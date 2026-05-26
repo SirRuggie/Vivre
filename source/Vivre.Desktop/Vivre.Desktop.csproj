@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\Vivre.Core\Vivre.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
+    <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
+    <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
+    <PackageReference Include="Serilog" Version="4.2.0" />
+    <PackageReference Include="Serilog.Sinks.File" Version="6.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PowerShell syntax highlighting for the Run Script editor (loaded at runtime). -->
+    <EmbeddedResource Include="Resources\PowerShell.xshd" />
+    <!-- App logo: AppIcon.png is embedded for the window + tray icon at runtime. -->
+    <Resource Include="Assets\AppIcon.png" />
+    <!-- Hero background for the About dialog. -->
+    <Resource Include="Assets\AboutBackground.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Curated PowerShell script library (repo root \scripts). Shipped beside the exe and
+         seeded into %APPDATA%\Vivre\Scripts on first run (copy-if-missing). -->
+    <Content Include="..\..\scripts\**\*.ps1" Link="Scripts\%(RecursiveDir)%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <!-- Ship as Vivre.exe with Vivre identity in Explorer / Task Manager. RootNamespace stays
+         Vivre.Desktop (matches the XAML x:Class), only the output assembly name is shortened. -->
+    <AssemblyName>Vivre</AssemblyName>
+    <RootNamespace>Vivre.Desktop</RootNamespace>
+    <Product>Vivre</Product>
+    <AssemblyTitle>Vivre</AssemblyTitle>
+    <!-- Icon shown on the .exe itself (Explorer / pinned taskbar). -->
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>

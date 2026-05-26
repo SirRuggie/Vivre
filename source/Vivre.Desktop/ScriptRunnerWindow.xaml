@@ -1,0 +1,181 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.ScriptRunnerWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
+        mc:Ignorable="d"
+        Title="Run Script"
+        Height="660" Width="940"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner">
+
+    <ui:FluentWindow.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <!-- Group the saved-scripts list by category folder, like the right-click menu. -->
+        <CollectionViewSource x:Key="GroupedScripts" Source="{Binding Scripts}">
+            <CollectionViewSource.GroupDescriptions>
+                <PropertyGroupDescription PropertyName="Category" />
+            </CollectionViewSource.GroupDescriptions>
+        </CollectionViewSource>
+    </ui:FluentWindow.Resources>
+
+    <Grid Margin="0,0,0,12">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="2*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="1*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Run Script" />
+
+        <ui:TextBlock Grid.Row="1"
+                      Margin="12,4,12,8"
+                      Appearance="Secondary"
+                      Text="{Binding TargetSummary}" />
+
+        <!-- Saved scripts (left) + editor (right) -->
+        <Grid Grid.Row="2" Margin="12,0,12,0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="260" MinWidth="140" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" MinWidth="220" />
+            </Grid.ColumnDefinitions>
+
+            <ui:ListView x:Name="ScriptList"
+                         Grid.Column="0"
+                         ItemsSource="{Binding Source={StaticResource GroupedScripts}}"
+                         SelectedItem="{Binding SelectedScript, Mode=TwoWay}"
+                         SelectionChanged="OnScriptSelected"
+                         DisplayMemberPath="Name"
+                         ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                <ui:ListView.GroupStyle>
+                    <GroupStyle>
+                        <!-- Each category is a collapsible Expander (name + count); starts collapsed. -->
+                        <GroupStyle.ContainerStyle>
+                            <Style TargetType="{x:Type GroupItem}">
+                                <Setter Property="Template">
+                                    <Setter.Value>
+                                        <ControlTemplate TargetType="{x:Type GroupItem}">
+                                            <Expander IsExpanded="False">
+                                                <Expander.Header>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <TextBlock FontWeight="SemiBold">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Text" Value="{Binding Name}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding Name}" Value="">
+                                                                            <Setter Property="Text" Value="General" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                        <TextBlock Text="{Binding ItemCount, StringFormat=' ({0})'}" Opacity="0.6" />
+                                                    </StackPanel>
+                                                </Expander.Header>
+                                                <ItemsPresenter />
+                                            </Expander>
+                                        </ControlTemplate>
+                                    </Setter.Value>
+                                </Setter>
+                            </Style>
+                        </GroupStyle.ContainerStyle>
+                    </GroupStyle>
+                </ui:ListView.GroupStyle>
+            </ui:ListView>
+
+            <GridSplitter Grid.Column="1"
+                          Width="8"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="Transparent"
+                          ResizeBehavior="PreviousAndNext"
+                          ResizeDirection="Columns"
+                          ToolTip="Drag to resize" />
+
+            <Border Grid.Column="2"
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="4">
+                <avalon:TextEditor x:Name="Editor"
+                                   ShowLineNumbers="True"
+                                   WordWrap="False"
+                                   FontFamily="Cascadia Code, Consolas, monospace"
+                                   FontSize="13"
+                                   Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                   Padding="6" />
+            </Border>
+        </Grid>
+
+        <Grid Grid.Row="3" Margin="12,8">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Save current editor content into a folder (pick one or type a new name to create it) -->
+            <StackPanel Orientation="Horizontal" Grid.Column="0">
+                <ComboBox Width="150"
+                          IsEditable="True"
+                          VerticalAlignment="Center"
+                          ItemsSource="{Binding Categories}"
+                          Text="{Binding SaveCategory, UpdateSourceTrigger=PropertyChanged}"
+                          ToolTip="Folder to save into — pick one or type a new name to create it" />
+                <ui:TextBox x:Name="NameBox"
+                            Width="200"
+                            Margin="8,0,0,0"
+                            PlaceholderText="Script name"
+                            Text="{Binding ScriptName, UpdateSourceTrigger=PropertyChanged}" />
+                <ui:Button Margin="8,0,0,0"
+                           Icon="{ui:SymbolIcon Save24}"
+                           Content="Save"
+                           Click="OnSave" />
+                <ui:Button Margin="8,0,0,0"
+                           Appearance="Secondary"
+                           Icon="{ui:SymbolIcon Delete24}"
+                           Content="Delete"
+                           Click="OnDeleteScript"
+                           IsEnabled="{Binding CanDeleteSelectedScript}"
+                           ToolTip="Delete the selected saved script (built-in scripts can't be deleted)" />
+            </StackPanel>
+
+            <!-- Run / Stop -->
+            <StackPanel Orientation="Horizontal" Grid.Column="1">
+                <ui:ProgressRing Width="22" Height="22" Margin="0,0,8,0"
+                                 IsIndeterminate="True"
+                                 VerticalAlignment="Center"
+                                 Visibility="{Binding IsBusy, Converter={StaticResource BoolToVis}}" />
+                <ui:Button Appearance="Primary"
+                           Icon="{ui:SymbolIcon Play24}"
+                           Content="Run"
+                           Click="OnRun" />
+                <ui:Button Margin="8,0,0,0"
+                           Icon="{ui:SymbolIcon Stop24}"
+                           Content="Stop"
+                           Command="{Binding RunCancelCommand}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- Output (auto-scrolls to newest line) -->
+        <TextBox Grid.Row="4"
+                 x:Name="OutputBox"
+                 Margin="12,0,12,0"
+                 IsReadOnly="True"
+                 FontFamily="Cascadia Code, Consolas, monospace"
+                 FontSize="12"
+                 VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Auto"
+                 TextWrapping="NoWrap"
+                 TextChanged="OnOutputChanged"
+                 Text="{Binding Output, Mode=OneWay}" />
+    </Grid>
+</ui:FluentWindow>

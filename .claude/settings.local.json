@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet --version)",
+      "Bash(git add *)",
+      "Bash(git config *)",
+      "Bash(git commit -q -m 'Baseline: legacy .NET Framework 4.8 WinForms app \\(pre-rebuild\\) *)",
+      "Bash(git commit -q -m 'Spike #1: confirm PowerShell SDK 7.6.2 hosts on .NET 10 *)",
+      "Bash(dotnet new *)",
+      "Bash(dotnet sln *)",
+      "Bash(dotnet add *)",
+      "Bash(dotnet build *)",
+      "Bash(dotnet test *)",
+      "Bash(git commit -q -m 'Scaffold rebuild solution \\(Session 1\\): Core + Desktop + Tests on .NET 10 *)"
+    ]
+  }
+}
