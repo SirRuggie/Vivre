@@ -1,0 +1,70 @@
+<?xml version="1.0"?>
+<!-- Compact PowerShell highlighting for the Run Script editor (AvalonEdit). -->
+<SyntaxDefinition name="PowerShell" extensions=".ps1"
+                  xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+
+  <Color name="Comment"  foreground="#6A9955" />
+  <Color name="String"   foreground="#CE9178" />
+  <Color name="Variable" foreground="#9CDCFE" />
+  <Color name="Keyword"  foreground="#569CD6" fontWeight="bold" />
+  <Color name="Cmdlet"   foreground="#DCDCAA" />
+  <Color name="Operator" foreground="#569CD6" />
+
+  <RuleSet ignoreCase="true">
+    <Span color="Comment" multiline="true" begin="&lt;#" end="#&gt;" />
+    <Span color="Comment" begin="#" />
+
+    <Span color="String" multiline="true" begin="@&quot;" end="&quot;@" />
+    <Span color="String" multiline="true" begin="@'" end="'@" />
+    <Span color="String" begin="&quot;" end="&quot;" />
+    <Span color="String" begin="'" end="'" />
+
+    <Rule color="Variable">\$[\w:]+</Rule>
+
+    <Keywords color="Keyword">
+      <Word>if</Word>
+      <Word>else</Word>
+      <Word>elseif</Word>
+      <Word>foreach</Word>
+      <Word>for</Word>
+      <Word>while</Word>
+      <Word>do</Word>
+      <Word>switch</Word>
+      <Word>function</Word>
+      <Word>filter</Word>
+      <Word>return</Word>
+      <Word>param</Word>
+      <Word>try</Word>
+      <Word>catch</Word>
+      <Word>finally</Word>
+      <Word>throw</Word>
+      <Word>break</Word>
+      <Word>continue</Word>
+      <Word>begin</Word>
+      <Word>process</Word>
+      <Word>end</Word>
+    </Keywords>
+
+    <Keywords color="Operator">
+      <Word>-eq</Word>
+      <Word>-ne</Word>
+      <Word>-gt</Word>
+      <Word>-ge</Word>
+      <Word>-lt</Word>
+      <Word>-le</Word>
+      <Word>-like</Word>
+      <Word>-notlike</Word>
+      <Word>-match</Word>
+      <Word>-notmatch</Word>
+      <Word>-contains</Word>
+      <Word>-in</Word>
+      <Word>-notin</Word>
+      <Word>-and</Word>
+      <Word>-or</Word>
+      <Word>-not</Word>
+    </Keywords>
+
+    <!-- Verb-Noun cmdlet names, e.g. Get-Service, Invoke-CimMethod -->
+    <Rule color="Cmdlet">\b[A-Za-z]+-[A-Za-z][A-Za-z0-9]*\b</Rule>
+  </RuleSet>
+</SyntaxDefinition>

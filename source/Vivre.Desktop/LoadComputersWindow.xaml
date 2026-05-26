@@ -1,0 +1,44 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.LoadComputersWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        mc:Ignorable="d"
+        Title="Load computers"
+        Height="520" Width="460"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Load computers" />
+
+        <ui:TextBlock Grid.Row="1"
+                      Margin="16,4,16,8"
+                      Appearance="Secondary"
+                      Text="Paste machine names, one per line." />
+
+        <TextBox Grid.Row="2"
+                 x:Name="NamesBox"
+                 Margin="16,0,16,0"
+                 AcceptsReturn="True"
+                 AcceptsTab="False"
+                 FontFamily="Cascadia Code, Consolas, monospace"
+                 VerticalScrollBarVisibility="Auto"
+                 TextWrapping="NoWrap" />
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,12,16,16">
+            <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" Content="Load" Click="OnLoad" />
+            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>
