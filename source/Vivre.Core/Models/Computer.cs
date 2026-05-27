@@ -79,6 +79,40 @@ public partial class Computer : ObservableObject
     [NotifyPropertyChangedFor(nameof(LastRebootDisplay))]
     public partial DateTime? LastBootTime { get; set; }
 
+    // --- Windows Update lane (the BatchPatch-replacement view; see REBUILD_PLAN.md A1) ---
+
+    /// <summary>Per-host update status for the "Windows update message" column (e.g. "Installing 3 of 8").</summary>
+    [ObservableProperty]
+    public partial string? UpdateMessage { get; set; }
+
+    /// <summary>Reboot-action status for the "Reboot message" column (e.g. "Rebooting… / back online in Xm"); Phase 2.</summary>
+    [ObservableProperty]
+    public partial string? RebootMessage { get; set; }
+
+    /// <summary>Live install progress 0-100 for the progress bar, null when indeterminate/idle.</summary>
+    [ObservableProperty]
+    public partial int? UpdateProgress { get; set; }
+
+    /// <summary>Applicable-update count from the last scan, null until scanned.</summary>
+    [ObservableProperty]
+    public partial int? UpdatesAvailable { get; set; }
+
+    /// <summary>Current patch phase name (Scanning/Installing/…); drives logging/state, not a column.</summary>
+    [ObservableProperty]
+    public partial string? UpdatePhase { get; set; }
+
+    /// <summary>Last update-lane error for this row, null when the last operation succeeded.</summary>
+    [ObservableProperty]
+    public partial string? UpdateError { get; set; }
+
+    /// <summary>Queued scheduled-task action for the "Scheduled task action" column (Phase 2).</summary>
+    [ObservableProperty]
+    public partial string? ScheduledAction { get; set; }
+
+    /// <summary>Next run time of the queued scheduled task for its column (Phase 2).</summary>
+    [ObservableProperty]
+    public partial DateTime? ScheduledNextRun { get; set; }
+
     /// <summary>Relative "time since last reboot" (e.g. "3h", "2d") for the grid; exact value in the tooltip.</summary>
     public string? LastRebootDisplay => LastBootTime is { } boot ? Relative(DateTime.Now - boot) : null;
 

@@ -10,105 +10,222 @@
     <UserControl.Resources>
         <local:StatusBrushConverter x:Key="StatusBrush" />
         <local:BoolStateTextConverter x:Key="YesNo" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
-    <!-- This tab's computer grid only. The toolbar + add-bar are shared in the shell. -->
-    <ui:DataGrid x:Name="ComputerGrid"
-                 ItemsSource="{Binding Computers}"
-                 AutoGenerateColumns="False"
-                 IsReadOnly="True"
-                 CanUserAddRows="False"
-                 CanUserDeleteRows="False"
-                 GridLinesVisibility="Horizontal"
-                 HeadersVisibility="Column"
-                 SelectionMode="Extended"
-                 SelectionUnit="FullRow"
-                 ClipboardCopyMode="IncludeHeader"
-                 SelectionChanged="OnGridSelectionChanged"
-                 MouseDoubleClick="OnRowDoubleClick"
-                 PreviewMouseRightButtonDown="OnGridRightClick"
-                 PreviewKeyDown="OnGridKeyDown">
-        <ui:DataGrid.ContextMenu>
-            <ContextMenu x:Name="GridMenu" />
-        </ui:DataGrid.ContextMenu>
-        <ui:DataGrid.Columns>
-            <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" />
-            <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
-                <DataGridTemplateColumn.CellTemplate>
-                    <DataTemplate>
-                        <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Fill="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
-                                 ToolTip="{Binding LastStatus}" />
-                    </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="2*">
-                <DataGridTextColumn.ElementStyle>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                        <Setter Property="ToolTip" Value="{Binding CommandResult}" />
-                    </Style>
-                </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTextColumn Header="Site code" Binding="{Binding SiteCode}" Width="Auto" />
-            <DataGridTextColumn Header="Agent version" Binding="{Binding AgentVersion}" Width="Auto" />
-            <DataGridTextColumn Header="Last reboot" Binding="{Binding LastRebootDisplay}" Width="Auto">
-                <DataGridTextColumn.ElementStyle>
-                    <Style TargetType="TextBlock">
-                        <Setter Property="ToolTip" Value="{Binding LastBootTime}" />
-                    </Style>
-                </DataGridTextColumn.ElementStyle>
-            </DataGridTextColumn>
-            <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
-                <DataGridTemplateColumn.Header>
-                    <TextBlock TextAlignment="Center"><Run Text="Reboot" /><LineBreak /><Run Text="Pending" /></TextBlock>
-                </DataGridTemplateColumn.Header>
-                <DataGridTemplateColumn.CellTemplate>
-                    <DataTemplate>
-                        <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Fill="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                 ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
-                    </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Width="Auto" SortMemberPath="MissingUpdates">
-                <DataGridTemplateColumn.Header>
-                    <TextBlock TextAlignment="Center"><Run Text="Updates" /><LineBreak /><Run Text="Missing" /></TextBlock>
-                </DataGridTemplateColumn.Header>
-                <DataGridTemplateColumn.CellTemplate>
-                    <DataTemplate>
-                        <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Fill="{Binding MissingUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                 ToolTip="{Binding MissingUpdates, Converter={StaticResource YesNo}}" />
-                    </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Width="Auto" SortMemberPath="RunningUpdates">
-                <DataGridTemplateColumn.Header>
-                    <TextBlock TextAlignment="Center"><Run Text="Install" /><LineBreak /><Run Text="Running" /></TextBlock>
-                </DataGridTemplateColumn.Header>
-                <DataGridTemplateColumn.CellTemplate>
-                    <DataTemplate>
-                        <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Fill="{Binding RunningUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                 ToolTip="{Binding RunningUpdates, Converter={StaticResource YesNo}}" />
-                    </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTemplateColumn Width="Auto" SortMemberPath="UserLoggedOn">
-                <DataGridTemplateColumn.Header>
-                    <TextBlock TextAlignment="Center"><Run Text="Users" /><LineBreak /><Run Text="Online" /></TextBlock>
-                </DataGridTemplateColumn.Header>
-                <DataGridTemplateColumn.CellTemplate>
-                    <DataTemplate>
-                        <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                 Fill="{Binding UserLoggedOn, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                 ToolTip="{Binding UserLoggedOn, Converter={StaticResource YesNo}}" />
-                    </DataTemplate>
-                </DataGridTemplateColumn.CellTemplate>
-            </DataGridTemplateColumn>
-            <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="2*" />
-            <DataGridTextColumn Header="Last error" Binding="{Binding LastError}" Width="2*" />
-        </ui:DataGrid.Columns>
-    </ui:DataGrid>
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Mode toggle + (in Windows Update mode) the patch command bar. -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="12,4,12,8" VerticalAlignment="Center">
+            <ToggleButton Padding="11,6" VerticalAlignment="Center"
+                          IsChecked="{Binding IsUpdateMode, Mode=TwoWay}"
+                          ToolTip="Switch this tab between the Machines view and the Windows Update view (same machine list).">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="ArrowDownload24" Margin="0,0,8,0" />
+                    <TextBlock Text="Windows Update mode" VerticalAlignment="Center" />
+                </StackPanel>
+            </ToggleButton>
+
+            <!-- Patch command bar — visible only in Windows Update mode. -->
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                        Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
+                <TextBlock Text="Source:" VerticalAlignment="Center" Margin="16,0,6,0" />
+                <ComboBox Width="160" VerticalAlignment="Center"
+                          ItemsSource="{Binding UpdateSources}"
+                          SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          ToolTip="Windows Update = OS/drivers; Microsoft Update adds SQL/Office/.NET; Managed = WSUS/SCCM." />
+                <ui:TextBox Width="200" Margin="12,0,0,0" VerticalAlignment="Center"
+                            PlaceholderText="Exclude titles (e.g. SQL, Silverlight)"
+                            Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}" />
+                <ui:Button Margin="12,0,0,0" Icon="{ui:SymbolIcon Search24}" Content="Scan"
+                           Command="{Binding ScanUpdatesCommand}" />
+                <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install"
+                           Command="{Binding InstallUpdatesCommand}"
+                           ToolTip="Download + install all applicable updates (one-time SYSTEM task per host). Reboot is reported, not forced." />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Machines grid (default mode). -->
+        <ui:DataGrid x:Name="ComputerGrid"
+                     Grid.Row="1"
+                     Visibility="{Binding IsMachineMode, Converter={StaticResource BoolToVis}}"
+                     ItemsSource="{Binding Computers}"
+                     AutoGenerateColumns="False"
+                     IsReadOnly="True"
+                     CanUserAddRows="False"
+                     CanUserDeleteRows="False"
+                     GridLinesVisibility="Horizontal"
+                     HeadersVisibility="Column"
+                     SelectionMode="Extended"
+                     SelectionUnit="FullRow"
+                     ClipboardCopyMode="IncludeHeader"
+                     SelectionChanged="OnGridSelectionChanged"
+                     MouseDoubleClick="OnRowDoubleClick"
+                     PreviewMouseRightButtonDown="OnGridRightClick"
+                     PreviewKeyDown="OnGridKeyDown">
+            <ui:DataGrid.Columns>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" />
+                <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
+                                     ToolTip="{Binding LastStatus}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="ToolTip" Value="{Binding CommandResult}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Site code" Binding="{Binding SiteCode}" Width="Auto" />
+                <DataGridTextColumn Header="Agent version" Binding="{Binding AgentVersion}" Width="Auto" />
+                <DataGridTextColumn Header="Last reboot" Binding="{Binding LastRebootDisplay}" Width="Auto">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="ToolTip" Value="{Binding LastBootTime}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock TextAlignment="Center"><Run Text="Reboot" /><LineBreak /><Run Text="Pending" /></TextBlock>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                     ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="Auto" SortMemberPath="MissingUpdates">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock TextAlignment="Center"><Run Text="Updates" /><LineBreak /><Run Text="Missing" /></TextBlock>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding MissingUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                     ToolTip="{Binding MissingUpdates, Converter={StaticResource YesNo}}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="Auto" SortMemberPath="RunningUpdates">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock TextAlignment="Center"><Run Text="Install" /><LineBreak /><Run Text="Running" /></TextBlock>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding RunningUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                     ToolTip="{Binding RunningUpdates, Converter={StaticResource YesNo}}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Width="Auto" SortMemberPath="UserLoggedOn">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock TextAlignment="Center"><Run Text="Users" /><LineBreak /><Run Text="Online" /></TextBlock>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding UserLoggedOn, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                     ToolTip="{Binding UserLoggedOn, Converter={StaticResource YesNo}}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="2*" />
+                <DataGridTextColumn Header="Last error" Binding="{Binding LastError}" Width="2*" />
+            </ui:DataGrid.Columns>
+        </ui:DataGrid>
+
+        <!-- Windows Update grid (update mode) — same machine list, the BatchPatch-replacement columns. -->
+        <ui:DataGrid x:Name="UpdateGrid"
+                     Grid.Row="1"
+                     Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}"
+                     ItemsSource="{Binding Computers}"
+                     AutoGenerateColumns="False"
+                     IsReadOnly="True"
+                     CanUserAddRows="False"
+                     CanUserDeleteRows="False"
+                     GridLinesVisibility="Horizontal"
+                     HeadersVisibility="Column"
+                     SelectionMode="Extended"
+                     SelectionUnit="FullRow"
+                     ClipboardCopyMode="IncludeHeader"
+                     SelectionChanged="OnGridSelectionChanged"
+                     PreviewMouseRightButtonDown="OnGridRightClick"
+                     PreviewKeyDown="OnGridKeyDown">
+            <ui:DataGrid.Columns>
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" />
+                <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
+                                     ToolTip="{Binding LastStatus}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="1.2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="ToolTip" Value="{Binding RebootMessage}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTextColumn Header="Windows update message" Binding="{Binding UpdateMessage}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="ToolTip" Value="{Binding UpdateMessage}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+                <DataGridTemplateColumn Header="Progress" Width="140">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid Margin="8,0">
+                                <ProgressBar Height="14" Minimum="0" Maximum="100" Value="{Binding UpdateProgress, FallbackValue=0, TargetNullValue=0}" />
+                                <TextBlock Text="{Binding UpdateProgress, StringFormat={}{0}%}" FontSize="10"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" />
+                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun}" Width="Auto" />
+                <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
+                    <DataGridTemplateColumn.Header>
+                        <TextBlock TextAlignment="Center"><Run Text="Pending" /><LineBreak /><Run Text="Reboot" /></TextBlock>
+                    </DataGridTemplateColumn.Header>
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                     Fill="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                     ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="2*">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="ToolTip" Value="{Binding CommandResult}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
+            </ui:DataGrid.Columns>
+        </ui:DataGrid>
+    </Grid>
 </UserControl>
