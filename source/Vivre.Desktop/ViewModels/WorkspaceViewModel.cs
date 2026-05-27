@@ -9,6 +9,7 @@ using Vivre.Core.PowerShell;
 using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
+using Vivre.Core.Updates;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -33,6 +34,8 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IComputerListStore _lists;
     private readonly IActivityLog _activity;
     private readonly IScriptLibrary _scripts;
+    private readonly IPatchService _patch;
+    private readonly PatchOptions _patchOptions;
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _monitorCts;
 
@@ -54,8 +57,33 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(PingAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(PingOfflineCommand))]
     [NotifyCanExecuteChangedFor(nameof(CheckAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanUpdatesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     public partial bool IsBusy { get; set; }
+
+    /// <summary>
+    /// When true the tab shows the Windows Update grid + patch command bar instead of the
+    /// Machines grid (same machine list, different lane). Bound to the per-tab mode toggle.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsMachineMode))]
+    public partial bool IsUpdateMode { get; set; }
+
+    /// <summary>Inverse of <see cref="IsUpdateMode"/> — each grid binds its own bool through one converter.</summary>
+    public bool IsMachineMode => !IsUpdateMode;
+
+    /// <summary>The update source for scan/install (bound to the patch command bar's Source toggle).</summary>
+    [ObservableProperty]
+    public partial UpdateSource SelectedSource { get; set; }
+
+    /// <summary>Comma/newline-separated exclude terms (bound to the Exclude box); parsed into <see cref="PatchOptions"/>.</summary>
+    [ObservableProperty]
+    public partial string ExcludeText { get; set; } = string.Empty;
+
+    /// <summary>The update sources offered in the Source toggle.</summary>
+    public IReadOnlyList<UpdateSource> UpdateSources { get; } =
+        [UpdateSource.WindowsUpdate, UpdateSource.MicrosoftUpdate, UpdateSource.Managed];
 
     /// <summary>
     /// When true, a background loop continuously re-checks every row's online/offline state on
@@ -70,7 +98,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -80,9 +108,22 @@ public partial class WorkspaceViewModel : ObservableObject
         _lists = lists;
         _activity = activity;
         _scripts = scripts;
+        _patch = patch;
+        _patchOptions = patchOptions;
+        SelectedSource = patchOptions.Source;
+        ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         // No seeding — the grid starts empty; the user opens a saved list or pastes one.
         IsMonitoring = true; // start watching online/offline straight away
     }
+
+    /// <summary>Push the Source toggle's value into the shared patch options.</summary>
+    partial void OnSelectedSourceChanged(UpdateSource value) => _patchOptions.Source = value;
+
+    /// <summary>Parse the Exclude box into the shared patch options (split on comma/newline, trim, drop blanks).</summary>
+    partial void OnExcludeTextChanged(string value) =>
+        _patchOptions.ExcludeNameContains =
+            [.. (value ?? string.Empty)
+                .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
     /// <summary>Starts/stops the continuous monitor loop when <see cref="IsMonitoring"/> flips.</summary>
     partial void OnIsMonitoringChanged(bool value)
@@ -167,6 +208,24 @@ public partial class WorkspaceViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
     private Task CheckAllAsync() => RunSweepAsync([.. Computers], CheckRowAsync);
 
+    // --- Windows Update lane (scan / install) ---
+
+    /// <summary>Scans every row for applicable updates from the selected source.</summary>
+    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync);
+
+    /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
+    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], InstallRowAsync);
+
+    /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
+    public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync);
+
+    /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
+    public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], InstallRowAsync);
+
     /// <summary>Cancels the running sweep and halts continuous monitoring (the Monitor toggle restarts it).</summary>
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void Stop()
@@ -228,6 +287,164 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             IsBusy = false;
             _cts = null;
+        }
+    }
+
+    /// <summary>
+    /// Like <see cref="RunSweepAsync"/> (shares Stop / IsBusy / the cancellation race) but
+    /// bounded — installs are heavy, so each host runs under a <see cref="SemaphoreSlim"/>
+    /// throttle and a per-host timeout so one stuck box never holds up the grid.
+    /// </summary>
+    private async Task RunPatchSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation)
+    {
+        using var cts = new CancellationTokenSource();
+        _cts = cts;
+        IsBusy = true;
+        using var throttle = new SemaphoreSlim(Math.Max(1, _patchOptions.MaxConcurrentHosts));
+        try
+        {
+            Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, throttle, cts.Token)));
+
+            Task cancelled = Task.Delay(Timeout.Infinite, cts.Token);
+            if (await Task.WhenAny(work, cancelled) == work)
+            {
+                await work;
+            }
+            else
+            {
+                _ = work.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop pressed — finished/in-flight rows keep their results.
+        }
+        finally
+        {
+            IsBusy = false;
+            _cts = null;
+        }
+    }
+
+    private async Task RunOnePatchHostAsync(
+        Computer row,
+        Func<Computer, CancellationToken, Task> operation,
+        SemaphoreSlim throttle,
+        CancellationToken token)
+    {
+        await throttle.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+            perHost.CancelAfter(_patchOptions.PerHostTimeout);
+            try
+            {
+                await operation(row, perHost.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                // Per-host timeout (not a user Stop): surface it and let the rest of the sweep continue.
+                row.UpdateError = $"Timed out after {_patchOptions.PerHostTimeout.TotalHours:N0}h";
+                row.UpdateMessage = "Timed out";
+                row.UpdatePhase = PatchPhase.Error.ToString();
+                _activity.Error(row.Name, row.UpdateError);
+            }
+        }
+        finally
+        {
+            throttle.Release();
+        }
+    }
+
+    private async Task ScanRowAsync(Computer computer, CancellationToken token)
+    {
+        computer.UpdateError = null;
+        computer.UpdateProgress = null;
+        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdateMessage = "Scanning…";
+        try
+        {
+            HostPatchStatus status = await _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, token);
+            ApplyStatus(computer, status);
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Scan failed";
+            computer.UpdatePhase = PatchPhase.Error.ToString();
+            _activity.Error(computer.Name, $"Scan failed — {ex.Message}");
+        }
+    }
+
+    private async Task InstallRowAsync(Computer computer, CancellationToken token)
+    {
+        computer.UpdateError = null;
+        computer.UpdateProgress = 0;
+        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdateMessage = "Starting…";
+
+        // Progress<T> marshals callbacks to the captured (UI) context; WPF also auto-marshals
+        // the scalar property updates, so the grid stays current as the SYSTEM task reports in.
+        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        try
+        {
+            HostPatchStatus final = await _patch.InstallAsync(computer.Name, _patchOptions, _credentials.Current, progress, token);
+            ApplyStatus(computer, final);
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Install failed";
+            computer.UpdatePhase = PatchPhase.Error.ToString();
+            _activity.Error(computer.Name, $"Install failed — {ex.Message}");
+        }
+    }
+
+    /// <summary>Writes a <see cref="HostPatchStatus"/> snapshot onto a row, logging phase transitions only.</summary>
+    private void ApplyStatus(Computer computer, HostPatchStatus status)
+    {
+        string phase = status.Phase.ToString();
+        bool phaseChanged = !string.Equals(computer.UpdatePhase, phase, StringComparison.Ordinal);
+
+        computer.UpdatePhase = phase;
+        computer.UpdateMessage = status.Message;
+        computer.UpdateProgress = status.Percent;
+
+        if (status.Phase == PatchPhase.Available)
+        {
+            computer.UpdatesAvailable = status.AvailableCount;
+        }
+
+        if (status.RebootPending)
+        {
+            computer.RebootRequired = true;
+        }
+
+        if (status.Phase == PatchPhase.Error)
+        {
+            computer.UpdateError = status.Message;
+        }
+
+        if (phaseChanged && status.Phase != PatchPhase.Idle)
+        {
+            if (status.Phase == PatchPhase.Error)
+            {
+                _activity.Error(computer.Name, status.Message);
+            }
+            else
+            {
+                _activity.Info(computer.Name, $"{phase}: {status.Message}");
+            }
         }
     }
 

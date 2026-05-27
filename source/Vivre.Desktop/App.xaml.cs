@@ -6,6 +6,7 @@ using Vivre.Core.PowerShell;
 using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
+using Vivre.Core.Updates;
 using Vivre.Desktop.ViewModels;
 
 namespace Vivre.Desktop;
@@ -31,6 +32,9 @@ public partial class App : Application
         var credentials = new CredentialStore();
         var activity = new ActivityLog();
         var scripts = new ScriptLibrary();
+        var patch = new PatchService(powerShell);
+        // Session-only, shared across tabs (consistent with the in-memory credential model).
+        var patchOptions = new PatchOptions();
 
         // Global safety net: never die silently. Unhandled exceptions (e.g. from an async void
         // event handler) are logged to the activity log + rolling file instead of taking the app
@@ -54,7 +58,7 @@ public partial class App : Application
         };
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions);
 
         var shell = new ShellViewModel(NewWorkspace, credentials, activity);
         var window = new MainWindow { DataContext = shell };

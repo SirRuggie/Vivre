@@ -30,33 +30,53 @@ public partial class WorkspaceView : UserControl
 
     private Window? OwnerWindow => Window.GetWindow(this);
 
+    // One menu instance, re-parented to whichever grid (Machines / Windows Update) was clicked.
+    private readonly ContextMenu _gridMenu = new();
+
     // --- right-click action menu (built lazily; DataContext isn't set in the ctor) ---
 
     private void BuildContextMenu(WorkspaceViewModel vm)
     {
-        GridMenu.Items.Clear();
+        _gridMenu.Items.Clear();
 
         var copy = new MenuItem { Header = "Copy" };
         copy.Click += (_, _) => CopySelectedRows();
-        GridMenu.Items.Add(copy);
+        _gridMenu.Items.Add(copy);
 
-        GridMenu.Items.Add(new Separator());
+        _gridMenu.Items.Add(new Separator());
+
+        // In Windows Update mode, lead with the patch shortcuts (selection ⇒ those rows, else all).
+        if (vm.IsUpdateMode)
+        {
+            var updates = new MenuItem { Header = "Updates" };
+
+            var scan = new MenuItem { Header = "Scan selected" };
+            scan.Click += (_, _) => _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
+            updates.Items.Add(scan);
+
+            var install = new MenuItem { Header = "Install selected" };
+            install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
+            updates.Items.Add(install);
+
+            _gridMenu.Items.Add(updates);
+            _gridMenu.Items.Add(new Separator());
+        }
 
         var runSelected = new MenuItem { Header = "Run PowerShell Script" };
         runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
-        GridMenu.Items.Add(runSelected);
+        _gridMenu.Items.Add(runSelected);
 
         var runAll = new MenuItem { Header = "Run PowerShell (All Machines)" };
         runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
-        GridMenu.Items.Add(runAll);
+        _gridMenu.Items.Add(runAll);
 
-        GridMenu.Items.Add(BuildScriptMenu(vm));
+        _gridMenu.Items.Add(BuildScriptMenu(vm));
 
-        GridMenu.Items.Add(new Separator());
+        _gridMenu.Items.Add(new Separator());
 
         foreach (ScheduleAction action in vm.ClientActions)
         {
-            GridMenu.Items.Add(new MenuItem
+            _gridMenu.Items.Add(new MenuItem
             {
                 Header = action.Label,
                 Command = vm.TriggerScheduleCommand,
@@ -64,11 +84,11 @@ public partial class WorkspaceView : UserControl
             });
         }
 
-        GridMenu.Items.Add(new Separator());
+        _gridMenu.Items.Add(new Separator());
 
         var enableWinRm = new MenuItem { Header = "Enable WinRM (PSRemoting)…" };
         enableWinRm.Click += OnEnableWinRm;
-        GridMenu.Items.Add(enableWinRm);
+        _gridMenu.Items.Add(enableWinRm);
     }
 
     /// <summary>
@@ -207,7 +227,7 @@ public partial class WorkspaceView : UserControl
 
     private void OnGridRightClick(object sender, MouseButtonEventArgs e)
     {
-        if (ViewModel is not { } vm)
+        if (ViewModel is not { } vm || sender is not DataGrid grid)
         {
             return;
         }
@@ -220,13 +240,15 @@ public partial class WorkspaceView : UserControl
 
         if (!row.IsSelected)
         {
-            ComputerGrid.UnselectAll();
+            grid.UnselectAll();
             row.IsSelected = true;
         }
 
         BuildContextMenu(vm);
-        GridMenu.PlacementTarget = row;
-        GridMenu.IsOpen = true;
+        // Re-parent the single menu to the grid that was clicked (Machines or Windows Update).
+        grid.ContextMenu = _gridMenu;
+        _gridMenu.PlacementTarget = row;
+        _gridMenu.IsOpen = true;
         e.Handled = true;
     }
 
