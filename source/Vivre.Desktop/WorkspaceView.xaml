@@ -10,6 +10,7 @@
     <UserControl.Resources>
         <local:StatusBrushConverter x:Key="StatusBrush" />
         <local:BoolStateTextConverter x:Key="YesNo" />
+        <local:UpdateSourceNameConverter x:Key="UpdateSourceName" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
@@ -37,7 +38,13 @@
                 <ComboBox Width="160" VerticalAlignment="Center"
                           ItemsSource="{Binding UpdateSources}"
                           SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
-                          ToolTip="Windows Update = OS/drivers; Microsoft Update adds SQL/Office/.NET; Managed = WSUS/SCCM." />
+                          ToolTip="Windows Update = OS/drivers; Microsoft Update adds SQL/Office/.NET; Managed = WSUS/SCCM.">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding Converter={StaticResource UpdateSourceName}}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
                 <ui:TextBox Width="200" Margin="12,0,0,0" VerticalAlignment="Center"
                             PlaceholderText="Exclude titles (e.g. SQL, Silverlight)"
                             Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}" />
