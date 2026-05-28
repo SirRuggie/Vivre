@@ -23,7 +23,7 @@ namespace Vivre.Desktop;
 public partial class WorkspaceView : UserControl
 {
     /// <summary>Side-panel width when a machine is focused; collapses to 0 otherwise.</summary>
-    private static readonly GridLength ChecklistOpenWidth = new(360);
+    private static readonly GridLength ChecklistOpenWidth = new(320);
 
     public WorkspaceView()
     {
@@ -60,9 +60,22 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        // Open to a default 360 px when a machine is focused; collapse otherwise so the grid
+        // Open to a default 320 px when a machine is focused; collapse otherwise so the grid
         // gets the full width back. (A future tweak could remember the user's last splitter drag.)
         ChecklistColumn.Width = focused is null ? new GridLength(0) : ChecklistOpenWidth;
+    }
+
+    /// <summary>
+    /// Close (✕) on the checklist panel — clears <see cref="WorkspaceViewModel.FocusedComputer"/>
+    /// so the auto-collapse listener takes the panel back to 0 width and the grid gets the full
+    /// window back. The grid's selected row stays selected.
+    /// </summary>
+    private void OnCloseChecklist(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+        {
+            vm.FocusedComputer = null;
+        }
     }
 
     private WorkspaceViewModel? ViewModel => DataContext as WorkspaceViewModel;
