@@ -116,6 +116,24 @@ public partial class MainWindow : FluentWindow
     private void OnOpenAbout(object sender, RoutedEventArgs e) =>
         new AboutWindow { Owner = this }.ShowDialog();
 
+    private void OnOpenExcludeDialog(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is not { } vm)
+        {
+            return;
+        }
+
+        var dialog = new TextPromptWindow(
+            "Exclude updates",
+            "Comma-separated update title terms to skip (e.g. SQL, Silverlight, Edge):",
+            vm.ExcludeText) { Owner = this };
+
+        if (dialog.ShowDialog() == true && dialog.Value is { } text)
+        {
+            vm.ExcludeText = text;
+        }
+    }
+
     // --- tabs ---
 
     private void OnNewTab(object sender, RoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);

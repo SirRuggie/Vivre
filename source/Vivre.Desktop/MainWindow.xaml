@@ -6,6 +6,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:Vivre.Desktop"
         xmlns:tb="http://www.hardcodet.net/taskbar"
+        xmlns:updates="clr-namespace:Vivre.Core.Updates;assembly=Vivre.Core"
         mc:Ignorable="d"
         Title="Vivre"
         Icon="pack://application:,,,/Assets/AppIcon.png"
@@ -18,6 +19,8 @@
 
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:InverseBooleanConverter x:Key="InverseBool" />
+        <local:EnumEqualsConverter x:Key="EnumEquals" />
         <local:LogSeverityBrushConverter x:Key="SeverityBrush" />
     </ui:FluentWindow.Resources>
 
@@ -57,6 +60,29 @@
             <MenuItem Header="_View">
                 <MenuItem x:Name="ActivityLogMenuItem" Header="_Activity log"
                           IsCheckable="True" IsChecked="False" Click="OnToggleActivityLog" />
+                <Separator />
+                <MenuItem Header="_Modes">
+                    <MenuItem Header="_Machines" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource InverseBool}, Mode=TwoWay}" />
+                    <MenuItem Header="_Windows Update" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.IsUpdateMode, Mode=TwoWay}" />
+                </MenuItem>
+            </MenuItem>
+            <MenuItem Header="_Updates">
+                <MenuItem Header="_Source">
+                    <MenuItem Header="Windows _Update" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.WindowsUpdate}, Mode=TwoWay}" />
+                    <MenuItem Header="_Microsoft Update" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.MicrosoftUpdate}, Mode=TwoWay}" />
+                    <MenuItem Header="Mana_ged (WSUS/SCCM)" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.Managed}, Mode=TwoWay}" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Include _drivers" IsCheckable="True"
+                          IsChecked="{Binding SelectedTab.IncludeDrivers, Mode=TwoWay}"
+                          ToolTip="Off (default) hides driver updates — matches the Windows Update UI and BatchPatch." />
+                <Separator />
+                <MenuItem Header="_Exclude updates…" Click="OnOpenExcludeDialog" />
             </MenuItem>
             <MenuItem Header="_Settings">
                 <MenuItem Header="_Credentials…" Click="OnOpenSettings" />
@@ -80,6 +106,16 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- In Windows Update mode the toolbar leads with Scan + Install, separated from the machine actions. -->
+                <ui:Button Icon="{ui:SymbolIcon Search24}" Content="Scan"
+                           Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
+                           Command="{Binding SelectedTab.ScanUpdatesCommand}" />
+                <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install"
+                           Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
+                           Command="{Binding SelectedTab.InstallUpdatesCommand}"
+                           ToolTip="Download + install all applicable updates (one-time SYSTEM task per host). Reboot is reported, not forced." />
+                <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
+                        Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
                 <ui:SplitButton Appearance="Primary"
                                 Icon="{ui:SymbolIcon ArrowSync24}"
                                 Content="Ping All"
