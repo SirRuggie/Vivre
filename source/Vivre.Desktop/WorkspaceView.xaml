@@ -32,7 +32,7 @@
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
-                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" />
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
                 <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -42,7 +42,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="2*">
+                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -50,9 +50,9 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTextColumn Header="Site code" Binding="{Binding SiteCode}" Width="Auto" />
-                <DataGridTextColumn Header="Agent version" Binding="{Binding AgentVersion}" Width="Auto" />
-                <DataGridTextColumn Header="Last reboot" Binding="{Binding LastRebootDisplay}" Width="Auto">
+                <DataGridTextColumn Header="Site code" Binding="{Binding SiteCode}" Width="Auto" MinWidth="80" />
+                <DataGridTextColumn Header="Agent version" Binding="{Binding AgentVersion}" Width="Auto" MinWidth="100" />
+                <DataGridTextColumn Header="Last reboot" Binding="{Binding LastRebootDisplay}" Width="Auto" MinWidth="90">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="ToolTip" Value="{Binding LastBootTime}" />
@@ -107,8 +107,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="2*" />
-                <DataGridTextColumn Header="Last error" Binding="{Binding LastError}" Width="2*" />
+                <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="Auto" MinWidth="160" MaxWidth="400" />
+                <DataGridTextColumn Header="Last error" Binding="{Binding LastError}" Width="Auto" MinWidth="160" MaxWidth="500" />
             </ui:DataGrid.Columns>
         </ui:DataGrid>
 
@@ -136,7 +136,7 @@
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
-                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" />
+                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -146,7 +146,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="1.2*">
+                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="Auto" MinWidth="140" MaxWidth="350">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -154,7 +154,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTextColumn Header="Windows update message" Binding="{Binding UpdateMessage}" Width="2*">
+                <DataGridTextColumn Header="Windows update message" Binding="{Binding UpdateMessage}" Width="Auto" MinWidth="180" MaxWidth="500">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -173,8 +173,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" />
-                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun}" Width="Auto" />
+                <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" MinWidth="140" />
+                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun}" Width="Auto" MinWidth="140" />
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Pending" /><LineBreak /><Run Text="Reboot" /></TextBlock>
@@ -187,7 +187,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="2*">
+                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
