@@ -363,7 +363,7 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding FocusedComputer.ScannedUpdates.Count}" Value="0">
+                                        <DataTrigger Binding="{Binding FocusedActiveUpdates.Count}" Value="0">
                                             <Setter Property="Visibility" Value="Visible" />
                                         </DataTrigger>
                                     </Style.Triggers>
