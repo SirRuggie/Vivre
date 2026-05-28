@@ -117,7 +117,10 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="360" MinWidth="240" />
+                <!-- Code-behind drives Width: 0 when no machine focused (grid keeps the full
+                     window), 360 when a row is clicked. Splitter still works between * and the
+                     pixel width once it's open. -->
+                <ColumnDefinition x:Name="ChecklistColumn" Width="0" MinWidth="0" />
             </Grid.ColumnDefinitions>
 
             <ui:DataGrid x:Name="UpdateGrid"
@@ -199,11 +202,33 @@
             </ui:DataGrid>
 
             <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch"
-                          ResizeBehavior="PreviousAndNext" Background="Transparent" />
+                          ResizeBehavior="PreviousAndNext" Background="Transparent">
+                <GridSplitter.Style>
+                    <Style TargetType="GridSplitter">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding FocusedComputer}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </GridSplitter.Style>
+            </GridSplitter>
 
-            <!-- Per-machine update checklist for the focused row. -->
+            <!-- Per-machine update checklist for the focused row. Collapsed when no row is
+                 focused so the machine grid keeps the full window width. -->
             <Border Grid.Column="2" Padding="10,0,0,0" BorderThickness="1,0,0,0"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Visible" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding FocusedComputer}" Value="{x:Null}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
                 <Grid>
                     <TextBlock Text="Select a machine on the left to see and choose its updates."
                                TextWrapping="Wrap" TextAlignment="Center" Margin="12"
