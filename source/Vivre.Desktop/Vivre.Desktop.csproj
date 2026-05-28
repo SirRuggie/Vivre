@@ -45,4 +45,32 @@
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
   </PropertyGroup>
 
+  <!--
+    Microsoft.PowerShell.SDK lays its core Modules under runtimes/win/lib/net10.0/Modules/ in
+    the output, but the SDK's host expects them at $PSHOME/Modules (i.e. beside Vivre.exe).
+    Without this copy, the static ctor for InitialSessionState throws on the first remote
+    operation and PSRP wraps it as the misleading "Processing data from remote server X
+    failed... type initializer for InitialSessionState threw an exception" message. Mirror the
+    copy for Build (so dotnet run / debug works) and Publish (so the shipped zip works).
+  -->
+  <Target Name="CopyPowerShellSdkModulesAfterBuild" AfterTargets="Build">
+    <ItemGroup>
+      <_PSSdkModulesBuild Include="$(OutDir)runtimes\win\lib\net10.0\Modules\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PSSdkModulesBuild)"
+          DestinationFiles="@(_PSSdkModulesBuild->'$(OutDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PSSdkModulesBuild)' != ''" />
+  </Target>
+
+  <Target Name="CopyPowerShellSdkModulesAfterPublish" AfterTargets="Publish">
+    <ItemGroup>
+      <_PSSdkModulesPublish Include="$(PublishDir)runtimes\win\lib\net10.0\Modules\**\*.*" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_PSSdkModulesPublish)"
+          DestinationFiles="@(_PSSdkModulesPublish->'$(PublishDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')"
+          SkipUnchangedFiles="true"
+          Condition="'@(_PSSdkModulesPublish)' != ''" />
+  </Target>
+
 </Project>
