@@ -64,6 +64,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(InstallUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanFocusedCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     public partial bool IsBusy { get; set; }
 
@@ -140,6 +141,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanFocusedCommand))]
     [NotifyPropertyChangedFor(nameof(FocusedActiveUpdates))]
     public partial Computer? FocusedComputer { get; set; }
 
@@ -320,6 +322,18 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
         RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], InstallRowAsync);
+
+    /// <summary>
+    /// Scans only the focused machine — wired to the side-panel "Scan" button that appears inside
+    /// the empty-state hint when this scope has never been scanned for the focused row. Distinct
+    /// from the toolbar's ScanUpdates (which sweeps every row), so the user can fill in just the
+    /// machine they're looking at without re-scanning the whole tab.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanScanFocused))]
+    private Task ScanFocusedAsync() =>
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync) : Task.CompletedTask;
+
+    private bool CanScanFocused() => !IsBusy && FocusedComputer is not null;
 
     /// <summary>Installs only the ticked updates on the focused machine (the side panel's "Install checked").</summary>
     [RelayCommand(CanExecute = nameof(CanInstallChecked))]

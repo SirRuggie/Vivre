@@ -349,18 +349,16 @@
                             </ui:DataGrid.Columns>
                         </ui:DataGrid>
 
-                        <!-- Empty-state hint shown when the checklist has no rows. Prefers the row's
-                             last UpdateMessage if set (e.g. "Up to date", "No installed updates") so a
-                             successful scan that came back empty reads naturally; otherwise it falls
-                             back to a scan prompt for machines that haven't been scanned yet. -->
-                        <TextBlock Text="{Binding FocusedComputer.UpdateMessage, TargetNullValue='Nothing here yet — run Scan to pull updates for this machine.'}"
-                                   TextWrapping="Wrap" TextAlignment="Center" Margin="20"
-                                   FontSize="13"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   IsHitTestVisible="False">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
+                        <!-- Empty-state when the active-scope checklist has no rows. The hint text
+                             prefers the row's last UpdateMessage if set (e.g. "Up to date", "No
+                             installed updates") so a successful scan that came back empty reads
+                             naturally; otherwise it falls back to "Nothing here yet — run Scan…".
+                             The Scan button only appears for never-scanned scope (UpdateMessage is
+                             null) — once a scan completed the message itself is informative and a
+                             button isn't needed; it scans just the focused machine, not the tab. -->
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
                                     <Setter Property="Visibility" Value="Collapsed" />
                                     <Style.Triggers>
                                         <DataTrigger Binding="{Binding FocusedActiveUpdates.Count}" Value="0">
@@ -368,8 +366,30 @@
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
+                            </StackPanel.Style>
+                            <TextBlock Text="{Binding FocusedComputer.UpdateMessage, TargetNullValue='Nothing here yet — run Scan to pull updates for this machine.'}"
+                                       TextWrapping="Wrap" TextAlignment="Center"
+                                       FontSize="13"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       HorizontalAlignment="Center"
+                                       IsHitTestVisible="False" />
+                            <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center"
+                                       Appearance="Primary"
+                                       Icon="{ui:SymbolIcon Search24}" Content="Scan"
+                                       Command="{Binding ScanFocusedCommand}"
+                                       ToolTip="Scan only this machine (faster than the toolbar Scan, which sweeps the whole tab).">
+                                <ui:Button.Style>
+                                    <Style TargetType="{x:Type ui:Button}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding FocusedComputer.UpdateMessage}" Value="{x:Null}">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                            </ui:Button>
+                        </StackPanel>
                         </Grid>
                     </DockPanel>
                 </Grid>
