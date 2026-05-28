@@ -36,6 +36,9 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IScriptLibrary _scripts;
     private readonly IPatchService _patch;
     private readonly PatchOptions _patchOptions;
+    private readonly IHostRebootProbe _rebootProbe;
+    // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
+    private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
     private CancellationTokenSource? _cts;
     private CancellationTokenSource? _monitorCts;
 
@@ -114,7 +117,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -126,6 +129,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _scripts = scripts;
         _patch = patch;
         _patchOptions = patchOptions;
+        _rebootProbe = rebootProbe;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
@@ -144,6 +148,18 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Push the "Include drivers" checkbox into the shared patch options.</summary>
     partial void OnIncludeDriversChanged(bool value) => _patchOptions.IncludeDrivers = value;
+
+    /// <summary>
+    /// When the tab flips into Windows Update mode, kick an immediate monitor pass so the
+    /// Pending Reboot column populates straight away instead of waiting for the next 20 s tick.
+    /// </summary>
+    partial void OnIsUpdateModeChanged(bool value)
+    {
+        if (value && IsMonitoring && _monitorCts is { } cts && Computers.Count > 0)
+        {
+            _ = MonitorRowsAsync([.. Computers], cts.Token);
+        }
+    }
 
     /// <summary>Starts/stops the continuous monitor loop when <see cref="IsMonitoring"/> flips.</summary>
     partial void OnIsMonitoringChanged(bool value)
@@ -661,6 +677,14 @@ public partial class WorkspaceViewModel : ObservableObject
         computer.IsOnline = online;
         computer.LastError = online ? null : error;
 
+        // While the Windows Update view is up, also keep the Pending Reboot column live —
+        // a small registry/SCCM-aggregated probe over WinRM, throttled so a large fleet
+        // doesn't open dozens of runspaces at once.
+        if (online && IsUpdateMode)
+        {
+            await ProbeRebootPendingAsync(computer, token).ConfigureAwait(false);
+        }
+
         if (previous == online)
         {
             return; // unchanged — leave LastStatus as-is
@@ -674,6 +698,36 @@ public partial class WorkspaceViewModel : ObservableObject
         else
         {
             _activity.Warn(computer.Name, previous is null ? $"Offline — {error}" : $"Went offline — {error}");
+        }
+    }
+
+    /// <summary>
+    /// One pending-reboot pass against an online row, throttled so a big fleet doesn't open
+    /// dozens of runspaces at once. Best-effort: a probe failure leaves the row's previous
+    /// <see cref="Computer.RebootRequired"/> in place and the next tick will retry.
+    /// </summary>
+    private async Task ProbeRebootPendingAsync(Computer computer, CancellationToken token)
+    {
+        await _rebootProbeThrottle.WaitAsync(token).ConfigureAwait(false);
+        try
+        {
+            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token).ConfigureAwait(false);
+            if (pending.HasValue)
+            {
+                computer.RebootRequired = pending.Value;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Swallow — don't spam the activity log every 20 s for a flaky host.
+        }
+        finally
+        {
+            _rebootProbeThrottle.Release();
         }
     }
 

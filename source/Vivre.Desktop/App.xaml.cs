@@ -26,6 +26,7 @@ public partial class App : Application
         var powerShell = new PSRunspaceHost();
         var pinger = new HostPinger();
         var hostProbe = new WmiHostProbe();
+        var rebootProbe = new HostRebootProbe(powerShell);
         var configMgr = new ConfigMgrClient(powerShell);
         var winRm = new WinRmEnabler();
         var lists = new ComputerListStore();
@@ -58,7 +59,7 @@ public partial class App : Application
         };
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe);
 
         var shell = new ShellViewModel(NewWorkspace, credentials, activity);
         var window = new MainWindow { DataContext = shell };
