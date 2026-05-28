@@ -79,6 +79,9 @@
                 <ui:TextBox Width="200" Margin="12,0,0,0" VerticalAlignment="Center"
                             PlaceholderText="Exclude titles (e.g. SQL, Silverlight)"
                             Text="{Binding ExcludeText, UpdateSourceTrigger=PropertyChanged}" />
+                <CheckBox Margin="12,0,0,0" VerticalAlignment="Center" Content="Include drivers"
+                          IsChecked="{Binding IncludeDrivers, Mode=TwoWay}"
+                          ToolTip="Off (default) hides driver updates from scan/install (Type='Software') — matches the Windows Update UI and BatchPatch. Turn on to also see and install drivers." />
                 <ui:Button Margin="12,0,0,0" Icon="{ui:SymbolIcon Search24}" Content="Scan"
                            Command="{Binding ScanUpdatesCommand}" />
                 <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install"

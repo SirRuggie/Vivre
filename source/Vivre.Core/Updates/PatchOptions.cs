@@ -37,6 +37,14 @@ public sealed class PatchOptions
     public IReadOnlyList<string> ExcludeNameContains { get; set; } = [];
 
     /// <summary>
+    /// Whether the WUA search returns driver updates. Default <c>false</c> matches the Windows
+    /// Update UI and BatchPatch — drivers are filtered out at the search (<c>Type='Software'</c>),
+    /// so a scan/install only sees software updates. Turn on to also scan/install drivers from the
+    /// chosen source.
+    /// </summary>
+    public bool IncludeDrivers { get; set; }
+
+    /// <summary>
     /// When non-null, restricts install to updates whose KB article id is in this list (the
     /// per-machine checklist's ticked updates). <c>null</c> ⇒ install everything applicable
     /// (still minus <see cref="ExcludeNameContains"/>); an <em>empty</em> list ⇒ nothing selected.

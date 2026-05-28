@@ -157,6 +157,7 @@ public class WuaUpdateLaneTests
         Assert.True(options.MaxConcurrentHosts >= 1);
         Assert.True(options.PerHostTimeout > TimeSpan.Zero);
         Assert.Null(options.IncludeKbArticleIds);
+        Assert.False(options.IncludeDrivers);
     }
 
     [Fact]

@@ -41,7 +41,7 @@ public sealed class WuaUpdateLane
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentNullException.ThrowIfNull(options);
 
-        string script = BuildScanScript(options.Source);
+        string script = BuildScanScript(options.Source, options.IncludeDrivers);
         PSExecutionResult result = await RunScriptAsync(host, script, credential, cancellationToken).ConfigureAwait(false);
 
         if (result.HadErrors && result.Output.Count == 0)
@@ -382,15 +382,17 @@ public sealed class WuaUpdateLane
     /// <summary>Marker the poll script emits when the scheduled task is gone and no JSON remains.</summary>
     private const string TaskGoneMarker = "__VIVRE_TASK_GONE__";
 
-    private static string BuildScanScript(UpdateSource source)
+    private static string BuildScanScript(UpdateSource source, bool includeDrivers)
     {
         WuaServerSelection sel = WuaServerSelection.For(source);
+        // Default off matches the Windows Update UI and BatchPatch; flip via PatchOptions.IncludeDrivers.
+        string typeFilter = includeDrivers ? string.Empty : " and Type='Software'";
         return $$"""
             $ErrorActionPreference = 'Stop'
             $session  = New-Object -ComObject Microsoft.Update.Session
             $searcher = $session.CreateUpdateSearcher()
             {{SourceSelectionSnippet(sel)}}
-            $result = $searcher.Search("IsInstalled=0 and IsHidden=0")
+            $result = $searcher.Search("IsInstalled=0 and IsHidden=0{{typeFilter}}")
             foreach ($u in $result.Updates) {
                 $kb = $null
                 if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
@@ -434,6 +436,8 @@ public sealed class WuaUpdateLane
         WuaServerSelection sel = WuaServerSelection.For(options.Source);
         string excludeArray = BuildExcludePsArray(options.ExcludeNameContains);
         string includeArray = BuildIncludeKbPsArray(options.IncludeKbArticleIds);
+        // Default off matches the Windows Update UI and BatchPatch; flip via PatchOptions.IncludeDrivers.
+        string typeFilter = options.IncludeDrivers ? string.Empty : " and Type='Software'";
         string rebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait ? "$true" : "$false";
 
         // Single-quoted here-string callers embed this verbatim — keep it free of a leading '@.
@@ -460,7 +464,7 @@ public sealed class WuaUpdateLane
                 $session  = New-Object -ComObject Microsoft.Update.Session
                 $searcher = $session.CreateUpdateSearcher()
                 {{SourceSelectionSnippet(sel)}}
-                $result = $searcher.Search("IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'")
+                $result = $searcher.Search("IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'{{typeFilter}}")
 
                 $applicable = @()
                 foreach ($u in $result.Updates) {
