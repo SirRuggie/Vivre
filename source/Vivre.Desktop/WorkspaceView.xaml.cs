@@ -222,6 +222,12 @@ public partial class WorkspaceView : UserControl
         if (ViewModel is { } vm && sender is DataGrid grid)
         {
             vm.SetSelection(grid.SelectedItems.OfType<Computer>());
+
+            // Drive the Windows Update side panel from the primary (focused) machine row.
+            if (grid.SelectedItem is Computer focused)
+            {
+                vm.FocusedComputer = focused;
+            }
         }
     }
 

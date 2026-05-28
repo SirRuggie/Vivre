@@ -433,6 +433,7 @@ public sealed class WuaUpdateLane
     {
         WuaServerSelection sel = WuaServerSelection.For(options.Source);
         string excludeArray = BuildExcludePsArray(options.ExcludeNameContains);
+        string includeArray = BuildIncludeKbPsArray(options.IncludeKbArticleIds);
         string rebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait ? "$true" : "$false";
 
         // Single-quoted here-string callers embed this verbatim — keep it free of a leading '@.
@@ -440,6 +441,7 @@ public sealed class WuaUpdateLane
             $ErrorActionPreference = 'Stop'
             $progressPath = '{{progressPath}}'
             $excludes = {{excludeArray}}
+            $includeKbs = {{includeArray}}
             $rebootAfter = {{rebootAfter}}
 
             function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
@@ -464,6 +466,11 @@ public sealed class WuaUpdateLane
                 foreach ($u in $result.Updates) {
                     $skip = $false
                     foreach ($x in $excludes) { if ($u.Title -like "*$x*") { $skip = $true; break } }
+                    if (-not $skip -and $includeKbs.Count -gt 0) {
+                        $kb = $null
+                        if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
+                        if (($null -eq $kb) -or ($includeKbs -notcontains $kb)) { $skip = $true }
+                    }
                     if (-not $skip) { $applicable += $u }
                 }
 
@@ -573,6 +580,20 @@ public sealed class WuaUpdateLane
         string[] terms = [.. (excludes ?? [])
             .Where(t => !string.IsNullOrWhiteSpace(t))
             .Select(t => "'" + t.Trim().Replace("'", "''", StringComparison.Ordinal) + "'")];
+
+        return terms.Length == 0 ? "@()" : "@(" + string.Join(", ", terms) + ")";
+    }
+
+    /// <summary>
+    /// Builds the PowerShell array literal of KB ids the install worker restricts to (the ticked
+    /// updates from the per-machine checklist). Null/empty ⇒ <c>@()</c>, which the worker treats as
+    /// "no KB filter" (install everything not excluded). Public for host-free testing.
+    /// </summary>
+    public static string BuildIncludeKbPsArray(IReadOnlyList<string>? includeKbs)
+    {
+        string[] terms = [.. (includeKbs ?? [])
+            .Where(kb => !string.IsNullOrWhiteSpace(kb))
+            .Select(kb => "'" + kb.Trim().Replace("'", "''", StringComparison.Ordinal) + "'")];
 
         return terms.Length == 0 ? "@()" : "@(" + string.Join(", ", terms) + ")";
     }

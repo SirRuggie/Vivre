@@ -36,6 +36,14 @@ public sealed class PatchOptions
     /// </summary>
     public IReadOnlyList<string> ExcludeNameContains { get; set; } = [];
 
+    /// <summary>
+    /// When non-null, restricts install to updates whose KB article id is in this list (the
+    /// per-machine checklist's ticked updates). <c>null</c> ⇒ install everything applicable
+    /// (still minus <see cref="ExcludeNameContains"/>); an <em>empty</em> list ⇒ nothing selected.
+    /// Per-host — set on a <see cref="Clone"/>, never on the shared instance.
+    /// </summary>
+    public IReadOnlyList<string>? IncludeKbArticleIds { get; set; }
+
     /// <summary>Run now or at a scheduled time.</summary>
     public RunBehavior RunBehavior { get; set; } = RunBehavior.InstallNow;
 
@@ -56,4 +64,11 @@ public sealed class PatchOptions
 
     /// <summary>How often the controller polls the target's progress JSON.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(3);
+
+    /// <summary>
+    /// A shallow copy, so a per-host install scope (<see cref="IncludeKbArticleIds"/>) can be set
+    /// without mutating the shared session options that concurrent hosts read. The list properties
+    /// are treated as immutable (always reassigned, never mutated), so a shallow copy is safe.
+    /// </summary>
+    public PatchOptions Clone() => (PatchOptions)MemberwiseClone();
 }
