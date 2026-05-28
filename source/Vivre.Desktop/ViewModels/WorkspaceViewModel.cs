@@ -82,6 +82,13 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     public partial string ExcludeText { get; set; } = string.Empty;
 
+    /// <summary>
+    /// Whether the patch command bar's "Include drivers" checkbox is on. Off by default — the WUA
+    /// search adds <c>Type='Software'</c>, matching the Windows Update UI and BatchPatch.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IncludeDrivers { get; set; }
+
     /// <summary>The update sources offered in the Source toggle.</summary>
     public IReadOnlyList<UpdateSource> UpdateSources { get; } =
         [UpdateSource.WindowsUpdate, UpdateSource.MicrosoftUpdate, UpdateSource.Managed];
@@ -121,6 +128,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _patchOptions = patchOptions;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
+        IncludeDrivers = patchOptions.IncludeDrivers;
         // No seeding — the grid starts empty; the user opens a saved list or pastes one.
         IsMonitoring = true; // start watching online/offline straight away
     }
@@ -133,6 +141,9 @@ public partial class WorkspaceViewModel : ObservableObject
         _patchOptions.ExcludeNameContains =
             [.. (value ?? string.Empty)
                 .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+
+    /// <summary>Push the "Include drivers" checkbox into the shared patch options.</summary>
+    partial void OnIncludeDriversChanged(bool value) => _patchOptions.IncludeDrivers = value;
 
     /// <summary>Starts/stops the continuous monitor loop when <see cref="IsMonitoring"/> flips.</summary>
     partial void OnIsMonitoringChanged(bool value)
