@@ -590,6 +590,11 @@ public sealed class WuaUpdateLane
 
                 $installed = 0; $failed = 0; $rebootPending = $false
                 for ($i = 0; $i -lt $total; $i++) {
+                    # Per-iteration try/catch: a single update throwing (BeginDownload returning
+                    # null, stale COM proxy, missing property, COM HRESULT) shouldn't kill the
+                    # whole worker. The bare CLR exception text from one bad update was bubbling
+                    # up to the outer catch and surfacing as the row's UpdateMessage.
+                    try {
                     $u = $applicable[$i]
 
                     $coll = New-Object -ComObject Microsoft.Update.UpdateColl
@@ -654,6 +659,12 @@ public sealed class WuaUpdateLane
                     $r = $installer.EndInstall($instJob)
                     if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
                     if ($r.RebootRequired) { $rebootPending = $true }
+                    } catch {
+                        # Mark this row failed, surface a useful message, keep going.
+                        $failed++
+                        $overallPct = [int]((($i + 1) * 100) / $total)
+                        Write-Progress2 'Installing' ("Update {0} of {1} failed: $($_.Exception.Message)" -f ($i + 1), $total) $overallPct $total $installed $failed $rebootPending
+                    }
                 }
 
                 if ($rebootPending) {
@@ -732,6 +743,9 @@ public sealed class WuaUpdateLane
 
                 $installed = 0; $failed = 0; $rebootPending = $false
                 for ($i = 0; $i -lt $total; $i++) {
+                    # Per-iteration try/catch — see the install worker for the rationale; the same
+                    # one-row-shouldn't-nuke-the-worker pattern applies to uninstall.
+                    try {
                     $u = $applicable[$i]
 
                     $coll = New-Object -ComObject Microsoft.Update.UpdateColl
@@ -758,6 +772,11 @@ public sealed class WuaUpdateLane
                     $r = $installer.EndUninstall($unJob)
                     if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
                     if ($r.RebootRequired) { $rebootPending = $true }
+                    } catch {
+                        $failed++
+                        $overallPct = [int]((($i + 1) * 100) / $total)
+                        Write-Progress2 'Installing' ("Update {0} of {1} failed: $($_.Exception.Message)" -f ($i + 1), $total) $overallPct $total $installed $failed $rebootPending
+                    }
                 }
 
                 if ($rebootPending) {
