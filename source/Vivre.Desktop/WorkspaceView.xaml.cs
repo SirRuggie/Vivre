@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -21,9 +22,47 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class WorkspaceView : UserControl
 {
+    /// <summary>Side-panel width when a machine is focused; collapses to 0 otherwise.</summary>
+    private static readonly GridLength ChecklistOpenWidth = new(360);
+
     public WorkspaceView()
     {
         InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.OldValue is WorkspaceViewModel oldVm)
+        {
+            oldVm.PropertyChanged -= OnViewModelPropertyChanged;
+        }
+
+        if (e.NewValue is WorkspaceViewModel newVm)
+        {
+            newVm.PropertyChanged += OnViewModelPropertyChanged;
+            UpdateChecklistColumnWidth(newVm.FocusedComputer);
+        }
+    }
+
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WorkspaceViewModel.FocusedComputer) && sender is WorkspaceViewModel vm)
+        {
+            UpdateChecklistColumnWidth(vm.FocusedComputer);
+        }
+    }
+
+    private void UpdateChecklistColumnWidth(Computer? focused)
+    {
+        if (ChecklistColumn is null)
+        {
+            return;
+        }
+
+        // Open to a default 360 px when a machine is focused; collapse otherwise so the grid
+        // gets the full width back. (A future tweak could remember the user's last splitter drag.)
+        ChecklistColumn.Width = focused is null ? new GridLength(0) : ChecklistOpenWidth;
     }
 
     private WorkspaceViewModel? ViewModel => DataContext as WorkspaceViewModel;
