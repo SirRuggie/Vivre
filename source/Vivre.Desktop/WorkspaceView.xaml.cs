@@ -22,8 +22,14 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class WorkspaceView : UserControl
 {
-    /// <summary>Side-panel width when a machine is focused; collapses to 0 otherwise.</summary>
-    private static readonly GridLength ChecklistOpenWidth = new(320);
+    /// <summary>Default side-panel width when a machine is first focused; the user's drag is
+    /// preserved across machine switches via <see cref="_lastFocused"/>.</summary>
+    private static readonly GridLength ChecklistOpenWidth = new(280);
+
+    /// <summary>Tracks the previous focused machine so the column width only resets when
+    /// transitioning from "no machine" to "a machine" — not when switching between machines,
+    /// where the user's splitter drag should be kept.</summary>
+    private Computer? _lastFocused;
 
     public WorkspaceView()
     {
@@ -60,9 +66,19 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        // Open to a default 320 px when a machine is focused; collapse otherwise so the grid
-        // gets the full width back. (A future tweak could remember the user's last splitter drag.)
-        ChecklistColumn.Width = focused is null ? new GridLength(0) : ChecklistOpenWidth;
+        if (focused is null)
+        {
+            ChecklistColumn.Width = new GridLength(0);
+        }
+        else if (_lastFocused is null)
+        {
+            // Transitioning from "panel closed" to "panel opening" — apply the default width.
+            // Switching from one focused machine to another leaves the column alone so any
+            // splitter drag the user made is preserved.
+            ChecklistColumn.Width = ChecklistOpenWidth;
+        }
+
+        _lastFocused = focused;
     }
 
     /// <summary>
@@ -75,6 +91,26 @@ public partial class WorkspaceView : UserControl
         if (ViewModel is { } vm)
         {
             vm.FocusedComputer = null;
+        }
+    }
+
+    /// <summary>
+    /// Left-click on a row in the Windows Update grid always reopens the checklist for that
+    /// machine. Needed because <c>SelectionChanged</c> doesn't fire when the clicked row is
+    /// already the selected row — so without this, closing the panel via the ✕ would strand
+    /// the user on that machine until they clicked a different one first.
+    /// </summary>
+    private void OnUpdateGridLeftClick(object sender, MouseButtonEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        DataGridRow? row = FindParent<DataGridRow>(e.OriginalSource as DependencyObject);
+        if (row?.Item is Computer focused)
+        {
+            vm.FocusedComputer = focused;
         }
     }
 

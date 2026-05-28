@@ -137,6 +137,7 @@
                      ClipboardCopyMode="IncludeHeader"
                      SelectionChanged="OnGridSelectionChanged"
                      PreviewMouseRightButtonDown="OnGridRightClick"
+                     PreviewMouseLeftButtonUp="OnUpdateGridLeftClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
@@ -149,7 +150,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="Auto" MinWidth="140" MaxWidth="350">
+                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="Auto" MinWidth="100" MaxWidth="350">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -176,8 +177,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" MinWidth="140" />
-                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun}" Width="Auto" MinWidth="140" />
+                <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" MinWidth="80" />
+                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun}" Width="Auto" MinWidth="80" />
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Pending" /><LineBreak /><Run Text="Reboot" /></TextBlock>
