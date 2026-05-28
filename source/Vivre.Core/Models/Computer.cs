@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Vivre.Core.Updates;
 
 namespace Vivre.Core.Models;
 
@@ -112,6 +114,14 @@ public partial class Computer : ObservableObject
     /// <summary>Next run time of the queued scheduled task for its column (Phase 2).</summary>
     [ObservableProperty]
     public partial DateTime? ScheduledNextRun { get; set; }
+
+    /// <summary>
+    /// The updates found by the last scan, each with a keep/skip checkbox
+    /// (<see cref="SelectableUpdate.IsSelected"/>) for the Windows Update view's per-machine
+    /// checklist. Empty until scanned. The collection instance is stable (only its contents
+    /// change), so it needs no change notification of its own.
+    /// </summary>
+    public ObservableCollection<SelectableUpdate> ScannedUpdates { get; } = [];
 
     /// <summary>Relative "time since last reboot" (e.g. "3h", "2d") for the grid; exact value in the tooltip.</summary>
     public string? LastRebootDisplay => LastBootTime is { } boot ? Relative(DateTime.Now - boot) : null;

@@ -156,6 +156,45 @@ public class WuaUpdateLaneTests
         Assert.Empty(options.ExcludeNameContains);
         Assert.True(options.MaxConcurrentHosts >= 1);
         Assert.True(options.PerHostTimeout > TimeSpan.Zero);
+        Assert.Null(options.IncludeKbArticleIds);
+    }
+
+    [Fact]
+    public void PatchOptions_clone_copies_fields_and_is_independent()
+    {
+        var original = new PatchOptions
+        {
+            Source = UpdateSource.MicrosoftUpdate,
+            ExcludeNameContains = ["SQL"],
+            MaxConcurrentHosts = 9,
+        };
+
+        PatchOptions clone = original.Clone();
+        clone.IncludeKbArticleIds = ["5037782"];
+
+        Assert.Equal(UpdateSource.MicrosoftUpdate, clone.Source);
+        Assert.Equal(9, clone.MaxConcurrentHosts);
+        Assert.Equal(new[] { "SQL" }, clone.ExcludeNameContains);
+
+        // A per-host include list set on the clone must not leak back to the shared original.
+        Assert.Null(original.IncludeKbArticleIds);
+    }
+
+    // --- include-KB PowerShell array (per-machine checklist) ---
+
+    [Fact]
+    public void BuildIncludeKbPsArray_is_empty_for_null_or_blank()
+    {
+        Assert.Equal("@()", WuaUpdateLane.BuildIncludeKbPsArray(null));
+        Assert.Equal("@()", WuaUpdateLane.BuildIncludeKbPsArray([]));
+        Assert.Equal("@()", WuaUpdateLane.BuildIncludeKbPsArray(["   "]));
+    }
+
+    [Fact]
+    public void BuildIncludeKbPsArray_quotes_trims_and_escapes_each_kb()
+    {
+        Assert.Equal("@('5037782', '5040442')", WuaUpdateLane.BuildIncludeKbPsArray(["5037782", " 5040442 "]));
+        Assert.Equal("@('a''b')", WuaUpdateLane.BuildIncludeKbPsArray(["a'b"]));
     }
 
     // --- helpers ---

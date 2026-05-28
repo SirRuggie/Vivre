@@ -59,6 +59,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(CheckAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallUpdatesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     public partial bool IsBusy { get; set; }
 
@@ -84,6 +85,14 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>The update sources offered in the Source toggle.</summary>
     public IReadOnlyList<UpdateSource> UpdateSources { get; } =
         [UpdateSource.WindowsUpdate, UpdateSource.MicrosoftUpdate, UpdateSource.Managed];
+
+    /// <summary>
+    /// The machine whose update checklist the Windows Update side panel shows — the grid's focused
+    /// row (set from the code-behind selection handler). Null = no machine focused.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
+    public partial Computer? FocusedComputer { get; set; }
 
     /// <summary>
     /// When true, a background loop continuously re-checks every row's online/offline state on
@@ -153,6 +162,7 @@ public partial class WorkspaceViewModel : ObservableObject
     {
         Computers.Clear();
         SelectedComputers.Clear();
+        FocusedComputer = null;
         AddComputers(names);
     }
 
@@ -226,6 +236,35 @@ public partial class WorkspaceViewModel : ObservableObject
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
         RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], InstallRowAsync);
 
+    /// <summary>Installs only the ticked updates on the focused machine (the side panel's "Install checked").</summary>
+    [RelayCommand(CanExecute = nameof(CanInstallChecked))]
+    private Task InstallCheckedAsync() =>
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync) : Task.CompletedTask;
+
+    private bool CanInstallChecked() =>
+        !IsBusy && FocusedComputer is { } c && c.ScannedUpdates.Count > 0;
+
+    /// <summary>Ticks every update in the focused machine's checklist.</summary>
+    [RelayCommand]
+    private void SelectAllUpdates() => SetAllUpdatesSelected(true);
+
+    /// <summary>Unticks every update in the focused machine's checklist.</summary>
+    [RelayCommand]
+    private void SelectNoUpdates() => SetAllUpdatesSelected(false);
+
+    private void SetAllUpdatesSelected(bool selected)
+    {
+        if (FocusedComputer is not { } c)
+        {
+            return;
+        }
+
+        foreach (SelectableUpdate update in c.ScannedUpdates)
+        {
+            update.IsSelected = selected;
+        }
+    }
+
     /// <summary>Cancels the running sweep and halts continuous monitoring (the Monitor toggle restarts it).</summary>
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void Stop()
@@ -242,6 +281,11 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             Computers.Remove(computer);
             SelectedComputers.Remove(computer);
+        }
+
+        if (FocusedComputer is { } focused && !Computers.Contains(focused))
+        {
+            FocusedComputer = null;
         }
     }
 
@@ -383,6 +427,36 @@ public partial class WorkspaceViewModel : ObservableObject
 
     private async Task InstallRowAsync(Computer computer, CancellationToken token)
     {
+        // Honor the per-machine checklist. Clone the shared options (concurrent hosts read it) and
+        // scope this host's install to its ticked KBs: never scanned ⇒ no checklist ⇒ install all
+        // (not-excluded, unchanged); scanned but nothing ticked ⇒ skip without launching a task.
+        PatchOptions options = _patchOptions.Clone();
+        if (computer.ScannedUpdates.Count > 0)
+        {
+            if (!computer.ScannedUpdates.Any(u => u.IsSelected))
+            {
+                computer.UpdateError = null;
+                computer.UpdateProgress = null;
+                computer.UpdatePhase = PatchPhase.Idle.ToString();
+                computer.UpdateMessage = "No updates selected";
+                return;
+            }
+
+            string[] selectedKbs = [.. computer.ScannedUpdates
+                .Where(u => u.IsSelected && !string.IsNullOrWhiteSpace(u.Kb))
+                .Select(u => u.Kb!)];
+            if (selectedKbs.Length == 0)
+            {
+                computer.UpdateError = null;
+                computer.UpdateProgress = null;
+                computer.UpdatePhase = PatchPhase.Idle.ToString();
+                computer.UpdateMessage = "Selected updates have no KB id to target";
+                return;
+            }
+
+            options.IncludeKbArticleIds = selectedKbs;
+        }
+
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
@@ -393,7 +467,7 @@ public partial class WorkspaceViewModel : ObservableObject
         var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
         try
         {
-            HostPatchStatus final = await _patch.InstallAsync(computer.Name, _patchOptions, _credentials.Current, progress, token);
+            HostPatchStatus final = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, token);
             ApplyStatus(computer, final);
         }
         catch (OperationCanceledException)
@@ -423,6 +497,7 @@ public partial class WorkspaceViewModel : ObservableObject
         if (status.Phase == PatchPhase.Available)
         {
             computer.UpdatesAvailable = status.AvailableCount;
+            ReplaceScannedUpdates(computer, status.Updates);
         }
 
         if (status.RebootPending)
@@ -445,6 +520,26 @@ public partial class WorkspaceViewModel : ObservableObject
             {
                 _activity.Info(computer.Name, $"{phase}: {status.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Repopulates a row's checklist from a fresh scan, preserving the user's prior unticks by KB
+    /// (fallback title) so a re-scan doesn't silently re-select updates they chose to skip.
+    /// </summary>
+    private static void ReplaceScannedUpdates(Computer computer, IReadOnlyList<SoftwareUpdate> updates)
+    {
+        var prior = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+        foreach (SelectableUpdate existing in computer.ScannedUpdates)
+        {
+            prior[existing.Kb ?? existing.Title] = existing.IsSelected;
+        }
+
+        computer.ScannedUpdates.Clear();
+        foreach (SoftwareUpdate update in updates)
+        {
+            bool selected = !prior.TryGetValue(update.ArticleId ?? update.Title, out bool wasSelected) || wasSelected;
+            computer.ScannedUpdates.Add(new SelectableUpdate(update, selected));
         }
     }
 
@@ -650,6 +745,11 @@ public partial class WorkspaceViewModel : ObservableObject
         }
 
         SelectedComputers.Clear();
+
+        if (FocusedComputer is { } focused && !Computers.Contains(focused))
+        {
+            FocusedComputer = null;
+        }
     }
 
     /// <summary>Mirrors the grid's selection into <see cref="SelectedComputers"/> (called from code-behind).</summary>

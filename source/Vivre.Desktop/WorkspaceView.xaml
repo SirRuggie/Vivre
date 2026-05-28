@@ -11,7 +11,34 @@
         <local:StatusBrushConverter x:Key="StatusBrush" />
         <local:BoolStateTextConverter x:Key="YesNo" />
         <local:UpdateSourceNameConverter x:Key="UpdateSourceName" />
+        <local:InverseBooleanConverter x:Key="InverseBool" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- Two RadioButtons styled as a segmented pill for the Machines / Windows Update switch. -->
+        <Style x:Key="SegmentRadio" TargetType="RadioButton">
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
@@ -20,16 +47,20 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Mode toggle + (in Windows Update mode) the patch command bar. -->
+        <!-- Mode switch (segmented) + (in Windows Update mode) the patch command bar. -->
         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="12,4,12,8" VerticalAlignment="Center">
-            <ToggleButton Padding="11,6" VerticalAlignment="Center"
-                          IsChecked="{Binding IsUpdateMode, Mode=TwoWay}"
-                          ToolTip="Switch this tab between the Machines view and the Windows Update view (same machine list).">
+            <Border CornerRadius="6" BorderThickness="1" Padding="2"
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                    VerticalAlignment="Center"
+                    ToolTip="Switch this tab between the Machines view and the Windows Update view (same machine list).">
                 <StackPanel Orientation="Horizontal">
-                    <ui:SymbolIcon Symbol="ArrowDownload24" Margin="0,0,8,0" />
-                    <TextBlock Text="Windows Update mode" VerticalAlignment="Center" />
+                    <RadioButton GroupName="ViewMode" Style="{StaticResource SegmentRadio}" Content="Machines"
+                                 IsChecked="{Binding IsUpdateMode, Converter={StaticResource InverseBool}, Mode=TwoWay}" />
+                    <RadioButton GroupName="ViewMode" Style="{StaticResource SegmentRadio}" Content="Windows Update"
+                                 IsChecked="{Binding IsUpdateMode, Mode=TwoWay}" />
                 </StackPanel>
-            </ToggleButton>
+            </Border>
 
             <!-- Patch command bar — visible only in Windows Update mode. -->
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
@@ -155,10 +186,16 @@
             </ui:DataGrid.Columns>
         </ui:DataGrid>
 
-        <!-- Windows Update grid (update mode) — same machine list, the BatchPatch-replacement columns. -->
-        <ui:DataGrid x:Name="UpdateGrid"
-                     Grid.Row="1"
-                     Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}"
+        <!-- Windows Update view (update mode): machine grid (left) + per-machine update checklist (right). -->
+        <Grid Grid.Row="1" Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="360" MinWidth="240" />
+            </Grid.ColumnDefinitions>
+
+            <ui:DataGrid x:Name="UpdateGrid"
+                     Grid.Column="0"
                      ItemsSource="{Binding Computers}"
                      AutoGenerateColumns="False"
                      IsReadOnly="True"
@@ -233,6 +270,89 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
             </ui:DataGrid.Columns>
-        </ui:DataGrid>
+            </ui:DataGrid>
+
+            <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                          ResizeBehavior="PreviousAndNext" Background="Transparent" />
+
+            <!-- Per-machine update checklist for the focused row. -->
+            <Border Grid.Column="2" Padding="10,0,0,0" BorderThickness="1,0,0,0"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+                <Grid>
+                    <TextBlock Text="Select a machine on the left to see and choose its updates."
+                               TextWrapping="Wrap" TextAlignment="Center" Margin="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FocusedComputer}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+
+                    <DockPanel>
+                        <DockPanel.Style>
+                            <Style TargetType="DockPanel">
+                                <Setter Property="Visibility" Value="Visible" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding FocusedComputer}" Value="{x:Null}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </DockPanel.Style>
+
+                        <StackPanel DockPanel.Dock="Top" Margin="0,4,0,8">
+                            <TextBlock Text="{Binding FocusedComputer.Name}" FontWeight="SemiBold" FontSize="14"
+                                       TextTrimming="CharacterEllipsis" />
+                            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12">
+                                <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" update(s) — tick to install" />
+                            </TextBlock>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                                <ui:Button Content="All" Appearance="Secondary" Padding="10,2" Command="{Binding SelectAllUpdatesCommand}" />
+                                <ui:Button Content="None" Appearance="Secondary" Padding="10,2" Margin="6,0,0,0" Command="{Binding SelectNoUpdatesCommand}" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                   Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
+                                   Command="{Binding InstallCheckedCommand}"
+                                   ToolTip="Install only the ticked updates on this machine (one-time SYSTEM task). Reboot is reported, not forced." />
+
+                        <ui:DataGrid ItemsSource="{Binding FocusedComputer.ScannedUpdates}"
+                                     AutoGenerateColumns="False" IsReadOnly="True"
+                                     CanUserAddRows="False" CanUserDeleteRows="False"
+                                     HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                     SelectionMode="Single" SelectionUnit="FullRow">
+                            <ui:DataGrid.Columns>
+                                <DataGridTemplateColumn Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
+                                <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                            <Setter Property="ToolTip" Value="{Binding Title}" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                            </ui:DataGrid.Columns>
+                        </ui:DataGrid>
+                    </DockPanel>
+                </Grid>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>
