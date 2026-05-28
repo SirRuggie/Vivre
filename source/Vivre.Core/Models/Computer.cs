@@ -116,12 +116,42 @@ public partial class Computer : ObservableObject
     public partial DateTime? ScheduledNextRun { get; set; }
 
     /// <summary>
-    /// The updates found by the last scan, each with a keep/skip checkbox
-    /// (<see cref="SelectableUpdate.IsSelected"/>) for the Windows Update view's per-machine
-    /// checklist. Empty until scanned. The collection instance is stable (only its contents
-    /// change), so it needs no change notification of its own.
+    /// Applicable updates found by the last "Applicable"-scope scan, each with a keep/skip
+    /// checkbox (<see cref="SelectableUpdate.IsSelected"/>). Per-scope so toggling the side-panel
+    /// scope doesn't lose the data — the user scans once per scope and can swap between them
+    /// freely. The collection instance is stable; only its contents change.
     /// </summary>
-    public ObservableCollection<SelectableUpdate> ScannedUpdates { get; } = [];
+    public ObservableCollection<SelectableUpdate> ApplicableUpdates { get; } = [];
+
+    /// <summary>Installed updates found by the last "Installed"-scope scan; same shape as
+    /// <see cref="ApplicableUpdates"/> but feeds the uninstall flow.</summary>
+    public ObservableCollection<SelectableUpdate> InstalledUpdates { get; } = [];
+
+    /// <summary>"N update(s) available" / "Up to date" message from the last Applicable scan;
+    /// null until that scope has been scanned for this machine.</summary>
+    [ObservableProperty]
+    public partial string? ApplicableMessage { get; set; }
+
+    /// <summary>"N installed update(s)" / "No installed updates" message from the last Installed
+    /// scan; null until that scope has been scanned for this machine.</summary>
+    [ObservableProperty]
+    public partial string? InstalledMessage { get; set; }
+
+    /// <summary>Count from the last Applicable-scope scan; null until scanned in that scope.</summary>
+    [ObservableProperty]
+    public partial int? ApplicableCount { get; set; }
+
+    /// <summary>Count from the last Installed-scope scan; null until scanned in that scope.</summary>
+    [ObservableProperty]
+    public partial int? InstalledCount { get; set; }
+
+    /// <summary>When the Applicable-scope scan last completed (null = never).</summary>
+    [ObservableProperty]
+    public partial DateTime? LastScannedApplicable { get; set; }
+
+    /// <summary>When the Installed-scope scan last completed (null = never).</summary>
+    [ObservableProperty]
+    public partial DateTime? LastScannedInstalled { get; set; }
 
     /// <summary>Relative "time since last reboot" (e.g. "3h", "2d") for the grid; exact value in the tooltip.</summary>
     public string? LastRebootDisplay => LastBootTime is { } boot ? Relative(DateTime.Now - boot) : null;
