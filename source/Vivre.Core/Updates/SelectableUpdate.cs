@@ -38,4 +38,8 @@ public partial class SelectableUpdate : ObservableObject
     /// the checklist's checkbox binds <c>IsEnabled</c> to this so non-uninstallable Windows
     /// updates are visibly greyed out).</summary>
     public bool IsUninstallable => Update.IsUninstallable;
+
+    /// <summary>When the update was installed (only populated for Installed-scope scans). Bound by
+    /// the checklist's "Installed" column for display and sort.</summary>
+    public DateTime? InstalledAt => Update.InstalledAt;
 }
