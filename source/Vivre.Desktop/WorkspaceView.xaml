@@ -259,11 +259,25 @@
                         </DockPanel.Style>
 
                         <StackPanel DockPanel.Dock="Top" Margin="0,4,0,8">
-                            <TextBlock Text="{Binding FocusedComputer.Name}" FontWeight="SemiBold" FontSize="14"
-                                       TextTrimming="CharacterEllipsis" />
-                            <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12">
-                                <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" update(s) — tick to install" />
-                            </TextBlock>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding FocusedComputer.Name}" FontWeight="SemiBold" FontSize="14"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12">
+                                        <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" update(s) — tick to install" />
+                                    </TextBlock>
+                                </StackPanel>
+                                <ui:Button Grid.Column="1" Padding="6" Margin="6,0,0,0"
+                                           Background="Transparent" BorderThickness="0"
+                                           VerticalAlignment="Top"
+                                           Icon="{ui:SymbolIcon Dismiss24}"
+                                           ToolTip="Close panel (gives the grid the full window width back)"
+                                           Click="OnCloseChecklist" />
+                            </Grid>
                             <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
                                 <ui:Button Content="All" Appearance="Secondary" Padding="10,2" Command="{Binding SelectAllUpdatesCommand}" />
                                 <ui:Button Content="None" Appearance="Secondary" Padding="10,2" Margin="6,0,0,0" Command="{Binding SelectNoUpdatesCommand}" />
