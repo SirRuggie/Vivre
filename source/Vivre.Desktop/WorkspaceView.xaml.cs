@@ -39,8 +39,32 @@ public partial class WorkspaceView : UserControl
     {
         _gridMenu.Items.Clear();
 
+        Computer? firstSelected = vm.SelectedComputers.FirstOrDefault();
+
         var copy = new MenuItem { Header = "Copy" };
-        copy.Click += (_, _) => CopySelectedRows();
+
+        var copyRows = new MenuItem { Header = "Selected rows" };
+        copyRows.Click += (_, _) => CopySelectedRows();
+        copy.Items.Add(copyRows);
+
+        copy.Items.Add(new Separator());
+
+        var copyUpdate = new MenuItem { Header = "Update message", IsEnabled = !string.IsNullOrEmpty(firstSelected?.UpdateMessage) };
+        copyUpdate.Click += (_, _) => CopyField(static c => c.UpdateMessage);
+        copy.Items.Add(copyUpdate);
+
+        var copyReboot = new MenuItem { Header = "Reboot message", IsEnabled = !string.IsNullOrEmpty(firstSelected?.RebootMessage) };
+        copyReboot.Click += (_, _) => CopyField(static c => c.RebootMessage);
+        copy.Items.Add(copyReboot);
+
+        var copyCmd = new MenuItem { Header = "Command result", IsEnabled = !string.IsNullOrEmpty(firstSelected?.CommandResult) };
+        copyCmd.Click += (_, _) => CopyField(static c => c.CommandResult);
+        copy.Items.Add(copyCmd);
+
+        var copyErr = new MenuItem { Header = "Last error", IsEnabled = !string.IsNullOrEmpty(firstSelected?.LastError) };
+        copyErr.Click += (_, _) => CopyField(static c => c.LastError);
+        copy.Items.Add(copyErr);
+
         _gridMenu.Items.Add(copy);
 
         _gridMenu.Items.Add(new Separator());
@@ -190,6 +214,28 @@ public partial class WorkspaceView : UserControl
         }
 
         Clipboard.SetText(text.ToString());
+    }
+
+    /// <summary>
+    /// Copies one field across the selected rows (one row per line, blanks dropped). Used by the
+    /// Copy submenu for the long-text columns so the user can grab the full message without the
+    /// rest of the row noise — Ctrl+C / "Selected rows" still copies the whole row.
+    /// </summary>
+    private void CopyField(Func<Computer, string?> selector)
+    {
+        if (ViewModel is not { SelectedComputers.Count: > 0 } vm)
+        {
+            return;
+        }
+
+        string text = string.Join(
+            Environment.NewLine,
+            vm.SelectedComputers.Select(c => selector(c) ?? string.Empty).Where(static s => s.Length > 0));
+
+        if (text.Length > 0)
+        {
+            Clipboard.SetText(text);
+        }
     }
 
     private async void OnEnableWinRm(object sender, RoutedEventArgs e)
