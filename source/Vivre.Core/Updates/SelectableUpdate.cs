@@ -33,4 +33,9 @@ public partial class SelectableUpdate : ObservableObject
 
     /// <summary>Whether the target has already downloaded this update.</summary>
     public bool IsDownloaded => Update.IsDownloaded;
+
+    /// <summary>Whether the update can be uninstalled (only meaningful for Installed-scope scans —
+    /// the checklist's checkbox binds <c>IsEnabled</c> to this so non-uninstallable Windows
+    /// updates are visibly greyed out).</summary>
+    public bool IsUninstallable => Update.IsUninstallable;
 }

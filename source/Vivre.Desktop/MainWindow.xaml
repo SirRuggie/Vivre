@@ -111,9 +111,9 @@
                            Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
                            Command="{Binding SelectedTab.ScanUpdatesCommand}" />
                 <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install"
-                           Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
+                           Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
                            Command="{Binding SelectedTab.InstallUpdatesCommand}"
-                           ToolTip="Download + install all applicable updates (one-time SYSTEM task per host). Reboot is reported, not forced." />
+                           ToolTip="Download + install all applicable updates (one-time SYSTEM task per host). Reboot is reported, not forced. Hidden in 'Installed' scope — uninstall is per-machine from the side panel." />
                 <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
                         Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
                 <ui:SplitButton Appearance="Primary"

@@ -33,4 +33,18 @@ public interface IPatchService
         ConnectionCredential? credential,
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Uninstalls the selected installed updates on <paramref name="host"/> via the same
+    /// one-time SYSTEM scheduled task pattern as <see cref="InstallAsync"/>. Honors
+    /// <see cref="PatchOptions.IncludeKbArticleIds"/> as the per-machine selection, and only
+    /// touches updates Windows marks as <c>IsUninstallable</c>. Reports progress through
+    /// <paramref name="progress"/>; cleans up the task + temp files regardless of outcome.
+    /// </summary>
+    Task<HostPatchStatus> UninstallAsync(
+        string host,
+        PatchOptions options,
+        ConnectionCredential? credential,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default);
 }

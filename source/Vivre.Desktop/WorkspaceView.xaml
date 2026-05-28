@@ -10,6 +10,7 @@
     <UserControl.Resources>
         <local:StatusBrushConverter x:Key="StatusBrush" />
         <local:BoolStateTextConverter x:Key="YesNo" />
+        <local:InverseBooleanConverter x:Key="InverseBool" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
@@ -268,8 +269,21 @@
                                 <StackPanel Grid.Column="0">
                                     <TextBlock Text="{Binding FocusedComputer.Name}" FontWeight="SemiBold" FontSize="14"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12">
-                                        <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" update(s) — tick to install" />
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                        <RadioButton GroupName="ScopeToggle" Content="Applicable"
+                                                     IsChecked="{Binding IsInstalledMode, Converter={StaticResource InverseBool}, Mode=TwoWay}"
+                                                     ToolTip="Show updates that can be installed on this machine." />
+                                        <RadioButton GroupName="ScopeToggle" Content="Installed" Margin="12,0,0,0"
+                                                     IsChecked="{Binding IsInstalledMode, Mode=TwoWay}"
+                                                     ToolTip="Show updates already installed (with Uninstall). Greyed rows can't be uninstalled." />
+                                    </StackPanel>
+                                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
+                                               Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
+                                        <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" />
+                                    </TextBlock>
+                                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
+                                               Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
+                                        <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" />
                                     </TextBlock>
                                 </StackPanel>
                                 <ui:Button Grid.Column="1" Padding="6" Margin="6,0,0,0"
@@ -288,7 +302,13 @@
                         <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
                                    Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
                                    Command="{Binding InstallCheckedCommand}"
+                                   Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
                                    ToolTip="Install only the ticked updates on this machine (one-time SYSTEM task). Reboot is reported, not forced." />
+                        <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                   Appearance="Primary" Icon="{ui:SymbolIcon Delete24}" Content="Uninstall checked"
+                                   Click="OnUninstallChecked"
+                                   Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
+                                   ToolTip="Uninstall the ticked updates on this machine. Greyed rows are non-uninstallable. May require a reboot." />
 
                         <ui:DataGrid ItemsSource="{Binding FocusedComputer.ScannedUpdates}"
                                      AutoGenerateColumns="False" IsReadOnly="True"
@@ -300,7 +320,18 @@
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                      IsEnabled="{Binding IsUninstallable}"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                <CheckBox.Style>
+                                                    <Style TargetType="CheckBox">
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsEnabled" Value="False">
+                                                                <Setter Property="ToolTip" Value="This update is marked non-uninstallable by Windows." />
+                                                            </Trigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </CheckBox.Style>
+                                            </CheckBox>
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>

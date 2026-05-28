@@ -32,4 +32,12 @@ public sealed class PatchService : IPatchService
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken = default) =>
         _wua.InstallAsync(host, options, credential, progress, cancellationToken);
+
+    public Task<HostPatchStatus> UninstallAsync(
+        string host,
+        PatchOptions options,
+        ConnectionCredential? credential,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default) =>
+        _wua.UninstallAsync(host, options, credential, progress, cancellationToken);
 }

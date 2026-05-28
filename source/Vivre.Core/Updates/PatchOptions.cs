@@ -1,5 +1,16 @@
 namespace Vivre.Core.Updates;
 
+/// <summary>Which set of updates the scan/install lane targets — applicable updates (the install
+/// flow) or already-installed updates (the uninstall flow).</summary>
+public enum UpdateScope
+{
+    /// <summary>Updates that are applicable but not installed yet (default; the install flow).</summary>
+    Applicable,
+
+    /// <summary>Already-installed updates, surfaced so the user can uninstall a selected subset.</summary>
+    Installed,
+}
+
 /// <summary>When the install should run.</summary>
 public enum RunBehavior
 {
@@ -29,6 +40,12 @@ public sealed class PatchOptions
 {
     /// <summary>Which update catalogue to scan/install from.</summary>
     public UpdateSource Source { get; set; } = UpdateSource.WindowsUpdate;
+
+    /// <summary>
+    /// Whether the scan/install lane targets applicable updates (default — the install flow) or
+    /// already-installed updates (the uninstall flow). Side-panel toggle drives this on the VM.
+    /// </summary>
+    public UpdateScope Scope { get; set; } = UpdateScope.Applicable;
 
     /// <summary>
     /// Case-insensitive substrings; any update whose title contains one is skipped

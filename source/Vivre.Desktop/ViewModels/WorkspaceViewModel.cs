@@ -63,6 +63,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(ScanUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
     public partial bool IsBusy { get; set; }
 
@@ -72,10 +73,33 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMachineMode))]
+    [NotifyPropertyChangedFor(nameof(CanShowInstallToolbar))]
     public partial bool IsUpdateMode { get; set; }
 
     /// <summary>Inverse of <see cref="IsUpdateMode"/> — each grid binds its own bool through one converter.</summary>
     public bool IsMachineMode => !IsUpdateMode;
+
+    /// <summary>
+    /// Side-panel scope toggle: false = Applicable (default; the install flow), true = Installed
+    /// (the uninstall flow — the checklist shows installed updates with checkboxes, non-uninstallable
+    /// rows greyed). Per-tab; drives <see cref="PatchOptions.Scope"/>.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsApplicableMode))]
+    [NotifyPropertyChangedFor(nameof(CanShowInstallToolbar))]
+    [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
+    public partial bool IsInstalledMode { get; set; }
+
+    /// <summary>Inverse of <see cref="IsInstalledMode"/> — bound by the "Applicable" radio in the side panel.</summary>
+    public bool IsApplicableMode => !IsInstalledMode;
+
+    /// <summary>
+    /// The main toolbar's "Install" button is shown only when the tab is in Windows Update mode
+    /// <em>and</em> the scope is Applicable (uninstalling all installed updates from the toolbar
+    /// would be too destructive a default — uninstall is per-machine from the side panel only).
+    /// </summary>
+    public bool CanShowInstallToolbar => IsUpdateMode && !IsInstalledMode;
 
     /// <summary>The update source for scan/install (bound to the patch command bar's Source toggle).</summary>
     [ObservableProperty]
@@ -102,6 +126,7 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
+    [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
     public partial Computer? FocusedComputer { get; set; }
 
     /// <summary>
@@ -133,6 +158,7 @@ public partial class WorkspaceViewModel : ObservableObject
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
+        IsInstalledMode = patchOptions.Scope == UpdateScope.Installed;
         // No seeding — the grid starts empty; the user opens a saved list or pastes one.
         IsMonitoring = true; // start watching online/offline straight away
     }
@@ -148,6 +174,22 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Push the "Include drivers" checkbox into the shared patch options.</summary>
     partial void OnIncludeDriversChanged(bool value) => _patchOptions.IncludeDrivers = value;
+
+    /// <summary>
+    /// Push the side-panel scope toggle into the shared patch options and clear any stale
+    /// scanned-update lists across all rows so the user re-scans into the new scope.
+    /// </summary>
+    partial void OnIsInstalledModeChanged(bool value)
+    {
+        _patchOptions.Scope = value ? UpdateScope.Installed : UpdateScope.Applicable;
+
+        foreach (Computer c in Computers)
+        {
+            c.ScannedUpdates.Clear();
+            c.UpdatesAvailable = null;
+            c.UpdateMessage = null;
+        }
+    }
 
     /// <summary>
     /// When the tab flips into Windows Update mode, kick an immediate monitor pass so the
@@ -269,7 +311,20 @@ public partial class WorkspaceViewModel : ObservableObject
         FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync) : Task.CompletedTask;
 
     private bool CanInstallChecked() =>
-        !IsBusy && FocusedComputer is { } c && c.ScannedUpdates.Count > 0;
+        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ScannedUpdates.Count > 0;
+
+    /// <summary>
+    /// Uninstalls only the ticked updates on the focused machine. Only enabled in Installed scope
+    /// and when at least one ticked update is actually uninstallable. The confirmation dialog lives
+    /// in the view's code-behind so the VM doesn't pop UI directly.
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanUninstallChecked))]
+    public Task UninstallCheckedAsync() =>
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], UninstallRowAsync) : Task.CompletedTask;
+
+    private bool CanUninstallChecked() =>
+        !IsBusy && IsInstalledMode && FocusedComputer is { } c
+        && c.ScannedUpdates.Any(u => u.IsSelected && u.IsUninstallable);
 
     /// <summary>Ticks every update in the focused machine's checklist.</summary>
     [RelayCommand]
@@ -449,6 +504,64 @@ public partial class WorkspaceViewModel : ObservableObject
             computer.UpdateMessage = "Scan failed";
             computer.UpdatePhase = PatchPhase.Error.ToString();
             _activity.Error(computer.Name, $"Scan failed — {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Per-host uninstall — same shape as <see cref="InstallRowAsync"/> but only ever runs when
+    /// there's an explicit selection of uninstallable updates (no "uninstall everything by default"
+    /// fallback). Per-host clone of the shared options carries the KB list and Scope=Installed.
+    /// </summary>
+    private async Task UninstallRowAsync(Computer computer, CancellationToken token)
+    {
+        if (computer.ScannedUpdates.Count == 0
+            || !computer.ScannedUpdates.Any(u => u.IsSelected && u.IsUninstallable))
+        {
+            computer.UpdateError = null;
+            computer.UpdateProgress = null;
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "No uninstallable updates selected";
+            return;
+        }
+
+        string[] selectedKbs = [.. computer.ScannedUpdates
+            .Where(u => u.IsSelected && u.IsUninstallable && !string.IsNullOrWhiteSpace(u.Kb))
+            .Select(u => u.Kb!)];
+        if (selectedKbs.Length == 0)
+        {
+            computer.UpdateError = null;
+            computer.UpdateProgress = null;
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "Selected updates have no KB id to target";
+            return;
+        }
+
+        PatchOptions options = _patchOptions.Clone();
+        options.Scope = UpdateScope.Installed;
+        options.IncludeKbArticleIds = selectedKbs;
+
+        computer.UpdateError = null;
+        computer.UpdateProgress = 0;
+        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdateMessage = "Starting uninstall…";
+
+        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        try
+        {
+            HostPatchStatus final = await _patch.UninstallAsync(computer.Name, options, _credentials.Current, progress, token);
+            ApplyStatus(computer, final);
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Uninstall failed";
+            computer.UpdatePhase = PatchPhase.Error.ToString();
+            _activity.Error(computer.Name, $"Uninstall failed — {ex.Message}");
         }
     }
 
