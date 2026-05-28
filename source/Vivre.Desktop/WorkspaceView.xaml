@@ -310,6 +310,7 @@
                                    Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
                                    ToolTip="Uninstall the ticked updates on this machine. Greyed rows are non-uninstallable. May require a reboot." />
 
+                        <Grid>
                         <ui:DataGrid ItemsSource="{Binding FocusedComputer.ScannedUpdates}"
                                      AutoGenerateColumns="False" IsReadOnly="True"
                                      CanUserAddRows="False" CanUserDeleteRows="False"
@@ -347,6 +348,29 @@
                                 <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
                             </ui:DataGrid.Columns>
                         </ui:DataGrid>
+
+                        <!-- Empty-state hint shown when the checklist has no rows. Prefers the row's
+                             last UpdateMessage if set (e.g. "Up to date", "No installed updates") so a
+                             successful scan that came back empty reads naturally; otherwise it falls
+                             back to a scan prompt for machines that haven't been scanned yet. -->
+                        <TextBlock Text="{Binding FocusedComputer.UpdateMessage, TargetNullValue='Nothing here yet — run Scan to pull updates for this machine.'}"
+                                   TextWrapping="Wrap" TextAlignment="Center" Margin="20"
+                                   FontSize="13"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding FocusedComputer.ScannedUpdates.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        </Grid>
                     </DockPanel>
                 </Grid>
             </Border>
