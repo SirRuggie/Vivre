@@ -449,10 +449,13 @@ public sealed class WuaUpdateLane
             $rebootAfter = {{rebootAfter}}
 
             function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
+                # ts (timestamp ticks) makes every write unique even when nothing visible changed,
+                # so the controller's "no progress" stuck-detector never false-positives on a slow link.
                 $obj = [PSCustomObject]@{
                     phase = $phase; message = $message; percent = $percent
                     available = $available; installed = $installed; failed = $failed
                     rebootPending = [bool]$rebootPending
+                    ts = (Get-Date).Ticks
                 }
                 $tmp = "$progressPath.tmp"
                 ($obj | ConvertTo-Json -Compress) | Set-Content -Path $tmp -Encoding UTF8
@@ -487,20 +490,67 @@ public sealed class WuaUpdateLane
                 $installed = 0; $failed = 0; $rebootPending = $false
                 for ($i = 0; $i -lt $total; $i++) {
                     $u = $applicable[$i]
-                    $pct = [int](($i / $total) * 100)
 
                     $coll = New-Object -ComObject Microsoft.Update.UpdateColl
                     $null = $coll.Add($u)
 
-                    Write-Progress2 'Downloading' ("Downloading {0} of {1}" -f ($i + 1), $total) $pct $total $installed $failed $rebootPending
+                    # --- Download with live progress polling ---
+                    # Begin* returns immediately with an IDownloadJob; we poll GetProgress() every
+                    # 2s and write a fresh JSON so the UI shows real bytes/percent. Each update
+                    # contributes 50% download + 50% install to the overall progress bar.
+                    $dlPrefix = "Downloading {0} of {1}" -f ($i + 1), $total
+                    Write-Progress2 'Downloading' "$dlPrefix starting…" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
+
                     $downloader = $session.CreateUpdateDownloader()
                     $downloader.Updates = $coll
-                    $null = $downloader.Download()
+                    $dlJob = $downloader.BeginDownload($null, $null, $null)
 
-                    Write-Progress2 'Installing' ("Installing {0} of {1}" -f ($i + 1), $total) $pct $total $installed $failed $rebootPending
+                    while (-not $dlJob.IsCompleted) {
+                        Start-Sleep -Seconds 2
+                        $dlPct = 0; $bytesDl = 0; $bytesTotal = 0
+                        try {
+                            $dlProgress = $dlJob.GetProgress()
+                            $dlPct = [int]$dlProgress.PercentComplete
+                            $bytesDl = [long]$dlProgress.TotalBytesDownloaded
+                            $bytesTotal = [long]$dlProgress.TotalBytesToDownload
+                        } catch { }
+                        $overallPct = [int]((($i * 100) + ($dlPct / 2)) / $total)
+                        if ($bytesTotal -gt 0) {
+                            $sizeText = " ({0:N0}/{1:N0} MB)" -f ($bytesDl / 1MB), ($bytesTotal / 1MB)
+                        } else {
+                            $sizeText = ""
+                        }
+                        Write-Progress2 'Downloading' ("$dlPrefix — $dlPct%$sizeText") $overallPct $total $installed $failed $rebootPending
+                    }
+
+                    $dlResult = $downloader.EndDownload($dlJob)
+                    if ($dlResult.ResultCode -ne 2) {
+                        $failed++
+                        $overallPct = [int]((($i + 1) * 100) / $total)
+                        Write-Progress2 'Downloading' ("$dlPrefix failed (result code {0})" -f $dlResult.ResultCode) $overallPct $total $installed $failed $rebootPending
+                        continue
+                    }
+
+                    # --- Install with live progress polling ---
+                    $instPrefix = "Installing {0} of {1}" -f ($i + 1), $total
+                    Write-Progress2 'Installing' "$instPrefix starting…" ([int]((($i * 100) + 50) / $total)) $total $installed $failed $rebootPending
+
                     $installer = $session.CreateUpdateInstaller()
                     $installer.Updates = $coll
-                    $r = $installer.Install()
+                    $instJob = $installer.BeginInstall($null, $null, $null)
+
+                    while (-not $instJob.IsCompleted) {
+                        Start-Sleep -Seconds 2
+                        $instPct = 0
+                        try {
+                            $instProgress = $instJob.GetProgress()
+                            $instPct = [int]$instProgress.PercentComplete
+                        } catch { }
+                        $overallPct = [int]((($i * 100) + 50 + ($instPct / 2)) / $total)
+                        Write-Progress2 'Installing' ("$instPrefix — $instPct%") $overallPct $total $installed $failed $rebootPending
+                    }
+
+                    $r = $installer.EndInstall($instJob)
                     if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
                     if ($r.RebootRequired) { $rebootPending = $true }
                 }
