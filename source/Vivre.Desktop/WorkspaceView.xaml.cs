@@ -95,6 +95,41 @@ public partial class WorkspaceView : UserControl
     }
 
     /// <summary>
+    /// Uninstall confirmation. Pops a small Wpf.Ui MessageBox before kicking the per-machine
+    /// uninstall sweep — uninstalls are destructive enough to deserve a "yes, really" prompt,
+    /// especially with multi-select. The VM only exposes the command; the dialog lives here so
+    /// the VM doesn't pop UI directly.
+    /// </summary>
+    private async void OnUninstallChecked(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { FocusedComputer: { } c } vm)
+        {
+            return;
+        }
+
+        int count = c.ScannedUpdates.Count(u => u.IsSelected && u.IsUninstallable);
+        if (count == 0)
+        {
+            return;
+        }
+
+        var confirm = new MessageBox
+        {
+            Title = "Uninstall updates",
+            Content = $"Uninstall {count} update(s) from {c.Name}?\n\n"
+                      + "This may require a reboot. Use with care — once removed, some updates "
+                      + "can't be reinstalled through normal scans (Windows may consider them superseded).",
+            PrimaryButtonText = "Uninstall",
+            CloseButtonText = "Cancel",
+        };
+
+        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
+        {
+            await vm.UninstallCheckedAsync();
+        }
+    }
+
+    /// <summary>
     /// Left-click on a row in the Windows Update grid always reopens the checklist for that
     /// machine. Needed because <c>SelectionChanged</c> doesn't fire when the clicked row is
     /// already the selected row — so without this, closing the panel via the ✕ would strand

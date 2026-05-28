@@ -158,6 +158,31 @@ public class WuaUpdateLaneTests
         Assert.True(options.PerHostTimeout > TimeSpan.Zero);
         Assert.Null(options.IncludeKbArticleIds);
         Assert.False(options.IncludeDrivers);
+        Assert.Equal(UpdateScope.Applicable, options.Scope);
+    }
+
+    [Fact]
+    public void ParseScan_defaults_IsUninstallable_to_true_when_property_absent()
+    {
+        // Older rows without the IsUninstallable field default to true so the checklist's
+        // checkboxes stay enabled (Applicable-scope assumption).
+        var rows = new List<PSObject> { ScanRow("Update A", "5037782", downloaded: true, sizeMb: 100) };
+
+        IReadOnlyList<SoftwareUpdate> updates = WuaUpdateLane.ParseScan(rows);
+
+        Assert.True(updates[0].IsUninstallable);
+    }
+
+    [Fact]
+    public void ParseScan_reads_IsUninstallable_when_emitted_by_the_scan()
+    {
+        var row = ScanRow("Servicing Stack Update", "5036893", downloaded: true, sizeMb: 30);
+        row.Properties.Add(new PSNoteProperty("IsUninstallable", false));
+        var rows = new List<PSObject> { row };
+
+        IReadOnlyList<SoftwareUpdate> updates = WuaUpdateLane.ParseScan(rows);
+
+        Assert.False(updates[0].IsUninstallable);
     }
 
     [Fact]

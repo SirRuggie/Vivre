@@ -8,8 +8,12 @@ namespace Vivre.Core.Updates;
 /// <param name="ArticleId">The KB article id without the "KB" prefix (e.g. "5037782"); null if the update has none.</param>
 /// <param name="IsDownloaded">True if WUA already has the payload cached locally.</param>
 /// <param name="SizeMb">Approximate download size in MB (0 when unknown).</param>
+/// <param name="IsUninstallable">Whether the update can be uninstalled — only meaningful for
+/// <see cref="UpdateScope.Installed"/> scans. The Applicable scan emits <c>true</c> so the
+/// checklist's checkboxes stay enabled for install.</param>
 public sealed record SoftwareUpdate(
     string Title,
     string? ArticleId,
     bool IsDownloaded,
-    double SizeMb);
+    double SizeMb,
+    bool IsUninstallable = true);

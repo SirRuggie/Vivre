@@ -41,7 +41,7 @@ public sealed class WuaUpdateLane
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentNullException.ThrowIfNull(options);
 
-        string script = BuildScanScript(options.Source, options.IncludeDrivers);
+        string script = BuildScanScript(options.Source, options.IncludeDrivers, options.Scope);
         PSExecutionResult result = await RunScriptAsync(host, script, credential, cancellationToken).ConfigureAwait(false);
 
         if (result.HadErrors && result.Output.Count == 0)
@@ -53,9 +53,9 @@ public sealed class WuaUpdateLane
         IReadOnlyList<SoftwareUpdate> updates = ParseScan(result.Output);
         updates = ApplyExclude(updates, options.ExcludeNameContains);
 
-        string message = updates.Count == 0
-            ? "Up to date"
-            : $"{updates.Count} update(s) available";
+        string message = options.Scope == UpdateScope.Installed
+            ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update(s)")
+            : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update(s) available");
 
         return new HostPatchStatus(PatchPhase.Available, message, AvailableCount: updates.Count)
         {
@@ -65,11 +65,33 @@ public sealed class WuaUpdateLane
 
     // --- install ----------------------------------------------------------
 
-    public async Task<HostPatchStatus> InstallAsync(
+    public Task<HostPatchStatus> InstallAsync(
         string host,
         PatchOptions options,
         ConnectionCredential? credential,
         IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken) =>
+        RunWorkerTaskAsync(host, options, credential, progress, BuildInstallWorker, "Starting update task…", cancellationToken);
+
+    public Task<HostPatchStatus> UninstallAsync(
+        string host,
+        PatchOptions options,
+        ConnectionCredential? credential,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken) =>
+        RunWorkerTaskAsync(host, options, credential, progress, BuildUninstallWorker, "Starting uninstall task…", cancellationToken);
+
+    /// <summary>
+    /// Shared implementation for install + uninstall — same SYSTEM-task plumbing (register, start,
+    /// poll the progress JSON, clean up) with the worker script swapped in.
+    /// </summary>
+    private async Task<HostPatchStatus> RunWorkerTaskAsync(
+        string host,
+        PatchOptions options,
+        ConnectionCredential? credential,
+        IProgress<HostPatchStatus> progress,
+        Func<PatchOptions, string, string> buildWorker,
+        string startingMessage,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
@@ -81,11 +103,11 @@ public sealed class WuaUpdateLane
         string workerPath = $@"C:\Windows\Temp\{taskName}.ps1";
         string progressPath = $@"C:\Windows\Temp\{taskName}_progress.json";
 
-        progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Starting update task…"));
+        progress.Report(new HostPatchStatus(PatchPhase.Scanning, startingMessage));
 
         try
         {
-            string worker = BuildInstallWorker(options, progressPath);
+            string worker = buildWorker(options, progressPath);
             string bootstrap = BuildBootstrapScript(taskName, workerPath, progressPath, worker, options);
 
             // WinRM-first; DCOM Win32_Process.Create fallback for the register+start step only.
@@ -287,7 +309,8 @@ public sealed class WuaUpdateLane
                 Title: title!,
                 ArticleId: Str(row, "KB"),
                 IsDownloaded: Bool(row, "IsDownloaded"),
-                SizeMb: Dbl(row, "SizeMb")));
+                SizeMb: Dbl(row, "SizeMb"),
+                IsUninstallable: BoolOr(row, "IsUninstallable", fallback: true)));
         }
 
         return list;
@@ -382,27 +405,33 @@ public sealed class WuaUpdateLane
     /// <summary>Marker the poll script emits when the scheduled task is gone and no JSON remains.</summary>
     private const string TaskGoneMarker = "__VIVRE_TASK_GONE__";
 
-    private static string BuildScanScript(UpdateSource source, bool includeDrivers)
+    private static string BuildScanScript(UpdateSource source, bool includeDrivers, UpdateScope scope)
     {
         WuaServerSelection sel = WuaServerSelection.For(source);
         // Default off matches the Windows Update UI and BatchPatch; flip via PatchOptions.IncludeDrivers.
         string typeFilter = includeDrivers ? string.Empty : " and Type='Software'";
+        // Applicable → "IsInstalled=0" (default), Installed → "IsInstalled=1" (the uninstall flow).
+        string installedFilter = scope == UpdateScope.Installed ? "IsInstalled=1" : "IsInstalled=0";
+        // For Applicable, IsUninstallable isn't meaningful — emit $true so the checklist's checkboxes
+        // are enabled for install. For Installed, use the WUA value so non-uninstallable rows are greyed.
+        string uninstallableExpr = scope == UpdateScope.Installed ? "[bool]$u.IsUninstallable" : "$true";
         return $$"""
             $ErrorActionPreference = 'Stop'
             $session  = New-Object -ComObject Microsoft.Update.Session
             $searcher = $session.CreateUpdateSearcher()
             {{SourceSelectionSnippet(sel)}}
-            $result = $searcher.Search("IsInstalled=0 and IsHidden=0{{typeFilter}}")
+            $result = $searcher.Search("{{installedFilter}} and IsHidden=0{{typeFilter}}")
             foreach ($u in $result.Updates) {
                 $kb = $null
                 if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
                 $size = 0
                 try { $size = [math]::Round($u.MaxDownloadSize / 1MB, 1) } catch { }
                 [PSCustomObject]@{
-                    Title        = $u.Title
-                    KB           = $kb
-                    IsDownloaded = [bool]$u.IsDownloaded
-                    SizeMb       = $size
+                    Title           = $u.Title
+                    KB              = $kb
+                    IsDownloaded    = [bool]$u.IsDownloaded
+                    SizeMb          = $size
+                    IsUninstallable = {{uninstallableExpr}}
                 }
             }
             """;
@@ -570,6 +599,110 @@ public sealed class WuaUpdateLane
             """;
     }
 
+    /// <summary>
+    /// The uninstall worker the SYSTEM task runs locally: search installed updates → filter to the
+    /// per-machine selection (uninstallable + ticked) → per-update <c>BeginUninstall</c> with live
+    /// progress polling, writing the same progress JSON shape the install worker does so the
+    /// controller's <c>PollAsync</c> works unchanged. Reuses <c>Phase=Installing</c> because there
+    /// is no separate Uninstalling phase in the JSON schema; the message says "Uninstalling X of N".
+    /// </summary>
+    private static string BuildUninstallWorker(PatchOptions options, string progressPath)
+    {
+        WuaServerSelection sel = WuaServerSelection.For(options.Source);
+        string excludeArray = BuildExcludePsArray(options.ExcludeNameContains);
+        string includeArray = BuildIncludeKbPsArray(options.IncludeKbArticleIds);
+        string rebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait ? "$true" : "$false";
+
+        return $$"""
+            $ErrorActionPreference = 'Stop'
+            $progressPath = '{{progressPath}}'
+            $excludes = {{excludeArray}}
+            $includeKbs = {{includeArray}}
+            $rebootAfter = {{rebootAfter}}
+
+            function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
+                $obj = [PSCustomObject]@{
+                    phase = $phase; message = $message; percent = $percent
+                    available = $available; installed = $installed; failed = $failed
+                    rebootPending = [bool]$rebootPending
+                    ts = (Get-Date).Ticks
+                }
+                $tmp = "$progressPath.tmp"
+                ($obj | ConvertTo-Json -Compress) | Set-Content -Path $tmp -Encoding UTF8
+                Move-Item -Path $tmp -Destination $progressPath -Force
+            }
+
+            try {
+                Write-Progress2 'Searching' 'Finding installed updates to uninstall…' 0 0 0 0 $false
+                $session  = New-Object -ComObject Microsoft.Update.Session
+                $searcher = $session.CreateUpdateSearcher()
+                {{SourceSelectionSnippet(sel)}}
+                $result = $searcher.Search("IsInstalled=1 and IsHidden=0")
+
+                $applicable = @()
+                foreach ($u in $result.Updates) {
+                    if (-not $u.IsUninstallable) { continue }
+                    $skip = $false
+                    foreach ($x in $excludes) { if ($u.Title -like "*$x*") { $skip = $true; break } }
+                    if (-not $skip -and $includeKbs.Count -gt 0) {
+                        $kb = $null
+                        if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
+                        if (($null -eq $kb) -or ($includeKbs -notcontains $kb)) { $skip = $true }
+                    }
+                    if (-not $skip) { $applicable += $u }
+                }
+
+                $total = $applicable.Count
+                if ($total -eq 0) {
+                    Write-Progress2 'Done' 'No uninstallable updates matched the selection' 100 0 0 0 $false
+                    return
+                }
+
+                $installed = 0; $failed = 0; $rebootPending = $false
+                for ($i = 0; $i -lt $total; $i++) {
+                    $u = $applicable[$i]
+
+                    $coll = New-Object -ComObject Microsoft.Update.UpdateColl
+                    $null = $coll.Add($u)
+
+                    $unPrefix = "Uninstalling {0} of {1}" -f ($i + 1), $total
+                    Write-Progress2 'Installing' "$unPrefix starting…" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
+
+                    $installer = $session.CreateUpdateInstaller()
+                    $installer.Updates = $coll
+                    $unJob = $installer.BeginUninstall($null, $null, $null)
+
+                    while (-not $unJob.IsCompleted) {
+                        Start-Sleep -Seconds 2
+                        $unPct = 0
+                        try {
+                            $unProgress = $unJob.GetProgress()
+                            $unPct = [int]$unProgress.PercentComplete
+                        } catch { }
+                        $overallPct = [int]((($i * 100) + $unPct) / $total)
+                        Write-Progress2 'Installing' ("$unPrefix — $unPct%") $overallPct $total $installed $failed $rebootPending
+                    }
+
+                    $r = $installer.EndUninstall($unJob)
+                    if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
+                    if ($r.RebootRequired) { $rebootPending = $true }
+                }
+
+                if ($rebootPending) {
+                    Write-Progress2 'PendingReboot' ("Uninstalled {0}, reboot required" -f $installed) 100 $total $installed $failed $true
+                    if ($rebootAfter) {
+                        Start-Sleep -Seconds 5
+                        Restart-Computer -Force
+                    }
+                } else {
+                    Write-Progress2 'Done' ("Uninstalled {0} update(s)" -f $installed) 100 $total $installed $failed $false
+                }
+            } catch {
+                Write-Progress2 'Error' ($_.Exception.Message) $null 0 0 0 $false
+            }
+            """;
+    }
+
     private static string BuildBootstrapScript(
         string taskName,
         string workerPath,
@@ -667,6 +800,11 @@ public sealed class WuaUpdateLane
 
     private static bool Bool(PSObject row, string name) =>
         row.Properties[name]?.Value is bool b && b;
+
+    /// <summary>Reads a boolean PSObject property, falling back to a default when the property is
+    /// absent (older scan rows that pre-date a new field).</summary>
+    private static bool BoolOr(PSObject row, string name, bool fallback) =>
+        row.Properties[name]?.Value is bool b ? b : fallback;
 
     private static double Dbl(PSObject row, string name)
     {
