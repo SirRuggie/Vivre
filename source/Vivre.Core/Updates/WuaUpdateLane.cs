@@ -299,19 +299,34 @@ public sealed class WuaUpdateLane
         var list = new List<SoftwareUpdate>(rows.Count);
         foreach (PSObject row in rows)
         {
-            string? title = Str(row, "Title");
-            if (string.IsNullOrWhiteSpace(title))
+            // Defensive: a null row or a row that throws while we read its properties shouldn't
+            // dynamite the whole parse — just skip it. Pairs with the per-iteration try/catch on
+            // the PowerShell side.
+            if (row is null)
             {
                 continue;
             }
 
-            list.Add(new SoftwareUpdate(
-                Title: title!,
-                ArticleId: Str(row, "KB"),
-                IsDownloaded: Bool(row, "IsDownloaded"),
-                SizeMb: Dbl(row, "SizeMb"),
-                IsUninstallable: BoolOr(row, "IsUninstallable", fallback: true),
-                InstalledAt: DateTimeOrNull(row, "InstalledAt")));
+            try
+            {
+                string? title = Str(row, "Title");
+                if (string.IsNullOrWhiteSpace(title))
+                {
+                    continue;
+                }
+
+                list.Add(new SoftwareUpdate(
+                    Title: title!,
+                    ArticleId: Str(row, "KB"),
+                    IsDownloaded: Bool(row, "IsDownloaded"),
+                    SizeMb: Dbl(row, "SizeMb"),
+                    IsUninstallable: BoolOr(row, "IsUninstallable", fallback: true),
+                    InstalledAt: DateTimeOrNull(row, "InstalledAt")));
+            }
+            catch
+            {
+                // Skip rows that can't be parsed.
+            }
         }
 
         return list;
@@ -473,19 +488,23 @@ public sealed class WuaUpdateLane
             {{historyBlock}}
             $result = $searcher.Search("{{installedFilter}} and IsHidden=0{{typeFilter}}")
             foreach ($u in $result.Updates) {
-                $kb = $null
-                if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
-                $size = 0
-                try { $size = [math]::Round($u.MaxDownloadSize / 1MB, 1) } catch { }
-                {{installedAtBlock}}
-                [PSCustomObject]@{
-                    Title           = $u.Title
-                    KB              = $kb
-                    IsDownloaded    = [bool]$u.IsDownloaded
-                    SizeMb          = $size
-                    IsUninstallable = {{uninstallableExpr}}
-                    InstalledAt     = $installedAt
-                }
+                # Wrap the whole iteration so a single weird update (stale COM proxy, missing
+                # property, unusual subtype) just gets skipped instead of killing the scan.
+                try {
+                    $kb = $null
+                    if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
+                    $size = 0
+                    try { $size = [math]::Round($u.MaxDownloadSize / 1MB, 1) } catch { }
+                    {{installedAtBlock}}
+                    [PSCustomObject]@{
+                        Title           = $u.Title
+                        KB              = $kb
+                        IsDownloaded    = [bool]$u.IsDownloaded
+                        SizeMb          = $size
+                        IsUninstallable = {{uninstallableExpr}}
+                        InstalledAt     = $installedAt
+                    }
+                } catch { }
             }
             """;
     }
