@@ -447,9 +447,23 @@ public sealed class WuaUpdateLane
                 } catch { }
                 """
             : "$dates = @{}; $kbDates = @{}";
-        string installedAtExpr = scope == UpdateScope.Installed
-            ? "if ($u.Identity -and $u.Identity.UpdateID -and $dates.ContainsKey($u.Identity.UpdateID)) { $dates[$u.Identity.UpdateID] } elseif ($kb -and $kbDates.ContainsKey($kb)) { $kbDates[$kb] } else { $null }"
-            : "$null";
+        // Multi-line block (not inline) so the lookup is wrapped in its own try/catch — a single
+        // update with a stale Identity COM proxy can otherwise throw NRE and kill the whole scan
+        // foreach.
+        string installedAtBlock = scope == UpdateScope.Installed
+            ? """
+                $installedAt = $null
+                try {
+                    $uid = $null
+                    if ($null -ne $u.Identity) { $uid = $u.Identity.UpdateID }
+                    if ($uid -and $dates.ContainsKey($uid)) {
+                        $installedAt = $dates[$uid]
+                    } elseif ($kb -and $kbDates.ContainsKey($kb)) {
+                        $installedAt = $kbDates[$kb]
+                    }
+                } catch { }
+                """
+            : "$installedAt = $null";
 
         return $$"""
             $ErrorActionPreference = 'Stop'
@@ -463,7 +477,7 @@ public sealed class WuaUpdateLane
                 if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
                 $size = 0
                 try { $size = [math]::Round($u.MaxDownloadSize / 1MB, 1) } catch { }
-                $installedAt = {{installedAtExpr}}
+                {{installedAtBlock}}
                 [PSCustomObject]@{
                     Title           = $u.Title
                     KB              = $kb
