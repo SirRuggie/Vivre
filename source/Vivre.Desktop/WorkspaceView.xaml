@@ -346,6 +346,13 @@
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
                                 <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                                <DataGridTextColumn Header="Installed" Binding="{Binding InstalledAt, StringFormat=yyyy-MM-dd}" Width="Auto" MinWidth="90" SortMemberPath="InstalledAt">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="ToolTip" Value="{Binding InstalledAt, StringFormat=F}" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
                             </ui:DataGrid.Columns>
                         </ui:DataGrid>
 

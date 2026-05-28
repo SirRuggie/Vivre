@@ -11,9 +11,13 @@ namespace Vivre.Core.Updates;
 /// <param name="IsUninstallable">Whether the update can be uninstalled — only meaningful for
 /// <see cref="UpdateScope.Installed"/> scans. The Applicable scan emits <c>true</c> so the
 /// checklist's checkboxes stay enabled for install.</param>
+/// <param name="InstalledAt">When this update was installed (best-effort, from WUA's history) —
+/// populated only for <see cref="UpdateScope.Installed"/> scans; null for Applicable rows and for
+/// installed updates whose history entry can't be matched.</param>
 public sealed record SoftwareUpdate(
     string Title,
     string? ArticleId,
     bool IsDownloaded,
     double SizeMb,
-    bool IsUninstallable = true);
+    bool IsUninstallable = true,
+    DateTime? InstalledAt = null);

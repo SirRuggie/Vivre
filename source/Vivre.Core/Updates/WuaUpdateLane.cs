@@ -310,7 +310,8 @@ public sealed class WuaUpdateLane
                 ArticleId: Str(row, "KB"),
                 IsDownloaded: Bool(row, "IsDownloaded"),
                 SizeMb: Dbl(row, "SizeMb"),
-                IsUninstallable: BoolOr(row, "IsUninstallable", fallback: true)));
+                IsUninstallable: BoolOr(row, "IsUninstallable", fallback: true),
+                InstalledAt: DateTimeOrNull(row, "InstalledAt")));
         }
 
         return list;
@@ -415,23 +416,61 @@ public sealed class WuaUpdateLane
         // For Applicable, IsUninstallable isn't meaningful — emit $true so the checklist's checkboxes
         // are enabled for install. For Installed, use the WUA value so non-uninstallable rows are greyed.
         string uninstallableExpr = scope == UpdateScope.Installed ? "[bool]$u.IsUninstallable" : "$true";
+        // For Installed scope, build maps from the WUA history so each row carries its install date.
+        // Match primarily by UpdateID (Identity GUID); also keep a KB-keyed fallback because WUSA-
+        // installed updates sometimes show different UpdateIDs in history than the current Identity.
+        string historyBlock = scope == UpdateScope.Installed
+            ? """
+                $dates = @{}
+                $kbDates = @{}
+                try {
+                    $histCount = $searcher.GetTotalHistoryCount()
+                    if ($histCount -gt 0) {
+                        $history = $searcher.QueryHistory(0, $histCount)
+                        foreach ($h in $history) {
+                            if ($h.Operation -ne 1) { continue }
+                            if (-not $h.UpdateIdentity) { continue }
+                            $id = $h.UpdateIdentity.UpdateID
+                            if ($id) {
+                                if (-not $dates.ContainsKey($id) -or $dates[$id] -lt $h.Date) {
+                                    $dates[$id] = $h.Date
+                                }
+                            }
+                            if ($h.Title -and $h.Title -match 'KB(\d+)') {
+                                $kbKey = $matches[1]
+                                if (-not $kbDates.ContainsKey($kbKey) -or $kbDates[$kbKey] -lt $h.Date) {
+                                    $kbDates[$kbKey] = $h.Date
+                                }
+                            }
+                        }
+                    }
+                } catch { }
+                """
+            : "$dates = @{}; $kbDates = @{}";
+        string installedAtExpr = scope == UpdateScope.Installed
+            ? "if ($u.Identity -and $u.Identity.UpdateID -and $dates.ContainsKey($u.Identity.UpdateID)) { $dates[$u.Identity.UpdateID] } elseif ($kb -and $kbDates.ContainsKey($kb)) { $kbDates[$kb] } else { $null }"
+            : "$null";
+
         return $$"""
             $ErrorActionPreference = 'Stop'
             $session  = New-Object -ComObject Microsoft.Update.Session
             $searcher = $session.CreateUpdateSearcher()
             {{SourceSelectionSnippet(sel)}}
+            {{historyBlock}}
             $result = $searcher.Search("{{installedFilter}} and IsHidden=0{{typeFilter}}")
             foreach ($u in $result.Updates) {
                 $kb = $null
                 if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
                 $size = 0
                 try { $size = [math]::Round($u.MaxDownloadSize / 1MB, 1) } catch { }
+                $installedAt = {{installedAtExpr}}
                 [PSCustomObject]@{
                     Title           = $u.Title
                     KB              = $kb
                     IsDownloaded    = [bool]$u.IsDownloaded
                     SizeMb          = $size
                     IsUninstallable = {{uninstallableExpr}}
+                    InstalledAt     = $installedAt
                 }
             }
             """;
@@ -805,6 +844,11 @@ public sealed class WuaUpdateLane
     /// absent (older scan rows that pre-date a new field).</summary>
     private static bool BoolOr(PSObject row, string name, bool fallback) =>
         row.Properties[name]?.Value is bool b ? b : fallback;
+
+    /// <summary>Reads a DateTime PSObject property, returning null when absent or not a DateTime
+    /// (older scan rows or Applicable-scope rows that don't emit a date).</summary>
+    private static DateTime? DateTimeOrNull(PSObject row, string name) =>
+        row.Properties[name]?.Value is DateTime dt ? dt : null;
 
     private static double Dbl(PSObject row, string name)
     {
