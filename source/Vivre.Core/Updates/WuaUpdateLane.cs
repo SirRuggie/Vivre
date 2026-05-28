@@ -609,27 +609,41 @@ public sealed class WuaUpdateLane
 
                     $downloader = $session.CreateUpdateDownloader()
                     $downloader.Updates = $coll
-                    $dlJob = $downloader.BeginDownload($null, $null, $null)
 
-                    while (-not $dlJob.IsCompleted) {
-                        Start-Sleep -Seconds 2
-                        $dlPct = 0; $bytesDl = 0; $bytesTotal = 0
-                        try {
-                            $dlProgress = $dlJob.GetProgress()
-                            $dlPct = [int]$dlProgress.PercentComplete
-                            $bytesDl = [long]$dlProgress.TotalBytesDownloaded
-                            $bytesTotal = [long]$dlProgress.TotalBytesToDownload
-                        } catch { }
-                        $overallPct = [int]((($i * 100) + ($dlPct / 2)) / $total)
-                        if ($bytesTotal -gt 0) {
-                            $sizeText = " ({0:N0}/{1:N0} MB)" -f ($bytesDl / 1MB), ($bytesTotal / 1MB)
-                        } else {
-                            $sizeText = ""
+                    # Try the async Begin* path for live byte/percent progress; fall back to
+                    # synchronous Download() if Begin* throws or returns null. The async API
+                    # wants non-null IUnknown callbacks on some WUA configurations and PS can't
+                    # supply real COM callback objects — so we silently get NRE on .IsCompleted
+                    # otherwise, and the per-iteration catch above eats every update as $failed.
+                    $dlResult = $null
+                    $dlJob = $null
+                    try { $dlJob = $downloader.BeginDownload($null, $null, $null) } catch { }
+
+                    if ($null -ne $dlJob) {
+                        while (-not $dlJob.IsCompleted) {
+                            Start-Sleep -Seconds 2
+                            $dlPct = 0; $bytesDl = 0; $bytesTotal = 0
+                            try {
+                                $dlProgress = $dlJob.GetProgress()
+                                $dlPct = [int]$dlProgress.PercentComplete
+                                $bytesDl = [long]$dlProgress.TotalBytesDownloaded
+                                $bytesTotal = [long]$dlProgress.TotalBytesToDownload
+                            } catch { }
+                            $overallPct = [int]((($i * 100) + ($dlPct / 2)) / $total)
+                            if ($bytesTotal -gt 0) {
+                                $sizeText = " ({0:N0}/{1:N0} MB)" -f ($bytesDl / 1MB), ($bytesTotal / 1MB)
+                            } else {
+                                $sizeText = ""
+                            }
+                            Write-Progress2 'Downloading' ("$dlPrefix — $dlPct%$sizeText") $overallPct $total $installed $failed $rebootPending
                         }
-                        Write-Progress2 'Downloading' ("$dlPrefix — $dlPct%$sizeText") $overallPct $total $installed $failed $rebootPending
+                        try { $dlResult = $downloader.EndDownload($dlJob) } catch { }
                     }
 
-                    $dlResult = $downloader.EndDownload($dlJob)
+                    if ($null -eq $dlResult) {
+                        Write-Progress2 'Downloading' "$dlPrefix (sync mode — no live progress)" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
+                        $dlResult = $downloader.Download()
+                    }
                     if ($dlResult.ResultCode -ne 2) {
                         $failed++
                         $overallPct = [int]((($i + 1) * 100) / $total)
@@ -643,20 +657,30 @@ public sealed class WuaUpdateLane
 
                     $installer = $session.CreateUpdateInstaller()
                     $installer.Updates = $coll
-                    $instJob = $installer.BeginInstall($null, $null, $null)
 
-                    while (-not $instJob.IsCompleted) {
-                        Start-Sleep -Seconds 2
-                        $instPct = 0
-                        try {
-                            $instProgress = $instJob.GetProgress()
-                            $instPct = [int]$instProgress.PercentComplete
-                        } catch { }
-                        $overallPct = [int]((($i * 100) + 50 + ($instPct / 2)) / $total)
-                        Write-Progress2 'Installing' ("$instPrefix — $instPct%") $overallPct $total $installed $failed $rebootPending
+                    # Same Begin*-with-sync-fallback pattern as Download above.
+                    $r = $null
+                    $instJob = $null
+                    try { $instJob = $installer.BeginInstall($null, $null, $null) } catch { }
+
+                    if ($null -ne $instJob) {
+                        while (-not $instJob.IsCompleted) {
+                            Start-Sleep -Seconds 2
+                            $instPct = 0
+                            try {
+                                $instProgress = $instJob.GetProgress()
+                                $instPct = [int]$instProgress.PercentComplete
+                            } catch { }
+                            $overallPct = [int]((($i * 100) + 50 + ($instPct / 2)) / $total)
+                            Write-Progress2 'Installing' ("$instPrefix — $instPct%") $overallPct $total $installed $failed $rebootPending
+                        }
+                        try { $r = $installer.EndInstall($instJob) } catch { }
                     }
 
-                    $r = $installer.EndInstall($instJob)
+                    if ($null -eq $r) {
+                        Write-Progress2 'Installing' "$instPrefix (sync mode — no live progress)" ([int]((($i * 100) + 50) / $total)) $total $installed $failed $rebootPending
+                        $r = $installer.Install()
+                    }
                     if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
                     if ($r.RebootRequired) { $rebootPending = $true }
                     } catch {
@@ -667,14 +691,17 @@ public sealed class WuaUpdateLane
                     }
                 }
 
+                # Surface the failed count in the final message — "Installed 0 update(s)" hides
+                # the difference between "no work to do" and "5 attempts all failed".
+                $summary = if ($failed -gt 0) { "Installed $installed, $failed failed" } else { "Installed $installed update(s)" }
                 if ($rebootPending) {
-                    Write-Progress2 'PendingReboot' ("Installed {0}, reboot required" -f $installed) 100 $total $installed $failed $true
+                    Write-Progress2 'PendingReboot' "$summary, reboot required" 100 $total $installed $failed $true
                     if ($rebootAfter) {
                         Start-Sleep -Seconds 5
                         Restart-Computer -Force
                     }
                 } else {
-                    Write-Progress2 'Done' ("Installed {0} update(s)" -f $installed) 100 $total $installed $failed $false
+                    Write-Progress2 'Done' $summary 100 $total $installed $failed $false
                 }
             } catch {
                 Write-Progress2 'Error' ($_.Exception.Message) $null 0 0 0 $false
@@ -756,20 +783,30 @@ public sealed class WuaUpdateLane
 
                     $installer = $session.CreateUpdateInstaller()
                     $installer.Updates = $coll
-                    $unJob = $installer.BeginUninstall($null, $null, $null)
 
-                    while (-not $unJob.IsCompleted) {
-                        Start-Sleep -Seconds 2
-                        $unPct = 0
-                        try {
-                            $unProgress = $unJob.GetProgress()
-                            $unPct = [int]$unProgress.PercentComplete
-                        } catch { }
-                        $overallPct = [int]((($i * 100) + $unPct) / $total)
-                        Write-Progress2 'Installing' ("$unPrefix — $unPct%") $overallPct $total $installed $failed $rebootPending
+                    # Same Begin*-with-sync-fallback pattern as the install worker uses.
+                    $r = $null
+                    $unJob = $null
+                    try { $unJob = $installer.BeginUninstall($null, $null, $null) } catch { }
+
+                    if ($null -ne $unJob) {
+                        while (-not $unJob.IsCompleted) {
+                            Start-Sleep -Seconds 2
+                            $unPct = 0
+                            try {
+                                $unProgress = $unJob.GetProgress()
+                                $unPct = [int]$unProgress.PercentComplete
+                            } catch { }
+                            $overallPct = [int]((($i * 100) + $unPct) / $total)
+                            Write-Progress2 'Installing' ("$unPrefix — $unPct%") $overallPct $total $installed $failed $rebootPending
+                        }
+                        try { $r = $installer.EndUninstall($unJob) } catch { }
                     }
 
-                    $r = $installer.EndUninstall($unJob)
+                    if ($null -eq $r) {
+                        Write-Progress2 'Installing' "$unPrefix (sync mode — no live progress)" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
+                        $r = $installer.Uninstall()
+                    }
                     if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
                     if ($r.RebootRequired) { $rebootPending = $true }
                     } catch {
@@ -779,14 +816,15 @@ public sealed class WuaUpdateLane
                     }
                 }
 
+                $summary = if ($failed -gt 0) { "Uninstalled $installed, $failed failed" } else { "Uninstalled $installed update(s)" }
                 if ($rebootPending) {
-                    Write-Progress2 'PendingReboot' ("Uninstalled {0}, reboot required" -f $installed) 100 $total $installed $failed $true
+                    Write-Progress2 'PendingReboot' "$summary, reboot required" 100 $total $installed $failed $true
                     if ($rebootAfter) {
                         Start-Sleep -Seconds 5
                         Restart-Computer -Force
                     }
                 } else {
-                    Write-Progress2 'Done' ("Uninstalled {0} update(s)" -f $installed) 100 $total $installed $failed $false
+                    Write-Progress2 'Done' $summary 100 $total $installed $failed $false
                 }
             } catch {
                 Write-Progress2 'Error' ($_.Exception.Message) $null 0 0 0 $false
