@@ -107,7 +107,9 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        int count = c.ScannedUpdates.Count(u => u.IsSelected && u.IsUninstallable);
+        // The Uninstall button is only visible in Installed scope, so the relevant cache here is
+        // InstalledUpdates (the user can only have ticked rows from that scope's list).
+        int count = c.InstalledUpdates.Count(u => u.IsSelected && u.IsUninstallable);
         if (count == 0)
         {
             return;

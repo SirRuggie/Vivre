@@ -279,11 +279,11 @@
                                     </StackPanel>
                                     <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
                                                Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
-                                        <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" />
+                                        <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" />
                                     </TextBlock>
                                     <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
                                                Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
-                                        <Run Text="{Binding FocusedComputer.ScannedUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" />
+                                        <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" />
                                     </TextBlock>
                                 </StackPanel>
                                 <ui:Button Grid.Column="1" Padding="6" Margin="6,0,0,0"
@@ -311,7 +311,7 @@
                                    ToolTip="Uninstall the ticked updates on this machine. Greyed rows are non-uninstallable. May require a reboot." />
 
                         <Grid>
-                        <ui:DataGrid ItemsSource="{Binding FocusedComputer.ScannedUpdates}"
+                        <ui:DataGrid ItemsSource="{Binding FocusedActiveUpdates}"
                                      AutoGenerateColumns="False" IsReadOnly="True"
                                      CanUserAddRows="False" CanUserDeleteRows="False"
                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal"

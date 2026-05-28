@@ -87,6 +87,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsApplicableMode))]
     [NotifyPropertyChangedFor(nameof(CanShowInstallToolbar))]
+    [NotifyPropertyChangedFor(nameof(FocusedActiveUpdates))]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
     public partial bool IsInstalledMode { get; set; }
@@ -100,6 +101,18 @@ public partial class WorkspaceViewModel : ObservableObject
     /// would be too destructive a default — uninstall is per-machine from the side panel only).
     /// </summary>
     public bool CanShowInstallToolbar => IsUpdateMode && !IsInstalledMode;
+
+    /// <summary>
+    /// The collection bound to the side-panel checklist DataGrid — points at the focused machine's
+    /// <see cref="Computer.ApplicableUpdates"/> or <see cref="Computer.InstalledUpdates"/> depending
+    /// on the current scope. Each cache is populated by a Scan in its own scope and persists across
+    /// scope toggles and panel close/reopen — so once you've scanned a machine in Installed scope
+    /// you don't have to scan again every time the panel pops back up.
+    /// </summary>
+    public ObservableCollection<SelectableUpdate>? FocusedActiveUpdates =>
+        FocusedComputer is null
+            ? null
+            : (IsInstalledMode ? FocusedComputer.InstalledUpdates : FocusedComputer.ApplicableUpdates);
 
     /// <summary>The update source for scan/install (bound to the patch command bar's Source toggle).</summary>
     [ObservableProperty]
@@ -127,6 +140,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
+    [NotifyPropertyChangedFor(nameof(FocusedActiveUpdates))]
     public partial Computer? FocusedComputer { get; set; }
 
     /// <summary>
@@ -176,8 +190,11 @@ public partial class WorkspaceViewModel : ObservableObject
     partial void OnIncludeDriversChanged(bool value) => _patchOptions.IncludeDrivers = value;
 
     /// <summary>
-    /// Push the side-panel scope toggle into the shared patch options and clear any stale
-    /// scanned-update lists across all rows so the user re-scans into the new scope.
+    /// Push the side-panel scope toggle into the shared patch options and restore each row's
+    /// visible "Windows update message" / count from the per-scope cache (so the grid reflects
+    /// whichever scope is active). The per-scope SelectableUpdate collections on
+    /// <see cref="Computer"/> are NOT cleared — once a scope has been scanned, that data sticks
+    /// across toggles and panel close/reopen until the user re-scans in that scope.
     /// </summary>
     partial void OnIsInstalledModeChanged(bool value)
     {
@@ -185,9 +202,8 @@ public partial class WorkspaceViewModel : ObservableObject
 
         foreach (Computer c in Computers)
         {
-            c.ScannedUpdates.Clear();
-            c.UpdatesAvailable = null;
-            c.UpdateMessage = null;
+            c.UpdateMessage = value ? c.InstalledMessage : c.ApplicableMessage;
+            c.UpdatesAvailable = value ? c.InstalledCount : c.ApplicableCount;
         }
     }
 
@@ -311,7 +327,7 @@ public partial class WorkspaceViewModel : ObservableObject
         FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync) : Task.CompletedTask;
 
     private bool CanInstallChecked() =>
-        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ScannedUpdates.Count > 0;
+        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0;
 
     /// <summary>
     /// Uninstalls only the ticked updates on the focused machine. Only enabled in Installed scope
@@ -324,7 +340,7 @@ public partial class WorkspaceViewModel : ObservableObject
 
     private bool CanUninstallChecked() =>
         !IsBusy && IsInstalledMode && FocusedComputer is { } c
-        && c.ScannedUpdates.Any(u => u.IsSelected && u.IsUninstallable);
+        && c.InstalledUpdates.Any(u => u.IsSelected && u.IsUninstallable);
 
     /// <summary>Ticks every update in the focused machine's checklist.</summary>
     [RelayCommand]
@@ -341,7 +357,8 @@ public partial class WorkspaceViewModel : ObservableObject
             return;
         }
 
-        foreach (SelectableUpdate update in c.ScannedUpdates)
+        ObservableCollection<SelectableUpdate> target = IsInstalledMode ? c.InstalledUpdates : c.ApplicableUpdates;
+        foreach (SelectableUpdate update in target)
         {
             update.IsSelected = selected;
         }
@@ -488,10 +505,13 @@ public partial class WorkspaceViewModel : ObservableObject
         computer.UpdateProgress = null;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
         computer.UpdateMessage = "Scanning…";
+        // Capture the scope at scan start so a mid-scan scope toggle doesn't route the result into
+        // the wrong per-scope cache.
+        UpdateScope scopeAtScan = _patchOptions.Scope;
         try
         {
             HostPatchStatus status = await _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, token);
-            ApplyStatus(computer, status);
+            ApplyStatus(computer, status, scopeAtScan);
         }
         catch (OperationCanceledException)
         {
@@ -514,8 +534,8 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     private async Task UninstallRowAsync(Computer computer, CancellationToken token)
     {
-        if (computer.ScannedUpdates.Count == 0
-            || !computer.ScannedUpdates.Any(u => u.IsSelected && u.IsUninstallable))
+        if (computer.InstalledUpdates.Count == 0
+            || !computer.InstalledUpdates.Any(u => u.IsSelected && u.IsUninstallable))
         {
             computer.UpdateError = null;
             computer.UpdateProgress = null;
@@ -524,7 +544,7 @@ public partial class WorkspaceViewModel : ObservableObject
             return;
         }
 
-        string[] selectedKbs = [.. computer.ScannedUpdates
+        string[] selectedKbs = [.. computer.InstalledUpdates
             .Where(u => u.IsSelected && u.IsUninstallable && !string.IsNullOrWhiteSpace(u.Kb))
             .Select(u => u.Kb!)];
         if (selectedKbs.Length == 0)
@@ -571,9 +591,9 @@ public partial class WorkspaceViewModel : ObservableObject
         // scope this host's install to its ticked KBs: never scanned ⇒ no checklist ⇒ install all
         // (not-excluded, unchanged); scanned but nothing ticked ⇒ skip without launching a task.
         PatchOptions options = _patchOptions.Clone();
-        if (computer.ScannedUpdates.Count > 0)
+        if (computer.ApplicableUpdates.Count > 0)
         {
-            if (!computer.ScannedUpdates.Any(u => u.IsSelected))
+            if (!computer.ApplicableUpdates.Any(u => u.IsSelected))
             {
                 computer.UpdateError = null;
                 computer.UpdateProgress = null;
@@ -582,7 +602,7 @@ public partial class WorkspaceViewModel : ObservableObject
                 return;
             }
 
-            string[] selectedKbs = [.. computer.ScannedUpdates
+            string[] selectedKbs = [.. computer.ApplicableUpdates
                 .Where(u => u.IsSelected && !string.IsNullOrWhiteSpace(u.Kb))
                 .Select(u => u.Kb!)];
             if (selectedKbs.Length == 0)
@@ -624,8 +644,11 @@ public partial class WorkspaceViewModel : ObservableObject
         }
     }
 
-    /// <summary>Writes a <see cref="HostPatchStatus"/> snapshot onto a row, logging phase transitions only.</summary>
-    private void ApplyStatus(Computer computer, HostPatchStatus status)
+    /// <summary>Writes a <see cref="HostPatchStatus"/> snapshot onto a row, logging phase transitions only.
+    /// <paramref name="scopeForScan"/> is set by <see cref="ScanRowAsync"/> so the scan result lands in the
+    /// right per-scope cache on <see cref="Computer"/>; null (the Progress&lt;T&gt; callback path) uses the
+    /// shared options' current scope, which only matters for the Phase.Available branch.</summary>
+    private void ApplyStatus(Computer computer, HostPatchStatus status, UpdateScope? scopeForScan = null)
     {
         string phase = status.Phase.ToString();
         bool phaseChanged = !string.Equals(computer.UpdatePhase, phase, StringComparison.Ordinal);
@@ -636,8 +659,22 @@ public partial class WorkspaceViewModel : ObservableObject
 
         if (status.Phase == PatchPhase.Available)
         {
+            UpdateScope scope = scopeForScan ?? _patchOptions.Scope;
             computer.UpdatesAvailable = status.AvailableCount;
-            ReplaceScannedUpdates(computer, status.Updates);
+            ReplaceUpdatesForScope(computer, scope, status.Updates);
+            // Cache per-scope so toggling between Applicable / Installed preserves the data.
+            if (scope == UpdateScope.Installed)
+            {
+                computer.InstalledMessage = status.Message;
+                computer.InstalledCount = status.AvailableCount;
+                computer.LastScannedInstalled = DateTime.Now;
+            }
+            else
+            {
+                computer.ApplicableMessage = status.Message;
+                computer.ApplicableCount = status.AvailableCount;
+                computer.LastScannedApplicable = DateTime.Now;
+            }
         }
 
         if (status.RebootPending)
@@ -664,22 +701,29 @@ public partial class WorkspaceViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Repopulates a row's checklist from a fresh scan, preserving the user's prior unticks by KB
-    /// (fallback title) so a re-scan doesn't silently re-select updates they chose to skip.
+    /// Repopulates the per-scope checklist on <paramref name="computer"/> from a fresh scan,
+    /// preserving the user's prior unticks by KB (fallback title) so a re-scan in the same scope
+    /// doesn't silently re-select updates they chose to skip. Routes into either
+    /// <see cref="Computer.ApplicableUpdates"/> or <see cref="Computer.InstalledUpdates"/> based
+    /// on the scope that was active when the scan ran.
     /// </summary>
-    private static void ReplaceScannedUpdates(Computer computer, IReadOnlyList<SoftwareUpdate> updates)
+    private static void ReplaceUpdatesForScope(Computer computer, UpdateScope scope, IReadOnlyList<SoftwareUpdate> updates)
     {
+        ObservableCollection<SelectableUpdate> target = scope == UpdateScope.Installed
+            ? computer.InstalledUpdates
+            : computer.ApplicableUpdates;
+
         var prior = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
-        foreach (SelectableUpdate existing in computer.ScannedUpdates)
+        foreach (SelectableUpdate existing in target)
         {
             prior[existing.Kb ?? existing.Title] = existing.IsSelected;
         }
 
-        computer.ScannedUpdates.Clear();
+        target.Clear();
         foreach (SoftwareUpdate update in updates)
         {
             bool selected = !prior.TryGetValue(update.ArticleId ?? update.Title, out bool wasSelected) || wasSelected;
-            computer.ScannedUpdates.Add(new SelectableUpdate(update, selected));
+            target.Add(new SelectableUpdate(update, selected));
         }
     }
 
