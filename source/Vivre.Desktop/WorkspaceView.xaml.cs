@@ -36,8 +36,33 @@ public partial class WorkspaceView : UserControl
     {
         GridMenu.Items.Clear();
 
+        // Copy ▸ submenu — names / command results for the selected rows, the full TSV, or every
+        // online / offline device. All land on the clipboard newline-separated (paste into Excel).
+        bool hasSelection = vm.SelectedComputers.Count > 0;
         var copy = new MenuItem { Header = "Copy" };
-        copy.Click += (_, _) => CopySelectedRows();
+
+        var copyNames = new MenuItem { Header = "Name(s)", IsEnabled = hasSelection };
+        copyNames.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.Name));
+        copy.Items.Add(copyNames);
+
+        var copyResults = new MenuItem { Header = "Command result(s)", IsEnabled = hasSelection };
+        copyResults.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.CommandResult));
+        copy.Items.Add(copyResults);
+
+        var copyRows = new MenuItem { Header = "Selected rows (all columns)", IsEnabled = hasSelection };
+        copyRows.Click += (_, _) => CopySelectedRows();
+        copy.Items.Add(copyRows);
+
+        copy.Items.Add(new Separator());
+
+        var copyOnline = new MenuItem { Header = "All online devices", IsEnabled = vm.OnlineNames.Count > 0 };
+        copyOnline.Click += (_, _) => CopyLines(vm.OnlineNames);
+        copy.Items.Add(copyOnline);
+
+        var copyOffline = new MenuItem { Header = "All offline devices", IsEnabled = vm.OfflineNames.Count > 0 };
+        copyOffline.Click += (_, _) => CopyLines(vm.OfflineNames);
+        copy.Items.Add(copyOffline);
+
         GridMenu.Items.Add(copy);
 
         GridMenu.Items.Add(new Separator());
@@ -147,6 +172,16 @@ public partial class WorkspaceView : UserControl
 
         IReadOnlyList<Computer> resolved = targets.Count > 0 ? targets : [.. vm.Computers];
         new ScriptRunnerWindow(resolved, vm.Credentials, vm.Activity, vm.ScriptLibrary, initialScript) { Owner = OwnerWindow }.Show();
+    }
+
+    /// <summary>Copies the values one-per-line to the clipboard (Excel-friendly), skipping blanks.</summary>
+    private static void CopyLines(IEnumerable<string?> values)
+    {
+        string text = string.Join(Environment.NewLine, values.Where(v => !string.IsNullOrEmpty(v)));
+        if (text.Length > 0)
+        {
+            Clipboard.SetText(text);
+        }
     }
 
     private void CopySelectedRows()
