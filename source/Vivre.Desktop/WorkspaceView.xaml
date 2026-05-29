@@ -293,7 +293,8 @@
                                            ToolTip="Close panel (gives the grid the full window width back)"
                                            Click="OnCloseChecklist" />
                             </Grid>
-                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                                        IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}">
                                 <ui:Button Content="All" Appearance="Secondary" Padding="10,2" Command="{Binding SelectAllUpdatesCommand}" />
                                 <ui:Button Content="None" Appearance="Secondary" Padding="10,2" Margin="6,0,0,0" Command="{Binding SelectNoUpdatesCommand}" />
                             </StackPanel>
@@ -313,6 +314,7 @@
 
                         <Grid>
                         <ui:DataGrid ItemsSource="{Binding FocusedActiveUpdates}"
+                                     IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
                                      AutoGenerateColumns="False" IsReadOnly="True"
                                      CanUserAddRows="False" CanUserDeleteRows="False"
                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal"

@@ -431,12 +431,20 @@ public sealed class WuaUpdateLane
         string dismBlock = scope == UpdateScope.Installed
             ? """
                 $dismKbs = New-Object 'System.Collections.Generic.HashSet[string]'
-                try {
-                    foreach ($p in (Get-WindowsPackage -Online -ErrorAction Stop)) {
-                        if ("$($p.PackageState)" -ne 'Installed') { continue }
-                        if ($p.PackageName -match 'KB(\d+)') { [void]$dismKbs.Add($matches[1]) }
-                    }
-                } catch { }
+                # Skip the DISM/CBS enumeration if a reboot/servicing transaction is already
+                # pending — don't open a servicing session while the OS may be mid-transaction.
+                # Removability then falls back to the WUA IsUninstallable signal alone.
+                $servicingBusy = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
+                                 (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootInProgress') -or
+                                 (Test-Path (Join-Path $env:WinDir 'WinSxS\pending.xml'))
+                if (-not $servicingBusy) {
+                    try {
+                        foreach ($p in (Get-WindowsPackage -Online -ErrorAction Stop)) {
+                            if ("$($p.PackageState)" -ne 'Installed') { continue }
+                            if ($p.PackageName -match 'KB(\d+)') { [void]$dismKbs.Add($matches[1]) }
+                        }
+                    } catch { }
+                }
                 """
             : "$dismKbs = New-Object 'System.Collections.Generic.HashSet[string]'";
         // Multi-line block (not inline) so the lookup is wrapped in its own try/catch — a single
@@ -569,7 +577,7 @@ public sealed class WuaUpdateLane
     /// returns immediately; the task fires at its trigger and writes the log file, but with no
     /// live stream the user verifies via a later scan (so the EXE + config are left in place).
     /// </summary>
-    private static string BuildBootstrapScript(
+    internal static string BuildBootstrapScript(
         string taskName,
         string exePath,
         string configPath,
@@ -596,7 +604,7 @@ public sealed class WuaUpdateLane
             {{trigger}}
             $action    = New-ScheduledTaskAction -Execute '{{exePath}}' -Argument '"{{configPath}}"'
             $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
-            $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
+            $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 6)
             Register-ScheduledTask -TaskName '{{taskName}}' -Action $action -Principal $principal -Settings $settings {{registerTrigger}}-Force | Out-Null
 
             $runNow = {{runNow}}
@@ -686,7 +694,16 @@ public sealed class WuaUpdateLane
                 }
             } finally {
                 # Always reap the task + temp files, even on a client cancel (which trips
-                # PipelineStoppedException — PowerShell still runs the finally block).
+                # PipelineStoppedException — PowerShell still runs the finally block). Wait for the
+                # worker to actually stop first: a running EXE is file-locked, so deleting it while
+                # the agent is still alive (e.g. the brief pre-reboot window) silently fails and
+                # orphans it. Bounded so we never hang the session.
+                $deadline = (Get-Date).AddSeconds(10)
+                while ((Get-Date) -lt $deadline) {
+                    $t = Get-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue
+                    if (-not $t -or $t.State -ne 'Running') { break }
+                    Start-Sleep -Milliseconds 500
+                }
                 Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
                 Remove-Item '{{exePath}}' -Force -ErrorAction SilentlyContinue
                 Remove-Item '{{configPath}}' -Force -ErrorAction SilentlyContinue
@@ -697,6 +714,12 @@ public sealed class WuaUpdateLane
 
     private static string BuildSafetyCleanupScript(string taskName, string exePath, string configPath, string progressPath) =>
         $$"""
+            $deadline = (Get-Date).AddSeconds(10)
+            while ((Get-Date) -lt $deadline) {
+                $t = Get-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue
+                if (-not $t -or $t.State -ne 'Running') { break }
+                Start-Sleep -Milliseconds 500
+            }
             Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
             Remove-Item '{{exePath}}' -Force -ErrorAction SilentlyContinue
             Remove-Item '{{configPath}}' -Force -ErrorAction SilentlyContinue

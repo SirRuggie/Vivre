@@ -158,10 +158,39 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(FocusedActiveUpdates))]
     [NotifyPropertyChangedFor(nameof(CanInstallChecked))]
     [NotifyPropertyChangedFor(nameof(CanUninstallChecked))]
+    [NotifyPropertyChangedFor(nameof(IsFocusedPatching))]
     public partial Computer? FocusedComputer { get; set; }
 
-    /// <summary>Re-track the checklist for command/enable-state when the focused machine changes.</summary>
-    partial void OnFocusedComputerChanged(Computer? value) => RetrackChecklist();
+    /// <summary>Keep a subscription to the focused machine's <see cref="Computer.IsPatching"/> so the
+    /// checklist + per-machine buttons lock while it installs/uninstalls, and re-track the checklist
+    /// when focus changes.</summary>
+    partial void OnFocusedComputerChanged(Computer? oldValue, Computer? newValue)
+    {
+        if (oldValue is not null)
+        {
+            oldValue.PropertyChanged -= OnFocusedComputerPropertyChanged;
+        }
+
+        if (newValue is not null)
+        {
+            newValue.PropertyChanged += OnFocusedComputerPropertyChanged;
+        }
+
+        RetrackChecklist();
+    }
+
+    private void OnFocusedComputerPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Computer.IsPatching))
+        {
+            OnPropertyChanged(nameof(IsFocusedPatching));
+            RefreshChecklistCommandState();
+        }
+    }
+
+    /// <summary>True while the focused machine has an install/uninstall in flight — drives the
+    /// checklist lock (DataGrid/All/None disabled) and the per-machine button enable-state.</summary>
+    public bool IsFocusedPatching => FocusedComputer?.IsPatching == true;
 
     /// <summary>
     /// When true, a background loop continuously re-checks every row's online/offline state on
@@ -366,7 +395,7 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
     /// checklist, not busy. Bound by the button's enable-state and re-evaluated as boxes toggle.</summary>
     public bool CanInstallChecked =>
-        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0;
+        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0 && !c.IsPatching;
 
     /// <summary>
     /// Uninstalls only the ticked updates on the focused machine. Only enabled in Installed scope
@@ -382,7 +411,7 @@ public partial class WorkspaceViewModel : ObservableObject
     /// a Click handler for its confirm dialog) and re-evaluated live as boxes toggle, so it's
     /// disabled before a scan and whenever nothing removable is ticked.</summary>
     public bool CanUninstallChecked =>
-        !IsBusy && IsInstalledMode && FocusedComputer is { } c
+        !IsBusy && IsInstalledMode && FocusedComputer is { } c && !c.IsPatching
         && c.InstalledUpdates.Any(u => u.IsSelected && u.IsUninstallable);
 
     /// <summary>Ticks every update in the focused machine's checklist.</summary>
@@ -1030,12 +1059,54 @@ public partial class WorkspaceViewModel : ObservableObject
         computer.LastStatus = online ? "Online" : "Offline";
         if (online)
         {
-            _activity.Info(computer.Name, previous is null ? "Online" : "Came online");
+            // Came back. If we'd seen it go down (a reboot/shutdown), report how long it was out and
+            // whether it still wants another reboot — the BatchPatch-style "it's back" signal.
+            if (previous == false && computer.WentOfflineAt is { } downAt)
+            {
+                string back = $"Back online {DateTime.Now:HH:mm} (down {FormatDownDuration(DateTime.Now - downAt)})";
+                if (computer.RebootRequired == true)
+                {
+                    back += " — reboot still pending";
+                }
+
+                computer.RebootMessage = back;
+                _activity.Info(computer.Name, back);
+            }
+            else
+            {
+                _activity.Info(computer.Name, previous is null ? "Online" : "Came online");
+            }
+
+            computer.WentOfflineAt = null;
         }
         else
         {
+            // Was up, now unreachable — most often a reboot/shutdown. Start the "waiting" clock so the
+            // return trip can be timed. (First-ever-offline, previous null, isn't a reboot — skip.)
+            if (previous == true)
+            {
+                computer.WentOfflineAt = DateTime.Now;
+                computer.RebootMessage = $"Offline since {DateTime.Now:HH:mm} — waiting for it to come back…";
+            }
+
             _activity.Warn(computer.Name, previous is null ? $"Offline — {error}" : $"Went offline — {error}");
         }
+    }
+
+    /// <summary>Compact down-time for the reboot message: "45s", "3m 12s", "1h 4m".</summary>
+    private static string FormatDownDuration(TimeSpan d)
+    {
+        if (d.TotalMinutes < 1)
+        {
+            return $"{(int)d.TotalSeconds}s";
+        }
+
+        if (d.TotalHours < 1)
+        {
+            return $"{(int)d.TotalMinutes}m {d.Seconds}s";
+        }
+
+        return $"{(int)d.TotalHours}h {d.Minutes}m";
     }
 
     /// <summary>

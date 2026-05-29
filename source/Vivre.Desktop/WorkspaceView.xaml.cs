@@ -199,11 +199,15 @@ public partial class WorkspaceView : UserControl
         {
             var updates = new MenuItem { Header = "Updates" };
 
-            var scan = new MenuItem { Header = "Scan selected" };
+            // Only meaningful when at least one selected row isn't already mid-install/uninstall
+            // (those rows are skipped anyway — disabling avoids a no-op click on an in-flight machine).
+            bool anyActionable = vm.SelectedComputers.Any(c => !c.IsPatching);
+
+            var scan = new MenuItem { Header = "Scan selected", IsEnabled = anyActionable };
             scan.Click += (_, _) => _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
             updates.Items.Add(scan);
 
-            var install = new MenuItem { Header = "Install selected" };
+            var install = new MenuItem { Header = "Install selected", IsEnabled = anyActionable };
             install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
             updates.Items.Add(install);
 
