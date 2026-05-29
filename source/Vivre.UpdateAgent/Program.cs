@@ -33,13 +33,32 @@ namespace Vivre.UpdateAgent
                 AgentConfig config = AgentConfig.Load(args[0]);
                 progress = new ProgressWriter(config.ProgressPath);
 
-                if (string.Equals(config.Mode, "Uninstall", StringComparison.OrdinalIgnoreCase))
+                // Never touch the servicing stack (WUA/DISM) while a reboot is already pending or a
+                // servicing transaction is staged/in-flight — that's how we'd collide with the OS's
+                // boot-time offline-servicing pass. Defer cleanly and let the user reboot first.
+                if (BootBusyGuard.IsServicingBusy(out string busyReason))
                 {
-                    RunUninstall(config, progress);
+                    progress.Write("PendingReboot",
+                        "Deferred — " + busyReason + ". Reboot the machine, then re-run. (Not started, to avoid colliding with Windows servicing.)",
+                        100, 0, 0, 0, true);
+                    return 0;
                 }
-                else
+
+                bool rebootNeeded = string.Equals(config.Mode, "Uninstall", StringComparison.OrdinalIgnoreCase)
+                    ? RunUninstall(config, progress)
+                    : RunInstall(config, progress);
+
+                // Reboot (RebootAndWait) only after the operation method has returned — its WUA COM
+                // objects are now out of scope. Force-release the RCWs so nothing of ours holds a
+                // handle into the servicing stack as the box goes down, then schedule the restart
+                // with enough delay for the controller to reap the task + temp files, and exit
+                // immediately (no lingering process).
+                if (rebootNeeded && config.RebootAfter)
                 {
-                    RunInstall(config, progress);
+                    GC.Collect();
+                    GC.WaitForPendingFinalizers();
+                    GC.Collect();
+                    System.Diagnostics.Process.Start("shutdown.exe", "/r /t 20 /c \"Vivre update reboot\"");
                 }
 
                 return 0;
@@ -63,7 +82,8 @@ namespace Vivre.UpdateAgent
 
         // --- install -------------------------------------------------------
 
-        private static void RunInstall(AgentConfig config, ProgressWriter progress)
+        /// <summary>Returns whether a reboot is required after the install (the caller reboots).</summary>
+        private static bool RunInstall(AgentConfig config, ProgressWriter progress)
         {
             progress.Write("Searching", "Searching for updates…", 0, 0, 0, 0, false);
 
@@ -80,7 +100,7 @@ namespace Vivre.UpdateAgent
             if (total == 0)
             {
                 progress.Write("Done", "No applicable updates", 100, 0, 0, 0, false);
-                return;
+                return false;
             }
 
             progress.Write("Searching", total + " update(s) matched — starting downloads…", 5, total, 0, 0, false);
@@ -129,19 +149,20 @@ namespace Vivre.UpdateAgent
                 pollWrite: job => WriteInstallPoll((IInstallationJob)job, progress, total, config, "Installing"),
                 end: job => installer.EndInstall((IInstallationJob)job));
 
-            Summarize(config, progress, installResult, coll.Count, "Installed");
+            return Summarize(progress, installResult, coll.Count, "Installed");
         }
 
         // --- uninstall -----------------------------------------------------
 
-        private static void RunUninstall(AgentConfig config, ProgressWriter progress)
+        /// <summary>Returns whether a reboot is required after the uninstall (the caller reboots).</summary>
+        private static bool RunUninstall(AgentConfig config, ProgressWriter progress)
         {
             string[] targets = config.IncludeKbs ?? new string[0];
             if (targets.Length == 0)
             {
                 // The UI only enables Uninstall when removable KBs are ticked, so this is a guard.
                 progress.Write("Done", "No updates selected to uninstall", 100, 0, 0, 0, false);
-                return;
+                return false;
             }
 
             progress.Write("Searching", "Finding updates to uninstall…", 0, targets.Length, 0, 0, false);
@@ -234,16 +255,13 @@ namespace Vivre.UpdateAgent
             if (rebootPending)
             {
                 progress.Write("PendingReboot", summary + ", reboot required", 100, total, removed, failed, true);
-                if (config.RebootAfter)
-                {
-                    System.Threading.Thread.Sleep(5000);
-                    System.Diagnostics.Process.Start("shutdown.exe", "/r /t 5 /c \"Vivre update reboot\"");
-                }
             }
             else
             {
                 progress.Write("Done", summary, 100, total, removed, failed, false);
             }
+
+            return rebootPending;
         }
 
         /// <summary>Uninstalls one update via WUA's own installer (live percent from GetProgress).
@@ -353,8 +371,10 @@ namespace Vivre.UpdateAgent
             progress.Write("Installing", msg, overall, total, 0, 0, false);
         }
 
-        private static void Summarize(
-            AgentConfig config, ProgressWriter progress, IInstallationResult result, int total, string verb)
+        /// <summary>Writes the terminal Done/PendingReboot line and returns whether a reboot is
+        /// required. The actual reboot is the caller's job (after COM is released).</summary>
+        private static bool Summarize(
+            ProgressWriter progress, IInstallationResult result, int total, string verb)
         {
             int installed = 0;
             int failed = 0;
@@ -386,16 +406,13 @@ namespace Vivre.UpdateAgent
             if (rebootPending)
             {
                 progress.Write("PendingReboot", summary + ", reboot required", 100, total, installed, failed, true);
-                if (config.RebootAfter)
-                {
-                    System.Threading.Thread.Sleep(5000);
-                    System.Diagnostics.Process.Start("shutdown.exe", "/r /t 5 /c \"Vivre update reboot\"");
-                }
             }
             else
             {
                 progress.Write("Done", summary, 100, total, installed, failed, false);
             }
+
+            return rebootPending;
         }
 
         // --- helpers -------------------------------------------------------

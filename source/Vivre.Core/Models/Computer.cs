@@ -87,9 +87,15 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial string? UpdateMessage { get; set; }
 
-    /// <summary>Reboot-action status for the "Reboot message" column (e.g. "Rebooting… / back online in Xm"); Phase 2.</summary>
+    /// <summary>Reboot-action status for the "Reboot message" column (e.g. "Offline since 09:21 — waiting…",
+    /// then "Back online 09:24 (down 3m) — reboot still pending"). Written by the monitor on online/offline
+    /// transitions so a reboot is visibly tracked end-to-end.</summary>
     [ObservableProperty]
     public partial string? RebootMessage { get; set; }
+
+    /// <summary>Monitor bookkeeping: when this row last transitioned online→offline, so the down-time can
+    /// be reported when it returns. Null when online / never seen down. Not persisted, not bound.</summary>
+    public DateTime? WentOfflineAt { get; set; }
 
     /// <summary>Live install progress 0-100 for the progress bar, null when indeterminate/idle.</summary>
     [ObservableProperty]
