@@ -39,4 +39,28 @@ public interface IPowerShellHost
         int port = 5985,
         bool useSsl = false,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Runs <paramref name="script"/> on <paramref name="host"/> over WinRM and invokes
+    /// <paramref name="onOutput"/> for each <see cref="PSObject"/> emitted by the script
+    /// as it arrives — not buffered until completion. The caller uses this for live
+    /// progress streams (the install/uninstall controller tails a per-update log on the
+    /// target and re-emits each new line). Errors/warnings are still aggregated into the
+    /// returned <see cref="PSExecutionResult"/>; only the output stream is delivered live.
+    /// </summary>
+    /// <remarks>
+    /// Backed by <see cref="PSDataCollection{T}.DataAdded"/> on a pre-allocated output
+    /// collection. The script is responsible for ending; if the consumer cancels via
+    /// <paramref name="cancellationToken"/>, the pipeline is stopped (<c>ps.Stop()</c>)
+    /// which lets any server-side <c>finally</c> block run (so the streaming controller
+    /// can unregister the SYSTEM task even on a client-side cancel).
+    /// </remarks>
+    Task<PSExecutionResult> RunRemoteStreamingAsync(
+        string host,
+        string script,
+        Action<PSObject> onOutput,
+        PSCredential? credential = null,
+        int port = 5985,
+        bool useSsl = false,
+        CancellationToken cancellationToken = default);
 }

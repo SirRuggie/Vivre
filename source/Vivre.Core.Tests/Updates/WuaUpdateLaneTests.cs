@@ -262,5 +262,24 @@ public class WuaUpdateLaneTests
             LastScript = script;
             return Task.FromResult(_result);
         }
+
+        public Task<PSExecutionResult> RunRemoteStreamingAsync(
+            string host,
+            string script,
+            Action<PSObject> onOutput,
+            PSCredential? credential = null,
+            int port = 5985,
+            bool useSsl = false,
+            CancellationToken cancellationToken = default)
+        {
+            // Replay the fake result as a synthetic stream so install/uninstall tests can
+            // exercise the streaming-controller path the same way they used to for polling.
+            LastScript = script;
+            foreach (PSObject row in _result.Output)
+            {
+                onOutput(row);
+            }
+            return Task.FromResult(_result);
+        }
     }
 }

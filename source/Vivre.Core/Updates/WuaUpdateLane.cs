@@ -1,11 +1,8 @@
 using System.Globalization;
 using System.Management.Automation;
-using System.Text;
 using System.Text.Json;
 using Vivre.Core.Credentials;
 using Vivre.Core.PowerShell;
-using Microsoft.Management.Infrastructure;
-using Microsoft.Management.Infrastructure.Options;
 
 namespace Vivre.Core.Updates;
 
@@ -82,8 +79,14 @@ public sealed class WuaUpdateLane
         RunWorkerTaskAsync(host, options, credential, progress, BuildUninstallWorker, "Starting uninstall task…", cancellationToken);
 
     /// <summary>
-    /// Shared implementation for install + uninstall — same SYSTEM-task plumbing (register, start,
-    /// poll the progress JSON, clean up) with the worker script swapped in.
+    /// Shared implementation for install + uninstall. One persistent PSSession from start to
+    /// finish: the bootstrap script registers + starts the SYSTEM task on the target, then
+    /// tails the worker's append-only progress log, emitting each new JSON line via
+    /// <c>Write-Output</c>. We receive those lines live via
+    /// <see cref="PSDataCollection{T}.DataAdded"/>, parse them into <see cref="HostPatchStatus"/>,
+    /// and forward to <paramref name="progress"/> as they arrive. Cancellation stops the
+    /// pipeline; the server-side <c>finally</c> in the bootstrap unregisters the task and
+    /// removes the temp files no matter how we leave.
     /// </summary>
     private async Task<HostPatchStatus> RunWorkerTaskAsync(
         string host,
@@ -105,84 +108,73 @@ public sealed class WuaUpdateLane
 
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, startingMessage));
 
+        string worker = buildWorker(options, progressPath);
+        string bootstrap = BuildBootstrapScript(taskName, workerPath, progressPath, worker, options);
+
+        HostPatchStatus last = new(PatchPhase.Scanning, startingMessage);
+        bool progressSeen = false;
+
         try
         {
-            string worker = buildWorker(options, progressPath);
-            string bootstrap = BuildBootstrapScript(taskName, workerPath, progressPath, worker, options);
+            PSExecutionResult result = await RunStreamingAsync(
+                host,
+                bootstrap,
+                credential,
+                onOutput: psObj =>
+                {
+                    string raw = psObj?.BaseObject?.ToString() ?? psObj?.ToString() ?? string.Empty;
+                    if (raw.Length == 0)
+                    {
+                        return;
+                    }
 
-            // WinRM-first; DCOM Win32_Process.Create fallback for the register+start step only.
-            await StartTaskAsync(host, bootstrap, credential, cancellationToken).ConfigureAwait(false);
+                    // Heartbeat lines keep the channel visibly alive during long sync-mode
+                    // downloads but must NOT change the UI phase (Heartbeat would otherwise
+                    // map to Scanning via MapPhase's unknown-phase fallback, regressing the
+                    // UI from "Installing 1 of 5 — 50%" back to "Searching…").
+                    if (raw.Contains("\"phase\":\"Heartbeat\"", StringComparison.Ordinal))
+                    {
+                        return;
+                    }
 
-            return await PollAsync(host, taskName, progressPath, options, credential, progress, cancellationToken)
-                .ConfigureAwait(false);
+                    if (TryParseProgress(raw, out HostPatchStatus parsed))
+                    {
+                        last = parsed;
+                        progressSeen = true;
+                        progress.Report(parsed);
+                    }
+                },
+                cancellationToken).ConfigureAwait(false);
+
+            if (!progressSeen)
+            {
+                // Bootstrap returned without emitting any progress — usually Register-ScheduledTask
+                // or Start-ScheduledTask threw before the streaming loop got going. Surface the
+                // captured PS error so the user sees the real cause instead of a silent zero.
+                string detail = result.Errors.Count > 0
+                    ? result.Errors[0]
+                    : "Worker task did not emit any progress.";
+                var failed = HostPatchStatus.Failed(detail);
+                progress.Report(failed);
+                return failed;
+            }
+
+            return last;
         }
         catch (OperationCanceledException)
         {
             progress.Report(new HostPatchStatus(PatchPhase.Idle, "Cancelled"));
+            // Server-side finally usually handles cleanup, but if the pipeline was torn down
+            // before that block ran we still want to reap the task + temp files.
+            await SafetyCleanupAsync(host, taskName, workerPath, progressPath, credential).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
         {
             var failed = HostPatchStatus.Failed(ex.Message);
             progress.Report(failed);
+            await SafetyCleanupAsync(host, taskName, workerPath, progressPath, credential).ConfigureAwait(false);
             return failed;
-        }
-        finally
-        {
-            // Always tear down the task + temp files, even on cancel/error. Best-effort:
-            // a cleanup failure must not mask the real outcome.
-            await CleanupAsync(host, taskName, workerPath, progressPath, credential).ConfigureAwait(false);
-        }
-    }
-
-    private async Task<HostPatchStatus> PollAsync(
-        string host,
-        string taskName,
-        string progressPath,
-        PatchOptions options,
-        ConnectionCredential? credential,
-        IProgress<HostPatchStatus> progress,
-        CancellationToken cancellationToken)
-    {
-        string pollScript = BuildPollScript(taskName, progressPath);
-        HostPatchStatus last = new(PatchPhase.Scanning, "Searching for updates…");
-        string lastRaw = string.Empty;
-        DateTime lastChange = DateTime.UtcNow;
-
-        while (true)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(options.PollInterval, cancellationToken).ConfigureAwait(false);
-
-            PSExecutionResult result = await RunScriptAsync(host, pollScript, credential, cancellationToken).ConfigureAwait(false);
-            string raw = result.Output.Count > 0 ? result.Output[0]?.ToString() ?? string.Empty : string.Empty;
-
-            if (raw.Length > 0 && raw != lastRaw)
-            {
-                lastRaw = raw;
-                lastChange = DateTime.UtcNow;
-
-                if (TryParseProgress(raw, out HostPatchStatus status))
-                {
-                    last = status;
-                    progress.Report(status);
-
-                    if (status.Phase is PatchPhase.Done or PatchPhase.PendingReboot or PatchPhase.Error)
-                    {
-                        return status;
-                    }
-                }
-                else if (raw == TaskGoneMarker)
-                {
-                    // The task finished/vanished before writing a terminal JSON — treat as done.
-                    return last with { Phase = PatchPhase.Done };
-                }
-            }
-            else if (DateTime.UtcNow - lastChange > options.StuckThreshold)
-            {
-                return HostPatchStatus.Failed(
-                    $"No progress for {options.StuckThreshold.TotalMinutes:N0} min — host may be stuck.");
-            }
         }
     }
 
@@ -198,80 +190,44 @@ public sealed class WuaUpdateLane
             ? _powerShell.RunLocalAsync(script, cancellationToken)
             : _powerShell.RunRemoteAsync(host, script, credential?.ToPowerShellCredential(), cancellationToken: cancellationToken);
 
-    /// <summary>Registers + starts the SYSTEM task: WinRM first, DCOM <c>Win32_Process.Create</c> on failure.</summary>
-    private async Task StartTaskAsync(
+    /// <summary>
+    /// Streaming variant of <see cref="RunScriptAsync"/>: each output object reaches
+    /// <paramref name="onOutput"/> the moment the script writes it, not at end-of-script.
+    /// Local hosts fall back to the non-streaming path and replay output at end (local
+    /// install is the rare case; live progress matters most for remote targets).
+    /// </summary>
+    private async Task<PSExecutionResult> RunStreamingAsync(
         string host,
-        string bootstrap,
+        string script,
         ConnectionCredential? credential,
+        Action<PSObject> onOutput,
         CancellationToken cancellationToken)
     {
-        try
+        if (IsLocal(host))
         {
-            PSExecutionResult result = await RunScriptAsync(host, bootstrap, credential, cancellationToken).ConfigureAwait(false);
-            if (!result.HadErrors)
+            PSExecutionResult result = await _powerShell.RunLocalAsync(script, cancellationToken).ConfigureAwait(false);
+            foreach (PSObject row in result.Output)
             {
-                return;
+                onOutput(row);
             }
+            return result;
+        }
 
-            // WinRM reached the box but the registration itself errored — surface it; DCOM won't help.
-            string detail = result.Errors.Count > 0 ? result.Errors[0] : "task registration failed";
-            throw new InvalidOperationException(detail);
-        }
-        catch (OperationCanceledException)
-        {
-            throw;
-        }
-        catch (InvalidOperationException)
-        {
-            throw;
-        }
-        catch (Exception)
-        {
-            // WinRM unreachable — fall back to DCOM (the EnableWinRM channel).
-            cancellationToken.ThrowIfCancellationRequested();
-            StartTaskViaDcom(host, bootstrap, credential);
-        }
+        return await _powerShell.RunRemoteStreamingAsync(
+            host,
+            script,
+            onOutput,
+            credential?.ToPowerShellCredential(),
+            cancellationToken: cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// DCOM fallback: run the bootstrap as a base64 <c>-EncodedCommand</c> via
-    /// <c>Win32_Process.Create</c> (same plumbing as <c>WinRmEnabler</c>). Note polling
-    /// still needs WinRM, so this only helps when WinRM reads work but the initial
-    /// process-launch needed DCOM.
+    /// Safety net for cleanup when the server-side <c>finally</c> in the bootstrap didn't
+    /// get to run (e.g., the WSMan channel was torn down before the worker exited). Best-
+    /// effort over a fresh short WinRM call — a leftover task/file is harmless (per-run
+    /// name) and a re-scan reflects the true state.
     /// </summary>
-    private static void StartTaskViaDcom(string host, string bootstrap, ConnectionCredential? credential)
-    {
-        string encoded = Convert.ToBase64String(Encoding.Unicode.GetBytes(bootstrap));
-        string commandLine = $"powershell.exe -NoProfile -ExecutionPolicy Bypass -EncodedCommand {encoded}";
-
-        using var options = new DComSessionOptions();
-        if (credential is not null)
-        {
-            options.AddDestinationCredentials(new CimCredential(
-                PasswordAuthenticationMechanism.Default,
-                credential.Domain,
-                credential.UserName,
-                credential.Password));
-        }
-
-        using CimSession session = CimSession.Create(host, options);
-        using var arguments = new CimMethodParametersCollection
-        {
-            CimMethodParameter.Create("CommandLine", commandLine, CimFlags.In),
-        };
-
-        using CimMethodResult result =
-            session.InvokeMethod(@"root\cimv2", "Win32_Process", "Create", arguments);
-
-        uint returnValue = Convert.ToUInt32(result.ReturnValue.Value, CultureInfo.InvariantCulture);
-        if (returnValue != 0)
-        {
-            throw new InvalidOperationException(
-                $"DCOM Win32_Process.Create on '{host}' returned {returnValue} (could not start the update task).");
-        }
-    }
-
-    private async Task CleanupAsync(
+    private async Task SafetyCleanupAsync(
         string host,
         string taskName,
         string workerPath,
@@ -280,14 +236,12 @@ public sealed class WuaUpdateLane
     {
         try
         {
-            string script = BuildCleanupScript(taskName, workerPath, progressPath);
-            // Use a detached token: cleanup must run even after a cancelled install.
+            string script = BuildSafetyCleanupScript(taskName, workerPath, progressPath);
             await RunScriptAsync(host, script, credential, CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {
-            // Best-effort: a leftover task/file is harmless (it's named per-run) and a
-            // re-scan reflects the true state. Don't let cleanup mask the real result.
+            // Best-effort.
         }
     }
 
@@ -417,9 +371,6 @@ public sealed class WuaUpdateLane
     };
 
     // --- embedded scripts -------------------------------------------------
-
-    /// <summary>Marker the poll script emits when the scheduled task is gone and no JSON remains.</summary>
-    private const string TaskGoneMarker = "__VIVRE_TASK_GONE__";
 
     private static string BuildScanScript(UpdateSource source, bool includeDrivers, UpdateScope scope)
     {
@@ -551,16 +502,19 @@ public sealed class WuaUpdateLane
 
             function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
                 # ts (timestamp ticks) makes every write unique even when nothing visible changed,
-                # so the controller's "no progress" stuck-detector never false-positives on a slow link.
+                # so a slow link can still tell "still going" from "wedged". Append-only: each
+                # progress emit is one JSON object on its own line, so the streaming controller
+                # tails the log via Get-Content -Wait and never loses an intermediate state to a
+                # mid-overwrite read (the old single-file overwrite pattern lost intermediate
+                # states the moment polls landed between two Set-Content/Move-Item pairs).
                 $obj = [PSCustomObject]@{
                     phase = $phase; message = $message; percent = $percent
                     available = $available; installed = $installed; failed = $failed
                     rebootPending = [bool]$rebootPending
                     ts = (Get-Date).Ticks
                 }
-                $tmp = "$progressPath.tmp"
-                ($obj | ConvertTo-Json -Compress) | Set-Content -Path $tmp -Encoding UTF8
-                Move-Item -Path $tmp -Destination $progressPath -Force
+                $line = ($obj | ConvertTo-Json -Compress)
+                Add-Content -Path $progressPath -Value $line -Encoding UTF8
             }
 
             try {
@@ -735,15 +689,15 @@ public sealed class WuaUpdateLane
             $rebootAfter = {{rebootAfter}}
 
             function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
+                # Append-only JSONL — see BuildInstallWorker for the rationale.
                 $obj = [PSCustomObject]@{
                     phase = $phase; message = $message; percent = $percent
                     available = $available; installed = $installed; failed = $failed
                     rebootPending = [bool]$rebootPending
                     ts = (Get-Date).Ticks
                 }
-                $tmp = "$progressPath.tmp"
-                ($obj | ConvertTo-Json -Compress) | Set-Content -Path $tmp -Encoding UTF8
-                Move-Item -Path $tmp -Destination $progressPath -Force
+                $line = ($obj | ConvertTo-Json -Compress)
+                Add-Content -Path $progressPath -Value $line -Encoding UTF8
             }
 
             try {
@@ -836,6 +790,16 @@ public sealed class WuaUpdateLane
             """;
     }
 
+    /// <summary>
+    /// The whole server-side controller in one script: write the worker file, register the
+    /// SYSTEM scheduled task, start it, then <b>tail the append-only progress log and emit
+    /// each new line via <c>Write-Output</c></b>. The client receives those lines live via
+    /// <see cref="PSDataCollection{T}.DataAdded"/> — one persistent PSSession from start to
+    /// finish, no per-poll WinRM shells. Cleanup (unregister + delete files) runs in a
+    /// <c>finally</c> so a client cancel still tears the task down. For <see cref="RunBehavior.ScheduleAt"/>
+    /// the script registers the task and returns immediately; the task fires at its trigger
+    /// and writes the log file, but with no live stream the user verifies via a later scan.
+    /// </summary>
     private static string BuildBootstrapScript(
         string taskName,
         string workerPath,
@@ -843,7 +807,6 @@ public sealed class WuaUpdateLane
         string worker,
         PatchOptions options)
     {
-        // Single-quoted here-string keeps the worker literal (no PS interpolation/escaping).
         string trigger = options is { RunBehavior: RunBehavior.ScheduleAt, ScheduleAt: { } at }
             ? $"$trigger = New-ScheduledTaskTrigger -Once -At '{at.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)}'"
             : "$trigger = $null";
@@ -852,9 +815,7 @@ public sealed class WuaUpdateLane
             ? "-Trigger $trigger "
             : string.Empty;
 
-        string startNow = options.RunBehavior == RunBehavior.ScheduleAt
-            ? string.Empty
-            : $"Start-ScheduledTask -TaskName '{taskName}'";
+        string runNow = options.RunBehavior == RunBehavior.ScheduleAt ? "$false" : "$true";
 
         return $$"""
             $ErrorActionPreference = 'Stop'
@@ -868,31 +829,107 @@ public sealed class WuaUpdateLane
             $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
             $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
             Register-ScheduledTask -TaskName '{{taskName}}' -Action $action -Principal $principal -Settings $settings {{registerTrigger}}-Force | Out-Null
-            {{startNow}}
-            'started'
-            """;
-    }
 
-    private static string BuildPollScript(string taskName, string progressPath)
-    {
-        // Emit the latest progress JSON if present; otherwise, if the task is gone, the marker.
-        return $$"""
-            if (Test-Path '{{progressPath}}') {
-                Get-Content -Path '{{progressPath}}' -Raw
-            } else {
-                $t = Get-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue
-                if ($null -eq $t) { '{{TaskGoneMarker}}' } else { '' }
+            $runNow = {{runNow}}
+            if (-not $runNow) {
+                # ScheduleAt: task is registered and will fire at its trigger. There is no live
+                # stream to deliver here — emit one terminal-shape line so the client surfaces
+                # a status, then exit. No cleanup; the task must survive until it runs.
+                $sched = [PSCustomObject]@{
+                    phase = 'Done'; message = 'Scheduled — will run at the configured time'
+                    percent = 100; available = 0; installed = 0; failed = 0
+                    rebootPending = $false; ts = (Get-Date).Ticks
+                }
+                Write-Output ($sched | ConvertTo-Json -Compress)
+                return
+            }
+
+            Start-ScheduledTask -TaskName '{{taskName}}'
+
+            # --- Streaming controller -------------------------------------------------
+            # Position-tracked tail of the append-only progress log. Read only the new
+            # bytes since last iteration (positional FileStream over FileShare.ReadWrite
+            # so the worker can keep appending), split on newlines, and emit each line to
+            # Write-Output. Loop exits on a terminal phase (Done / Error / PendingReboot).
+            try {
+                $started = Get-Date
+                $lastSeen = Get-Date
+                $lastLen = 0L
+                $done = $false
+
+                while (-not $done) {
+                    Start-Sleep -Milliseconds 500
+
+                    if (Test-Path '{{progressPath}}') {
+                        $file = Get-Item '{{progressPath}}'
+                        if ($file.Length -gt $lastLen) {
+                            $newText = ''
+                            try {
+                                $fs = [System.IO.File]::Open('{{progressPath}}', 'Open', 'Read', 'ReadWrite')
+                                $fs.Seek($lastLen, 'Begin') | Out-Null
+                                $sr = New-Object System.IO.StreamReader($fs, [System.Text.Encoding]::UTF8)
+                                $newText = $sr.ReadToEnd()
+                                $lastLen = $fs.Length
+                                $sr.Dispose()
+                                $fs.Dispose()
+                            } catch { }
+
+                            foreach ($line in ($newText -split "`r?`n")) {
+                                if ([string]::IsNullOrWhiteSpace($line)) { continue }
+                                # Emit the raw JSON line to the client.
+                                $line
+                                $lastSeen = Get-Date
+                                # Check for a terminal phase so we know when to stop tailing.
+                                try {
+                                    $obj = $line | ConvertFrom-Json
+                                    if ($obj.phase -eq 'Done' -or $obj.phase -eq 'Error' -or $obj.phase -eq 'PendingReboot') {
+                                        $done = $true
+                                        break
+                                    }
+                                } catch { }
+                            }
+                        }
+                    }
+
+                    # Heartbeat — 15s of silence emits a synthetic line so a long sync-mode
+                    # download never looks identical to a hung channel from the UI's POV.
+                    if (-not $done -and ((Get-Date) - $lastSeen) -gt [TimeSpan]::FromSeconds(15)) {
+                        $hb = [PSCustomObject]@{
+                            phase = 'Heartbeat'; message = 'Worker still running…'; percent = $null
+                            available = 0; installed = 0; failed = 0; rebootPending = $false
+                            ts = (Get-Date).Ticks
+                        }
+                        Write-Output ($hb | ConvertTo-Json -Compress)
+                        $lastSeen = Get-Date
+                    }
+
+                    # If the worker never started writing within 2 min, give up — the task
+                    # didn't launch (typically a permission or COM-server issue on the host).
+                    if (-not (Test-Path '{{progressPath}}') -and ((Get-Date) - $started) -gt [TimeSpan]::FromMinutes(2)) {
+                        $err = [PSCustomObject]@{
+                            phase = 'Error'; message = 'Worker did not start writing progress within 2 minutes.'
+                            percent = $null; available = 0; installed = 0; failed = 0
+                            rebootPending = $false; ts = (Get-Date).Ticks
+                        }
+                        Write-Output ($err | ConvertTo-Json -Compress)
+                        $done = $true
+                    }
+                }
+            } finally {
+                # Always reap the task + temp files, even on a client cancel (which trips
+                # PipelineStoppedException — PowerShell still runs the finally block).
+                Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
+                Remove-Item '{{workerPath}}' -Force -ErrorAction SilentlyContinue
+                Remove-Item '{{progressPath}}' -Force -ErrorAction SilentlyContinue
             }
             """;
     }
 
-    private static string BuildCleanupScript(string taskName, string workerPath, string progressPath) =>
+    private static string BuildSafetyCleanupScript(string taskName, string workerPath, string progressPath) =>
         $$"""
             Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
             Remove-Item '{{workerPath}}' -Force -ErrorAction SilentlyContinue
             Remove-Item '{{progressPath}}' -Force -ErrorAction SilentlyContinue
-            Remove-Item '{{progressPath}}.tmp' -Force -ErrorAction SilentlyContinue
-            'cleaned'
             """;
 
     private static string BuildExcludePsArray(IReadOnlyList<string> excludes)
