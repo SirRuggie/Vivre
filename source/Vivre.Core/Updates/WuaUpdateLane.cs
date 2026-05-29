@@ -563,56 +563,15 @@ public sealed class WuaUpdateLane
                 Move-Item -Path $tmp -Destination $progressPath -Force
             }
 
-            # Compile minimal C# shims that implement the four WUA callback interfaces, so
-            # BeginDownload / BeginInstall receive real IUnknown callbacks (PowerShell $null
-            # is rejected by many WUA configs — Begin* throws or returns null and we collapse
-            # to the sync fallback with no live byte/percent progress). The Invoke bodies are
-            # empty; we don't actually need the callbacks to do anything because we poll
-            # $job.GetProgress() ourselves. If Add-Type fails (rare — needs csc.exe in tmp),
-            # $dlCb / $instCb stay null and Begin* gets the same nulls as before, then the
-            # per-iteration sync fallback kicks in. WUA IIDs are from wuapi.h.
-            $dlCb = $null
-            $instCb = $null
-            try {
-                Add-Type -ErrorAction Stop -TypeDefinition @'
-            using System;
-            using System.Runtime.InteropServices;
-            [ComImport, Guid("8C3F1CDD-6173-4591-AEBD-A56A53CA77C1"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IVivreDownloadCompletedCallback {
-                void Invoke([In, MarshalAs(UnmanagedType.IDispatch)] object downloadJob, [In, MarshalAs(UnmanagedType.IDispatch)] object callbackArgs);
-            }
-            [ComImport, Guid("8C3F1CDD-6173-4591-AEBD-A56A53CA77C2"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IVivreDownloadProgressChangedCallback {
-                void Invoke([In, MarshalAs(UnmanagedType.IDispatch)] object downloadJob, [In, MarshalAs(UnmanagedType.IDispatch)] object callbackArgs);
-            }
-            [ComImport, Guid("45F4F944-B81A-4C26-B2C6-1B0FBF5D8C0E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IVivreInstallationCompletedCallback {
-                void Invoke([In, MarshalAs(UnmanagedType.IDispatch)] object installationJob, [In, MarshalAs(UnmanagedType.IDispatch)] object callbackArgs);
-            }
-            [ComImport, Guid("E01402D5-F8DA-43BA-A012-38894BD048F1"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IVivreInstallationProgressChangedCallback {
-                void Invoke([In, MarshalAs(UnmanagedType.IDispatch)] object installationJob, [In, MarshalAs(UnmanagedType.IDispatch)] object callbackArgs);
-            }
-            public class VivreDownloadCallback : IVivreDownloadCompletedCallback, IVivreDownloadProgressChangedCallback {
-                public void Invoke(object downloadJob, object callbackArgs) { }
-            }
-            public class VivreInstallCallback : IVivreInstallationCompletedCallback, IVivreInstallationProgressChangedCallback {
-                public void Invoke(object installationJob, object callbackArgs) { }
-            }
-            '@
-                $dlCb = New-Object VivreDownloadCallback
-                $instCb = New-Object VivreInstallCallback
-            } catch {
-                $dlCb = $null
-                $instCb = $null
-            }
-
             try {
                 Write-Progress2 'Searching' 'Searching for updates…' 0 0 0 0 $false
                 $session  = New-Object -ComObject Microsoft.Update.Session
                 $searcher = $session.CreateUpdateSearcher()
                 {{SourceSelectionSnippet(sel)}}
                 $result = $searcher.Search("IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'{{typeFilter}}")
+                # Interim heartbeat so a slow filter step (large \$result.Updates) doesn't look
+                # identical to a still-running search.
+                Write-Progress2 'Searching' ("Search complete — {0} updates returned, filtering…" -f $result.Updates.Count) 3 0 0 0 $false
 
                 $applicable = @()
                 foreach ($u in $result.Updates) {
@@ -631,6 +590,7 @@ public sealed class WuaUpdateLane
                     Write-Progress2 'Done' 'No applicable updates' 100 0 0 0 $false
                     return
                 }
+                Write-Progress2 'Searching' ("$total update(s) matched — starting downloads…") 5 $total 0 0 $false
 
                 $installed = 0; $failed = 0; $rebootPending = $false
                 for ($i = 0; $i -lt $total; $i++) {
@@ -661,7 +621,7 @@ public sealed class WuaUpdateLane
                     # otherwise, and the per-iteration catch above eats every update as $failed.
                     $dlResult = $null
                     $dlJob = $null
-                    try { $dlJob = $downloader.BeginDownload($dlCb, $dlCb, $null) } catch { }
+                    try { $dlJob = $downloader.BeginDownload($null, $null, $null) } catch { }
 
                     if ($null -ne $dlJob) {
                         while (-not $dlJob.IsCompleted) {
@@ -705,7 +665,7 @@ public sealed class WuaUpdateLane
                     # Same Begin*-with-sync-fallback pattern as Download above.
                     $r = $null
                     $instJob = $null
-                    try { $instJob = $installer.BeginInstall($instCb, $instCb, $null) } catch { }
+                    try { $instJob = $installer.BeginInstall($null, $null, $null) } catch { }
 
                     if ($null -ne $instJob) {
                         while (-not $instJob.IsCompleted) {
@@ -786,29 +746,6 @@ public sealed class WuaUpdateLane
                 Move-Item -Path $tmp -Destination $progressPath -Force
             }
 
-            # Same WUA callback shims as the install worker — see there for the rationale.
-            $instCb = $null
-            try {
-                Add-Type -ErrorAction Stop -TypeDefinition @'
-            using System;
-            using System.Runtime.InteropServices;
-            [ComImport, Guid("45F4F944-B81A-4C26-B2C6-1B0FBF5D8C0E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IVivreInstallationCompletedCallback {
-                void Invoke([In, MarshalAs(UnmanagedType.IDispatch)] object installationJob, [In, MarshalAs(UnmanagedType.IDispatch)] object callbackArgs);
-            }
-            [ComImport, Guid("E01402D5-F8DA-43BA-A012-38894BD048F1"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-            public interface IVivreInstallationProgressChangedCallback {
-                void Invoke([In, MarshalAs(UnmanagedType.IDispatch)] object installationJob, [In, MarshalAs(UnmanagedType.IDispatch)] object callbackArgs);
-            }
-            public class VivreInstallCallback : IVivreInstallationCompletedCallback, IVivreInstallationProgressChangedCallback {
-                public void Invoke(object installationJob, object callbackArgs) { }
-            }
-            '@
-                $instCb = New-Object VivreInstallCallback
-            } catch {
-                $instCb = $null
-            }
-
             try {
                 Write-Progress2 'Searching' 'Finding installed updates to uninstall…' 0 0 0 0 $false
                 $session  = New-Object -ComObject Microsoft.Update.Session
@@ -854,7 +791,7 @@ public sealed class WuaUpdateLane
                     # Same Begin*-with-sync-fallback pattern as the install worker uses.
                     $r = $null
                     $unJob = $null
-                    try { $unJob = $installer.BeginUninstall($instCb, $instCb, $null) } catch { }
+                    try { $unJob = $installer.BeginUninstall($null, $null, $null) } catch { }
 
                     if ($null -ne $unJob) {
                         while (-not $unJob.IsCompleted) {
