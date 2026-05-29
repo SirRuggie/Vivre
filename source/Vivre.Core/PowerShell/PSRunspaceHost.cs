@@ -22,7 +22,7 @@ public sealed class PSRunspaceHost : IPowerShellHost
         using Runspace runspace = RunspaceFactory.CreateRunspace();
         runspace.Open();
 
-        return await RunInRunspaceAsync(runspace, script, cancellationToken).ConfigureAwait(false);
+        return await RunInRunspaceAsync(runspace, script, onOutput: null, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<PSExecutionResult> RunRemoteAsync(
@@ -68,17 +68,63 @@ public sealed class PSRunspaceHost : IPowerShellHost
             throw;
         }
 
-        return await RunInRunspaceAsync(runspace, script, cancellationToken).ConfigureAwait(false);
+        return await RunInRunspaceAsync(runspace, script, onOutput: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PSExecutionResult> RunRemoteStreamingAsync(
+        string host,
+        string script,
+        Action<PSObject> onOutput,
+        PSCredential? credential = null,
+        int port = 5985,
+        bool useSsl = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(script);
+        ArgumentNullException.ThrowIfNull(onOutput);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var connectionInfo = new WSManConnectionInfo(
+            useSsl,
+            host,
+            port,
+            "/wsman",
+            "http://schemas.microsoft.com/powershell/Microsoft.PowerShell",
+            credential)
+        {
+            OpenTimeout = RemoteOpenTimeoutMs,
+        };
+
+        using Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
+
+        Task openTask = Task.Run(runspace.Open);
+        try
+        {
+            await openTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            _ = openTask.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            throw;
+        }
+
+        return await RunInRunspaceAsync(runspace, script, onOutput, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
     /// Shared execution path for local and remote runspaces: invoke the script,
     /// capture the error/warning streams, and translate a cancellation-driven stop
-    /// into <see cref="OperationCanceledException"/>.
+    /// into <see cref="OperationCanceledException"/>. When <paramref name="onOutput"/>
+    /// is non-null, the output stream is delivered live via
+    /// <see cref="PSDataCollection{T}.DataAdded"/> as the script emits each object —
+    /// this is what the streaming install/uninstall controller uses to forward per-line
+    /// progress JSON back to the UI as it arrives rather than at end-of-script.
     /// </summary>
     private static async Task<PSExecutionResult> RunInRunspaceAsync(
         Runspace runspace,
         string script,
+        Action<PSObject>? onOutput,
         CancellationToken cancellationToken)
     {
         using var ps = SmaPowerShell.Create();
@@ -90,9 +136,34 @@ public sealed class PSRunspaceHost : IPowerShellHost
         using CancellationTokenRegistration registration =
             cancellationToken.Register(static state => ((SmaPowerShell)state!).Stop(), ps);
 
+        // Pre-allocate the output collection so streaming-mode handlers can subscribe
+        // before the pipeline starts producing items. In non-streaming mode this is the
+        // same end-state collection that the synchronous overload would return.
+        var output = new PSDataCollection<PSObject>();
+        if (onOutput is not null)
+        {
+            output.DataAdded += (sender, args) =>
+            {
+                // Snapshot the new index off the collection — the handler may be invoked
+                // after additional items have already been appended.
+                PSObject? added = ((PSDataCollection<PSObject>)sender!)[args.Index];
+                if (added is not null)
+                {
+                    try
+                    {
+                        onOutput(added);
+                    }
+                    catch
+                    {
+                        // A faulty consumer callback must not tear the pipeline down.
+                    }
+                }
+            };
+        }
+
         try
         {
-            PSDataCollection<PSObject> output = await ps.InvokeAsync().ConfigureAwait(false);
+            await ps.InvokeAsync<PSObject, PSObject>(input: null, output).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 
