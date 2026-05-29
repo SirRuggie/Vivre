@@ -68,7 +68,7 @@ public sealed class WuaUpdateLane
         ConnectionCredential? credential,
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken) =>
-        RunWorkerTaskAsync(host, options, credential, progress, BuildInstallWorker, "Starting update task…", cancellationToken);
+        RunWorkerTaskAsync(host, options, credential, progress, "Install", "Starting update task…", cancellationToken);
 
     public Task<HostPatchStatus> UninstallAsync(
         string host,
@@ -76,7 +76,7 @@ public sealed class WuaUpdateLane
         ConnectionCredential? credential,
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken) =>
-        RunWorkerTaskAsync(host, options, credential, progress, BuildUninstallWorker, "Starting uninstall task…", cancellationToken);
+        RunWorkerTaskAsync(host, options, credential, progress, "Uninstall", "Starting uninstall task…", cancellationToken);
 
     /// <summary>
     /// Shared implementation for install + uninstall. One persistent PSSession from start to
@@ -93,7 +93,7 @@ public sealed class WuaUpdateLane
         PatchOptions options,
         ConnectionCredential? credential,
         IProgress<HostPatchStatus> progress,
-        Func<PatchOptions, string, string> buildWorker,
+        string mode,
         string startingMessage,
         CancellationToken cancellationToken)
     {
@@ -103,13 +103,20 @@ public sealed class WuaUpdateLane
 
         string runId = Guid.NewGuid().ToString("N");
         string taskName = $"Vivre_WUA_{runId}";
-        string workerPath = $@"C:\Windows\Temp\{taskName}.ps1";
+        string exePath = $@"C:\Windows\Temp\{taskName}.exe";
+        string configPath = $@"C:\Windows\Temp\{taskName}_config.json";
         string progressPath = $@"C:\Windows\Temp\{taskName}_progress.json";
 
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, startingMessage));
 
-        string worker = buildWorker(options, progressPath);
-        string bootstrap = BuildBootstrapScript(taskName, workerPath, progressPath, worker, options);
+        // The worker is now the compiled Vivre.UpdateAgent.exe (real WUA progress callbacks),
+        // not a generated PowerShell script. Ship it + its config to the target as base64 so the
+        // bootstrap can drop both with no here-string quoting concerns; the SYSTEM task runs the
+        // EXE and it writes the same progress JSONL the streaming controller below tails.
+        string base64Exe = Convert.ToBase64String(ReadAgentBytes());
+        string base64Config = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes(BuildAgentConfigJson(options, progressPath, mode)));
+        string bootstrap = BuildBootstrapScript(taskName, exePath, configPath, progressPath, base64Exe, base64Config, options);
 
         HostPatchStatus last = new(PatchPhase.Scanning, startingMessage);
         bool progressSeen = false;
@@ -166,14 +173,14 @@ public sealed class WuaUpdateLane
             progress.Report(new HostPatchStatus(PatchPhase.Idle, "Cancelled"));
             // Server-side finally usually handles cleanup, but if the pipeline was torn down
             // before that block ran we still want to reap the task + temp files.
-            await SafetyCleanupAsync(host, taskName, workerPath, progressPath, credential).ConfigureAwait(false);
+            await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
             throw;
         }
         catch (Exception ex)
         {
             var failed = HostPatchStatus.Failed(ex.Message);
             progress.Report(failed);
-            await SafetyCleanupAsync(host, taskName, workerPath, progressPath, credential).ConfigureAwait(false);
+            await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
             return failed;
         }
     }
@@ -230,13 +237,14 @@ public sealed class WuaUpdateLane
     private async Task SafetyCleanupAsync(
         string host,
         string taskName,
-        string workerPath,
+        string exePath,
+        string configPath,
         string progressPath,
         ConnectionCredential? credential)
     {
         try
         {
-            string script = BuildSafetyCleanupScript(taskName, workerPath, progressPath);
+            string script = BuildSafetyCleanupScript(taskName, exePath, configPath, progressPath);
             await RunScriptAsync(host, script, credential, CancellationToken.None).ConfigureAwait(false);
         }
         catch
@@ -379,9 +387,12 @@ public sealed class WuaUpdateLane
         string typeFilter = includeDrivers ? string.Empty : " and Type='Software'";
         // Applicable → "IsInstalled=0" (default), Installed → "IsInstalled=1" (the uninstall flow).
         string installedFilter = scope == UpdateScope.Installed ? "IsInstalled=1" : "IsInstalled=0";
-        // For Applicable, IsUninstallable isn't meaningful — emit $true so the checklist's checkboxes
-        // are enabled for install. For Installed, use the WUA value so non-uninstallable rows are greyed.
-        string uninstallableExpr = scope == UpdateScope.Installed ? "[bool]$u.IsUninstallable" : "$true";
+        // For Applicable, removability isn't meaningful — emit $true so the checklist's checkboxes are
+        // enabled for install. For Installed, a row is "removable" if WUA can uninstall it OR DISM has a
+        // removable Package_for_KB for it; rows where neither applies are greyed (truly non-removable).
+        string uninstallableExpr = scope == UpdateScope.Installed
+            ? "([bool]$u.IsUninstallable -or ($kb -and $dismKbs.Contains([string]$kb)))"
+            : "$true";
         // For Installed scope, build maps from the WUA history so each row carries its install date.
         // Match primarily by UpdateID (Identity GUID); also keep a KB-keyed fallback because WUSA-
         // installed updates sometimes show different UpdateIDs in history than the current Identity.
@@ -413,6 +424,21 @@ public sealed class WuaUpdateLane
                 } catch { }
                 """
             : "$dates = @{}; $kbDates = @{}";
+        // Installed scope only: the set of KB numbers DISM can remove (an installed Package_for_KB
+        // exists). Unioned with WUA IsUninstallable so the checklist greys only updates neither engine
+        // can remove. Read-only enumeration over the supported Dism module; if it can't run (older box,
+        // permissions over WinRM), the set stays empty and removability falls back to WUA alone.
+        string dismBlock = scope == UpdateScope.Installed
+            ? """
+                $dismKbs = New-Object 'System.Collections.Generic.HashSet[string]'
+                try {
+                    foreach ($p in (Get-WindowsPackage -Online -ErrorAction Stop)) {
+                        if ("$($p.PackageState)" -ne 'Installed') { continue }
+                        if ($p.PackageName -match 'KB(\d+)') { [void]$dismKbs.Add($matches[1]) }
+                    }
+                } catch { }
+                """
+            : "$dismKbs = New-Object 'System.Collections.Generic.HashSet[string]'";
         // Multi-line block (not inline) so the lookup is wrapped in its own try/catch — a single
         // update with a stale Identity COM proxy can otherwise throw NRE and kill the whole scan
         // foreach.
@@ -437,6 +463,7 @@ public sealed class WuaUpdateLane
             $searcher = $session.CreateUpdateSearcher()
             {{SourceSelectionSnippet(sel)}}
             {{historyBlock}}
+            {{dismBlock}}
             $result = $searcher.Search("{{installedFilter}} and IsHidden=0{{typeFilter}}")
             foreach ($u in $result.Updates) {
                 # Wrap the whole iteration so a single weird update (stale COM proxy, missing
@@ -480,331 +507,75 @@ public sealed class WuaUpdateLane
     }
 
     /// <summary>
-    /// The worker the SYSTEM task runs locally: search → per-update download+install,
-    /// writing a progress JSON after each step. All settings are baked in (no args).
+    /// The settings JSON the on-target <c>Vivre.UpdateAgent.exe</c> reads (its AgentConfig
+    /// deserialises this). Keys match AgentConfig's property names. <paramref name="mode"/> is
+    /// "Install" or "Uninstall"; <paramref name="progressPath"/> is the target path the agent
+    /// appends its progress JSONL to (the same file the streaming controller tails). Public so
+    /// the shape stays host-free unit-testable.
     /// </summary>
-    private static string BuildInstallWorker(PatchOptions options, string progressPath)
+    public static string BuildAgentConfigJson(PatchOptions options, string progressPath, string mode)
     {
         WuaServerSelection sel = WuaServerSelection.For(options.Source);
-        string excludeArray = BuildExcludePsArray(options.ExcludeNameContains);
-        string includeArray = BuildIncludeKbPsArray(options.IncludeKbArticleIds);
-        // Default off matches the Windows Update UI and BatchPatch; flip via PatchOptions.IncludeDrivers.
-        string typeFilter = options.IncludeDrivers ? string.Empty : " and Type='Software'";
-        string rebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait ? "$true" : "$false";
+        var config = new
+        {
+            Mode = mode,
+            ServerSelection = sel.ServerSelection,
+            ServiceId = sel.ServiceId,
+            IncludeDrivers = options.IncludeDrivers,
+            Excludes = (options.ExcludeNameContains ?? [])
+                .Where(t => !string.IsNullOrWhiteSpace(t))
+                .Select(t => t.Trim())
+                .ToArray(),
+            IncludeKbs = (options.IncludeKbArticleIds ?? [])
+                .Where(kb => !string.IsNullOrWhiteSpace(kb))
+                .Select(kb => kb.Trim())
+                .ToArray(),
+            RebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait,
+            ProgressPath = progressPath,
+        };
 
-        // Single-quoted here-string callers embed this verbatim — keep it free of a leading '@.
-        return $$"""
-            $ErrorActionPreference = 'Stop'
-            $progressPath = '{{progressPath}}'
-            $excludes = {{excludeArray}}
-            $includeKbs = {{includeArray}}
-            $rebootAfter = {{rebootAfter}}
-
-            function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
-                # ts (timestamp ticks) makes every write unique even when nothing visible changed,
-                # so a slow link can still tell "still going" from "wedged". Append-only: each
-                # progress emit is one JSON object on its own line, so the streaming controller
-                # tails the log via Get-Content -Wait and never loses an intermediate state to a
-                # mid-overwrite read (the old single-file overwrite pattern lost intermediate
-                # states the moment polls landed between two Set-Content/Move-Item pairs).
-                $obj = [PSCustomObject]@{
-                    phase = $phase; message = $message; percent = $percent
-                    available = $available; installed = $installed; failed = $failed
-                    rebootPending = [bool]$rebootPending
-                    ts = (Get-Date).Ticks
-                }
-                $line = ($obj | ConvertTo-Json -Compress)
-                Add-Content -Path $progressPath -Value $line -Encoding UTF8
-            }
-
-            try {
-                Write-Progress2 'Searching' 'Searching for updates…' 0 0 0 0 $false
-                $session  = New-Object -ComObject Microsoft.Update.Session
-                $searcher = $session.CreateUpdateSearcher()
-                {{SourceSelectionSnippet(sel)}}
-                $result = $searcher.Search("IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'{{typeFilter}}")
-                # Interim heartbeat so a slow filter step (large \$result.Updates) doesn't look
-                # identical to a still-running search.
-                Write-Progress2 'Searching' ("Search complete — {0} updates returned, filtering…" -f $result.Updates.Count) 3 0 0 0 $false
-
-                $applicable = @()
-                foreach ($u in $result.Updates) {
-                    $skip = $false
-                    foreach ($x in $excludes) { if ($u.Title -like "*$x*") { $skip = $true; break } }
-                    if (-not $skip -and $includeKbs.Count -gt 0) {
-                        $kb = $null
-                        if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
-                        if (($null -eq $kb) -or ($includeKbs -notcontains $kb)) { $skip = $true }
-                    }
-                    if (-not $skip) { $applicable += $u }
-                }
-
-                $total = $applicable.Count
-                if ($total -eq 0) {
-                    Write-Progress2 'Done' 'No applicable updates' 100 0 0 0 $false
-                    return
-                }
-                Write-Progress2 'Searching' ("$total update(s) matched — starting downloads…") 5 $total 0 0 $false
-
-                $installed = 0; $failed = 0; $rebootPending = $false
-                for ($i = 0; $i -lt $total; $i++) {
-                    # Per-iteration try/catch: a single update throwing (BeginDownload returning
-                    # null, stale COM proxy, missing property, COM HRESULT) shouldn't kill the
-                    # whole worker. The bare CLR exception text from one bad update was bubbling
-                    # up to the outer catch and surfacing as the row's UpdateMessage.
-                    try {
-                    $u = $applicable[$i]
-
-                    $coll = New-Object -ComObject Microsoft.Update.UpdateColl
-                    $null = $coll.Add($u)
-
-                    # --- Download with live progress polling ---
-                    # Begin* returns immediately with an IDownloadJob; we poll GetProgress() every
-                    # 2s and write a fresh JSON so the UI shows real bytes/percent. Each update
-                    # contributes 50% download + 50% install to the overall progress bar.
-                    $dlPrefix = "Downloading {0} of {1}" -f ($i + 1), $total
-                    Write-Progress2 'Downloading' "$dlPrefix starting…" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
-
-                    $downloader = $session.CreateUpdateDownloader()
-                    $downloader.Updates = $coll
-
-                    # Try the async Begin* path for live byte/percent progress; fall back to
-                    # synchronous Download() if Begin* throws or returns null. The async API
-                    # wants non-null IUnknown callbacks on some WUA configurations and PS can't
-                    # supply real COM callback objects — so we silently get NRE on .IsCompleted
-                    # otherwise, and the per-iteration catch above eats every update as $failed.
-                    $dlResult = $null
-                    $dlJob = $null
-                    try { $dlJob = $downloader.BeginDownload($null, $null, $null) } catch { }
-
-                    if ($null -ne $dlJob) {
-                        while (-not $dlJob.IsCompleted) {
-                            Start-Sleep -Seconds 2
-                            $dlPct = 0; $bytesDl = 0; $bytesTotal = 0
-                            try {
-                                $dlProgress = $dlJob.GetProgress()
-                                $dlPct = [int]$dlProgress.PercentComplete
-                                $bytesDl = [long]$dlProgress.TotalBytesDownloaded
-                                $bytesTotal = [long]$dlProgress.TotalBytesToDownload
-                            } catch { }
-                            $overallPct = [int]((($i * 100) + ($dlPct / 2)) / $total)
-                            if ($bytesTotal -gt 0) {
-                                $sizeText = " ({0:N0}/{1:N0} MB)" -f ($bytesDl / 1MB), ($bytesTotal / 1MB)
-                            } else {
-                                $sizeText = ""
-                            }
-                            Write-Progress2 'Downloading' ("$dlPrefix — $dlPct%$sizeText") $overallPct $total $installed $failed $rebootPending
-                        }
-                        try { $dlResult = $downloader.EndDownload($dlJob) } catch { }
-                    }
-
-                    if ($null -eq $dlResult) {
-                        Write-Progress2 'Downloading' "$dlPrefix (sync mode — no live progress)" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
-                        $dlResult = $downloader.Download()
-                    }
-                    if ($dlResult.ResultCode -ne 2) {
-                        $failed++
-                        $overallPct = [int]((($i + 1) * 100) / $total)
-                        Write-Progress2 'Downloading' ("$dlPrefix failed (result code {0})" -f $dlResult.ResultCode) $overallPct $total $installed $failed $rebootPending
-                        continue
-                    }
-
-                    # --- Install with live progress polling ---
-                    $instPrefix = "Installing {0} of {1}" -f ($i + 1), $total
-                    Write-Progress2 'Installing' "$instPrefix starting…" ([int]((($i * 100) + 50) / $total)) $total $installed $failed $rebootPending
-
-                    $installer = $session.CreateUpdateInstaller()
-                    $installer.Updates = $coll
-
-                    # Same Begin*-with-sync-fallback pattern as Download above.
-                    $r = $null
-                    $instJob = $null
-                    try { $instJob = $installer.BeginInstall($null, $null, $null) } catch { }
-
-                    if ($null -ne $instJob) {
-                        while (-not $instJob.IsCompleted) {
-                            Start-Sleep -Seconds 2
-                            $instPct = 0
-                            try {
-                                $instProgress = $instJob.GetProgress()
-                                $instPct = [int]$instProgress.PercentComplete
-                            } catch { }
-                            $overallPct = [int]((($i * 100) + 50 + ($instPct / 2)) / $total)
-                            Write-Progress2 'Installing' ("$instPrefix — $instPct%") $overallPct $total $installed $failed $rebootPending
-                        }
-                        try { $r = $installer.EndInstall($instJob) } catch { }
-                    }
-
-                    if ($null -eq $r) {
-                        Write-Progress2 'Installing' "$instPrefix (sync mode — no live progress)" ([int]((($i * 100) + 50) / $total)) $total $installed $failed $rebootPending
-                        $r = $installer.Install()
-                    }
-                    if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
-                    if ($r.RebootRequired) { $rebootPending = $true }
-                    } catch {
-                        # Mark this row failed, surface a useful message, keep going.
-                        $failed++
-                        $overallPct = [int]((($i + 1) * 100) / $total)
-                        Write-Progress2 'Installing' ("Update {0} of {1} failed: $($_.Exception.Message)" -f ($i + 1), $total) $overallPct $total $installed $failed $rebootPending
-                    }
-                }
-
-                # Surface the failed count in the final message — "Installed 0 update(s)" hides
-                # the difference between "no work to do" and "5 attempts all failed".
-                $summary = if ($failed -gt 0) { "Installed $installed, $failed failed" } else { "Installed $installed update(s)" }
-                if ($rebootPending) {
-                    Write-Progress2 'PendingReboot' "$summary, reboot required" 100 $total $installed $failed $true
-                    if ($rebootAfter) {
-                        Start-Sleep -Seconds 5
-                        Restart-Computer -Force
-                    }
-                } else {
-                    Write-Progress2 'Done' $summary 100 $total $installed $failed $false
-                }
-            } catch {
-                Write-Progress2 'Error' ($_.Exception.Message) $null 0 0 0 $false
-            }
-            """;
+        return JsonSerializer.Serialize(config);
     }
 
     /// <summary>
-    /// The uninstall worker the SYSTEM task runs locally: search installed updates → filter to the
-    /// per-machine selection (uninstallable + ticked) → per-update <c>BeginUninstall</c> with live
-    /// progress polling, writing the same progress JSON shape the install worker does so the
-    /// controller's <c>PollAsync</c> works unchanged. Reuses <c>Phase=Installing</c> because there
-    /// is no separate Uninstalling phase in the JSON schema; the message says "Uninstalling X of N".
+    /// Reads the bundled <c>Vivre.UpdateAgent.exe</c> (shipped next to the app) so the bootstrap
+    /// can base64-drop it onto the target. Throws a clear error if it's missing from the build
+    /// output rather than silently producing a non-working install.
     /// </summary>
-    private static string BuildUninstallWorker(PatchOptions options, string progressPath)
+    private static byte[] ReadAgentBytes()
     {
-        WuaServerSelection sel = WuaServerSelection.For(options.Source);
-        string excludeArray = BuildExcludePsArray(options.ExcludeNameContains);
-        string includeArray = BuildIncludeKbPsArray(options.IncludeKbArticleIds);
-        string rebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait ? "$true" : "$false";
+        string path = System.IO.Path.Combine(AppContext.BaseDirectory, AgentExeName);
+        if (!System.IO.File.Exists(path))
+        {
+            throw new System.IO.FileNotFoundException(
+                $"Update agent '{AgentExeName}' was not found next to the app ({path}). The build/publish must bundle it.",
+                path);
+        }
 
-        return $$"""
-            $ErrorActionPreference = 'Stop'
-            $progressPath = '{{progressPath}}'
-            $excludes = {{excludeArray}}
-            $includeKbs = {{includeArray}}
-            $rebootAfter = {{rebootAfter}}
-
-            function Write-Progress2($phase, $message, $percent, $available, $installed, $failed, $rebootPending) {
-                # Append-only JSONL — see BuildInstallWorker for the rationale.
-                $obj = [PSCustomObject]@{
-                    phase = $phase; message = $message; percent = $percent
-                    available = $available; installed = $installed; failed = $failed
-                    rebootPending = [bool]$rebootPending
-                    ts = (Get-Date).Ticks
-                }
-                $line = ($obj | ConvertTo-Json -Compress)
-                Add-Content -Path $progressPath -Value $line -Encoding UTF8
-            }
-
-            try {
-                Write-Progress2 'Searching' 'Finding installed updates to uninstall…' 0 0 0 0 $false
-                $session  = New-Object -ComObject Microsoft.Update.Session
-                $searcher = $session.CreateUpdateSearcher()
-                {{SourceSelectionSnippet(sel)}}
-                $result = $searcher.Search("IsInstalled=1 and IsHidden=0")
-
-                $applicable = @()
-                foreach ($u in $result.Updates) {
-                    if (-not $u.IsUninstallable) { continue }
-                    $skip = $false
-                    foreach ($x in $excludes) { if ($u.Title -like "*$x*") { $skip = $true; break } }
-                    if (-not $skip -and $includeKbs.Count -gt 0) {
-                        $kb = $null
-                        if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
-                        if (($null -eq $kb) -or ($includeKbs -notcontains $kb)) { $skip = $true }
-                    }
-                    if (-not $skip) { $applicable += $u }
-                }
-
-                $total = $applicable.Count
-                if ($total -eq 0) {
-                    Write-Progress2 'Done' 'No uninstallable updates matched the selection' 100 0 0 0 $false
-                    return
-                }
-
-                $installed = 0; $failed = 0; $rebootPending = $false
-                for ($i = 0; $i -lt $total; $i++) {
-                    # Per-iteration try/catch — see the install worker for the rationale; the same
-                    # one-row-shouldn't-nuke-the-worker pattern applies to uninstall.
-                    try {
-                    $u = $applicable[$i]
-
-                    $coll = New-Object -ComObject Microsoft.Update.UpdateColl
-                    $null = $coll.Add($u)
-
-                    $unPrefix = "Uninstalling {0} of {1}" -f ($i + 1), $total
-                    Write-Progress2 'Installing' "$unPrefix starting…" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
-
-                    $installer = $session.CreateUpdateInstaller()
-                    $installer.Updates = $coll
-
-                    # Same Begin*-with-sync-fallback pattern as the install worker uses.
-                    $r = $null
-                    $unJob = $null
-                    try { $unJob = $installer.BeginUninstall($null, $null, $null) } catch { }
-
-                    if ($null -ne $unJob) {
-                        while (-not $unJob.IsCompleted) {
-                            Start-Sleep -Seconds 2
-                            $unPct = 0
-                            try {
-                                $unProgress = $unJob.GetProgress()
-                                $unPct = [int]$unProgress.PercentComplete
-                            } catch { }
-                            $overallPct = [int]((($i * 100) + $unPct) / $total)
-                            Write-Progress2 'Installing' ("$unPrefix — $unPct%") $overallPct $total $installed $failed $rebootPending
-                        }
-                        try { $r = $installer.EndUninstall($unJob) } catch { }
-                    }
-
-                    if ($null -eq $r) {
-                        Write-Progress2 'Installing' "$unPrefix (sync mode — no live progress)" ([int](($i * 100) / $total)) $total $installed $failed $rebootPending
-                        $r = $installer.Uninstall()
-                    }
-                    if ($r.ResultCode -eq 2) { $installed++ } else { $failed++ }
-                    if ($r.RebootRequired) { $rebootPending = $true }
-                    } catch {
-                        $failed++
-                        $overallPct = [int]((($i + 1) * 100) / $total)
-                        Write-Progress2 'Installing' ("Update {0} of {1} failed: $($_.Exception.Message)" -f ($i + 1), $total) $overallPct $total $installed $failed $rebootPending
-                    }
-                }
-
-                $summary = if ($failed -gt 0) { "Uninstalled $installed, $failed failed" } else { "Uninstalled $installed update(s)" }
-                if ($rebootPending) {
-                    Write-Progress2 'PendingReboot' "$summary, reboot required" 100 $total $installed $failed $true
-                    if ($rebootAfter) {
-                        Start-Sleep -Seconds 5
-                        Restart-Computer -Force
-                    }
-                } else {
-                    Write-Progress2 'Done' $summary 100 $total $installed $failed $false
-                }
-            } catch {
-                Write-Progress2 'Error' ($_.Exception.Message) $null 0 0 0 $false
-            }
-            """;
+        return System.IO.File.ReadAllBytes(path);
     }
 
+    private const string AgentExeName = "Vivre.UpdateAgent.exe";
+
+
     /// <summary>
-    /// The whole server-side controller in one script: write the worker file, register the
-    /// SYSTEM scheduled task, start it, then <b>tail the append-only progress log and emit
-    /// each new line via <c>Write-Output</c></b>. The client receives those lines live via
-    /// <see cref="PSDataCollection{T}.DataAdded"/> — one persistent PSSession from start to
-    /// finish, no per-poll WinRM shells. Cleanup (unregister + delete files) runs in a
-    /// <c>finally</c> so a client cancel still tears the task down. For <see cref="RunBehavior.ScheduleAt"/>
-    /// the script registers the task and returns immediately; the task fires at its trigger
-    /// and writes the log file, but with no live stream the user verifies via a later scan.
+    /// The whole server-side controller in one script: base64-drop the compiled agent EXE +
+    /// its config onto the target, register the SYSTEM scheduled task to run the EXE, start it,
+    /// then <b>tail the append-only progress log and emit each new line via <c>Write-Output</c></b>.
+    /// The client receives those lines live via <see cref="PSDataCollection{T}.DataAdded"/> —
+    /// one persistent PSSession from start to finish, no per-poll WinRM shells. Cleanup
+    /// (unregister + delete files) runs in a <c>finally</c> so a client cancel still tears the
+    /// task down. For <see cref="RunBehavior.ScheduleAt"/> the script registers the task and
+    /// returns immediately; the task fires at its trigger and writes the log file, but with no
+    /// live stream the user verifies via a later scan (so the EXE + config are left in place).
     /// </summary>
     private static string BuildBootstrapScript(
         string taskName,
-        string workerPath,
+        string exePath,
+        string configPath,
         string progressPath,
-        string worker,
+        string base64Exe,
+        string base64Config,
         PatchOptions options)
     {
         string trigger = options is { RunBehavior: RunBehavior.ScheduleAt, ScheduleAt: { } at }
@@ -819,13 +590,11 @@ public sealed class WuaUpdateLane
 
         return $$"""
             $ErrorActionPreference = 'Stop'
-            $worker = @'
-            {{worker}}
-            '@
-            Set-Content -Path '{{workerPath}}' -Value $worker -Encoding UTF8
+            [System.IO.File]::WriteAllBytes('{{exePath}}', [Convert]::FromBase64String('{{base64Exe}}'))
+            [System.IO.File]::WriteAllBytes('{{configPath}}', [Convert]::FromBase64String('{{base64Config}}'))
             Remove-Item '{{progressPath}}' -ErrorAction SilentlyContinue
             {{trigger}}
-            $action    = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-NoProfile -ExecutionPolicy Bypass -File "{{workerPath}}"'
+            $action    = New-ScheduledTaskAction -Execute '{{exePath}}' -Argument '"{{configPath}}"'
             $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
             $settings  = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 6)
             Register-ScheduledTask -TaskName '{{taskName}}' -Action $action -Principal $principal -Settings $settings {{registerTrigger}}-Force | Out-Null
@@ -891,8 +660,8 @@ public sealed class WuaUpdateLane
                         }
                     }
 
-                    # Heartbeat — 15s of silence emits a synthetic line so a long sync-mode
-                    # download never looks identical to a hung channel from the UI's POV.
+                    # Heartbeat — 15s of silence emits a synthetic line so a quiet stretch (a
+                    # long single-update install) never looks identical to a hung channel.
                     if (-not $done -and ((Get-Date) - $lastSeen) -gt [TimeSpan]::FromSeconds(15)) {
                         $hb = [PSCustomObject]@{
                             phase = 'Heartbeat'; message = 'Worker still running…'; percent = $null
@@ -919,41 +688,20 @@ public sealed class WuaUpdateLane
                 # Always reap the task + temp files, even on a client cancel (which trips
                 # PipelineStoppedException — PowerShell still runs the finally block).
                 Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
-                Remove-Item '{{workerPath}}' -Force -ErrorAction SilentlyContinue
+                Remove-Item '{{exePath}}' -Force -ErrorAction SilentlyContinue
+                Remove-Item '{{configPath}}' -Force -ErrorAction SilentlyContinue
                 Remove-Item '{{progressPath}}' -Force -ErrorAction SilentlyContinue
             }
             """;
     }
 
-    private static string BuildSafetyCleanupScript(string taskName, string workerPath, string progressPath) =>
+    private static string BuildSafetyCleanupScript(string taskName, string exePath, string configPath, string progressPath) =>
         $$"""
             Unregister-ScheduledTask -TaskName '{{taskName}}' -Confirm:$false -ErrorAction SilentlyContinue
-            Remove-Item '{{workerPath}}' -Force -ErrorAction SilentlyContinue
+            Remove-Item '{{exePath}}' -Force -ErrorAction SilentlyContinue
+            Remove-Item '{{configPath}}' -Force -ErrorAction SilentlyContinue
             Remove-Item '{{progressPath}}' -Force -ErrorAction SilentlyContinue
             """;
-
-    private static string BuildExcludePsArray(IReadOnlyList<string> excludes)
-    {
-        string[] terms = [.. (excludes ?? [])
-            .Where(t => !string.IsNullOrWhiteSpace(t))
-            .Select(t => "'" + t.Trim().Replace("'", "''", StringComparison.Ordinal) + "'")];
-
-        return terms.Length == 0 ? "@()" : "@(" + string.Join(", ", terms) + ")";
-    }
-
-    /// <summary>
-    /// Builds the PowerShell array literal of KB ids the install worker restricts to (the ticked
-    /// updates from the per-machine checklist). Null/empty ⇒ <c>@()</c>, which the worker treats as
-    /// "no KB filter" (install everything not excluded). Public for host-free testing.
-    /// </summary>
-    public static string BuildIncludeKbPsArray(IReadOnlyList<string>? includeKbs)
-    {
-        string[] terms = [.. (includeKbs ?? [])
-            .Where(kb => !string.IsNullOrWhiteSpace(kb))
-            .Select(kb => "'" + kb.Trim().Replace("'", "''", StringComparison.Ordinal) + "'")];
-
-        return terms.Length == 0 ? "@()" : "@(" + string.Join(", ", terms) + ")";
-    }
 
     // --- helpers ----------------------------------------------------------
 

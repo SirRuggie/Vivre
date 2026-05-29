@@ -107,6 +107,15 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial string? UpdateError { get; set; }
 
+    /// <summary>
+    /// True while an install/uninstall is actively running against this row (set for the whole
+    /// streaming operation). Guards against a concurrent scan or a second install clobbering an
+    /// in-flight row's progress — a scan skips a patching row, and an install/uninstall won't
+    /// start on one already patching. Not persisted; runtime-only.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool IsPatching { get; set; }
+
     /// <summary>Queued scheduled-task action for the "Scheduled task action" column (Phase 2).</summary>
     [ObservableProperty]
     public partial string? ScheduledAction { get; set; }

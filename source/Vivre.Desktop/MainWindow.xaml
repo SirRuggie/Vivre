@@ -107,9 +107,10 @@
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <!-- In Windows Update mode the toolbar leads with Scan + Install, separated from the machine actions. -->
-                <ui:Button Icon="{ui:SymbolIcon Search24}" Content="Scan"
+                <ui:Button Icon="{ui:SymbolIcon Search24}" Content="Scan all"
                            Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
-                           Command="{Binding SelectedTab.ScanUpdatesCommand}" />
+                           Command="{Binding SelectedTab.ScanUpdatesCommand}"
+                           ToolTip="Scan every machine in this tab for updates. (To scan just one, use 'Scan this machine' in its side panel.)" />
                 <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install"
                            Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
                            Command="{Binding SelectedTab.InstallUpdatesCommand}"

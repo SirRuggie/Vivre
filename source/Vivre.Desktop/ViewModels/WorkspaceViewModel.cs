@@ -1,4 +1,6 @@
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Management.Automation;
 using Vivre.Core.Computers;
 using Vivre.Core.Credentials;
@@ -39,7 +41,14 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IHostRebootProbe _rebootProbe;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
-    private CancellationTokenSource? _cts;
+    // All operations currently running in this tab (Ping/Check/Scan/Install/Uninstall sweeps).
+    // Tracked as a set rather than a single field so independent operations can overlap — Stop
+    // cancels them all, and IsBusy stays true until the last one finishes. This is what lets you
+    // add + scan a new machine while another machine is mid-install.
+    private readonly List<CancellationTokenSource> _activeCts = [];
+    // One shared throttle for all patch sweeps so concurrent install/scan sweeps still honour a
+    // single fleet-wide concurrency cap (sized once from the session options).
+    private readonly SemaphoreSlim _patchThrottle;
     private CancellationTokenSource? _monitorCts;
 
     /// <summary>Tab title (editable — double-click the tab header to rename).</summary>
@@ -66,6 +75,8 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanFocusedCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyPropertyChangedFor(nameof(CanInstallChecked))]
+    [NotifyPropertyChangedFor(nameof(CanUninstallChecked))]
     public partial bool IsBusy { get; set; }
 
     /// <summary>
@@ -91,6 +102,8 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(FocusedActiveUpdates))]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
+    [NotifyPropertyChangedFor(nameof(CanInstallChecked))]
+    [NotifyPropertyChangedFor(nameof(CanUninstallChecked))]
     public partial bool IsInstalledMode { get; set; }
 
     /// <summary>Inverse of <see cref="IsInstalledMode"/> — bound by the "Applicable" radio in the side panel.</summary>
@@ -143,7 +156,12 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanFocusedCommand))]
     [NotifyPropertyChangedFor(nameof(FocusedActiveUpdates))]
+    [NotifyPropertyChangedFor(nameof(CanInstallChecked))]
+    [NotifyPropertyChangedFor(nameof(CanUninstallChecked))]
     public partial Computer? FocusedComputer { get; set; }
+
+    /// <summary>Re-track the checklist for command/enable-state when the focused machine changes.</summary>
+    partial void OnFocusedComputerChanged(Computer? value) => RetrackChecklist();
 
     /// <summary>
     /// When true, a background loop continuously re-checks every row's online/offline state on
@@ -170,6 +188,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _scripts = scripts;
         _patch = patch;
         _patchOptions = patchOptions;
+        _patchThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentHosts));
         _rebootProbe = rebootProbe;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
@@ -207,6 +226,10 @@ public partial class WorkspaceViewModel : ObservableObject
             c.UpdateMessage = value ? c.InstalledMessage : c.ApplicableMessage;
             c.UpdatesAvailable = value ? c.InstalledCount : c.ApplicableCount;
         }
+
+        // The active checklist collection changed (Applicable ↔ Installed) — re-track it for the
+        // Install/Uninstall enable-state.
+        RetrackChecklist();
     }
 
     /// <summary>
@@ -340,7 +363,9 @@ public partial class WorkspaceViewModel : ObservableObject
     private Task InstallCheckedAsync() =>
         FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync) : Task.CompletedTask;
 
-    private bool CanInstallChecked() =>
+    /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
+    /// checklist, not busy. Bound by the button's enable-state and re-evaluated as boxes toggle.</summary>
+    public bool CanInstallChecked =>
         !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0;
 
     /// <summary>
@@ -352,7 +377,11 @@ public partial class WorkspaceViewModel : ObservableObject
     public Task UninstallCheckedAsync() =>
         FocusedComputer is { } c ? RunPatchSweepAsync([c], UninstallRowAsync) : Task.CompletedTask;
 
-    private bool CanUninstallChecked() =>
+    /// <summary>Whether "Uninstall checked" can run: Installed scope, not busy, and at least one
+    /// ticked update that's actually removable. Bound by the button's enable-state (the button uses
+    /// a Click handler for its confirm dialog) and re-evaluated live as boxes toggle, so it's
+    /// disabled before a scan and whenever nothing removable is ticked.</summary>
+    public bool CanUninstallChecked =>
         !IsBusy && IsInstalledMode && FocusedComputer is { } c
         && c.InstalledUpdates.Any(u => u.IsSelected && u.IsUninstallable);
 
@@ -371,19 +400,120 @@ public partial class WorkspaceViewModel : ObservableObject
             return;
         }
 
-        ObservableCollection<SelectableUpdate> target = IsInstalledMode ? c.InstalledUpdates : c.ApplicableUpdates;
+        bool installed = IsInstalledMode;
+        ObservableCollection<SelectableUpdate> target = installed ? c.InstalledUpdates : c.ApplicableUpdates;
         foreach (SelectableUpdate update in target)
         {
-            update.IsSelected = selected;
+            // "All" never selects a non-removable update in Installed scope (neither WUA nor DISM
+            // can remove it, so ticking it is meaningless). "None" always clears.
+            update.IsSelected = selected && (!installed || update.IsUninstallable);
         }
+    }
+
+    // --- checklist enable-state tracking ----------------------------------
+    // The Install/Uninstall buttons depend on which updates are ticked, but an individual
+    // SelectableUpdate.IsSelected toggle raises no VM-level notification. Track the focused,
+    // active-scope checklist and refresh the button enable-state when its items toggle or the
+    // collection is repopulated by a scan.
+
+    private ObservableCollection<SelectableUpdate>? _trackedChecklist;
+
+    private void RetrackChecklist()
+    {
+        if (_trackedChecklist is not null)
+        {
+            _trackedChecklist.CollectionChanged -= OnChecklistCollectionChanged;
+            foreach (SelectableUpdate u in _trackedChecklist)
+            {
+                u.PropertyChanged -= OnChecklistItemChanged;
+            }
+        }
+
+        _trackedChecklist = FocusedActiveUpdates;
+
+        if (_trackedChecklist is not null)
+        {
+            _trackedChecklist.CollectionChanged += OnChecklistCollectionChanged;
+            foreach (SelectableUpdate u in _trackedChecklist)
+            {
+                u.PropertyChanged += OnChecklistItemChanged;
+            }
+        }
+
+        RefreshChecklistCommandState();
+    }
+
+    private void OnChecklistCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        // A scan repopulates the collection (Clear + Add) — re-hook every item, then refresh.
+        if (_trackedChecklist is not null)
+        {
+            foreach (SelectableUpdate u in _trackedChecklist)
+            {
+                u.PropertyChanged -= OnChecklistItemChanged;
+                u.PropertyChanged += OnChecklistItemChanged;
+            }
+        }
+
+        RefreshChecklistCommandState();
+    }
+
+    private void OnChecklistItemChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(SelectableUpdate.IsSelected))
+        {
+            RefreshChecklistCommandState();
+        }
+    }
+
+    private void RefreshChecklistCommandState()
+    {
+        InstallCheckedCommand.NotifyCanExecuteChanged();
+        UninstallCheckedCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanInstallChecked));
+        OnPropertyChanged(nameof(CanUninstallChecked));
     }
 
     /// <summary>Cancels the running sweep and halts continuous monitoring (the Monitor toggle restarts it).</summary>
     [RelayCommand(CanExecute = nameof(CanStop))]
     private void Stop()
     {
-        _cts?.Cancel();
+        // Cancel every running operation (there may be several overlapping — e.g. an install on one
+        // machine and a scan on another). BeginStop in the PS host makes each cancel non-blocking.
+        foreach (CancellationTokenSource cts in _activeCts.ToArray())
+        {
+            try
+            {
+                cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Finished between the snapshot and here — nothing to cancel.
+            }
+        }
+
         IsMonitoring = false;
+    }
+
+    /// <summary>Registers a new running operation: tracks its CTS (so Stop cancels it) and flips the
+    /// busy state on. IsBusy stays on until the last concurrent operation ends.</summary>
+    private CancellationTokenSource BeginOperation()
+    {
+        var cts = new CancellationTokenSource();
+        _activeCts.Add(cts);
+        IsBusy = true;
+        return cts;
+    }
+
+    /// <summary>Retires an operation; clears busy only when none remain.</summary>
+    private void EndOperation(CancellationTokenSource cts)
+    {
+        _activeCts.Remove(cts);
+        cts.Dispose();
+        if (_activeCts.Count == 0)
+        {
+            IsBusy = false;
+        }
     }
 
     /// <summary>Drops the offline rows from the grid.</summary>
@@ -414,9 +544,7 @@ public partial class WorkspaceViewModel : ObservableObject
 
     private async Task RunSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation)
     {
-        using var cts = new CancellationTokenSource();
-        _cts = cts;
-        IsBusy = true;
+        CancellationTokenSource cts = BeginOperation();
         try
         {
             Task work = Task.WhenAll(rows.Select(row => operation(row, cts.Token)));
@@ -442,8 +570,7 @@ public partial class WorkspaceViewModel : ObservableObject
         }
         finally
         {
-            IsBusy = false;
-            _cts = null;
+            EndOperation(cts);
         }
     }
 
@@ -454,13 +581,12 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     private async Task RunPatchSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation)
     {
-        using var cts = new CancellationTokenSource();
-        _cts = cts;
-        IsBusy = true;
-        using var throttle = new SemaphoreSlim(Math.Max(1, _patchOptions.MaxConcurrentHosts));
+        CancellationTokenSource cts = BeginOperation();
         try
         {
-            Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, throttle, cts.Token)));
+            // Shared throttle: concurrent patch sweeps (e.g. a fleet install plus a one-off scan)
+            // still honour a single fleet-wide concurrency cap.
+            Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, _patchThrottle, cts.Token)));
 
             Task cancelled = Task.Delay(Timeout.Infinite, cts.Token);
             if (await Task.WhenAny(work, cancelled) == work)
@@ -478,8 +604,7 @@ public partial class WorkspaceViewModel : ObservableObject
         }
         finally
         {
-            IsBusy = false;
-            _cts = null;
+            EndOperation(cts);
         }
     }
 
@@ -515,6 +640,14 @@ public partial class WorkspaceViewModel : ObservableObject
 
     private async Task ScanRowAsync(Computer computer, CancellationToken token)
     {
+        // Never scan a row that's mid-install/uninstall — a scan would overwrite its live phase,
+        // message and progress and clear its checklist. Leave the in-flight operation untouched.
+        if (computer.IsPatching)
+        {
+            _activity.Info(computer.Name, "Scan skipped — an update operation is in progress on this machine.");
+            return;
+        }
+
         computer.UpdateError = null;
         computer.UpdateProgress = null;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
@@ -548,6 +681,11 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     private async Task UninstallRowAsync(Computer computer, CancellationToken token)
     {
+        if (computer.IsPatching)
+        {
+            return;
+        }
+
         if (computer.InstalledUpdates.Count == 0
             || !computer.InstalledUpdates.Any(u => u.IsSelected && u.IsUninstallable))
         {
@@ -574,6 +712,7 @@ public partial class WorkspaceViewModel : ObservableObject
         options.Scope = UpdateScope.Installed;
         options.IncludeKbArticleIds = selectedKbs;
 
+        computer.IsPatching = true;
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
@@ -597,10 +736,20 @@ public partial class WorkspaceViewModel : ObservableObject
             computer.UpdatePhase = PatchPhase.Error.ToString();
             _activity.Error(computer.Name, $"Uninstall failed — {ex.Message}");
         }
+        finally
+        {
+            computer.IsPatching = false;
+        }
     }
 
     private async Task InstallRowAsync(Computer computer, CancellationToken token)
     {
+        // Don't start a second operation on a row already installing/uninstalling.
+        if (computer.IsPatching)
+        {
+            return;
+        }
+
         // Honor the per-machine checklist. Clone the shared options (concurrent hosts read it) and
         // scope this host's install to its ticked KBs: never scanned ⇒ no checklist ⇒ install all
         // (not-excluded, unchanged); scanned but nothing ticked ⇒ skip without launching a task.
@@ -631,6 +780,7 @@ public partial class WorkspaceViewModel : ObservableObject
             options.IncludeKbArticleIds = selectedKbs;
         }
 
+        computer.IsPatching = true;
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
@@ -655,6 +805,10 @@ public partial class WorkspaceViewModel : ObservableObject
             computer.UpdateMessage = "Install failed";
             computer.UpdatePhase = PatchPhase.Error.ToString();
             _activity.Error(computer.Name, $"Install failed — {ex.Message}");
+        }
+        finally
+        {
+            computer.IsPatching = false;
         }
     }
 
@@ -733,10 +887,22 @@ public partial class WorkspaceViewModel : ObservableObject
             prior[existing.Kb ?? existing.Title] = existing.IsSelected;
         }
 
+        // Install (Applicable) defaults ticked — you opt out of the few you don't want.
+        // Uninstall (Installed) defaults UNticked — removal is opt-in, never accidental.
+        bool defaultSelected = scope != UpdateScope.Installed;
+
         target.Clear();
         foreach (SoftwareUpdate update in updates)
         {
-            bool selected = !prior.TryGetValue(update.ArticleId ?? update.Title, out bool wasSelected) || wasSelected;
+            bool selected = prior.TryGetValue(update.ArticleId ?? update.Title, out bool wasSelected)
+                ? wasSelected
+                : defaultSelected;
+            // Never pre-tick a non-removable update in Installed scope (can't be removed by any engine).
+            if (scope == UpdateScope.Installed && !update.IsUninstallable)
+            {
+                selected = false;
+            }
+
             target.Add(new SelectableUpdate(update, selected));
         }
     }

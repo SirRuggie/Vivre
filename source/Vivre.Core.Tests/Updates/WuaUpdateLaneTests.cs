@@ -1,4 +1,6 @@
+using System.Linq;
 using System.Management.Automation;
+using System.Text.Json;
 using Vivre.Core.PowerShell;
 using Vivre.Core.Updates;
 using Xunit;
@@ -206,21 +208,49 @@ public class WuaUpdateLaneTests
         Assert.Null(original.IncludeKbArticleIds);
     }
 
-    // --- include-KB PowerShell array (per-machine checklist) ---
+    // --- agent config JSON (the settings the on-target Vivre.UpdateAgent.exe reads) ---
 
     [Fact]
-    public void BuildIncludeKbPsArray_is_empty_for_null_or_blank()
+    public void BuildAgentConfigJson_maps_options_to_agent_keys()
     {
-        Assert.Equal("@()", WuaUpdateLane.BuildIncludeKbPsArray(null));
-        Assert.Equal("@()", WuaUpdateLane.BuildIncludeKbPsArray([]));
-        Assert.Equal("@()", WuaUpdateLane.BuildIncludeKbPsArray(["   "]));
+        var options = new PatchOptions
+        {
+            Source = UpdateSource.MicrosoftUpdate,
+            IncludeDrivers = true,
+            ExcludeNameContains = ["SQL", " Silverlight "],
+            IncludeKbArticleIds = ["5037782", " 5040442 "],
+            RebootBehavior = RebootBehavior.RebootAndWait,
+        };
+
+        using JsonDocument doc = JsonDocument.Parse(
+            WuaUpdateLane.BuildAgentConfigJson(options, @"C:\Windows\Temp\p.json", "Install"));
+        JsonElement root = doc.RootElement;
+
+        Assert.Equal("Install", root.GetProperty("Mode").GetString());
+        Assert.Equal(3, root.GetProperty("ServerSelection").GetInt32());
+        Assert.Equal(WuaServerSelection.MicrosoftUpdateServiceId, root.GetProperty("ServiceId").GetString());
+        Assert.True(root.GetProperty("IncludeDrivers").GetBoolean());
+        Assert.True(root.GetProperty("RebootAfter").GetBoolean());
+        Assert.Equal(@"C:\Windows\Temp\p.json", root.GetProperty("ProgressPath").GetString());
+        Assert.Equal(["SQL", "Silverlight"], [.. root.GetProperty("Excludes").EnumerateArray().Select(e => e.GetString()!)]);
+        Assert.Equal(["5037782", "5040442"], [.. root.GetProperty("IncludeKbs").EnumerateArray().Select(e => e.GetString()!)]);
     }
 
     [Fact]
-    public void BuildIncludeKbPsArray_quotes_trims_and_escapes_each_kb()
+    public void BuildAgentConfigJson_emits_empty_arrays_and_null_serviceid_for_windows_update()
     {
-        Assert.Equal("@('5037782', '5040442')", WuaUpdateLane.BuildIncludeKbPsArray(["5037782", " 5040442 "]));
-        Assert.Equal("@('a''b')", WuaUpdateLane.BuildIncludeKbPsArray(["a'b"]));
+        var options = new PatchOptions { Source = UpdateSource.WindowsUpdate, IncludeKbArticleIds = null };
+
+        using JsonDocument doc = JsonDocument.Parse(
+            WuaUpdateLane.BuildAgentConfigJson(options, "p", "Uninstall"));
+        JsonElement root = doc.RootElement;
+
+        Assert.Equal("Uninstall", root.GetProperty("Mode").GetString());
+        Assert.Equal(2, root.GetProperty("ServerSelection").GetInt32());
+        Assert.Equal(JsonValueKind.Null, root.GetProperty("ServiceId").ValueKind);
+        Assert.Empty(root.GetProperty("IncludeKbs").EnumerateArray());
+        Assert.Empty(root.GetProperty("Excludes").EnumerateArray());
+        Assert.False(root.GetProperty("RebootAfter").GetBoolean());
     }
 
     // --- helpers ---
