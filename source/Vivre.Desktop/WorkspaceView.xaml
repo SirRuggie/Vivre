@@ -307,8 +307,9 @@
                         <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
                                    Appearance="Primary" Icon="{ui:SymbolIcon Delete24}" Content="Uninstall checked"
                                    Click="OnUninstallChecked"
+                                   IsEnabled="{Binding CanUninstallChecked}"
                                    Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
-                                   ToolTip="Uninstall the ticked updates on this machine. Greyed rows are non-uninstallable. May require a reboot." />
+                                   ToolTip="Uninstall the ticked updates on this machine (Windows Update first, then DISM). Greyed rows can't be removed by either. May require a reboot. Disabled until at least one removable update is ticked." />
 
                         <Grid>
                         <ui:DataGrid ItemsSource="{Binding FocusedActiveUpdates}"
@@ -327,7 +328,7 @@
                                                     <Style TargetType="CheckBox">
                                                         <Style.Triggers>
                                                             <Trigger Property="IsEnabled" Value="False">
-                                                                <Setter Property="ToolTip" Value="This update is marked non-uninstallable by Windows." />
+                                                                <Setter Property="ToolTip" Value="Neither Windows Update nor DISM can remove this update." />
                                                             </Trigger>
                                                         </Style.Triggers>
                                                     </Style>
@@ -382,9 +383,9 @@
                                        IsHitTestVisible="False" />
                             <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center"
                                        Appearance="Primary"
-                                       Icon="{ui:SymbolIcon Search24}" Content="Scan"
+                                       Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
                                        Command="{Binding ScanFocusedCommand}"
-                                       ToolTip="Scan only this machine (faster than the toolbar Scan, which sweeps the whole tab).">
+                                       ToolTip="Scan only this machine. The toolbar Scan (top bar) scans every machine in the tab.">
                                 <ui:Button.Style>
                                     <Style TargetType="{x:Type ui:Button}">
                                         <Setter Property="Visibility" Value="Collapsed" />

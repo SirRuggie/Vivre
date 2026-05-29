@@ -2,7 +2,18 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Vivre.Core\Vivre.Core.csproj" />
+    <!-- Build the net48 Windows Update agent first so it ships beside Vivre.exe (copied by the
+         targets below). ReferenceOutputAssembly=false: it's a standalone net48 EXE dropped onto
+         targets by WuaUpdateLane, not a managed reference of this net10 app. -->
+    <ProjectReference Include="..\Vivre.UpdateAgent\Vivre.UpdateAgent.csproj"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
+
+  <PropertyGroup>
+    <!-- The net48 update-agent ProjectReference is intentionally cross-TFM (build-order only,
+         ReferenceOutputAssembly=false) — NU1702 just flags the TFM mismatch, which is expected. -->
+    <NoWarn>$(NoWarn);NU1702</NoWarn>
+  </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="WPF-UI" Version="4.3.0" />
@@ -71,6 +82,30 @@
           DestinationFiles="@(_PSSdkModulesPublish->'$(PublishDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')"
           SkipUnchangedFiles="true"
           Condition="'@(_PSSdkModulesPublish)' != ''" />
+  </Target>
+
+  <!--
+    Ship the compiled Windows Update agent (Vivre.UpdateAgent.exe) beside Vivre.exe so
+    WuaUpdateLane can base64-drop it onto targets. Built first via the ProjectReference above;
+    these copies mirror it into the build output (dotnet run / debug) and the publish output
+    (the shipped zip), matching the PowerShell-SDK-Modules copies.
+  -->
+  <PropertyGroup>
+    <_UpdateAgentExe>$(MSBuildThisFileDirectory)..\Vivre.UpdateAgent\bin\$(Configuration)\net48\Vivre.UpdateAgent.exe</_UpdateAgentExe>
+  </PropertyGroup>
+
+  <Target Name="CopyUpdateAgentAfterBuild" AfterTargets="Build">
+    <Copy SourceFiles="$(_UpdateAgentExe)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(_UpdateAgentExe)')" />
+  </Target>
+
+  <Target Name="CopyUpdateAgentAfterPublish" AfterTargets="Publish">
+    <Copy SourceFiles="$(_UpdateAgentExe)"
+          DestinationFolder="$(PublishDir)"
+          SkipUnchangedFiles="true"
+          Condition="Exists('$(_UpdateAgentExe)')" />
   </Target>
 
 </Project>

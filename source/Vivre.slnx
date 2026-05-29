@@ -2,4 +2,5 @@
   <Project Path="Vivre.Core.Tests/Vivre.Core.Tests.csproj" />
   <Project Path="Vivre.Core/Vivre.Core.csproj" />
   <Project Path="Vivre.Desktop/Vivre.Desktop.csproj" />
+  <Project Path="Vivre.UpdateAgent/Vivre.UpdateAgent.csproj" />
 </Solution>

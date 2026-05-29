@@ -133,8 +133,30 @@ public sealed class PSRunspaceHost : IPowerShellHost
 
         // Cancellation stops the running pipeline; the SDK then surfaces a
         // PipelineStoppedException, which we translate to OperationCanceledException.
+        //
+        // BeginStop, NOT Stop: CancellationTokenSource.Cancel() runs this callback
+        // synchronously on the *caller's* thread — which is the UI thread for the Stop
+        // button. PowerShell.Stop() BLOCKS until the pipeline has actually stopped, and
+        // for a remote pipeline whose target is rebooting/unreachable that can take the
+        // full WSMan timeout (minutes) — freezing the whole UI. BeginStop initiates the
+        // stop and returns immediately: the awaited InvokeAsync below still throws
+        // PipelineStoppedException once the stop lands, the runspace's using-dispose tears
+        // the half-dead connection down, and the sweep's cancellation race has already
+        // freed the UI. A cancellation callback must never throw, so swallow the benign
+        // races (pipeline already completed/stopped/disposed — nothing left to stop).
         using CancellationTokenRegistration registration =
-            cancellationToken.Register(static state => ((SmaPowerShell)state!).Stop(), ps);
+            cancellationToken.Register(static state =>
+            {
+                try
+                {
+                    ((SmaPowerShell)state!).BeginStop(null, null);
+                }
+                catch (Exception)
+                {
+                    // Pipeline already finished or was disposed between the token tripping
+                    // and this callback — there is nothing left to cancel.
+                }
+            }, ps);
 
         // Pre-allocate the output collection so streaming-mode handlers can subscribe
         // before the pipeline starts producing items. In non-streaming mode this is the
