@@ -61,6 +61,16 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>Rows the user has selected (kept in sync from the grid's selection).</summary>
     public ObservableCollection<Computer> SelectedComputers { get; } = [];
 
+    /// <summary>Live "Online: (online/total)" summary for this tab, shown in the bottom status bar.
+    /// Recomputed whenever a row's online state changes or the list grows/shrinks.</summary>
+    public string OnlineSummary => $"Online: ({Computers.Count(c => c.IsOnline == true)}/{Computers.Count})";
+
+    /// <summary>Names of the online rows (IsOnline == true), for the grid's Copy ▸ All online devices.</summary>
+    public IReadOnlyList<string> OnlineNames => [.. Computers.Where(c => c.IsOnline == true).Select(c => c.Name)];
+
+    /// <summary>Names of the offline rows (IsOnline == false), for the grid's Copy ▸ All offline devices.</summary>
+    public IReadOnlyList<string> OfflineNames => [.. Computers.Where(c => c.IsOnline == false).Select(c => c.Name)];
+
     /// <summary>ConfigMgr client actions shown in the grid's right-click menu.</summary>
     public IReadOnlyList<ScheduleAction> ClientActions => Core.Sccm.ClientActions.All;
 
@@ -223,8 +233,40 @@ public partial class WorkspaceViewModel : ObservableObject
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
         IsInstalledMode = patchOptions.Scope == UpdateScope.Installed;
+        // Keep the status-bar online/total live as rows are added/removed and their state changes.
+        Computers.CollectionChanged += OnComputersChanged;
         // No seeding — the grid starts empty; the user opens a saved list or pastes one.
         IsMonitoring = true; // start watching online/offline straight away
+    }
+
+    /// <summary>Subscribe/unsubscribe row state changes and refresh the online/total summary.</summary>
+    private void OnComputersChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.OldItems is not null)
+        {
+            foreach (Computer c in e.OldItems)
+            {
+                c.PropertyChanged -= OnComputerStateChanged;
+            }
+        }
+
+        if (e.NewItems is not null)
+        {
+            foreach (Computer c in e.NewItems)
+            {
+                c.PropertyChanged += OnComputerStateChanged;
+            }
+        }
+
+        OnPropertyChanged(nameof(OnlineSummary));
+    }
+
+    private void OnComputerStateChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(Computer.IsOnline))
+        {
+            OnPropertyChanged(nameof(OnlineSummary));
+        }
     }
 
     /// <summary>Push the Source toggle's value into the shared patch options.</summary>

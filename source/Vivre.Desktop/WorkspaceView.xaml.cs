@@ -168,6 +168,11 @@ public partial class WorkspaceView : UserControl
 
         var copy = new MenuItem { Header = "Copy" };
 
+        bool hasSelection = vm.SelectedComputers.Count > 0;
+        var copyNames = new MenuItem { Header = "Name(s)", IsEnabled = hasSelection };
+        copyNames.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.Name));
+        copy.Items.Add(copyNames);
+
         var copyRows = new MenuItem { Header = "Selected rows" };
         copyRows.Click += (_, _) => CopySelectedRows();
         copy.Items.Add(copyRows);
@@ -189,6 +194,16 @@ public partial class WorkspaceView : UserControl
         var copyErr = new MenuItem { Header = "Last error", IsEnabled = !string.IsNullOrEmpty(firstSelected?.LastError) };
         copyErr.Click += (_, _) => CopyField(static c => c.LastError);
         copy.Items.Add(copyErr);
+
+        copy.Items.Add(new Separator());
+
+        var copyOnline = new MenuItem { Header = "All online devices", IsEnabled = vm.OnlineNames.Count > 0 };
+        copyOnline.Click += (_, _) => CopyLines(vm.OnlineNames);
+        copy.Items.Add(copyOnline);
+
+        var copyOffline = new MenuItem { Header = "All offline devices", IsEnabled = vm.OfflineNames.Count > 0 };
+        copyOffline.Click += (_, _) => CopyLines(vm.OfflineNames);
+        copy.Items.Add(copyOffline);
 
         _gridMenu.Items.Add(copy);
 
@@ -320,6 +335,16 @@ public partial class WorkspaceView : UserControl
 
         IReadOnlyList<Computer> resolved = targets.Count > 0 ? targets : [.. vm.Computers];
         new ScriptRunnerWindow(resolved, vm.Credentials, vm.Activity, vm.ScriptLibrary, initialScript) { Owner = OwnerWindow }.Show();
+    }
+
+    /// <summary>Copies the values one-per-line to the clipboard (Excel-friendly), skipping blanks.</summary>
+    private static void CopyLines(IEnumerable<string?> values)
+    {
+        string text = string.Join(Environment.NewLine, values.Where(v => !string.IsNullOrEmpty(v)));
+        if (text.Length > 0)
+        {
+            Clipboard.SetText(text);
+        }
     }
 
     private void CopySelectedRows()
