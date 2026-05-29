@@ -1101,11 +1101,14 @@ public partial class WorkspaceViewModel : ObservableObject
         computer.LastStatus = online ? "Online" : "Offline";
         if (online)
         {
-            // Came back. If we'd seen it go down (a reboot/shutdown), report how long it was out and
-            // whether it still wants another reboot — the BatchPatch-style "it's back" signal.
-            if (previous == false && computer.WentOfflineAt is { } downAt)
+            // Came back from a known-offline state (a reboot/shutdown) — the BatchPatch-style
+            // "it's back" signal. Include the down-time when we caught the moment it went down;
+            // otherwise still announce the return (don't depend on having seen the down start).
+            if (previous == false)
             {
-                string back = $"Back online {DateTime.Now:HH:mm} (down {FormatDownDuration(DateTime.Now - downAt)})";
+                string back = computer.WentOfflineAt is { } downAt
+                    ? $"Back online {DateTime.Now:HH:mm} (down {FormatDownDuration(DateTime.Now - downAt)})"
+                    : $"Back online {DateTime.Now:HH:mm}";
                 if (computer.RebootRequired == true)
                 {
                     back += " — reboot still pending";
@@ -1161,10 +1164,29 @@ public partial class WorkspaceViewModel : ObservableObject
         await _rebootProbeThrottle.WaitAsync(token).ConfigureAwait(false);
         try
         {
+            bool? was = computer.RebootRequired;
             bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token).ConfigureAwait(false);
             if (pending.HasValue)
             {
                 computer.RebootRequired = pending.Value;
+
+                // Reboot just resolved (was pending, now clear) — the reliable "it's back, reboot
+                // done" signal (this transition is what turns the dot green, so it always runs even
+                // if the monitor never caught the brief offline window). Narrate it and strip the
+                // now-stale ", reboot required" the install left on the update message.
+                if (was == true && !pending.Value)
+                {
+                    computer.RebootMessage = $"Reboot complete — back online {DateTime.Now:HH:mm}";
+                    computer.WentOfflineAt = null;
+
+                    const string suffix = ", reboot required";
+                    if (computer.UpdateMessage is { } msg && msg.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                    {
+                        computer.UpdateMessage = msg[..^suffix.Length];
+                    }
+
+                    _activity.Info(computer.Name, "Reboot complete — back online, no reboot pending");
+                }
             }
         }
         catch (OperationCanceledException)
