@@ -11,6 +11,8 @@
         <local:StatusBrushConverter x:Key="StatusBrush" />
         <local:BoolStateTextConverter x:Key="YesNo" />
         <local:InverseBooleanConverter x:Key="InverseBool" />
+        <local:PhaseChipBrushConverter x:Key="PhaseBrush" />
+        <local:PhaseChipLabelConverter x:Key="PhaseLabel" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
@@ -124,8 +126,19 @@
                 <ColumnDefinition x:Name="ChecklistColumn" Width="0" MinWidth="0" />
             </Grid.ColumnDefinitions>
 
+            <DockPanel Grid.Column="0">
+            <!-- First-run hint: shown until any machine has been scanned in this tab. -->
+            <Border DockPanel.Dock="Top" Margin="0,0,0,6" Padding="10,6" CornerRadius="4"
+                    Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                    Visibility="{Binding ShowUpdateFirstRunHint, Converter={StaticResource BoolToVis}}">
+                <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Lightbulb24" Margin="0,0,8,0" VerticalAlignment="Center" />
+                    <TextBlock VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Text="Select machines and click Scan (selected or all), or click a machine to open its panel and scan just it. Status appears here per machine." />
+                </StackPanel>
+            </Border>
             <ui:DataGrid x:Name="UpdateGrid"
-                     Grid.Column="0"
                      ItemsSource="{Binding Computers}"
                      AutoGenerateColumns="False"
                      IsReadOnly="True"
@@ -140,6 +153,41 @@
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewMouseLeftButtonUp="OnUpdateGridLeftClick"
                      PreviewKeyDown="OnGridKeyDown">
+            <ui:DataGrid.RowStyle>
+                <!-- Based on the WPF-UI default so selection/hover visuals are preserved; adds only a
+                     one-shot background flash when a row enters Done (green) or Error (red). The flash
+                     animates a fresh (unfrozen) Transparent brush back to transparent — self-completing,
+                     no timers. -->
+                <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
+                    <Setter Property="Background">
+                        <Setter.Value>
+                            <SolidColorBrush Color="Transparent" />
+                        </Setter.Value>
+                    </Setter>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding PatchState}" Value="Done">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <ColorAnimation Storyboard.TargetProperty="Background.Color"
+                                                        From="#5516A34A" To="Transparent" Duration="0:0:1.2" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding PatchState}" Value="Error">
+                            <DataTrigger.EnterActions>
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <ColorAnimation Storyboard.TargetProperty="Background.Color"
+                                                        From="#55DC2626" To="Transparent" Duration="0:0:1.2" />
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </DataTrigger.EnterActions>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </ui:DataGrid.RowStyle>
             <ui:DataGrid.Columns>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
@@ -148,6 +196,18 @@
                             <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
                                      Fill="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
                                      ToolTip="{Binding LastStatus}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="110" SortMemberPath="PatchState">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <!-- Colored pill: glanceable per-machine state (grey/blue/steel/amber/green/red). -->
+                            <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left"
+                                    Background="{Binding PatchState, Converter={StaticResource PhaseBrush}}">
+                                <TextBlock Text="{Binding PatchState, Converter={StaticResource PhaseLabel}}"
+                                           Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                            </Border>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -164,6 +224,8 @@
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                             <Setter Property="ToolTip" Value="{Binding UpdateMessage}" />
+                            <!-- Colour the message by state (red error / green done / amber reboot / blue working). -->
+                            <Setter Property="Foreground" Value="{Binding PatchState, Converter={StaticResource PhaseBrush}}" />
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
@@ -171,10 +233,41 @@
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Grid Margin="8,0">
-                                <ProgressBar Height="14" Minimum="0" Maximum="100" Value="{Binding UpdateProgress, FallbackValue=0, TargetNullValue=0}" />
-                                <TextBlock Text="{Binding UpdateProgress, StringFormat={}{0}%}" FontSize="10"
+                                <!-- Determinate bar + % for Downloading/Installing. -->
+                                <Grid x:Name="BarHost" Visibility="Collapsed">
+                                    <ProgressBar Height="14" Minimum="0" Maximum="100"
+                                                 Value="{Binding UpdateProgress, FallbackValue=0, TargetNullValue=0}" />
+                                    <TextBlock Text="{Binding UpdateProgress, StringFormat={}{0}%}" FontSize="10"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Grid>
+                                <!-- Indeterminate marquee while scanning (no % yet). -->
+                                <ProgressBar x:Name="Marquee" Height="14" IsIndeterminate="True" Visibility="Collapsed" />
+                                <!-- Terminal glyphs. -->
+                                <TextBlock x:Name="DoneGlyph" Text="&#x2713;" FontWeight="Bold" Visibility="Collapsed"
+                                           Foreground="{Binding PatchState, Converter={StaticResource PhaseBrush}}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <TextBlock x:Name="ErrGlyph" Text="&#x2716;" FontWeight="Bold" Visibility="Collapsed"
+                                           Foreground="{Binding PatchState, Converter={StaticResource PhaseBrush}}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
+                            <DataTemplate.Triggers>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Downloading">
+                                    <Setter TargetName="BarHost" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Installing">
+                                    <Setter TargetName="BarHost" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
+                                    <Setter TargetName="Marquee" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Done">
+                                    <Setter TargetName="DoneGlyph" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Error">
+                                    <Setter TargetName="ErrGlyph" Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                                <!-- Idle / Available / RebootPending: nothing (no misleading 0% bar). -->
+                            </DataTemplate.Triggers>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -192,16 +285,9 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
-                    <DataGridTextColumn.ElementStyle>
-                        <Style TargetType="TextBlock">
-                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                            <Setter Property="ToolTip" Value="{Binding CommandResult}" />
-                        </Style>
-                    </DataGridTextColumn.ElementStyle>
-                </DataGridTextColumn>
             </ui:DataGrid.Columns>
             </ui:DataGrid>
+            </DockPanel>
 
             <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch"
                           ResizeBehavior="PreviousAndNext" Background="Transparent">
