@@ -29,6 +29,8 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <!-- Fleet status band: appears only during an active update operation. -->
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <!-- Activity log splitter + panel: hidden by default, toggled from the View menu. -->
             <RowDefinition x:Name="SplitterRow" Height="0" />
@@ -44,7 +46,7 @@
         </ui:TitleBar>
 
         <!-- System tray icon (no visual footprint in the grid). -->
-        <tb:TaskbarIcon Grid.Row="0"
+        <tb:TaskbarIcon x:Name="TrayIcon" Grid.Row="0"
                         IconSource="pack://application:,,,/Assets/AppIcon.png"
                         ToolTipText="Vivre — the heartbeat of your fleet"
                         TrayMouseDoubleClick="OnTrayOpen">
@@ -109,14 +111,14 @@
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
                 <!-- In Windows Update mode the toolbar leads with Scan + Install, separated from the machine actions. -->
-                <ui:Button Icon="{ui:SymbolIcon Search24}" Content="Scan all"
+                <ui:Button Icon="{ui:SymbolIcon Search24}" Content="{Binding SelectedTab.ScanButtonLabel}"
                            Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
-                           Command="{Binding SelectedTab.ScanUpdatesCommand}"
-                           ToolTip="Scan every machine in this tab for updates. (To scan just one, use 'Scan this machine' in its side panel.)" />
-                <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install"
+                           Command="{Binding SelectedTab.ScanTargetCommand}"
+                           ToolTip="Scan the selected machines (or all of them when none are selected). To scan just one, open its side panel." />
+                <ui:Button Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="{Binding SelectedTab.InstallButtonLabel}"
                            Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
-                           Command="{Binding SelectedTab.InstallUpdatesCommand}"
-                           ToolTip="Download + install all applicable updates (one-time SYSTEM task per host). Reboot is reported, not forced. Hidden in 'Installed' scope — uninstall is per-machine from the side panel." />
+                           Command="{Binding SelectedTab.InstallTargetCommand}"
+                           ToolTip="Download + install applicable updates on the selected machines (or all when none selected). One-time SYSTEM task per host; reboot reported, not forced. Hidden in 'Installed' scope." />
                 <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
                         Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
                 <ui:SplitButton Appearance="Primary"
@@ -157,9 +159,26 @@
             </StackPanel>
         </Grid>
 
+        <!-- Fleet status band — visible only while an update operation is running on the active tab. -->
+        <Border Grid.Row="3" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
+                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
+                Visibility="{Binding SelectedTab.IsPatchOperationActive, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
+                           Text="{Binding SelectedTab.FleetSummary}" />
+                <ProgressBar Grid.Column="1" Height="8" VerticalAlignment="Center"
+                             Minimum="0" Maximum="100" Value="{Binding SelectedTab.FleetProgress, Mode=OneWay}" />
+            </Grid>
+        </Border>
+
         <!-- One tab per independent workspace. Header = title + close; double-click or right-click to rename.
              A browser-style "+" sits right after the last tab (TabControl template below). -->
-        <TabControl Grid.Row="3"
+        <TabControl Grid.Row="4"
                     Margin="8,4,8,8"
                     ItemsSource="{Binding Tabs}"
                     SelectedItem="{Binding SelectedTab, Mode=TwoWay}">
@@ -218,13 +237,13 @@
             </TabControl.ContentTemplate>
         </TabControl>
 
-        <GridSplitter x:Name="ActivitySplitter" Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+        <GridSplitter x:Name="ActivitySplitter" Grid.Row="5" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                       Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
                       Visibility="Collapsed" />
 
         <!-- Activity log (shared across all tabs) — search filters machine OR message.
              Hidden by default; shown via View ▸ Activity log. -->
-        <Grid x:Name="ActivityPanel" Grid.Row="5" Margin="8,0,8,8" Visibility="Collapsed" DataContext="{Binding ActivityLog}">
+        <Grid x:Name="ActivityPanel" Grid.Row="6" Margin="8,0,8,8" Visibility="Collapsed" DataContext="{Binding ActivityLog}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -264,15 +283,24 @@
             </DataGrid>
         </Grid>
 
-        <!-- Bottom status bar: live online/total for the active tab. (Copy actions live in the
-             grid's right-click Copy ▸ menu.) -->
-        <Border Grid.Row="6"
+        <!-- Bottom status bar: live online/total + update tally for the active tab. (Copy actions
+             live in the grid's right-click Copy ▸ menu.) -->
+        <Border Grid.Row="7"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">
-            <TextBlock Text="{Binding SelectedTab.OnlineSummary}" FontSize="12"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding SelectedTab.OnlineSummary}" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="·" Margin="10,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding SelectedTab.HasFleetSummary, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding SelectedTab.FleetSummary}" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
         </Border>
     </Grid>
 </ui:FluentWindow>

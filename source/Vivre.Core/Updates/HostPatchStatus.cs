@@ -32,6 +32,38 @@ public enum PatchPhase
 }
 
 /// <summary>
+/// The glanceable display state for the grid's Status chip / message color / fleet counts — a
+/// UI-agnostic reduction of <see cref="PatchPhase"/> combined with the row's reboot-pending flag.
+/// One source of truth so the chip, the colored message, and the fleet tally never disagree.
+/// </summary>
+public enum PatchState
+{
+    /// <summary>Not scanned / nothing happening (grey).</summary>
+    Idle,
+
+    /// <summary>A scan is running (blue, indeterminate).</summary>
+    Scanning,
+
+    /// <summary>Scanned and updates are available to install (info).</summary>
+    Available,
+
+    /// <summary>Downloading payloads (blue).</summary>
+    Downloading,
+
+    /// <summary>Installing (blue).</summary>
+    Installing,
+
+    /// <summary>A reboot is required / in progress (amber).</summary>
+    RebootPending,
+
+    /// <summary>Finished / up to date / back online with nothing pending (green).</summary>
+    Done,
+
+    /// <summary>Something failed (red).</summary>
+    Error,
+}
+
+/// <summary>
 /// A snapshot of one host's patch state, emitted by <see cref="PatchService"/> via
 /// <see cref="IProgress{T}"/>. The view model writes it onto the matching
 /// <c>Computer</c> row each poll. Immutable — a new instance per update.

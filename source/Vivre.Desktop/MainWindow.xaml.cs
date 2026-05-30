@@ -28,10 +28,58 @@ public partial class MainWindow : FluentWindow
         {
             BuildFileMenu();
             StartRelativeTimeRefresh();
+            HookOperationToasts();
         };
     }
 
     private ShellViewModel? Shell => DataContext as ShellViewModel;
+
+    // --- completion toast (tray balloon when a Scan/Install/Uninstall finishes) ---
+
+    private void HookOperationToasts()
+    {
+        if (Shell is not { } shell)
+        {
+            return;
+        }
+
+        foreach (WorkspaceViewModel tab in shell.Tabs)
+        {
+            tab.OperationCompleted += OnOperationCompleted;
+        }
+
+        // Tabs come and go — keep subscriptions in step (no double-subscribe, no leak).
+        shell.Tabs.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems is not null)
+            {
+                foreach (WorkspaceViewModel tab in e.OldItems.OfType<WorkspaceViewModel>())
+                {
+                    tab.OperationCompleted -= OnOperationCompleted;
+                }
+            }
+
+            if (e.NewItems is not null)
+            {
+                foreach (WorkspaceViewModel tab in e.NewItems.OfType<WorkspaceViewModel>())
+                {
+                    tab.OperationCompleted -= OnOperationCompleted;
+                    tab.OperationCompleted += OnOperationCompleted;
+                }
+            }
+        };
+    }
+
+    private void OnOperationCompleted(string summary)
+    {
+        // Don't nag when the operator is already watching the window.
+        if (IsActive)
+        {
+            return;
+        }
+
+        Dispatcher.Invoke(() => TrayIcon.ShowBalloonTip("Vivre", summary, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
+    }
 
     // --- keep relative times ("Last reboot") current between health checks ---
 

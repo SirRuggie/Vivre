@@ -274,15 +274,89 @@ public partial class WorkspaceViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(OnlineSummary));
+        RaiseFleetChanged();
     }
 
     private void OnComputerStateChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(Computer.IsOnline))
+        switch (e.PropertyName)
         {
-            OnPropertyChanged(nameof(OnlineSummary));
+            case nameof(Computer.IsOnline):
+                OnPropertyChanged(nameof(OnlineSummary));
+                break;
+            // The fleet tally / band / first-run hint all key off the derived PatchState, which the
+            // model raises when UpdatePhase or RebootRequired change. UpdateProgress feeds the band's
+            // overall bar. (Cheap: a LINQ group over the in-memory list, only on actual state change.)
+            case nameof(Computer.PatchState):
+            case nameof(Computer.UpdateProgress):
+                RaiseFleetChanged();
+                break;
         }
     }
+
+    /// <summary>Re-publish all the derived fleet aggregates after a row state change.</summary>
+    private void RaiseFleetChanged()
+    {
+        OnPropertyChanged(nameof(FleetSummary));
+        OnPropertyChanged(nameof(HasFleetSummary));
+        OnPropertyChanged(nameof(IsPatchOperationActive));
+        OnPropertyChanged(nameof(FleetProgress));
+        OnPropertyChanged(nameof(ShowUpdateFirstRunHint));
+    }
+
+    // --- fleet aggregates (Status band + bottom bar + first-run hint) ---------------------
+
+    /// <summary>Compact per-state tally for the status band / bottom bar, e.g.
+    /// "12 done · 3 installing · 2 reboot · 1 failed". Empty until a scan/install has touched a row.</summary>
+    public string FleetSummary
+    {
+        get
+        {
+            int done = 0, working = 0, reboot = 0, failed = 0, available = 0;
+            foreach (Computer c in Computers)
+            {
+                switch (c.PatchState)
+                {
+                    case PatchState.Done: done++; break;
+                    case PatchState.Scanning or PatchState.Downloading or PatchState.Installing: working++; break;
+                    case PatchState.RebootPending: reboot++; break;
+                    case PatchState.Error: failed++; break;
+                    case PatchState.Available: available++; break;
+                }
+            }
+
+            var parts = new List<string>(5);
+            if (working > 0) parts.Add($"{working} working");
+            if (available > 0) parts.Add($"{available} available");
+            if (reboot > 0) parts.Add($"{reboot} reboot");
+            if (done > 0) parts.Add($"{done} done");
+            if (failed > 0) parts.Add($"{failed} failed");
+            return parts.Count == 0 ? string.Empty : "Updates: " + string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>Whether <see cref="FleetSummary"/> is non-empty (drives the bottom-bar separator dot).</summary>
+    public bool HasFleetSummary => FleetSummary.Length > 0;
+
+    /// <summary>True while any row is actively scanning/downloading/installing — drives the band's visibility.</summary>
+    public bool IsPatchOperationActive =>
+        Computers.Any(c => c.PatchState is PatchState.Scanning or PatchState.Downloading or PatchState.Installing);
+
+    /// <summary>Overall progress (avg of the rows currently downloading/installing) for the band's bar; 0 when none.</summary>
+    public int FleetProgress
+    {
+        get
+        {
+            int[] vals = [.. Computers
+                .Where(c => c.PatchState is PatchState.Downloading or PatchState.Installing)
+                .Select(c => c.UpdateProgress ?? 0)];
+            return vals.Length == 0 ? 0 : (int)Math.Round(vals.Average());
+        }
+    }
+
+    /// <summary>Shown in update mode until any row has been scanned (a real PatchState beyond Idle appeared).</summary>
+    public bool ShowUpdateFirstRunHint =>
+        IsUpdateMode && Computers.Count > 0 && Computers.All(c => c.PatchState == PatchState.Idle);
 
     /// <summary>Push the Source toggle's value into the shared patch options.</summary>
     partial void OnSelectedSourceChanged(UpdateSource value) => _patchOptions.Source = value;
@@ -324,6 +398,10 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     partial void OnIsUpdateModeChanged(bool value)
     {
+        // The first-run hint + fleet band are update-mode-only — refresh their visibility on the flip.
+        OnPropertyChanged(nameof(ShowUpdateFirstRunHint));
+        OnPropertyChanged(nameof(IsPatchOperationActive));
+
         if (value && IsMonitoring && _monitorCts is { } cts && Computers.Count > 0)
         {
             _ = MonitorRowsAsync([.. Computers], cts.Token);
@@ -418,19 +496,19 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Scans every row for applicable updates from the selected source.</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
-    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync);
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan");
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
-    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], InstallRowAsync);
+    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], InstallRowAsync, "Install");
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync);
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan");
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], InstallRowAsync);
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], InstallRowAsync, "Install");
 
     /// <summary>
     /// Scans only the focused machine — wired to the side-panel "Scan" button that appears inside
@@ -440,14 +518,14 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanScanFocused))]
     private Task ScanFocusedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan") : Task.CompletedTask;
 
     private bool CanScanFocused() => !IsBusy && FocusedComputer is not null;
 
     /// <summary>Installs only the ticked updates on the focused machine (the side panel's "Install checked").</summary>
     [RelayCommand(CanExecute = nameof(CanInstallChecked))]
     private Task InstallCheckedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync, "Install") : Task.CompletedTask;
 
     /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
     /// checklist, not busy, not patching, and NOT with a reboot pending (a pending reboot means
@@ -464,7 +542,7 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanUninstallChecked))]
     public Task UninstallCheckedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], UninstallRowAsync) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], UninstallRowAsync, "Uninstall") : Task.CompletedTask;
 
     /// <summary>Whether "Uninstall checked" can run: Installed scope, not busy, and at least one
     /// ticked update that's actually removable. Bound by the button's enable-state (the button uses
@@ -668,33 +746,71 @@ public partial class WorkspaceViewModel : ObservableObject
     /// bounded — installs are heavy, so each host runs under a <see cref="SemaphoreSlim"/>
     /// throttle and a per-host timeout so one stuck box never holds up the grid.
     /// </summary>
-    private async Task RunPatchSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation)
+    /// <summary>Raised once when a Scan/Install/Uninstall sweep finishes (not on cancel) with a
+    /// human summary — the shell shows it as a tray balloon (suppressed when the window is focused).</summary>
+    public event Action<string>? OperationCompleted;
+
+    private async Task RunPatchSweepAsync(
+        IReadOnlyList<Computer> rows,
+        Func<Computer, CancellationToken, Task> operation,
+        string? operationLabel = null)
     {
         CancellationTokenSource cts = BeginOperation();
+        bool cancelled = false;
         try
         {
             // Shared throttle: concurrent patch sweeps (e.g. a fleet install plus a one-off scan)
             // still honour a single fleet-wide concurrency cap.
             Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, _patchThrottle, cts.Token)));
 
-            Task cancelled = Task.Delay(Timeout.Infinite, cts.Token);
-            if (await Task.WhenAny(work, cancelled) == work)
+            Task cancelledTask = Task.Delay(Timeout.Infinite, cts.Token);
+            if (await Task.WhenAny(work, cancelledTask) == work)
             {
                 await work;
             }
             else
             {
+                cancelled = true;
                 _ = work.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
             }
         }
         catch (OperationCanceledException)
         {
             // Stop pressed — finished/in-flight rows keep their results.
+            cancelled = true;
         }
         finally
         {
             EndOperation(cts);
         }
+
+        // One completion signal per sweep (not per row), only for a real finish.
+        if (!cancelled && operationLabel is not null)
+        {
+            OperationCompleted?.Invoke(BuildCompletionSummary(operationLabel, rows));
+        }
+    }
+
+    private static string BuildCompletionSummary(string label, IReadOnlyList<Computer> rows)
+    {
+        if (string.Equals(label, "Scan", StringComparison.Ordinal))
+        {
+            int avail = rows.Count(r => r.PatchState == PatchState.Available);
+            int errs = rows.Count(r => r.PatchState == PatchState.Error);
+            string s = $"Scan finished — {rows.Count} machine(s)";
+            if (avail > 0) s += $", {avail} with updates";
+            if (errs > 0) s += $", {errs} failed";
+            return s;
+        }
+
+        // Install / Uninstall.
+        int done = rows.Count(r => r.PatchState == PatchState.Done);
+        int reboot = rows.Count(r => r.PatchState == PatchState.RebootPending);
+        int failed = rows.Count(r => r.PatchState == PatchState.Error);
+        var parts = new List<string> { $"{done} succeeded" };
+        if (reboot > 0) parts.Add($"{reboot} need reboot");
+        if (failed > 0) parts.Add($"{failed} failed");
+        return $"{label} finished — " + string.Join(", ", parts);
     }
 
     private async Task RunOnePatchHostAsync(
@@ -1315,7 +1431,31 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             SelectedComputers.Add(computer);
         }
+
+        // Toolbar Scan/Install labels reflect the current target (selected count, or "all").
+        OnPropertyChanged(nameof(ScanButtonLabel));
+        OnPropertyChanged(nameof(InstallButtonLabel));
     }
+
+    // --- selection-aware toolbar (Scan/Install act on the selection, or all rows when none) ------
+
+    /// <summary>"Scan selected (N)" when rows are selected, else "Scan all".</summary>
+    public string ScanButtonLabel =>
+        SelectedComputers.Count > 0 ? $"Scan selected ({SelectedComputers.Count})" : "Scan all";
+
+    /// <summary>"Install selected (N)" when rows are selected, else "Install all".</summary>
+    public string InstallButtonLabel =>
+        SelectedComputers.Count > 0 ? $"Install selected ({SelectedComputers.Count})" : "Install all";
+
+    /// <summary>Toolbar Scan: scoped to the selection, or every row when nothing's selected.</summary>
+    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    private Task ScanTarget() =>
+        SelectedComputers.Count > 0 ? ScanSelectedAsync([.. SelectedComputers]) : ScanUpdatesAsync();
+
+    /// <summary>Toolbar Install: scoped to the selection, or every row when nothing's selected.</summary>
+    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    private Task InstallTarget() =>
+        SelectedComputers.Count > 0 ? InstallSelectedAsync([.. SelectedComputers]) : InstallUpdatesAsync();
 
     /// <summary>
     /// Fires <paramref name="action"/> against every selected online row. Source-generated
