@@ -1245,13 +1245,14 @@ public partial class WorkspaceViewModel : ObservableObject
             // otherwise still announce the return (don't depend on having seen the down start).
             if (previous == false)
             {
+                // Don't bake the reboot-pending state into this static string — right after boot
+                // the probe often still reports "pending" for a moment, and the text would then go
+                // stale once it clears. The live Pending-Reboot dot + the amber status chip show
+                // pending state; this message just reports the return (with down-time if we caught
+                // the moment it went down).
                 string back = computer.WentOfflineAt is { } downAt
                     ? $"Back online {DateTime.Now:HH:mm} (down {FormatDownDuration(DateTime.Now - downAt)})"
                     : $"Back online {DateTime.Now:HH:mm}";
-                if (computer.RebootRequired == true)
-                {
-                    back += " — reboot still pending";
-                }
 
                 computer.RebootMessage = back;
                 _activity.Info(computer.Name, back);
