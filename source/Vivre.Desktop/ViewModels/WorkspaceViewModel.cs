@@ -46,9 +46,11 @@ public partial class WorkspaceViewModel : ObservableObject
     // cancels them all, and IsBusy stays true until the last one finishes. This is what lets you
     // add + scan a new machine while another machine is mid-install.
     private readonly List<CancellationTokenSource> _activeCts = [];
-    // One shared throttle for all patch sweeps so concurrent install/scan sweeps still honour a
-    // single fleet-wide concurrency cap (sized once from the session options).
+    // Install/uninstall throttle (heavy SYSTEM-task operations — kept low).
     private readonly SemaphoreSlim _patchThrottle;
+    // Scan throttle — much higher: a scan is a light, read-only WUA search, so a whole fleet can
+    // scan near-simultaneously (BatchPatch-style) instead of in small waves.
+    private readonly SemaphoreSlim _scanThrottle;
     private CancellationTokenSource? _monitorCts;
 
     /// <summary>Tab title (editable — double-click the tab header to rename).</summary>
@@ -243,6 +245,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _patch = patch;
         _patchOptions = patchOptions;
         _patchThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentHosts));
+        _scanThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
         _rebootProbe = rebootProbe;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
@@ -496,7 +499,7 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Scans every row for applicable updates from the selected source.</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
-    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan");
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _scanThrottle);
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
@@ -504,7 +507,7 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan");
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _scanThrottle);
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -518,7 +521,7 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanScanFocused))]
     private Task ScanFocusedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan") : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _scanThrottle) : Task.CompletedTask;
 
     private bool CanScanFocused() => !IsBusy && FocusedComputer is not null;
 
@@ -753,15 +756,17 @@ public partial class WorkspaceViewModel : ObservableObject
     private async Task RunPatchSweepAsync(
         IReadOnlyList<Computer> rows,
         Func<Computer, CancellationToken, Task> operation,
-        string? operationLabel = null)
+        string? operationLabel = null,
+        SemaphoreSlim? throttle = null)
     {
+        // Scans pass the high scan throttle; install/uninstall default to the conservative one.
+        throttle ??= _patchThrottle;
+
         CancellationTokenSource cts = BeginOperation();
         bool cancelled = false;
         try
         {
-            // Shared throttle: concurrent patch sweeps (e.g. a fleet install plus a one-off scan)
-            // still honour a single fleet-wide concurrency cap.
-            Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, _patchThrottle, cts.Token)));
+            Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, throttle, cts.Token)));
 
             Task cancelledTask = Task.Delay(Timeout.Infinite, cts.Token);
             if (await Task.WhenAny(work, cancelledTask) == work)
