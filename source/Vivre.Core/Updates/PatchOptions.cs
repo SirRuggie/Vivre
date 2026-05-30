@@ -78,9 +78,12 @@ public sealed class PatchOptions
     /// <summary>Whether to reboot + wait after install.</summary>
     public RebootBehavior RebootBehavior { get; set; } = RebootBehavior.ReportOnly;
 
-    /// <summary>Cap on how many hosts install at once (installs are heavy — a SYSTEM task + a
-    /// persistent streaming WinRM session each — so keep this conservative).</summary>
-    public int MaxConcurrentHosts { get; set; } = 4;
+    /// <summary>Cap on how many hosts install at once. Each install holds a persistent streaming
+    /// WinRM session (mostly idle-waiting once open) plus the target downloading/installing as
+    /// SYSTEM. The practical governor is update-download bandwidth (N hosts pulling cumulative
+    /// updates at once), not the client — raise it on a fast LAN with WSUS/SCCM + Delivery
+    /// Optimization peering, lower it over a slow WAN. Scan has its own (much higher) cap.</summary>
+    public int MaxConcurrentHosts { get; set; } = 10;
 
     /// <summary>Cap on how many hosts scan at once. Much higher than the install cap: a scan is a
     /// read-only WUA search over WinRM (one shell per distinct host — no per-target shell-limit
