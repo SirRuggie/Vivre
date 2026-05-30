@@ -78,8 +78,16 @@ public sealed class PatchOptions
     /// <summary>Whether to reboot + wait after install.</summary>
     public RebootBehavior RebootBehavior { get; set; } = RebootBehavior.ReportOnly;
 
-    /// <summary>Cap on how many hosts install at once (installs are heavy — keep below the ping sweep).</summary>
+    /// <summary>Cap on how many hosts install at once (installs are heavy — a SYSTEM task + a
+    /// persistent streaming WinRM session each — so keep this conservative).</summary>
     public int MaxConcurrentHosts { get; set; } = 4;
+
+    /// <summary>Cap on how many hosts scan at once. Much higher than the install cap: a scan is a
+    /// read-only WUA search over WinRM (one shell per distinct host — no per-target shell-limit
+    /// concern) and is I/O-bound (the search runs on the target), so a whole 40+ machine fleet can
+    /// scan together. The cap only bounds thread-pool slots tied up by the connect (≤20s for a dead
+    /// host); raise it if lists routinely exceed this.</summary>
+    public int MaxConcurrentScans { get; set; } = 50;
 
     /// <summary>Give up on a single host after this long (a hung box must not block the grid).</summary>
     public TimeSpan PerHostTimeout { get; set; } = TimeSpan.FromHours(3);
