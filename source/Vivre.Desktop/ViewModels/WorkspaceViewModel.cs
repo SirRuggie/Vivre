@@ -169,6 +169,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(CanInstallChecked))]
     [NotifyPropertyChangedFor(nameof(CanUninstallChecked))]
     [NotifyPropertyChangedFor(nameof(IsFocusedPatching))]
+    [NotifyPropertyChangedFor(nameof(IsFocusedRebootPending))]
     public partial Computer? FocusedComputer { get; set; }
 
     /// <summary>Keep a subscription to the focused machine's <see cref="Computer.IsPatching"/> so the
@@ -196,11 +197,25 @@ public partial class WorkspaceViewModel : ObservableObject
             OnPropertyChanged(nameof(IsFocusedPatching));
             RefreshChecklistCommandState();
         }
+        else if (e.PropertyName == nameof(Computer.RebootRequired))
+        {
+            OnPropertyChanged(nameof(IsFocusedRebootPending));
+            RefreshChecklistCommandState();
+        }
     }
 
     /// <summary>True while the focused machine has an install/uninstall in flight — drives the
     /// checklist lock (DataGrid/All/None disabled) and the per-machine button enable-state.</summary>
     public bool IsFocusedPatching => FocusedComputer?.IsPatching == true;
+
+    /// <summary>
+    /// True when the focused machine has a reboot pending. After an install, WUA keeps reporting the
+    /// just-installed update as still "applicable" until the reboot finalizes the servicing
+    /// transaction — so a re-scan shows it again and the user could be fooled into re-installing.
+    /// Installing more while a reboot is pending is also what the agent's boot-busy guard refuses to
+    /// do. So we surface this and block Install until the machine is rebooted.
+    /// </summary>
+    public bool IsFocusedRebootPending => FocusedComputer?.RebootRequired == true;
 
     /// <summary>
     /// When true, a background loop continuously re-checks every row's online/offline state on
@@ -435,9 +450,12 @@ public partial class WorkspaceViewModel : ObservableObject
         FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync) : Task.CompletedTask;
 
     /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
-    /// checklist, not busy. Bound by the button's enable-state and re-evaluated as boxes toggle.</summary>
+    /// checklist, not busy, not patching, and NOT with a reboot pending (a pending reboot means
+    /// just-installed updates still read as applicable and installing more would just be deferred by
+    /// the agent's boot-busy guard — reboot first). Re-evaluated as boxes toggle / reboot state flips.</summary>
     public bool CanInstallChecked =>
-        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0 && !c.IsPatching;
+        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0
+        && !c.IsPatching && c.RebootRequired != true;
 
     /// <summary>
     /// Uninstalls only the ticked updates on the focused machine. Only enabled in Installed scope
