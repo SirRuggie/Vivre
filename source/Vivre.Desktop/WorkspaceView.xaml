@@ -153,41 +153,6 @@
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewMouseLeftButtonUp="OnUpdateGridLeftClick"
                      PreviewKeyDown="OnGridKeyDown">
-            <ui:DataGrid.RowStyle>
-                <!-- Based on the WPF-UI default so selection/hover visuals are preserved; adds only a
-                     one-shot background flash when a row enters Done (green) or Error (red). The flash
-                     animates a fresh (unfrozen) Transparent brush back to transparent — self-completing,
-                     no timers. -->
-                <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
-                    <Setter Property="Background">
-                        <Setter.Value>
-                            <SolidColorBrush Color="Transparent" />
-                        </Setter.Value>
-                    </Setter>
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding PatchState}" Value="Done">
-                            <DataTrigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetProperty="Background.Color"
-                                                        From="#5516A34A" To="Transparent" Duration="0:0:1.2" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </DataTrigger.EnterActions>
-                        </DataTrigger>
-                        <DataTrigger Binding="{Binding PatchState}" Value="Error">
-                            <DataTrigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <ColorAnimation Storyboard.TargetProperty="Background.Color"
-                                                        From="#55DC2626" To="Transparent" Duration="0:0:1.2" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </DataTrigger.EnterActions>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </ui:DataGrid.RowStyle>
             <ui:DataGrid.Columns>
                 <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
@@ -285,6 +250,16 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
+                <!-- Command result (e.g. output of a Run Script / "Restart - force now") — shown here too,
+                     since scripts are commonly run from Windows Update mode. -->
+                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="ToolTip" Value="{Binding CommandResult}" />
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
             </ui:DataGrid.Columns>
             </ui:DataGrid>
             </DockPanel>
