@@ -304,7 +304,20 @@
                                    Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
                                    Command="{Binding InstallCheckedCommand}"
                                    Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
-                                   ToolTip="Install only the ticked updates on this machine (one-time SYSTEM task). Reboot is reported, not forced." />
+                                   ToolTip="Install only the ticked updates on this machine (one-time SYSTEM task). Reboot is reported, not forced. Disabled while a reboot is pending — restart first." />
+
+                        <!-- Reboot-pending warning: after an install WUA still reports the just-installed
+                             update as applicable until the reboot finalizes it. Restart before installing
+                             more (and the agent would defer an install on a reboot-pending box anyway). -->
+                        <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
+                                Background="#33D9A300" BorderBrush="#D9A300" BorderThickness="1"
+                                Visibility="{Binding IsFocusedRebootPending, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Warning24" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12"
+                                           Text="Reboot pending. Just-installed updates may still show as applicable until you restart — reboot this machine before installing more." />
+                            </StackPanel>
+                        </Border>
                         <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
                                    Appearance="Primary" Icon="{ui:SymbolIcon Delete24}" Content="Uninstall checked"
                                    Click="OnUninstallChecked"
