@@ -9,10 +9,12 @@
 
     <UserControl.Resources>
         <local:StatusBrushConverter x:Key="StatusBrush" />
+        <local:StatusSymbolConverter x:Key="StatusSymbol" />
         <local:BoolStateTextConverter x:Key="YesNo" />
         <local:InverseBooleanConverter x:Key="InverseBool" />
         <local:PhaseChipBrushConverter x:Key="PhaseBrush" />
         <local:PhaseChipLabelConverter x:Key="PhaseLabel" />
+        <local:PhaseChipForegroundConverter x:Key="PhaseForeground" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
@@ -39,9 +41,10 @@
                 <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
-                                     ToolTip="{Binding LastStatus}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding IsOnline, Converter={StaticResource StatusSymbol}}"
+                                           Foreground="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
+                                           ToolTip="{Binding LastStatus}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -68,9 +71,10 @@
                     </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                     ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding RebootRequired, Converter={StaticResource StatusSymbol}, ConverterParameter=problem}"
+                                           Foreground="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                           ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -80,9 +84,10 @@
                     </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding MissingUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                     ToolTip="{Binding MissingUpdates, Converter={StaticResource YesNo}}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding MissingUpdates, Converter={StaticResource StatusSymbol}, ConverterParameter=problem}"
+                                           Foreground="{Binding MissingUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                           ToolTip="{Binding MissingUpdates, Converter={StaticResource YesNo}}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -92,9 +97,10 @@
                     </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding RunningUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                     ToolTip="{Binding RunningUpdates, Converter={StaticResource YesNo}}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding RunningUpdates, Converter={StaticResource StatusSymbol}, ConverterParameter=problem}"
+                                           Foreground="{Binding RunningUpdates, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                           ToolTip="{Binding RunningUpdates, Converter={StaticResource YesNo}}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -104,9 +110,10 @@
                     </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding UserLoggedOn, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                     ToolTip="{Binding UserLoggedOn, Converter={StaticResource YesNo}}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding UserLoggedOn, Converter={StaticResource StatusSymbol}, ConverterParameter=problem}"
+                                           Foreground="{Binding UserLoggedOn, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                           ToolTip="{Binding UserLoggedOn, Converter={StaticResource YesNo}}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -158,9 +165,10 @@
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
-                                     ToolTip="{Binding LastStatus}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding IsOnline, Converter={StaticResource StatusSymbol}}"
+                                           Foreground="{Binding IsOnline, Converter={StaticResource StatusBrush}}"
+                                           ToolTip="{Binding LastStatus}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
@@ -171,7 +179,8 @@
                             <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left"
                                     Background="{Binding PatchState, Converter={StaticResource PhaseBrush}}">
                                 <TextBlock Text="{Binding PatchState, Converter={StaticResource PhaseLabel}}"
-                                           Foreground="White" FontSize="11" FontWeight="SemiBold" />
+                                           Foreground="{Binding PatchState, Converter={StaticResource PhaseForeground}}"
+                                           FontSize="11" FontWeight="SemiBold" />
                             </Border>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
@@ -237,16 +246,17 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" MinWidth="80" />
-                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun}" Width="Auto" MinWidth="80" />
+                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun, StringFormat=g}" Width="Auto" MinWidth="80" />
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Pending" /><LineBreak /><Run Text="Reboot" /></TextBlock>
                     </DataGridTemplateColumn.Header>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <Ellipse Width="12" Height="12" Margin="10,0" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                     Fill="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
-                                     ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
+                            <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Symbol="{Binding RebootRequired, Converter={StaticResource StatusSymbol}, ConverterParameter=problem}"
+                                           Foreground="{Binding RebootRequired, Converter={StaticResource StatusBrush}, ConverterParameter=problem}"
+                                           ToolTip="{Binding RebootRequired, Converter={StaticResource YesNo}}" />
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>

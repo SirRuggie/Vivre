@@ -98,6 +98,15 @@ public sealed class PatchOptions
     /// <summary>How long the install poll loop tolerates no progress-file change before flagging a stuck host.</summary>
     public TimeSpan StuckThreshold { get; set; } = TimeSpan.FromMinutes(30);
 
+    /// <summary>
+    /// How long to tolerate <em>complete silence</em> from the target mid-install — no progress
+    /// AND no heartbeat — before declaring the session dead/hung. The controller heartbeats every
+    /// ~15s while the session is alive (even during a slow download), so this only trips when the
+    /// connection is genuinely gone; it never false-positives on a slow-but-working update. Default
+    /// 90s = ~6 missed heartbeats.
+    /// </summary>
+    public TimeSpan NoResponseTimeout { get; set; } = TimeSpan.FromSeconds(90);
+
     /// <summary>How often the controller polls the target's progress JSON.</summary>
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(3);
 

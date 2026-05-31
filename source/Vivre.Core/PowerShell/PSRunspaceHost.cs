@@ -1,4 +1,5 @@
 using System.Management.Automation;
+using System.Management.Automation.Remoting;
 using System.Management.Automation.Runspaces;
 using SmaPowerShell = System.Management.Automation.PowerShell;
 
@@ -67,8 +68,23 @@ public sealed class PSRunspaceHost : IPowerShellHost
             _ = openTask.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
             throw;
         }
+        catch (Exception ex)
+        {
+            // Connect-phase failure (e.g. WinRM/PSRP shell init on a degraded target — the
+            // InitialSessionState type-initializer / MaxShellsPerUser case). The open task faulted
+            // and WaitAsync observed it, so no continuation is needed; translate it into a typed,
+            // actionable exception instead of letting the raw SDK string propagate.
+            throw TranslateRemotingException(ex, host);
+        }
 
-        return await RunInRunspaceAsync(runspace, script, onOutput: null, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await RunInRunspaceAsync(runspace, script, onOutput: null, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw TranslateRemotingException(ex, host);
+        }
     }
 
     public async Task<PSExecutionResult> RunRemoteStreamingAsync(
@@ -108,8 +124,69 @@ public sealed class PSRunspaceHost : IPowerShellHost
             _ = openTask.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
             throw;
         }
+        catch (Exception ex)
+        {
+            throw TranslateRemotingException(ex, host);
+        }
 
-        return await RunInRunspaceAsync(runspace, script, onOutput, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await RunInRunspaceAsync(runspace, script, onOutput, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw TranslateRemotingException(ex, host);
+        }
+    }
+
+    /// <summary>
+    /// Maps a raw remoting failure to a typed, actionable exception so callers don't surface the
+    /// SDK's opaque strings — "The pipeline has been stopped." (a server-side session death) or
+    /// "The type initializer for 'InitialSessionState' threw an exception" (a degraded WinRM/PSRP
+    /// shell). A user-initiated cancel (<see cref="OperationCanceledException"/>) and anything we
+    /// don't recognise are returned <em>unchanged</em>, so the existing "Cancelled" path and
+    /// genuine in-script errors are untouched.
+    /// </summary>
+    internal static Exception TranslateRemotingException(Exception ex, string host)
+    {
+        if (ex is OperationCanceledException)
+        {
+            return ex;
+        }
+
+        // Shell/runspace init failure — pending-reboot corruption or MaxShellsPerUser exhaustion.
+        // The text can arrive as a TypeInitializationException or wrapped in a remoting/runtime
+        // exception, so scan the message chain culture-insensitively. Check this BEFORE the
+        // session-death classification (a transport exception can carry this very message).
+        if (MentionsInitialSessionState(ex))
+        {
+            return new RemoteShellInitException(host, ex);
+        }
+
+        // The remote session died for a non-cancellation reason (box rebooted / WinRM dropped /
+        // the pipeline was stopped server-side). PipelineStoppedException's .Message is the
+        // infamous "The pipeline has been stopped." that otherwise leaks into the UI. We translate
+        // ONLY transport/pipeline-stopped — NOT RemoteException/RuntimeException, which can be a
+        // genuine in-script error we must not mislabel as a lost connection.
+        if (ex is PSRemotingTransportException or PipelineStoppedException)
+        {
+            return new RemoteSessionLostException(host, ex);
+        }
+
+        return ex;
+    }
+
+    private static bool MentionsInitialSessionState(Exception? ex)
+    {
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (e.Message.Contains("InitialSessionState", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /// <summary>

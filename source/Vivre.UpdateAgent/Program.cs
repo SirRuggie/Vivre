@@ -201,6 +201,10 @@ namespace Vivre.UpdateAgent
             int removed = 0;
             int failed = 0;
             bool rebootPending = false;
+            // Per-KB failure reasons, kept so the FINAL summary can report WHY each one failed —
+            // the per-iteration "could not remove…" line below is otherwise instantly overwritten
+            // by the summary, so the user never sees the reason without this.
+            var failures = new List<string>();
 
             for (int i = 0; i < total; i++)
             {
@@ -243,13 +247,29 @@ namespace Vivre.UpdateAgent
                 else
                 {
                     failed++;
+                    string why = reason ?? "no supported uninstall path";
+                    failures.Add("KB" + kb + ": " + why);
                     int donePct = (int)(((i + 1) * 100.0) / total);
-                    progress.Write("Installing", prefix + " — could not remove: " + (reason ?? "no supported uninstall path"), donePct, total, removed, failed, rebootPending);
+                    progress.Write("Installing", prefix + " — could not remove: " + why, donePct, total, removed, failed, rebootPending);
                 }
             }
 
+            // Join the reasons onto one line (no newlines, so the JSONL stays one object per line);
+            // the grid trims it but the row tooltip shows it in full.
+            string reasons = failures.Count > 0 ? " — " + string.Join(" · ", failures) : string.Empty;
+
+            // Nothing came off: report it as an Error (red), not a green "Done". Most often this is
+            // Windows refusing to remove permanent/cumulative updates (0x800F0825) — by design, but
+            // the user should see that it failed and why.
+            if (removed == 0 && failed > 0)
+            {
+                string failMsg = string.Format(CultureInfo.InvariantCulture, "Uninstalled 0 — {0} could not be removed", failed) + reasons;
+                progress.Write("Error", failMsg, 100, total, removed, failed, false);
+                return false;
+            }
+
             string summary = failed > 0
-                ? string.Format(CultureInfo.InvariantCulture, "Uninstalled {0}, {1} could not be removed", removed, failed)
+                ? string.Format(CultureInfo.InvariantCulture, "Uninstalled {0}, {1} could not be removed", removed, failed) + reasons
                 : string.Format(CultureInfo.InvariantCulture, "Uninstalled {0} update(s)", removed);
 
             if (rebootPending)

@@ -53,6 +53,9 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 
 ## Conventions
 
+- **Answer concisely, in plain (layman's) terms.** Lead with the bottom line; keep chat replies
+  short and jargon-free, and skip the deep technical walkthrough unless asked. (Code, commit
+  messages, and docs still use full technical precision — this is about chat replies.)
 - **Do NOT add a `Co-Authored-By: Claude ...` trailer (or any AI/Claude attribution) to commit
   messages.** This overrides the default Claude Code behavior — write commit messages with no
   co-author/attribution line.
