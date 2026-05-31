@@ -153,5 +153,15 @@ public class ConfigMgrClientTests
             LastScript = script;
             return Task.FromResult(_result);
         }
+
+        public Task<PSExecutionResult> RunRemoteStreamingAsync(
+            string host,
+            string script,
+            Action<PSObject> onOutput,
+            PSCredential? credential = null,
+            int port = 5985,
+            bool useSsl = false,
+            CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException("ConfigMgr tests don't exercise the streaming path.");
     }
 }

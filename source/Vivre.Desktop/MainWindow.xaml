@@ -6,6 +6,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:Vivre.Desktop"
         xmlns:tb="http://www.hardcodet.net/taskbar"
+        xmlns:updates="clr-namespace:Vivre.Core.Updates;assembly=Vivre.Core"
         mc:Ignorable="d"
         Title="Vivre"
         Icon="pack://application:,,,/Assets/AppIcon.png"
@@ -18,13 +19,39 @@
 
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <local:InverseBooleanConverter x:Key="InverseBool" />
+        <local:EnumEqualsConverter x:Key="EnumEquals" />
         <local:LogSeverityBrushConverter x:Key="SeverityBrush" />
+        <local:LogSeveritySymbolConverter x:Key="SeveritySymbol" />
     </ui:FluentWindow.Resources>
+
+    <!-- Keyboard accelerators → routed to code-behind, which forwards to the active tab's commands.
+         (RoutedUICommands, not data-bound KeyBindings: InputBindings have no DataContext in WPF.) -->
+    <ui:FluentWindow.CommandBindings>
+        <CommandBinding Command="{x:Static local:MainWindow.NewTabKey}" Executed="OnNewTabKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.CloseTabKey}" Executed="OnCloseTabKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.FocusAddKey}" Executed="OnFocusAddKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.RenameTabKey}" Executed="OnRenameTabKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.ToggleModeKey}" Executed="OnToggleModeKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.RefreshKey}" Executed="OnRefreshKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.InstallKey}" Executed="OnInstallKey" />
+    </ui:FluentWindow.CommandBindings>
+    <ui:FluentWindow.InputBindings>
+        <KeyBinding Modifiers="Control" Key="T" Command="{x:Static local:MainWindow.NewTabKey}" />
+        <KeyBinding Modifiers="Control" Key="W" Command="{x:Static local:MainWindow.CloseTabKey}" />
+        <KeyBinding Modifiers="Control" Key="L" Command="{x:Static local:MainWindow.FocusAddKey}" />
+        <KeyBinding Key="F2" Command="{x:Static local:MainWindow.RenameTabKey}" />
+        <KeyBinding Modifiers="Control" Key="M" Command="{x:Static local:MainWindow.ToggleModeKey}" />
+        <KeyBinding Key="F5" Command="{x:Static local:MainWindow.RefreshKey}" />
+        <KeyBinding Modifiers="Control" Key="Return" Command="{x:Static local:MainWindow.InstallKey}" />
+    </ui:FluentWindow.InputBindings>
 
     <Grid>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <!-- Fleet status band: appears only during an active update operation. -->
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <!-- Activity log splitter + panel: hidden by default, toggled from the View menu. -->
@@ -41,7 +68,7 @@
         </ui:TitleBar>
 
         <!-- System tray icon (no visual footprint in the grid). -->
-        <tb:TaskbarIcon Grid.Row="0"
+        <tb:TaskbarIcon x:Name="TrayIcon" Grid.Row="0"
                         IconSource="pack://application:,,,/Assets/AppIcon.png"
                         ToolTipText="Vivre — the heartbeat of your fleet"
                         TrayMouseDoubleClick="OnTrayOpen">
@@ -59,14 +86,38 @@
             <MenuItem Header="_View">
                 <MenuItem x:Name="ActivityLogMenuItem" Header="_Activity log"
                           IsCheckable="True" IsChecked="False" Click="OnToggleActivityLog" />
+                <Separator />
+                <!-- Mode switch, directly selectable (the two are a radio pair via the inverse binding). -->
+                <MenuItem Header="_Machines" IsCheckable="True"
+                          IsChecked="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource InverseBool}, Mode=TwoWay}"
+                          InputGestureText="Ctrl+M" />
+                <MenuItem Header="_Windows Update" IsCheckable="True"
+                          IsChecked="{Binding SelectedTab.IsUpdateMode, Mode=TwoWay}"
+                          InputGestureText="Ctrl+M" />
+            </MenuItem>
+            <MenuItem Header="_Updates">
+                <MenuItem Header="_Source">
+                    <MenuItem Header="Windows _Update" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.WindowsUpdate}, Mode=TwoWay}" />
+                    <MenuItem Header="_Microsoft Update" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.MicrosoftUpdate}, Mode=TwoWay}" />
+                    <MenuItem Header="Mana_ged (WSUS/SCCM)" IsCheckable="True"
+                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.Managed}, Mode=TwoWay}" />
+                </MenuItem>
+                <Separator />
+                <MenuItem Header="Include _drivers" IsCheckable="True"
+                          IsChecked="{Binding SelectedTab.IncludeDrivers, Mode=TwoWay}"
+                          ToolTip="Off (default) hides driver updates — matches the Windows Update UI and BatchPatch." />
+                <Separator />
+                <MenuItem Header="_Exclude updates…" Click="OnOpenExcludeDialog" />
             </MenuItem>
             <MenuItem Header="_Settings">
                 <MenuItem Header="_Credentials…" Click="OnOpenSettings" />
                 <Separator />
                 <MenuItem Header="_Theme">
-                    <MenuItem Header="_Light" Click="OnThemeLight" />
-                    <MenuItem Header="_Dark" Click="OnThemeDark" />
-                    <MenuItem Header="_System" Click="OnThemeSystem" />
+                    <MenuItem x:Name="LightThemeItem" Header="_Light" IsCheckable="True" Click="OnThemeLight" />
+                    <MenuItem x:Name="DarkThemeItem" Header="_Dark" IsCheckable="True" Click="OnThemeDark" />
+                    <MenuItem x:Name="SystemThemeItem" Header="_System" IsCheckable="True" Click="OnThemeSystem" />
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Help">
@@ -82,17 +133,22 @@
             </Grid.ColumnDefinitions>
 
             <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <!-- Mode (Machines / Windows Update) is chosen from the View menu, not the toolbar.
+                     Machine actions sit in a fixed position; the update-only Scan/Install append on
+                     the RIGHT (below) so these buttons don't shift when you switch modes. -->
                 <ui:SplitButton Appearance="Primary"
                                 Icon="{ui:SymbolIcon ArrowSync24}"
                                 Content="Ping All"
-                                Command="{Binding SelectedTab.PingAllCommand}">
+                                Command="{Binding SelectedTab.PingAllCommand}"
+                                ToolTip="Ping every machine in this tab and update the Online status. (F5)">
                     <ui:SplitButton.Flyout>
                         <ContextMenu>
                             <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
                         </ContextMenu>
                     </ui:SplitButton.Flyout>
                 </ui:SplitButton>
-                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Heart24}" Content="Check All" Command="{Binding SelectedTab.CheckAllCommand}" />
+                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Heart24}" Content="Check All" Command="{Binding SelectedTab.CheckAllCommand}"
+                           ToolTip="Run the full SCCM client-health sweep (site, agent, reboot/updates, last boot) across every machine." />
                 <ToggleButton Margin="8,0,0,0" Padding="11,6"
                               VerticalAlignment="Center"
                               IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
@@ -102,9 +158,24 @@
                         <TextBlock Text="Monitor" VerticalAlignment="Center" />
                     </StackPanel>
                 </ToggleButton>
-                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline" Command="{Binding SelectedTab.RemoveOfflineCommand}" />
-                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop" Command="{Binding SelectedTab.StopCommand}" />
-                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Eraser24}" Content="Clear Results" Command="{Binding SelectedTab.ClearResultsCommand}" />
+                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline" Command="{Binding SelectedTab.RemoveOfflineCommand}"
+                           ToolTip="Remove every offline (red) machine from this tab's grid. Re-paste names to bring them back." />
+                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop" Command="{Binding SelectedTab.StopCommand}"
+                           ToolTip="Cancel all running operations in this tab (ping/check/scan/install)." />
+                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Eraser24}" Content="Clear Results" Command="{Binding SelectedTab.ClearResultsCommand}"
+                           ToolTip="Clear the Command result column on every row." />
+                <!-- Update-only Scan + Install, appended on the right so machine buttons stay put. -->
+                <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
+                        Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
+                <ui:Button Icon="{ui:SymbolIcon Search24}" Content="{Binding SelectedTab.ScanButtonLabel}"
+                           Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}"
+                           Command="{Binding SelectedTab.ScanTargetCommand}"
+                           ToolTip="Scan the selected machines (or all of them when none are selected). To scan just one, open its side panel." />
+                <ui:Button x:Name="InstallButton" Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="{Binding SelectedTab.InstallButtonLabel}"
+                           Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
+                           IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                           Click="OnInstallClick"
+                           ToolTip="Download + install applicable updates on the selected machines (or all when none selected). Asks for confirmation (Ctrl+Enter). One-time SYSTEM task per host; reboot reported, not forced. Hidden in 'Installed' scope." />
                 <ui:ProgressRing Margin="12,0,0,0" Width="22" Height="22" IsIndeterminate="True"
                                  VerticalAlignment="Center"
                                  Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
@@ -116,13 +187,31 @@
                 <ui:Button Margin="6,0,0,0" Appearance="Secondary" Icon="{ui:SymbolIcon ClipboardPaste24}" Click="OnPasteList"
                            Height="{Binding ActualHeight, ElementName=AddButton}"
                            VerticalContentAlignment="Center"
+                           AutomationProperties.Name="Paste a list of machines"
                            ToolTip="Paste a list of machines" />
             </StackPanel>
         </Grid>
 
+        <!-- Fleet status band — visible only while an update operation is running on the active tab. -->
+        <Border Grid.Row="3" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
+                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
+                Visibility="{Binding SelectedTab.IsPatchOperationActive, Converter={StaticResource BoolToVis}}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
+                           Text="{Binding SelectedTab.FleetSummary}" />
+                <ProgressBar Grid.Column="1" Height="8" VerticalAlignment="Center"
+                             Minimum="0" Maximum="100" Value="{Binding SelectedTab.FleetProgress, Mode=OneWay}" />
+            </Grid>
+        </Border>
+
         <!-- One tab per independent workspace. Header = title + close; double-click or right-click to rename.
              A browser-style "+" sits right after the last tab (TabControl template below). -->
-        <TabControl Grid.Row="3"
+        <TabControl x:Name="WorkspaceTabs" Grid.Row="4"
                     Margin="8,4,8,8"
                     ItemsSource="{Binding Tabs}"
                     SelectedItem="{Binding SelectedTab, Mode=TwoWay}">
@@ -133,16 +222,21 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <StackPanel Grid.Row="0" Orientation="Horizontal">
-                            <TabPanel IsItemsHost="True" />
-                            <ui:Button Content="+"
+                        <!-- "+" stays pinned at the right; the tab strip scrolls horizontally when
+                             there are more tabs than fit (no clipping / off-screen "+"). -->
+                        <DockPanel Grid.Row="0">
+                            <ui:Button DockPanel.Dock="Right" Content="+"
                                        FontSize="16"
                                        Margin="6,0,0,0"
                                        Padding="10,2"
                                        VerticalAlignment="Center"
                                        Click="OnNewTab"
-                                       ToolTip="New tab" />
-                        </StackPanel>
+                                       AutomationProperties.Name="New tab"
+                                       ToolTip="New tab (Ctrl+T)" />
+                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                <StackPanel IsItemsHost="True" Orientation="Horizontal" />
+                            </ScrollViewer>
+                        </DockPanel>
                         <Border Grid.Row="1"
                                 Margin="0,4,0,0"
                                 BorderBrush="{DynamicResource ControlElevationBorderBrush}"
@@ -159,8 +253,8 @@
                                 ToolTip="Double-click to rename · right-click for options">
                         <StackPanel.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="Rename…" Click="OnRenameTab" />
-                                <MenuItem Header="Close tab" Click="OnCloseTab" />
+                                <MenuItem Header="Rename…" Click="OnRenameTab" InputGestureText="F2" />
+                                <MenuItem Header="Close tab" Click="OnCloseTab" InputGestureText="Ctrl+W" />
                             </ContextMenu>
                         </StackPanel.ContextMenu>
                         <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
@@ -170,7 +264,8 @@
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Click="OnCloseTab"
-                                ToolTip="Close tab" />
+                                AutomationProperties.Name="Close tab"
+                                ToolTip="Close tab (Ctrl+W)" />
                     </StackPanel>
                 </DataTemplate>
             </TabControl.ItemTemplate>
@@ -181,13 +276,24 @@
             </TabControl.ContentTemplate>
         </TabControl>
 
-        <GridSplitter x:Name="ActivitySplitter" Grid.Row="4" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+        <!-- Transient "operation finished" banner — shown in-window when a Scan/Install/Uninstall
+             completes while the window is focused (the tray balloon covers the unfocused case).
+             Auto-closes after a few seconds; floats over the bottom of the active tab. -->
+        <ui:InfoBar x:Name="CompletionBar" Grid.Row="4"
+                    Margin="16,0,16,16"
+                    VerticalAlignment="Bottom"
+                    Panel.ZIndex="10"
+                    IsOpen="False" IsClosable="True"
+                    Severity="Informational"
+                    Title="Operation complete" />
+
+        <GridSplitter x:Name="ActivitySplitter" Grid.Row="5" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
                       Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
                       Visibility="Collapsed" />
 
         <!-- Activity log (shared across all tabs) — search filters machine OR message.
              Hidden by default; shown via View ▸ Activity log. -->
-        <Grid x:Name="ActivityPanel" Grid.Row="5" Margin="8,0,8,8" Visibility="Collapsed" DataContext="{Binding ActivityLog}">
+        <Grid x:Name="ActivityPanel" Grid.Row="6" Margin="8,0,8,8" Visibility="Collapsed" DataContext="{Binding ActivityLog}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
@@ -214,6 +320,16 @@
                       HeadersVisibility="Column"
                       GridLinesVisibility="None">
                 <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="" Width="Auto">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <ui:SymbolIcon Margin="6,0" FontSize="14"
+                                               Symbol="{Binding Severity, Converter={StaticResource SeveritySymbol}}"
+                                               Foreground="{Binding Severity, Converter={StaticResource SeverityBrush}}"
+                                               ToolTip="{Binding Severity}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
                     <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="Auto" />
                     <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
@@ -227,15 +343,32 @@
             </DataGrid>
         </Grid>
 
-        <!-- Bottom status bar: live online/total for the active tab. (Copy actions live in the
-             grid's right-click Copy ▸ menu.) -->
-        <Border Grid.Row="6"
+        <!-- Bottom status bar: live online/total + update tally for the active tab. (Copy actions
+             live in the grid's right-click Copy ▸ menu.) -->
+        <Border Grid.Row="7"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">
-            <TextBlock Text="{Binding SelectedTab.OnlineSummary}" FontSize="12"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                       VerticalAlignment="Center" />
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="{Binding SelectedTab.OnlineSummary}" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+                <TextBlock Text="·" Margin="10,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="·" Margin="10,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding SelectedTab.HasFleetSummary, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding SelectedTab.FleetSummary}" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
         </Border>
     </Grid>
 </ui:FluentWindow>

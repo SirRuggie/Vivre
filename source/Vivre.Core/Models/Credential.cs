@@ -7,11 +7,9 @@ namespace Vivre.Core.Models;
 /// legacy password-manager entry (Domain + Username + secret), minus the broken
 /// "encrypt with the domain name as the key" cipher.
 ///
-/// NOTE (Session 2): this is the start of the model only — it deliberately does
-/// NOT hold a plaintext password. Secret storage lands in a later session using
-/// Windows DPAPI (<c>ProtectedData.Protect</c>, CurrentUser scope) — see
-/// REBUILD_PLAN.md §3 (Credentials) and §9. The migration importer (§13) will
-/// decrypt old entries with the legacy algorithm and re-protect them with DPAPI.
+/// This model deliberately does NOT hold a plaintext password; if persisted secret
+/// storage is ever added it should use Windows DPAPI (<c>ProtectedData.Protect</c>,
+/// CurrentUser scope). (Today credentials are session-only — see <c>CredentialStore</c>.)
 /// </summary>
 public partial class Credential : ObservableObject
 {

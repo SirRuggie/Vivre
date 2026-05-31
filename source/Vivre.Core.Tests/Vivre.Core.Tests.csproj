@@ -22,4 +22,10 @@
     <ProjectReference Include="..\Vivre.Core\Vivre.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- The agent is net48 and can't be ProjectReferenced from net10, so link its PURE
+         boot-busy decision (no registry/IO/COM deps) to unit-test it here. -->
+    <Compile Include="..\Vivre.UpdateAgent\BootServicingState.cs" Link="Updates\BootServicingState.cs" />
+  </ItemGroup>
+
 </Project>

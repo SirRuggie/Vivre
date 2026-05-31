@@ -1,0 +1,142 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.ComputerDetailWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
+        mc:Ignorable="d"
+        Title="Machine details"
+        Height="640" Width="680"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner">
+
+    <ui:FluentWindow.Resources>
+        <local:StatusBrushConverter x:Key="StatusBrush" />
+        <local:StatusSymbolConverter x:Key="StatusSymbol" />
+        <local:BoolStateTextConverter x:Key="YesNo" />
+        <local:PhaseChipBrushConverter x:Key="PhaseBrush" />
+        <local:PhaseChipLabelConverter x:Key="PhaseLabel" />
+        <local:PhaseChipForegroundConverter x:Key="PhaseForeground" />
+        <local:LogSeverityBrushConverter x:Key="SeverityBrush" />
+        <local:LogSeveritySymbolConverter x:Key="SeveritySymbol" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </ui:FluentWindow.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Machine details" />
+
+        <!-- Header card: identity + current update state. -->
+        <Border Grid.Row="1" Margin="16,4,16,8" Padding="14,12" CornerRadius="6"
+                Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <ui:SymbolIcon FontSize="18" Margin="0,0,8,0" VerticalAlignment="Center"
+                                   Symbol="{Binding Computer.IsOnline, Converter={StaticResource StatusSymbol}}"
+                                   Foreground="{Binding Computer.IsOnline, Converter={StaticResource StatusBrush}}"
+                                   ToolTip="{Binding Computer.LastStatus}" />
+                    <ui:TextBlock Text="{Binding Computer.Name}" FontTypography="Subtitle" VerticalAlignment="Center" />
+                    <Border CornerRadius="8" Padding="8,1" Margin="12,0,0,0" VerticalAlignment="Center"
+                            Background="{Binding Computer.PatchState, Converter={StaticResource PhaseBrush}}">
+                        <TextBlock Text="{Binding Computer.PatchState, Converter={StaticResource PhaseLabel}}"
+                                   Foreground="{Binding Computer.PatchState, Converter={StaticResource PhaseForeground}}"
+                                   FontSize="11" FontWeight="SemiBold" />
+                    </Border>
+                </StackPanel>
+
+                <TextBlock Margin="0,10,0,0" TextWrapping="Wrap"
+                           Text="{Binding Computer.UpdateMessage}"
+                           Foreground="{Binding Computer.PatchState, Converter={StaticResource PhaseBrush}}" />
+
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding Computer.RebootMessage}" />
+
+                <ProgressBar Margin="0,8,0,0" Height="6" Minimum="0" Maximum="100"
+                             Value="{Binding Computer.UpdateProgress, Mode=OneWay, FallbackValue=0, TargetNullValue=0}" />
+
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ui:TextBlock Grid.Row="0" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,2" Text="OS" />
+                    <ui:TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,2" TextWrapping="Wrap"
+                                  Text="{Binding Computer.OperatingSystem, TargetNullValue='—'}" />
+                    <ui:TextBlock Grid.Row="1" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,2" Text="Reboot pending" />
+                    <ui:TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,0,2"
+                                  Text="{Binding Computer.RebootRequired, Converter={StaticResource YesNo}}" />
+                    <ui:TextBlock Grid.Row="2" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,0" Text="Scheduled" />
+                    <ui:TextBlock Grid.Row="2" Grid.Column="1"
+                                  Text="{Binding Computer.ScheduledNextRun, StringFormat=g, TargetNullValue='—'}" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <TabControl Grid.Row="2" Margin="16,0,16,16">
+            <TabItem Header="Applicable updates">
+                <DataGrid ItemsSource="{Binding Computer.ApplicableUpdates}"
+                          AutoGenerateColumns="False" IsReadOnly="True"
+                          CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" MinWidth="80" />
+                        <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="*" />
+                        <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="Installed updates">
+                <DataGrid ItemsSource="{Binding Computer.InstalledUpdates}"
+                          AutoGenerateColumns="False" IsReadOnly="True"
+                          CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="Horizontal">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" MinWidth="80" />
+                        <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="*" />
+                        <DataGridTextColumn Header="Installed" Binding="{Binding InstalledAt, StringFormat=yyyy-MM-dd}" Width="Auto" MinWidth="90" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+            <TabItem Header="Messages">
+                <DataGrid ItemsSource="{Binding Messages}"
+                          AutoGenerateColumns="False" IsReadOnly="True"
+                          CanUserAddRows="False" HeadersVisibility="Column" GridLinesVisibility="None">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="" Width="Auto">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <ui:SymbolIcon Margin="6,0" FontSize="14"
+                                                   Symbol="{Binding Severity, Converter={StaticResource SeveritySymbol}}"
+                                                   Foreground="{Binding Severity, Converter={StaticResource SeverityBrush}}"
+                                                   ToolTip="{Binding Severity}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
+                        <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap" />
+                                    <Setter Property="Foreground" Value="{Binding Severity, Converter={StaticResource SeverityBrush}}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </TabItem>
+        </TabControl>
+    </Grid>
+</ui:FluentWindow>

@@ -67,7 +67,13 @@ public partial class ScriptRunnerViewModel : ObservableObject
     public partial string Output { get; set; } = string.Empty;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRun))]
+    [NotifyCanExecuteChangedFor(nameof(RunCommand))]
     public partial bool IsBusy { get; set; }
+
+    /// <summary>False while a run is in flight — gates the Run command + button so a second
+    /// click can't start an overlapping pass over the same (production) targets.</summary>
+    public bool CanRun => !IsBusy;
 
     /// <summary>Reads a saved script's contents (the window loads it into the editor).</summary>
     public string LoadScript(ScriptFile script) => _library.Load(script);
@@ -97,7 +103,7 @@ public partial class ScriptRunnerViewModel : ObservableObject
     /// Runs <paramref name="script"/> against every target. Source-generated as
     /// <c>RunCommand</c> + <c>RunCancelCommand</c>; the editor text is passed as the parameter.
     /// </summary>
-    [RelayCommand(IncludeCancelCommand = true)]
+    [RelayCommand(IncludeCancelCommand = true, CanExecute = nameof(CanRun))]
     private async Task RunAsync(string? script, CancellationToken token)
     {
         if (string.IsNullOrWhiteSpace(script))
@@ -134,6 +140,13 @@ public partial class ScriptRunnerViewModel : ObservableObject
                 {
                     target.CommandResult = "(cancelled)";
                     throw;
+                }
+                catch (RemoteShellInitException ex)
+                {
+                    // The target's WinRM/PSRP shell init is failing — turn the cryptic
+                    // "type initializer for 'InitialSessionState'…" remoting error into guidance.
+                    machineOutput = $"FAILED (WinRM shell init): {ex.Message}";
+                    _activity.Error(target.Name, $"Script failed — WinRM shell init: {ex.Message}");
                 }
                 catch (Exception ex)
                 {

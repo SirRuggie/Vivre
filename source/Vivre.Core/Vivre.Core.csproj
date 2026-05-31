@@ -7,6 +7,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Let the test project assert on internal script builders (e.g. BuildBootstrapScript). -->
+    <InternalsVisibleTo Include="Vivre.Core.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <!-- PowerShell hosting. 7.6.x is the line that targets net10.0; confirmed by
          Spike #1 (resolves to 7.6.2 stable). Native replacement for the legacy

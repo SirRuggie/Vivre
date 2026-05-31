@@ -157,6 +157,7 @@
                 <ui:Button Appearance="Primary"
                            Icon="{ui:SymbolIcon Play24}"
                            Content="Run"
+                           IsEnabled="{Binding CanRun}"
                            Click="OnRun" />
                 <ui:Button Margin="8,0,0,0"
                            Icon="{ui:SymbolIcon Stop24}"

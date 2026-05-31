@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The on-target Windows Update worker. Compiled .NET Framework 4.8 (present on every
+    modern Windows target with no runtime to deploy — the same reason BatchPatch's agent
+    is .NET Framework). It uses WUA's REAL progress callbacks
+    (IDownloadProgressChangedCallback / IInstallationProgressChangedCallback) for accurate
+    live download AND install percent — the ground-truth source PowerShell cannot supply.
+    Dropped to the target (base64 over WinRM) by WuaUpdateLane and run from the one-time
+    SYSTEM scheduled task; it writes the same append-only progress JSONL the streaming
+    controller already tails.
+
+    NOT the reverted on-target Add-Type COM shim (1cabb9c): this is a pre-built native EXE
+    run standalone as SYSTEM, never compiled into a live PowerShell session.
+
+    Interop.WUApiLib.dll is generated ONCE via tlbimp.exe from %SystemRoot%\System32\wuapi.dll
+    and committed, so `dotnet build` stays headless (the .NET Core MSBuild cannot run the
+    COMReference/ResolveComReference tlbimp task — MSB4803). EmbedInteropTypes folds the
+    interop into the EXE, so the agent ships as a single file.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Vivre.UpdateAgent</AssemblyName>
+    <RootNamespace>Vivre.UpdateAgent</RootNamespace>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <Deterministic>true</Deterministic>
+    <!-- When Desktop is published with -r win-x64 the RID propagates to this ProjectReference and
+         would otherwise nest the output under net48\win-x64\. Pin it to net48\ so the Desktop
+         Copy targets find Vivre.UpdateAgent.exe at a deterministic, RID-agnostic path. -->
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- JavaScriptSerializer for reading the config + writing progress JSON, no NuGet. -->
+    <Reference Include="System.Web.Extensions" />
+    <Reference Include="Interop.WUApiLib">
+      <HintPath>Interop.WUApiLib.dll</HintPath>
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+
+</Project>

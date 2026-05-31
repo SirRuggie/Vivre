@@ -19,8 +19,18 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
+- **Windows Update lane** — scan, install, uninstall, and schedule updates per machine with live
+  progress (a built-in BatchPatch-style patcher). See `UPDATE_PLAN.md`.
 - **Named machine lists** and a **searchable activity log** (in-app panel + rolling file).
 - Session credentials (current login by default, or supply your own in Settings).
+
+## Roadmap
+
+- **Reboot-and-wait** after install (auto-reboot + watch for the box to return) — the on-target
+  agent already reboots; only the UI toggle + "waiting…" status is missing.
+- (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
+- Accessibility polish deferred as low-value for a single sighted user: full screen-reader naming
+  on the grids + automation IDs; light-theme tuning of the script editor's highlight colours.
 
 ## Build & run
 
@@ -53,7 +63,7 @@ git-ignored.)
 - `tools/RemoteRun` — small console to test remote PowerShell against a host.
 - `scripts/` — the curated PowerShell script library (PS7 / `Get-CimInstance`), organised into
   category folders. Shipped with the app and seeded into `%APPDATA%\Vivre\Scripts` on first
-  run; surfaced via the grid's cascading **Run script ▸** right-click menu. See `scripts/README.md`.
-- `REBUILD_PLAN.md` — design decisions, build history, and remaining backlog.
+  run; opened from the grid's right-click **Run script…**. See `scripts/README.md`.
+- `UPDATE_PLAN.md` — the Windows Update lane: how patching works and its reliability constraints.
 
-See [CHANGELOG.md](CHANGELOG.md) for what changed in the rewrite.
+See [CHANGELOG.md](CHANGELOG.md) for version history.

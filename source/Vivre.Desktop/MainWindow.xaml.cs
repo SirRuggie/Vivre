@@ -3,7 +3,6 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Vivre.Desktop.ViewModels;
-using Wpf.Ui.Appearance;
 using Wpf.Ui.Controls;
 using MenuItem = System.Windows.Controls.MenuItem;
 using MessageBox = Wpf.Ui.Controls.MessageBox;
@@ -19,6 +18,24 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class MainWindow : FluentWindow
 {
+    // --- keyboard accelerators (wired in MainWindow.xaml's InputBindings/CommandBindings) ---
+    public static readonly RoutedUICommand NewTabKey = new("New tab", nameof(NewTabKey), typeof(MainWindow));
+    public static readonly RoutedUICommand CloseTabKey = new("Close tab", nameof(CloseTabKey), typeof(MainWindow));
+    public static readonly RoutedUICommand FocusAddKey = new("Focus add box", nameof(FocusAddKey), typeof(MainWindow));
+    public static readonly RoutedUICommand RenameTabKey = new("Rename tab", nameof(RenameTabKey), typeof(MainWindow));
+    public static readonly RoutedUICommand ToggleModeKey = new("Toggle mode", nameof(ToggleModeKey), typeof(MainWindow));
+    public static readonly RoutedUICommand RefreshKey = new("Refresh", nameof(RefreshKey), typeof(MainWindow));
+    public static readonly RoutedUICommand InstallKey = new("Install", nameof(InstallKey), typeof(MainWindow));
+
+    /// <summary>Persisted preferences (theme) — injected by the composition root.</summary>
+    internal AppSettingsStore? Settings { get; set; }
+
+    /// <summary>Activity log for surfacing settings-save failures — injected by the composition root.</summary>
+    internal Core.Logging.IActivityLog? Log { get; set; }
+
+    /// <summary>The theme applied at startup — used to tick the right Theme menu item.</summary>
+    internal string SavedTheme { get; set; } = "Dark";
+
     public MainWindow()
     {
         InitializeComponent();
@@ -28,10 +45,86 @@ public partial class MainWindow : FluentWindow
         {
             BuildFileMenu();
             StartRelativeTimeRefresh();
+            HookOperationToasts();
+            UpdateThemeChecks(SavedTheme);
         };
     }
 
     private ShellViewModel? Shell => DataContext as ShellViewModel;
+
+    // --- completion toast (tray balloon when a Scan/Install/Uninstall finishes) ---
+
+    private void HookOperationToasts()
+    {
+        if (Shell is not { } shell)
+        {
+            return;
+        }
+
+        foreach (WorkspaceViewModel tab in shell.Tabs)
+        {
+            tab.OperationCompleted += OnOperationCompleted;
+        }
+
+        // Tabs come and go — keep subscriptions in step (no double-subscribe, no leak).
+        shell.Tabs.CollectionChanged += (_, e) =>
+        {
+            if (e.OldItems is not null)
+            {
+                foreach (WorkspaceViewModel tab in e.OldItems.OfType<WorkspaceViewModel>())
+                {
+                    tab.OperationCompleted -= OnOperationCompleted;
+                }
+            }
+
+            if (e.NewItems is not null)
+            {
+                foreach (WorkspaceViewModel tab in e.NewItems.OfType<WorkspaceViewModel>())
+                {
+                    tab.OperationCompleted -= OnOperationCompleted;
+                    tab.OperationCompleted += OnOperationCompleted;
+                }
+            }
+        };
+    }
+
+    private DispatcherTimer? _completionBarTimer;
+
+    private void OnOperationCompleted(string summary)
+    {
+        // Window focused → a brief in-window banner (the operator is watching, a tray balloon would
+        // be missed/ignored). Window unfocused → the tray balloon, as before.
+        if (IsActive)
+        {
+            Dispatcher.Invoke(() => ShowCompletionBar(summary));
+            return;
+        }
+
+        Dispatcher.Invoke(() => TrayIcon.ShowBalloonTip("Vivre", summary, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
+    }
+
+    private void ShowCompletionBar(string summary)
+    {
+        CompletionBar.Message = summary;
+        CompletionBar.Severity = summary.Contains("failed", StringComparison.OrdinalIgnoreCase)
+            ? InfoBarSeverity.Warning
+            : InfoBarSeverity.Success;
+        CompletionBar.IsOpen = true;
+
+        // Auto-dismiss after a few seconds (the activity log + status bar keep the durable record).
+        _completionBarTimer ??= new DispatcherTimer();
+        _completionBarTimer.Stop();
+        _completionBarTimer.Interval = TimeSpan.FromSeconds(7);
+        _completionBarTimer.Tick -= OnCompletionBarTick;
+        _completionBarTimer.Tick += OnCompletionBarTick;
+        _completionBarTimer.Start();
+    }
+
+    private void OnCompletionBarTick(object? sender, EventArgs e)
+    {
+        _completionBarTimer?.Stop();
+        CompletionBar.IsOpen = false;
+    }
 
     // --- keep relative times ("Last reboot") current between health checks ---
 
@@ -97,13 +190,55 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // --- theme (app-wide) ---
+    /// <summary>Opens the activity-log panel filtered to one machine (right-click "Show messages").</summary>
+    public void ShowActivityForMachine(string machine)
+    {
+        if (Shell is { } shell)
+        {
+            shell.ActivityLog.SearchText = machine;
+        }
 
-    private void OnThemeLight(object sender, RoutedEventArgs e) => ApplicationThemeManager.Apply(ApplicationTheme.Light);
+        if (!ActivityLogMenuItem.IsChecked)
+        {
+            ActivityLogMenuItem.IsChecked = true;
+            OnToggleActivityLog(ActivityLogMenuItem, new RoutedEventArgs());
+        }
+    }
 
-    private void OnThemeDark(object sender, RoutedEventArgs e) => ApplicationThemeManager.Apply(ApplicationTheme.Dark);
+    // --- theme (app-wide, persisted to %APPDATA%\Vivre\settings.json) ---
 
-    private void OnThemeSystem(object sender, RoutedEventArgs e) => ApplicationThemeManager.ApplySystemTheme();
+    private void OnThemeLight(object sender, RoutedEventArgs e) => SetTheme("Light");
+
+    private void OnThemeDark(object sender, RoutedEventArgs e) => SetTheme("Dark");
+
+    private void OnThemeSystem(object sender, RoutedEventArgs e) => SetTheme("System");
+
+    private void SetTheme(string theme)
+    {
+        App.ApplyTheme(theme);
+        UpdateThemeChecks(theme);
+        try
+        {
+            Settings?.Save(new AppSettings { Theme = theme });
+        }
+        catch (Exception ex)
+        {
+            Log?.Warn(null, $"Couldn't save theme preference. {ex.Message}");
+        }
+    }
+
+    /// <summary>Ticks the active theme in the menu (the three items are a manual radio group).</summary>
+    private void UpdateThemeChecks(string theme)
+    {
+        if (LightThemeItem is null)
+        {
+            return;
+        }
+
+        LightThemeItem.IsChecked = theme == "Light";
+        DarkThemeItem.IsChecked = theme == "Dark";
+        SystemThemeItem.IsChecked = theme == "System";
+    }
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
     {
@@ -116,6 +251,105 @@ public partial class MainWindow : FluentWindow
     private void OnOpenAbout(object sender, RoutedEventArgs e) =>
         new AboutWindow { Owner = this }.ShowDialog();
 
+    private void OnOpenExcludeDialog(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is not { } vm)
+        {
+            return;
+        }
+
+        var dialog = new TextPromptWindow(
+            "Exclude updates",
+            "Comma-separated update title terms to skip (e.g. SQL, Silverlight, Edge):",
+            vm.ExcludeText) { Owner = this };
+
+        if (dialog.ShowDialog() == true && dialog.Value is { } text)
+        {
+            vm.ExcludeText = text;
+        }
+    }
+
+    // --- toolbar Install (confirm scope before hitting production) ---
+
+    private async void OnInstallClick(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is not { } vm)
+        {
+            return;
+        }
+
+        // Mirror InstallTarget's scope: the selected rows, or every row when nothing is selected.
+        bool hasSelection = vm.SelectedComputers.Count > 0;
+        int count = hasSelection ? vm.SelectedComputers.Count : vm.Computers.Count;
+        if (count == 0 || !vm.InstallTargetCommand.CanExecute(null))
+        {
+            return; // nothing to target / a sweep is already running
+        }
+
+        string scope = hasSelection ? $"the {count} selected machine(s)" : $"all {count} machine(s) in this tab";
+        var confirm = new MessageBox
+        {
+            Title = "Install updates",
+            Content = $"Download and install applicable updates on {scope}?\n\n"
+                      + "Each host runs a one-time SYSTEM task. A required reboot is reported, not forced.",
+            PrimaryButtonText = $"Install on {count}",
+            CloseButtonText = "Cancel",
+        };
+
+        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary
+            && vm.InstallTargetCommand.CanExecute(null))
+        {
+            vm.InstallTargetCommand.Execute(null);
+        }
+    }
+
+    // --- keyboard accelerator handlers (routed from the window's InputBindings) ---
+
+    private void OnNewTabKey(object sender, ExecutedRoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);
+
+    private void OnCloseTabKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is { } tab)
+        {
+            CloseTabWithGuard(tab);
+        }
+    }
+
+    private void OnFocusAddKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        QuickAddBox.Focus();
+        QuickAddBox.SelectAll();
+    }
+
+    private void OnRenameTabKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is { } tab)
+        {
+            RenameTab(tab);
+        }
+    }
+
+    private void OnToggleModeKey(object sender, ExecutedRoutedEventArgs e) =>
+        Shell?.SelectedTab?.ToggleUpdateModeCommand.Execute(null);
+
+    private void OnRefreshKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        var cmd = Shell?.SelectedTab?.PingAllCommand;
+        if (cmd?.CanExecute(null) == true)
+        {
+            cmd.Execute(null);
+        }
+    }
+
+    private void OnInstallKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        // Ctrl+Enter installs — only where the toolbar Install button is shown (Update / Applicable scope).
+        if (Shell?.SelectedTab is { CanShowInstallToolbar: true })
+        {
+            OnInstallClick(sender, e);
+        }
+    }
+
     // --- tabs ---
 
     private void OnNewTab(object sender, RoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);
@@ -124,8 +358,33 @@ public partial class MainWindow : FluentWindow
     {
         if (sender is FrameworkElement { DataContext: WorkspaceViewModel workspace })
         {
-            Shell?.CloseTabCommand.Execute(workspace);
+            CloseTabWithGuard(workspace);
         }
+    }
+
+    /// <summary>Closes a tab — but confirms first when it holds work (loaded machines or a live
+    /// monitor/sweep) so a curated list or running op isn't lost on a stray click. Empty, idle tabs
+    /// close instantly so the guard never habituates.</summary>
+    private async void CloseTabWithGuard(WorkspaceViewModel workspace)
+    {
+        if (workspace.HasWork)
+        {
+            int n = workspace.Computers.Count;
+            string detail = n > 0 ? $"{n} machine(s)" : "a running operation";
+            var confirm = new MessageBox
+            {
+                Title = "Close tab",
+                Content = $"Close \"{workspace.Title}\"? It has {detail}.\n\nMachines stay in any saved list — re-open to bring them back.",
+                PrimaryButtonText = "Close tab",
+                CloseButtonText = "Keep open",
+            };
+            if (await confirm.ShowDialogAsync() != MessageBoxResult.Primary)
+            {
+                return;
+            }
+        }
+
+        Shell?.CloseTabCommand.Execute(workspace);
     }
 
     private void OnTabHeaderClick(object sender, MouseButtonEventArgs e)
@@ -209,7 +468,7 @@ public partial class MainWindow : FluentWindow
     {
         FileMenu.Items.Clear();
 
-        var newTab = new MenuItem { Header = "_New tab" };
+        var newTab = new MenuItem { Header = "_New tab", InputGestureText = "Ctrl+T" };
         newTab.Click += OnNewTab;
         FileMenu.Items.Add(newTab);
 

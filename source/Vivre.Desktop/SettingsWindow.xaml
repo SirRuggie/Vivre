@@ -59,7 +59,7 @@
                               Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" />
 
                 <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Username" />
-                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8"
+                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserNameBox"
                               PlaceholderText="e.g. admin_sbridges"
                               Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
 
@@ -69,8 +69,8 @@
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,0,24,16">
-            <ui:Button Appearance="Primary" Content="Save" Click="OnSave" />
-            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" />
+            <ui:Button Appearance="Primary" Content="Save" Click="OnSave" IsDefault="True" />
+            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>
     </Grid>
 </ui:FluentWindow>
