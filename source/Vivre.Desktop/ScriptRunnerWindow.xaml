@@ -63,7 +63,7 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type GroupItem}">
-                                            <Expander IsExpanded="True">
+                                            <Expander IsExpanded="False">
                                                 <Expander.Header>
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock FontWeight="SemiBold">

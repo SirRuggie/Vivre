@@ -55,9 +55,9 @@ public partial class WorkspaceViewModel : ObservableObject
     // amber dot forever (once RebootRequired is true we otherwise stop probing).
     private readonly ConcurrentDictionary<string, int> _rebootRecheckBudget = new(StringComparer.OrdinalIgnoreCase);
     private const int PostBootRebootRechecks = 5;
-    // Machines with a pending scheduled install (name → trigger time). Drives the "Scheduled task"
-    // columns and lets the monitor clear them once the trigger time has passed (client-side, no poll).
-    private readonly ConcurrentDictionary<string, DateTime> _scheduledInstalls = new(StringComparer.OrdinalIgnoreCase);
+    // Machines with a pending scheduled task — install or reboot (name → trigger time). Drives the
+    // "Scheduled task" columns and lets the monitor clear them once the time has passed (client-side).
+    private readonly ConcurrentDictionary<string, DateTime> _scheduledTasks = new(StringComparer.OrdinalIgnoreCase);
     // All operations currently running in this tab (Ping/Check/Scan/Install/Uninstall sweeps).
     // Tracked as a set rather than a single field so independent operations can overlap — Stop
     // cancels them all, and IsBusy stays true until the last one finishes. This is what lets you
@@ -551,6 +551,99 @@ public partial class WorkspaceViewModel : ObservableObject
     /// time passes.</summary>
     public Task ScheduleInstallSelectedAsync(IReadOnlyList<Computer> rows, DateTime at) =>
         RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct, at), "Schedule");
+
+    /// <summary>
+    /// Registers a one-time SYSTEM scheduled task (<c>Vivre_Reboot</c>) on each selected machine that
+    /// force-restarts it at <paramref name="at"/>. No agent needed — just <c>shutdown /r /f</c>.
+    /// Populates the "Scheduled task" columns; the monitor clears them once the time passes.
+    /// </summary>
+    public async Task ScheduleRebootSelectedAsync(IReadOnlyList<Computer> rows, DateTime at, CancellationToken token = default)
+    {
+        string script = $$"""
+            $trigger   = New-ScheduledTaskTrigger -Once -At '{{at:s}}'
+            $action    = New-ScheduledTaskAction -Execute 'shutdown.exe' -Argument '/r /f /t 0 /c "Vivre scheduled reboot"'
+            $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
+            $settings  = New-ScheduledTaskSettingsSet
+            Register-ScheduledTask -TaskName 'Vivre_Reboot' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+            'OK'
+            """;
+
+        foreach (Computer computer in (rows.Count > 0 ? rows : [.. SelectedComputers]).ToList())
+        {
+            computer.LastError = null;
+            computer.LastStatus = "Scheduling reboot…";
+            try
+            {
+                PSExecutionResult result = IsLocalHost(computer.Name)
+                    ? await _powerShell.RunLocalAsync(script, token)
+                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+
+                if (result.HadErrors)
+                {
+                    computer.LastStatus = "Schedule failed";
+                    computer.LastError = result.Errors.Count > 0 ? result.Errors[0] : "Register-ScheduledTask failed";
+                    _activity.Error(computer.Name, $"Schedule reboot failed — {computer.LastError}");
+                }
+                else
+                {
+                    computer.ScheduledAction = "Reboot";
+                    computer.ScheduledNextRun = at;
+                    computer.LastStatus = $"Reboot scheduled for {at:g}";
+                    _scheduledTasks[computer.Name] = at;
+                    _activity.Info(computer.Name, $"Reboot scheduled for {at:g}");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                computer.LastStatus = "Cancelled";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                computer.LastStatus = "Schedule failed";
+                computer.LastError = ex.Message;
+                _activity.Error(computer.Name, $"Schedule reboot failed — {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Cancels any pending Vivre scheduled task (install or reboot — <c>Vivre_*</c>) on each selected
+    /// machine and clears its "Scheduled task" columns. Safe: it only removes pending tasks.
+    /// </summary>
+    public async Task CancelScheduledTaskSelectedAsync(IReadOnlyList<Computer> rows, CancellationToken token = default)
+    {
+        const string script = "Get-ScheduledTask -TaskName 'Vivre_*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false; 'OK'";
+        foreach (Computer computer in (rows.Count > 0 ? rows : [.. SelectedComputers]).ToList())
+        {
+            computer.LastError = null;
+            computer.LastStatus = "Cancelling scheduled task…";
+            try
+            {
+                PSExecutionResult result = IsLocalHost(computer.Name)
+                    ? await _powerShell.RunLocalAsync(script, token)
+                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+
+                // Clear the columns regardless — there's nothing pending from our side now.
+                computer.ScheduledAction = null;
+                computer.ScheduledNextRun = null;
+                _scheduledTasks.TryRemove(computer.Name, out _);
+                computer.LastStatus = result.HadErrors ? "Cancel had errors" : "Scheduled task cancelled";
+                _activity.Info(computer.Name, "Cancelled pending scheduled task(s).");
+            }
+            catch (OperationCanceledException)
+            {
+                computer.LastStatus = "Cancelled";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                computer.LastStatus = "Cancel failed";
+                computer.LastError = ex.Message;
+                _activity.Error(computer.Name, $"Cancel scheduled task failed — {ex.Message}");
+            }
+        }
+    }
 
     /// <summary>
     /// Scans only the focused machine — wired to the side-panel "Scan" button that appears inside
@@ -1075,7 +1168,7 @@ public partial class WorkspaceViewModel : ObservableObject
                 computer.ScheduledAction = "Install updates";
                 computer.ScheduledNextRun = when;
                 computer.UpdateMessage = $"Scheduled for {when:g}";
-                _scheduledInstalls[computer.Name] = when;
+                _scheduledTasks[computer.Name] = when;
             }
         }
         catch (OperationCanceledException)
@@ -1301,9 +1394,9 @@ public partial class WorkspaceViewModel : ObservableObject
     {
         // Clear a scheduled-install row once its trigger time has passed (client-side — the task has
         // fired by now; a later scan shows the result). No remote call.
-        if (_scheduledInstalls.TryGetValue(computer.Name, out DateTime scheduledFor) && DateTime.Now >= scheduledFor)
+        if (_scheduledTasks.TryGetValue(computer.Name, out DateTime scheduledFor) && DateTime.Now >= scheduledFor)
         {
-            _scheduledInstalls.TryRemove(computer.Name, out _);
+            _scheduledTasks.TryRemove(computer.Name, out _);
             computer.ScheduledAction = null;
             computer.ScheduledNextRun = null;
         }
@@ -1736,6 +1829,42 @@ public partial class WorkspaceViewModel : ObservableObject
                 computer.LastError = ex.Message;
                 _activity.Error(computer.Name, $"Force reboot failed — {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Reads the OS caption + build for one machine on demand (e.g. when its detail window opens),
+    /// if not already known. Best-effort — a single quick WinRM query; leaves <see
+    /// cref="Computer.OperatingSystem"/> as-is on failure.
+    /// </summary>
+    public async Task FetchOperatingSystemAsync(Computer computer, CancellationToken token = default)
+    {
+        if (!string.IsNullOrEmpty(computer.OperatingSystem))
+        {
+            return; // already known
+        }
+
+        const string script =
+            "$o = Get-CimInstance Win32_OperatingSystem; \"$(($o.Caption -replace '^Microsoft ','').Trim()) — $($o.Version)\"";
+        try
+        {
+            PSExecutionResult result = IsLocalHost(computer.Name)
+                ? await _powerShell.RunLocalAsync(script, token)
+                : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+
+            string? os = result.Output.Count > 0 ? result.Output[0]?.BaseObject?.ToString()?.Trim() : null;
+            if (!string.IsNullOrWhiteSpace(os))
+            {
+                computer.OperatingSystem = os;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Best-effort — the detail window just shows "—" if the OS can't be read (offline, no WinRM).
         }
     }
 

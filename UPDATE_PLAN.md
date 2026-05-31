@@ -59,10 +59,12 @@ progress JSONL that the controller tails.
   `IsUninstallable`**. **Note:** modern cumulative updates are **non-removable by design** — Windows
   refuses with `0x800F0825` (permanent SSU/package). That's expected, not a tool bug; the per-KB
   reason is surfaced to the user.
-- **Schedule install** (right-click → *Updates ▸ Schedule install…*) registers the SYSTEM task with
-  a one-time trigger (`RunBehavior.ScheduleAt`) instead of running now. The two **Scheduled task**
-  columns show what's queued + when; they clear once the trigger time has passed (client-side — no
-  per-tick polling of the target).
+- **Schedule** (right-click → *Schedule ▸*) — runs a one-time SYSTEM task at a chosen time:
+  - **Install updates…** — `RunBehavior.ScheduleAt`; registers the agent task with a one-time trigger.
+  - **Reboot…** — registers a `Vivre_Reboot` task that runs `shutdown /r /f` (no agent needed).
+  - **Cancel scheduled task** — unregisters any pending `Vivre_*` task on the host.
+  The two **Scheduled task** columns show what's queued + when; they clear once the trigger time has
+  passed (client-side — no per-tick polling of the target).
 
 ---
 
@@ -109,8 +111,9 @@ These mechanisms exist because of real production failures. Don't undo them with
   toggle, All/None, and Install / Uninstall buttons.
 - **Command bar** (Update mode) — Scan and Install, labelled for the current target ("…selected (N)"
   vs "…all"). Source / Include-drivers / Exclude live under the **Updates** menu.
-- **Right-click** — Scan / Install / **Schedule install** selected · **Reboot (force now)** ·
-  **Details…** · **Show messages** · Run script… · Client actions ▸ · Enable WinRM.
+- **Right-click** — Scan / Install selected · **Reboot (force now)** · **Schedule ▸** (Install
+  updates / Reboot / Cancel) · **Details…** · **Show messages** · Run script… · Client actions ▸ ·
+  Enable WinRM.
 - **Per-machine detail window** (Details…) — live state (chip, messages, progress, reboot, scheduled)
   + tabs for Applicable / Installed updates / that machine's Messages.
 
@@ -119,12 +122,11 @@ These mechanisms exist because of real production failures. Don't undo them with
 ## Status
 
 **Done:** scan; install with live progress; uninstall (WUA + DISM, with the cumulative-update reason
-surfaced); schedule install; the reliability mechanisms above; the per-machine detail window;
-force-reboot.
+surfaced); schedule (install + reboot + cancel); the reliability mechanisms above; the per-machine
+detail window; force-reboot.
 
 **Deferred:**
 - Reboot-and-wait as an install option (the agent can reboot; no UI toggle / "waiting…" status yet).
-- Scheduled *reboot* (only scheduled *install* exists today).
 - An SCCM-deployment update lane (only if updates ever get deployed through SCCM here).
 
 **Pending live verification** (can't be driven from the build box — needs a real target server):
