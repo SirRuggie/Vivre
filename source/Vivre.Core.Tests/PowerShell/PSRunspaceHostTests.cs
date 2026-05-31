@@ -22,7 +22,7 @@ public class PSRunspaceHostTests
     [Fact]
     public async Task Get_Process_returns_objects()
     {
-        // The plan's Session 4 smoke test (REBUILD_PLAN.md §14).
+        // Local PowerShell host smoke test.
         PSExecutionResult result = await _host.RunLocalAsync("Get-Process | Select-Object -First 1");
 
         Assert.NotEmpty(result.Output);
@@ -65,8 +65,7 @@ public class PSRunspaceHostTests
     }
 
     // Remote argument validation runs before any network I/O, so these are safe to
-    // assert without a reachable target. Live WinRM verification is manual via
-    // tools/RemoteRun (REBUILD_PLAN.md §0).
+    // assert without a reachable target. Live WinRM verification is manual via tools/RemoteRun.
     [Theory]
     [InlineData(null)]
     [InlineData("")]

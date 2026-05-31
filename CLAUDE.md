@@ -4,38 +4,42 @@ This file guides Claude Code (claude.ai/code) when working in this repository.
 
 ## What this is
 
-**Vivre** — a Windows desktop tool for managing
-Microsoft Configuration Manager (SCCM/MEMCM) clients at scale: a tabbed grid of computers you ping,
-health-check, and run SCCM client actions / arbitrary PowerShell against. Named for the One Piece
-*Vivre Card* — every grid row is a card tracking one machine's life force (see **Help ▸ About Vivre**).
+**Vivre** — a **.NET 10 / WPF** Windows desktop tool for managing Microsoft Configuration Manager
+(SCCM/MEMCM) clients at scale: a tabbed grid of computers you ping, health-check, run SCCM client
+actions / arbitrary PowerShell against, and patch through a built-in Windows Update lane. Named for
+the One Piece *Vivre Card* — every grid row tracks one machine's life force (see **Help ▸ About Vivre**).
 
-It is a **.NET 10 / WPF** app — the modern rewrite of an older .NET Framework 4.8 WinForms
-app. **The legacy app was removed at cutover** (recover from git history if ever needed). Threat
-model: single user running against their own SCCM environment — favour usability/maintainability
-over enterprise hardening.
+Threat model: a single admin running it against their own environment — favour usability and
+maintainability over enterprise hardening. It's a dense power tool, not a consumer app.
 
 ## Start here
 
-**Read [REBUILD_PLAN.md](REBUILD_PLAN.md).** It's the design record + build history + the
-remaining backlog. **§0 "Current status" at the top is the resume point** — read it first and
-update it (status + NEXT + date) at the end of each working session. Keep the doc current when a
-decision changes or a feature lands.
+This file is the architecture + conventions reference. Two companions:
+- **[UPDATE_PLAN.md](UPDATE_PLAN.md)** — the Windows Update (WUA) lane deep-dive and its
+  **load-bearing reliability constraints — read it before touching the update or remoting code.**
+- **[README.md](README.md)** — the human-facing overview + roadmap.
+
+Keep this file and UPDATE_PLAN current when a decision changes or a feature lands.
 
 ## Layout
 
 - `source/Vivre.slnx` — the solution (`.slnx` format, the .NET 10 default).
   - **`Vivre.Core`** (net10.0) — non-UI logic: `Models`, `Net` (ping), `PowerShell`
-    (`PSRunspaceHost`), `Sccm` (`ConfigMgrClient`, client actions), `Remoting` (`WinRmEnabler`,
-    DCOM), `Credentials`, `Computers` (named-list store), `Scripts` (script library), `Logging`.
+    (`PSRunspaceHost` — the one place remoting happens), `Sccm` (`ConfigMgrClient`, client actions),
+    `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
+    store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output
     assembly is `Vivre` but the namespaces stay `Vivre.Desktop`.
+  - **`Vivre.UpdateAgent`** (net48) — tiny compiled EXE run as SYSTEM on the target to do WUA
+    install/uninstall with real progress callbacks; bundled beside `Vivre.exe` (see UPDATE_PLAN.md).
   - **`Vivre.Core.Tests`** (net10.0, xUnit).
 - `tools/RemoteRun` — dev console to exercise remote PowerShell (WinRM) against a host.
 - `scripts/` — the curated PowerShell script library (PS7 / `Get-CimInstance`), organised into
-  category folders; shipped with the app and seeded into `%APPDATA%\Vivre\Scripts` on first run,
-  surfaced via the grid's cascading **Run script ▸** right-click menu.
+  category folders; shipped with the app and seeded into `%APPDATA%\Vivre\Scripts` on first run.
+  Surfaced via the grid's right-click **Run script…**, which opens the Run Script window (the
+  library is grouped by category there).
 
 ## Building / running
 
@@ -61,3 +65,9 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   co-author/attribution line.
 - Commit only when the user asks; never push to a remote without explicit instruction.
 - No empty `catch {}` — surface failures (to the activity log / `LastError`), don't swallow them.
+- Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
+  large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
+- All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
+  it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see UPDATE_PLAN.md).
+- Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
+  changes or a feature lands — they're the human-readable source of truth.
