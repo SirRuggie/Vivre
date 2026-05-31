@@ -15,6 +15,8 @@ namespace Vivre.Desktop.ViewModels;
 public partial class ShellViewModel : ObservableObject
 {
     private readonly Func<WorkspaceViewModel> _newWorkspace;
+    // Monotonic so default tab titles never collide after a middle tab is closed.
+    private int _nextTabNumber = 1;
 
     public ShellViewModel(Func<WorkspaceViewModel> workspaceFactory, CredentialStore credentials, IActivityLog activityLog)
     {
@@ -39,7 +41,7 @@ public partial class ShellViewModel : ObservableObject
     private void NewTab()
     {
         WorkspaceViewModel workspace = _newWorkspace();
-        workspace.Title = $"Tab {Tabs.Count + 1}";
+        workspace.Title = $"Tab {_nextTabNumber++}";
         Tabs.Add(workspace);
         SelectedTab = workspace;
     }

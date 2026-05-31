@@ -31,6 +31,11 @@ public partial class WorkspaceView : UserControl
     /// where the user's splitter drag should be kept.</summary>
     private Computer? _lastFocused;
 
+    /// <summary>The row the user right-clicked — the anchor for the per-field Copy ▸ submenu, so it
+    /// copies THIS row's field regardless of any (possibly stale, multi-row) grid selection. Set in
+    /// <see cref="OnGridRightClick"/> immediately before the menu is built.</summary>
+    private Computer? _contextRow;
+
     public WorkspaceView()
     {
         InitializeComponent();
@@ -164,7 +169,9 @@ public partial class WorkspaceView : UserControl
     {
         _gridMenu.Items.Clear();
 
-        Computer? firstSelected = vm.SelectedComputers.FirstOrDefault();
+        // Per-field Copy items act on the right-clicked row (_contextRow); the multi-row items
+        // (Name(s) / Selected rows / online / offline) act on the selection.
+        Computer? ctx = _contextRow;
 
         var copy = new MenuItem { Header = "Copy" };
 
@@ -179,19 +186,19 @@ public partial class WorkspaceView : UserControl
 
         copy.Items.Add(new Separator());
 
-        var copyUpdate = new MenuItem { Header = "Update message", IsEnabled = !string.IsNullOrEmpty(firstSelected?.UpdateMessage) };
+        var copyUpdate = new MenuItem { Header = "Update message", IsEnabled = !string.IsNullOrEmpty(ctx?.UpdateMessage) };
         copyUpdate.Click += (_, _) => CopyField(static c => c.UpdateMessage);
         copy.Items.Add(copyUpdate);
 
-        var copyReboot = new MenuItem { Header = "Reboot message", IsEnabled = !string.IsNullOrEmpty(firstSelected?.RebootMessage) };
+        var copyReboot = new MenuItem { Header = "Reboot message", IsEnabled = !string.IsNullOrEmpty(ctx?.RebootMessage) };
         copyReboot.Click += (_, _) => CopyField(static c => c.RebootMessage);
         copy.Items.Add(copyReboot);
 
-        var copyCmd = new MenuItem { Header = "Command result", IsEnabled = !string.IsNullOrEmpty(firstSelected?.CommandResult) };
+        var copyCmd = new MenuItem { Header = "Command result", IsEnabled = !string.IsNullOrEmpty(ctx?.CommandResult) };
         copyCmd.Click += (_, _) => CopyField(static c => c.CommandResult);
         copy.Items.Add(copyCmd);
 
-        var copyErr = new MenuItem { Header = "Last error", IsEnabled = !string.IsNullOrEmpty(firstSelected?.LastError) };
+        var copyErr = new MenuItem { Header = "Last error", IsEnabled = !string.IsNullOrEmpty(ctx?.LastError) };
         copyErr.Click += (_, _) => CopyField(static c => c.LastError);
         copy.Items.Add(copyErr);
 
@@ -209,6 +216,17 @@ public partial class WorkspaceView : UserControl
 
         _gridMenu.Items.Add(new Separator());
 
+        // Inspect this machine: full detail window, or just its activity-log messages.
+        var details = new MenuItem { Header = "Details…" };
+        details.Click += OnShowDetails;
+        _gridMenu.Items.Add(details);
+
+        var showMessages = new MenuItem { Header = "Show messages" };
+        showMessages.Click += OnShowMessages;
+        _gridMenu.Items.Add(showMessages);
+
+        _gridMenu.Items.Add(new Separator());
+
         // In Windows Update mode, lead with the patch shortcuts (selection ⇒ those rows, else all).
         if (vm.IsUpdateMode)
         {
@@ -218,39 +236,56 @@ public partial class WorkspaceView : UserControl
             // (those rows are skipped anyway — disabling avoids a no-op click on an in-flight machine).
             bool anyActionable = vm.SelectedComputers.Any(c => !c.IsPatching);
 
-            var scan = new MenuItem { Header = "Scan selected", IsEnabled = anyActionable };
+            int selCount = vm.SelectedComputers.Count;
+            var scan = new MenuItem { Header = $"Scan selected ({selCount})", IsEnabled = anyActionable };
             scan.Click += (_, _) => _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
             updates.Items.Add(scan);
 
-            var install = new MenuItem { Header = "Install selected", IsEnabled = anyActionable };
+            var install = new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable };
             install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
             updates.Items.Add(install);
+
+            var schedule = new MenuItem { Header = $"Schedule install… ({selCount})", IsEnabled = anyActionable };
+            schedule.Click += OnScheduleInstall;
+            updates.Items.Add(schedule);
 
             _gridMenu.Items.Add(updates);
             _gridMenu.Items.Add(new Separator());
         }
 
-        var runSelected = new MenuItem { Header = "Run PowerShell Script" };
-        runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
-        _gridMenu.Items.Add(runSelected);
-
-        var runAll = new MenuItem { Header = "Run PowerShell (All Machines)" };
-        runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
-        _gridMenu.Items.Add(runAll);
-
-        _gridMenu.Items.Add(BuildScriptMenu(vm));
+        // Force-reboot the selected machines now — the most common Windows-Update follow-up.
+        var rebootForce = new MenuItem { Header = "Reboot (force now)…", IsEnabled = hasSelection };
+        rebootForce.Click += OnRebootForce;
+        _gridMenu.Items.Add(rebootForce);
 
         _gridMenu.Items.Add(new Separator());
 
+        // Run a saved (or pasted) script: opens the Run Script window, which lists the library
+        // grouped by category and is searchable — flatter than the old 3-level "Run script ▸
+        // Category ▸ Script" cascade, and lets you review before running on production.
+        var runSelected = new MenuItem { Header = "Run script… (selected)" };
+        runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
+        _gridMenu.Items.Add(runSelected);
+
+        var runAll = new MenuItem { Header = "Run script… (all machines)" };
+        runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
+        _gridMenu.Items.Add(runAll);
+
+        _gridMenu.Items.Add(new Separator());
+
+        // The five SCCM client-action triggers grouped under one submenu (was five flat items).
+        var clientActions = new MenuItem { Header = "Client actions" };
         foreach (ScheduleAction action in vm.ClientActions)
         {
-            _gridMenu.Items.Add(new MenuItem
+            clientActions.Items.Add(new MenuItem
             {
                 Header = action.Label,
                 Command = vm.TriggerScheduleCommand,
                 CommandParameter = action,
             });
         }
+
+        _gridMenu.Items.Add(clientActions);
 
         _gridMenu.Items.Add(new Separator());
 
@@ -260,70 +295,22 @@ public partial class WorkspaceView : UserControl
     }
 
     /// <summary>
-    /// The "Run script ▸" cascading menu, mirroring the script library's category folders.
-    /// Picking a leaf opens the Run Script window pre-loaded with that script and targeted at
-    /// the current selection — so you review and hit Run (no accidental bulk reboot from a click).
+    /// Opens the same right-click action menu from the toolbar "Actions ▾" button or the keyboard
+    /// (so nothing is mouse-right-click-only). Anchors the per-field Copy items on the focused /
+    /// first-selected row.
     /// </summary>
-    private MenuItem BuildScriptMenu(WorkspaceViewModel vm)
+    public void OpenActionsMenu(Control placementTarget)
     {
-        var root = new MenuItem { Header = "Run script" };
-
-        IReadOnlyList<ScriptFile> scripts = SafeListScripts(vm);
-        if (scripts.Count == 0)
+        if (ViewModel is not { } vm)
         {
-            root.Items.Add(new MenuItem { Header = "(no saved scripts)", IsEnabled = false });
-            return root;
+            return;
         }
 
-        // Category sub-menus first (alphabetical), then any root-level scripts.
-        foreach (IGrouping<string, ScriptFile> group in scripts
-                     .Where(s => !string.IsNullOrEmpty(s.Category))
-                     .GroupBy(s => s.Category)
-                     .OrderBy(g => g.Key, StringComparer.OrdinalIgnoreCase))
-        {
-            var category = new MenuItem { Header = group.Key };
-            foreach (ScriptFile script in group)
-            {
-                category.Items.Add(ScriptMenuItem(vm, script));
-            }
-
-            root.Items.Add(category);
-        }
-
-        List<ScriptFile> loose = [.. scripts.Where(s => string.IsNullOrEmpty(s.Category))];
-        if (loose.Count > 0)
-        {
-            if (root.Items.Count > 0)
-            {
-                root.Items.Add(new Separator());
-            }
-
-            foreach (ScriptFile script in loose)
-            {
-                root.Items.Add(ScriptMenuItem(vm, script));
-            }
-        }
-
-        return root;
-    }
-
-    private MenuItem ScriptMenuItem(WorkspaceViewModel vm, ScriptFile script)
-    {
-        var item = new MenuItem { Header = script.Name };
-        item.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers], script);
-        return item;
-    }
-
-    private static IReadOnlyList<ScriptFile> SafeListScripts(WorkspaceViewModel vm)
-    {
-        try
-        {
-            return vm.ScriptLibrary.List();
-        }
-        catch
-        {
-            return [];
-        }
+        _contextRow = vm.FocusedComputer ?? vm.SelectedComputers.FirstOrDefault();
+        BuildContextMenu(vm);
+        _gridMenu.PlacementTarget = placementTarget;
+        _gridMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        _gridMenu.IsOpen = true;
     }
 
     private void OpenScriptRunner(IReadOnlyList<Computer> targets, ScriptFile? initialScript = null)
@@ -371,24 +358,22 @@ public partial class WorkspaceView : UserControl
     }
 
     /// <summary>
-    /// Copies one field across the selected rows (one row per line, blanks dropped). Used by the
-    /// Copy submenu for the long-text columns so the user can grab the full message without the
-    /// rest of the row noise — Ctrl+C / "Selected rows" still copies the whole row.
+    /// Copies one long-text field of the RIGHT-CLICKED row (<see cref="_contextRow"/>) so the user
+    /// can grab that one cell's full text — independent of the grid selection, which may be a stale
+    /// multi-row set shared between the Machines and Windows Update grids. Ctrl+C / "Selected rows"
+    /// still copies the whole (multi-row) selection.
     /// </summary>
     private void CopyField(Func<Computer, string?> selector)
     {
-        if (ViewModel is not { SelectedComputers.Count: > 0 } vm)
+        if (_contextRow is null)
         {
             return;
         }
 
-        string text = string.Join(
-            Environment.NewLine,
-            vm.SelectedComputers.Select(c => selector(c) ?? string.Empty).Where(static s => s.Length > 0));
-
-        if (text.Length > 0)
+        string? value = selector(_contextRow);
+        if (!string.IsNullOrEmpty(value))
         {
-            Clipboard.SetText(text);
+            Clipboard.SetText(value);
         }
     }
 
@@ -412,6 +397,80 @@ public partial class WorkspaceView : UserControl
         if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
         {
             await vm.EnableWinRmSelectedAsync();
+        }
+    }
+
+    /// <summary>
+    /// Force-reboot confirmation. The hot Windows-Update follow-up, but destructive (unsaved work is
+    /// lost), so it restates the count + names before firing <c>shutdown /r /f</c> on each.
+    /// </summary>
+    private async void OnRebootForce(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { SelectedComputers.Count: > 0 } vm)
+        {
+            return;
+        }
+
+        int count = vm.SelectedComputers.Count;
+        string names = string.Join(", ", vm.SelectedComputers.Take(8).Select(c => c.Name));
+        if (count > 8)
+        {
+            names += $", +{count - 8} more";
+        }
+
+        var confirm = new MessageBox
+        {
+            Title = "Force reboot",
+            Content = $"Force-reboot {count} machine(s) now?\n\n{names}\n\n"
+                      + "Runs 'shutdown /r /f /t 5' — any unsaved work on those machines is lost.",
+            PrimaryButtonText = $"Reboot {count}",
+            CloseButtonText = "Cancel",
+        };
+
+        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
+        {
+            await vm.RebootForceSelectedAsync();
+        }
+    }
+
+    /// <summary>The machine the menu acts on: the right-clicked row, else the focused/first-selected.</summary>
+    private Computer? ContextOrFocused() =>
+        _contextRow ?? ViewModel?.FocusedComputer ?? ViewModel?.SelectedComputers.FirstOrDefault();
+
+    private void OnShowDetails(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm && ContextOrFocused() is { } computer)
+        {
+            new ComputerDetailWindow(computer, vm.Activity) { Owner = OwnerWindow }.Show();
+        }
+    }
+
+    private void OnShowMessages(object sender, RoutedEventArgs e)
+    {
+        if (ContextOrFocused() is { } computer && OwnerWindow is MainWindow main)
+        {
+            main.ShowActivityForMachine(computer.Name);
+        }
+    }
+
+    /// <summary>Schedule the install for a future time on the selected machines (one-time SYSTEM task).</summary>
+    private async void OnScheduleInstall(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        var targets = vm.SelectedComputers.ToList();
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        var dialog = new ScheduleWindow { Owner = OwnerWindow };
+        if (dialog.ShowDialog() == true && dialog.Value is { } at)
+        {
+            await vm.ScheduleInstallSelectedAsync(targets, at);
         }
     }
 
@@ -444,6 +503,10 @@ public partial class WorkspaceView : UserControl
             return; // right-clicked a header / empty area
         }
 
+        // Anchor the per-field Copy items on the right-clicked row, independent of the (possibly
+        // stale / multi-row) selection — fixes "Copy ▸ Update message copied all machines".
+        _contextRow = row.Item as Computer;
+
         if (!row.IsSelected)
         {
             grid.UnselectAll();
@@ -461,19 +524,62 @@ public partial class WorkspaceView : UserControl
     private void OnRowDoubleClick(object sender, MouseButtonEventArgs e)
     {
         DataGridRow? row = FindParent<DataGridRow>(e.OriginalSource as DependencyObject);
-        if (row?.Item is Computer computer)
+        if (row?.Item is not Computer computer || ViewModel is not { } vm)
         {
-            OpenScriptRunner([computer]); // double-click → script window for that one machine
+            return;
         }
+
+        // The double-click selects this row first, so target the current selection — same machines
+        // the right-click "Run script (selected)" would use (no surprise single-machine scope).
+        IReadOnlyList<Computer> targets = vm.SelectedComputers.Count > 0 ? [.. vm.SelectedComputers] : [computer];
+        OpenScriptRunner(targets);
     }
 
-    private void OnGridKeyDown(object sender, KeyEventArgs e)
+    private async void OnGridKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Delete && ViewModel is { } vm)
+        if (ViewModel is not { } vm)
         {
-            vm.RemoveSelected();
-            e.Handled = true;
+            return;
         }
+
+        // Shift+F10 / the Menu key → open the action menu by keyboard (parity with right-click).
+        if (sender is DataGrid grid && (e.Key == Key.Apps || (e.Key == Key.F10 && Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))))
+        {
+            e.Handled = true;
+            OpenActionsMenu(grid);
+            return;
+        }
+
+        if (e.Key != Key.Delete)
+        {
+            return;
+        }
+
+        e.Handled = true;
+        int count = vm.SelectedComputers.Count;
+        if (count == 0)
+        {
+            return;
+        }
+
+        // Small deletes are instant (re-pasteable, so cheap to undo); confirm only a large prune so
+        // the guard never habituates on the 1–2 row case.
+        if (count > 5)
+        {
+            var confirm = new MessageBox
+            {
+                Title = "Remove machines",
+                Content = $"Remove {count} machines from this tab?\n\nThey stay in any saved list — re-load to bring them back.",
+                PrimaryButtonText = $"Remove {count}",
+                CloseButtonText = "Cancel",
+            };
+            if (await confirm.ShowDialogAsync() != MessageBoxResult.Primary)
+            {
+                return;
+            }
+        }
+
+        vm.RemoveSelected();
     }
 
     private static T? FindParent<T>(DependencyObject? element) where T : DependencyObject

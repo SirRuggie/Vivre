@@ -38,7 +38,7 @@
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,12,16,16">
             <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" Content="Load" Click="OnLoad" />
-            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" />
+            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>
     </Grid>
 </ui:FluentWindow>

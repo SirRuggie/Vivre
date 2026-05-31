@@ -121,6 +121,37 @@ public sealed class WuaUpdateLane
         HostPatchStatus last = new(PatchPhase.Scanning, startingMessage);
         bool progressSeen = false;
 
+        // Liveness watchdog. The server-side controller heartbeats every ~15s while the session is
+        // alive (even during a slow download/install), so total silence — no progress AND no
+        // heartbeat — for NoResponseTimeout means the session is dead/hung (e.g. a silently-dropped
+        // connection the SDK never threw on). We cancel + report that, while a genuinely slow update
+        // keeps heartbeating and is never flagged. lastLineTicks is bumped on EVERY received line.
+        long[] lastLineTicks = [DateTime.UtcNow.Ticks];
+        bool watchdogStale = false;
+        using var watchdogCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+
+        Task watchdog = Task.Run(async () =>
+        {
+            try
+            {
+                while (!watchdogCts.IsCancellationRequested)
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(15), watchdogCts.Token).ConfigureAwait(false);
+                    long idle = DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref lastLineTicks[0]);
+                    if (idle > options.NoResponseTimeout.Ticks)
+                    {
+                        watchdogStale = true;
+                        watchdogCts.Cancel(); // stops the streaming pipeline → surfaces as OperationCanceled
+                        return;
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Normal: the op finished (or was cancelled) and we cancelled the watchdog.
+            }
+        });
+
         try
         {
             PSExecutionResult result = await RunStreamingAsync(
@@ -134,6 +165,9 @@ public sealed class WuaUpdateLane
                     {
                         return;
                     }
+
+                    // Any line — progress OR heartbeat — proves the session is alive; reset the watchdog.
+                    System.Threading.Interlocked.Exchange(ref lastLineTicks[0], DateTime.UtcNow.Ticks);
 
                     // Heartbeat lines keep the channel visibly alive during long sync-mode
                     // downloads but must NOT change the UI phase (Heartbeat would otherwise
@@ -151,7 +185,7 @@ public sealed class WuaUpdateLane
                         progress.Report(parsed);
                     }
                 },
-                cancellationToken).ConfigureAwait(false);
+                watchdogCts.Token).ConfigureAwait(false);
 
             if (!progressSeen)
             {
@@ -168,6 +202,15 @@ public sealed class WuaUpdateLane
 
             return last;
         }
+        catch (OperationCanceledException) when (watchdogStale && !cancellationToken.IsCancellationRequested)
+        {
+            // The watchdog tripped (total silence) — not a user Stop. The session is dead/hung.
+            var stale = HostPatchStatus.Failed(
+                $"No response from {host} for {options.NoResponseTimeout.TotalSeconds:N0}s — the remote session stopped sending progress and heartbeats (it appears dead or hung). Hit Stop, then re-scan once it's back.");
+            progress.Report(stale);
+            await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
+            return stale;
+        }
         catch (OperationCanceledException)
         {
             progress.Report(new HostPatchStatus(PatchPhase.Idle, "Cancelled"));
@@ -176,12 +219,47 @@ public sealed class WuaUpdateLane
             await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
             throw;
         }
-        catch (Exception ex)
+        catch (RemoteShellInitException ex)
         {
+            // The target's WinRM/PSRP shell init is failing (pending reboot / shell exhaustion).
+            // The exception message is already actionable ("reboot the target"); surface it as-is.
             var failed = HostPatchStatus.Failed(ex.Message);
             progress.Report(failed);
             await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
             return failed;
+        }
+        catch (RemoteSessionLostException)
+        {
+            // The remote session died unexpectedly (target rebooted / WinRM dropped) — distinct
+            // from a user Stop ("Cancelled") and from a genuine worker error. Don't leak the raw
+            // "The pipeline has been stopped." SDK string.
+            var lost = HostPatchStatus.Failed(
+                $"Lost connection to {host} — the remote session ended; the target may have rebooted or WinRM is unhealthy. Re-scan once it's back.");
+            progress.Report(lost);
+            await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
+            return lost;
+        }
+        catch (Exception ex)
+        {
+            // Defense-in-depth: name the host so even an untranslated failure never shows a bare,
+            // context-free SDK sentence in the update-message column.
+            var failed = HostPatchStatus.Failed($"Update failed on {host}: {ex.Message}");
+            progress.Report(failed);
+            await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
+            return failed;
+        }
+        finally
+        {
+            // Stop + observe the watchdog however we left the try (success, cancel, or fault).
+            watchdogCts.Cancel();
+            try
+            {
+                await watchdog.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected — cancelling the watchdog's Task.Delay.
+            }
         }
     }
 
@@ -388,10 +466,15 @@ public sealed class WuaUpdateLane
         // Applicable → "IsInstalled=0" (default), Installed → "IsInstalled=1" (the uninstall flow).
         string installedFilter = scope == UpdateScope.Installed ? "IsInstalled=1" : "IsInstalled=0";
         // For Applicable, removability isn't meaningful — emit $true so the checklist's checkboxes are
-        // enabled for install. For Installed, a row is "removable" if WUA can uninstall it OR DISM has a
-        // removable Package_for_KB for it; rows where neither applies are greyed (truly non-removable).
+        // enabled for install. For Installed, a row is "removable" only if WUA itself reports
+        // IsUninstallable=true — the authoritative "Windows says you can remove this" signal. We do NOT
+        // mark a row removable merely because a Package_for_KB exists on disk: modern cumulative/
+        // servicing-stack updates always have a package present yet are permanent and refuse removal
+        // (0x800F0825), so that test over-promised and let the user tick updates that can never come
+        // off. Truly-removable updates (standalone/optional) report IsUninstallable=true. (The agent
+        // still tries DISM as a runtime fallback for a ticked update whose WUA uninstall fails.)
         string uninstallableExpr = scope == UpdateScope.Installed
-            ? "([bool]$u.IsUninstallable -or ($kb -and $dismKbs.Contains([string]$kb)))"
+            ? "[bool]$u.IsUninstallable"
             : "$true";
         // For Installed scope, build maps from the WUA history so each row carries its install date.
         // Match primarily by UpdateID (Identity GUID); also keep a KB-keyed fallback because WUSA-
@@ -424,29 +507,12 @@ public sealed class WuaUpdateLane
                 } catch { }
                 """
             : "$dates = @{}; $kbDates = @{}";
-        // Installed scope only: the set of KB numbers DISM can remove (an installed Package_for_KB
-        // exists). Unioned with WUA IsUninstallable so the checklist greys only updates neither engine
-        // can remove. Read-only enumeration over the supported Dism module; if it can't run (older box,
-        // permissions over WinRM), the set stays empty and removability falls back to WUA alone.
-        string dismBlock = scope == UpdateScope.Installed
-            ? """
-                $dismKbs = New-Object 'System.Collections.Generic.HashSet[string]'
-                # Skip the DISM/CBS enumeration if a reboot/servicing transaction is already
-                # pending — don't open a servicing session while the OS may be mid-transaction.
-                # Removability then falls back to the WUA IsUninstallable signal alone.
-                $servicingBusy = (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
-                                 (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootInProgress') -or
-                                 (Test-Path (Join-Path $env:WinDir 'WinSxS\pending.xml'))
-                if (-not $servicingBusy) {
-                    try {
-                        foreach ($p in (Get-WindowsPackage -Online -ErrorAction Stop)) {
-                            if ("$($p.PackageState)" -ne 'Installed') { continue }
-                            if ($p.PackageName -match 'KB(\d+)') { [void]$dismKbs.Add($matches[1]) }
-                        }
-                    } catch { }
-                }
-                """
-            : "$dismKbs = New-Object 'System.Collections.Generic.HashSet[string]'";
+        // (Removed: the old DISM/Get-WindowsPackage enumeration that built a "$dismKbs" set of
+        // KBs with an installed Package_for_KB. Package existence does NOT mean DISM can remove it —
+        // permanent SSU/cumulative packages are present yet refuse removal — so it over-promised
+        // removability. Removability is now WUA IsUninstallable alone (see uninstallableExpr), which
+        // also drops a slow Get-WindowsPackage call from every Installed scan.)
+        string dismBlock = string.Empty;
         // Multi-line block (not inline) so the lookup is wrapped in its own try/catch — a single
         // update with a stale Identity COM proxy can otherwise throw NRE and kill the whole scan
         // foreach.

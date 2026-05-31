@@ -63,7 +63,7 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type GroupItem}">
-                                            <Expander IsExpanded="False">
+                                            <Expander IsExpanded="True">
                                                 <Expander.Header>
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock FontWeight="SemiBold">
@@ -157,6 +157,7 @@
                 <ui:Button Appearance="Primary"
                            Icon="{ui:SymbolIcon Play24}"
                            Content="Run"
+                           IsEnabled="{Binding CanRun}"
                            Click="OnRun" />
                 <ui:Button Margin="8,0,0,0"
                            Icon="{ui:SymbolIcon Stop24}"

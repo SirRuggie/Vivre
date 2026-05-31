@@ -47,12 +47,34 @@ namespace Vivre.UpdateAgent
                     case 3010:   // ERROR_SUCCESS_REBOOT_REQUIRED
                         return (true, true, null);
                     default:
-                        return (false, false, "DISM exit code " + exit);
+                        return (false, false, DescribeDismExit(exit));
                 }
             }
             catch (Exception ex)
             {
                 return (false, false, "DISM remove failed: " + ex.Message);
+            }
+        }
+
+        /// <summary>
+        /// Turns a DISM failure exit code into a plain-English reason. DISM returns the HRESULT as
+        /// its (unsigned) exit code on failure, so we show it in hex and translate the common
+        /// "can't be removed" cases — most importantly 0x800F0825 (a permanent/required package,
+        /// which is normal and by-design for cumulative & servicing-stack updates).
+        /// </summary>
+        private static string DescribeDismExit(int exit)
+        {
+            uint code = unchecked((uint)exit);
+            string hex = "0x" + code.ToString("X8");
+            switch (code)
+            {
+                case 0x800F0825: // CBS_E_CANNOT_UNINSTALL
+                    return "Windows blocks removal — this update is permanent/required and can't be uninstalled (" + hex
+                        + "). Normal for cumulative & servicing-stack updates.";
+                case 0x80070005: // E_ACCESSDENIED
+                    return "access denied removing the package (" + hex + ")";
+                default:
+                    return "DISM could not remove it (" + hex + ")";
             }
         }
 

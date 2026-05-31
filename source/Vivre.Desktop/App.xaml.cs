@@ -1,4 +1,5 @@
 using System.Windows;
+using Wpf.Ui.Appearance;
 using Vivre.Core.Computers;
 using Vivre.Core.Credentials;
 using Vivre.Core.Net;
@@ -58,11 +59,44 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        // Persisted preferences (theme). Read + apply the saved theme before the window shows so
+        // the user's choice survives restarts; a read failure falls back to the App.xaml default.
+        var settingsStore = new AppSettingsStore();
+        AppSettings settings;
+        try
+        {
+            settings = settingsStore.Load();
+        }
+        catch (Exception ex)
+        {
+            activity.Warn(null, $"Couldn't read settings — using defaults. {ex.Message}");
+            settings = new AppSettings();
+        }
+
+        ApplyTheme(settings.Theme);
+
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell);
 
         var shell = new ShellViewModel(NewWorkspace, credentials, activity);
-        var window = new MainWindow { DataContext = shell };
+        var window = new MainWindow { DataContext = shell, Settings = settingsStore, Log = activity };
         window.Show();
+    }
+
+    /// <summary>Applies a saved theme name ("Light" / "Dark" / "System").</summary>
+    internal static void ApplyTheme(string theme)
+    {
+        switch (theme)
+        {
+            case "Light":
+                ApplicationThemeManager.Apply(ApplicationTheme.Light);
+                break;
+            case "System":
+                ApplicationThemeManager.ApplySystemTheme();
+                break;
+            default:
+                ApplicationThemeManager.Apply(ApplicationTheme.Dark);
+                break;
+        }
     }
 }

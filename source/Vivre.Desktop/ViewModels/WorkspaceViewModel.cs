@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
@@ -39,8 +40,24 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IPatchService _patch;
     private readonly PatchOptions _patchOptions;
     private readonly IHostRebootProbe _rebootProbe;
+    private readonly IPowerShellHost _powerShell;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
+    // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
+    // MaxShellsPerUser). Value = the next time we'll RE-TEST it: we back off from probing every 20s
+    // (hammering a degraded box makes it worse) but still retry every few minutes so we notice when
+    // it recovers (a successful probe clears the flag immediately). Concurrent: probes run up to
+    // _rebootProbeThrottle-wide.
+    private readonly ConcurrentDictionary<string, DateTime> _degradedHosts = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan DegradedRetryInterval = TimeSpan.FromMinutes(5);
+    // After a host comes back online we re-probe its reboot state a few times: a just-booted box
+    // transiently still reports reboot-pending, so a single probe could catch that and strand the
+    // amber dot forever (once RebootRequired is true we otherwise stop probing).
+    private readonly ConcurrentDictionary<string, int> _rebootRecheckBudget = new(StringComparer.OrdinalIgnoreCase);
+    private const int PostBootRebootRechecks = 5;
+    // Machines with a pending scheduled install (name → trigger time). Drives the "Scheduled task"
+    // columns and lets the monitor clear them once the trigger time has passed (client-side, no poll).
+    private readonly ConcurrentDictionary<string, DateTime> _scheduledInstalls = new(StringComparer.OrdinalIgnoreCase);
     // All operations currently running in this tab (Ping/Check/Scan/Install/Uninstall sweeps).
     // Tracked as a set rather than a single field so independent operations can overlap — Stop
     // cancels them all, and IsBusy stays true until the last one finishes. This is what lets you
@@ -62,6 +79,13 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Rows the user has selected (kept in sync from the grid's selection).</summary>
     public ObservableCollection<Computer> SelectedComputers { get; } = [];
+
+    /// <summary>"N selected" for the status bar, or empty when nothing is selected. The main
+    /// guardrail for selection-scoped actions (Delete / Scan / Install selected).</summary>
+    public string SelectionSummary => SelectedComputers.Count > 0 ? $"{SelectedComputers.Count} selected" : string.Empty;
+
+    /// <summary>True when at least one row is selected (drives the status-bar selection indicator).</summary>
+    public bool HasSelection => SelectedComputers.Count > 0;
 
     /// <summary>Live "Online: (online/total)" summary for this tab, shown in the bottom status bar.
     /// Recomputed whenever a row's online state changes or the list grows/shrinks.</summary>
@@ -102,6 +126,14 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Inverse of <see cref="IsUpdateMode"/> — each grid binds its own bool through one converter.</summary>
     public bool IsMachineMode => !IsUpdateMode;
+
+    /// <summary>Flips Machines ↔ Windows Update (bound to Ctrl+M; the segmented switcher uses the property directly).</summary>
+    [RelayCommand]
+    private void ToggleUpdateMode() => IsUpdateMode = !IsUpdateMode;
+
+    /// <summary>True when the tab holds work worth a confirm before closing — loaded machines, or a
+    /// live monitor / sweep. Empty, idle tabs close instantly (so the guard never habituates).</summary>
+    public bool HasWork => Computers.Count > 0 || IsBusy || IsMonitoring;
 
     /// <summary>
     /// Side-panel scope toggle: false = Applicable (default; the install flow), true = Installed
@@ -232,12 +264,13 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
         _configMgr = configMgr;
         _winRm = winRm;
+        _powerShell = powerShell;
         _credentials = credentials;
         _lists = lists;
         _activity = activity;
@@ -503,7 +536,7 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
-    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], InstallRowAsync, "Install");
+    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install");
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -511,7 +544,13 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], InstallRowAsync, "Install");
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install");
+
+    /// <summary>Registers a one-time SYSTEM task on each row to install at <paramref name="at"/>
+    /// (instead of now). Populates the "Scheduled task" columns; the monitor clears them once the
+    /// time passes.</summary>
+    public Task ScheduleInstallSelectedAsync(IReadOnlyList<Computer> rows, DateTime at) =>
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct, at), "Schedule");
 
     /// <summary>
     /// Scans only the focused machine — wired to the side-panel "Scan" button that appears inside
@@ -528,7 +567,7 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>Installs only the ticked updates on the focused machine (the side panel's "Install checked").</summary>
     [RelayCommand(CanExecute = nameof(CanInstallChecked))]
     private Task InstallCheckedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], InstallRowAsync, "Install") : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], (c, ct) => InstallRowAsync(c, ct), "Install") : Task.CompletedTask;
 
     /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
     /// checklist, not busy, not patching, and NOT with a reboot pending (a pending reboot means
@@ -690,7 +729,8 @@ public partial class WorkspaceViewModel : ObservableObject
     [RelayCommand]
     private void RemoveOffline()
     {
-        foreach (Computer computer in Computers.Where(c => c.IsOnline == false).ToList())
+        var removed = Computers.Where(c => c.IsOnline == false).ToList();
+        foreach (Computer computer in removed)
         {
             Computers.Remove(computer);
             SelectedComputers.Remove(computer);
@@ -700,6 +740,14 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             FocusedComputer = null;
         }
+
+        if (removed.Count > 0)
+        {
+            _activity.Info(null, $"Removed {removed.Count} offline machine(s) from this tab.");
+        }
+
+        OnPropertyChanged(nameof(SelectionSummary));
+        OnPropertyChanged(nameof(HasSelection));
     }
 
     /// <summary>Clears the Command result column on every row.</summary>
@@ -798,9 +846,20 @@ public partial class WorkspaceViewModel : ObservableObject
 
     private static string BuildCompletionSummary(string label, IReadOnlyList<Computer> rows)
     {
+        if (string.Equals(label, "Schedule", StringComparison.Ordinal))
+        {
+            int scheduled = rows.Count(r => r.ScheduledNextRun is not null);
+            int errs = rows.Count(r => r.PatchState == PatchState.Error);
+            string s = $"Scheduled {scheduled} machine(s)";
+            if (errs > 0) s += $", {errs} failed";
+            return s;
+        }
+
         if (string.Equals(label, "Scan", StringComparison.Ordinal))
         {
-            int avail = rows.Count(r => r.PatchState == PatchState.Available);
+            // A scan leaves EVERY machine in PatchState.Available (that's just "scan done") — so
+            // count the ones that actually found updates by their update count, not the state.
+            int avail = rows.Count(r => r.UpdatesAvailable > 0);
             int errs = rows.Count(r => r.PatchState == PatchState.Error);
             string s = $"Scan finished — {rows.Count} machine(s)";
             if (avail > 0) s += $", {avail} with updates";
@@ -952,7 +1011,7 @@ public partial class WorkspaceViewModel : ObservableObject
         }
     }
 
-    private async Task InstallRowAsync(Computer computer, CancellationToken token)
+    private async Task InstallRowAsync(Computer computer, CancellationToken token, DateTime? scheduleAt = null)
     {
         // Don't start a second operation on a row already installing/uninstalling.
         if (computer.IsPatching)
@@ -964,6 +1023,12 @@ public partial class WorkspaceViewModel : ObservableObject
         // scope this host's install to its ticked KBs: never scanned ⇒ no checklist ⇒ install all
         // (not-excluded, unchanged); scanned but nothing ticked ⇒ skip without launching a task.
         PatchOptions options = _patchOptions.Clone();
+        if (scheduleAt is { } scheduledTime)
+        {
+            options.RunBehavior = RunBehavior.ScheduleAt;
+            options.ScheduleAt = scheduledTime;
+        }
+
         if (computer.ApplicableUpdates.Count > 0)
         {
             if (!computer.ApplicableUpdates.Any(u => u.IsSelected))
@@ -994,7 +1059,7 @@ public partial class WorkspaceViewModel : ObservableObject
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
-        computer.UpdateMessage = "Starting…";
+        computer.UpdateMessage = scheduleAt is null ? "Starting…" : "Scheduling…";
 
         // Progress<T> marshals callbacks to the captured (UI) context; WPF also auto-marshals
         // the scalar property updates, so the grid stays current as the SYSTEM task reports in.
@@ -1003,6 +1068,15 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             HostPatchStatus final = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, token);
             ApplyStatus(computer, final);
+
+            // Scheduled (not run now): surface it on the Scheduled-task columns + a clear message.
+            if (scheduleAt is { } when && final.Phase != PatchPhase.Error)
+            {
+                computer.ScheduledAction = "Install updates";
+                computer.ScheduledNextRun = when;
+                computer.UpdateMessage = $"Scheduled for {when:g}";
+                _scheduledInstalls[computer.Name] = when;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -1101,8 +1175,15 @@ public partial class WorkspaceViewModel : ObservableObject
         // Uninstall (Installed) defaults UNticked — removal is opt-in, never accidental.
         bool defaultSelected = scope != UpdateScope.Installed;
 
+        // Installed scope: show most-recently-installed first by default (the user can still
+        // click the "Installed" column to re-sort). Updates whose install date couldn't be matched
+        // from WUA history (null InstalledAt) sort to the bottom. Applicable scope keeps scan order.
+        IEnumerable<SoftwareUpdate> ordered = scope == UpdateScope.Installed
+            ? updates.OrderByDescending(u => u.InstalledAt ?? DateTime.MinValue)
+            : updates;
+
         target.Clear();
-        foreach (SoftwareUpdate update in updates)
+        foreach (SoftwareUpdate update in ordered)
         {
             bool selected = prior.TryGetValue(update.ArticleId ?? update.Title, out bool wasSelected)
                 ? wasSelected
@@ -1218,18 +1299,62 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     private async Task MonitorRowAsync(Computer computer, CancellationToken token)
     {
+        // Clear a scheduled-install row once its trigger time has passed (client-side — the task has
+        // fired by now; a later scan shows the result). No remote call.
+        if (_scheduledInstalls.TryGetValue(computer.Name, out DateTime scheduledFor) && DateTime.Now >= scheduledFor)
+        {
+            _scheduledInstalls.TryRemove(computer.Name, out _);
+            computer.ScheduledAction = null;
+            computer.ScheduledNextRun = null;
+        }
+
         bool? previous = computer.IsOnline;
         (bool online, string? error) = await ProbeReachabilityAsync(computer, token);
 
         computer.IsOnline = online;
         computer.LastError = online ? null : error;
 
-        // While the Windows Update view is up, also keep the Pending Reboot column live —
-        // a small registry/SCCM-aggregated probe over WinRM, throttled so a large fleet
-        // doesn't open dozens of runspaces at once.
-        if (online && IsUpdateMode)
+        // A host that just came back online (offline→online) may have actually rebooted: clear any
+        // "degraded WinRM" flag so we probe it again, and open a short re-probe window (a just-booted
+        // box transiently still reports reboot-pending, so a single probe could strand the amber dot).
+        if (online && previous == false)
         {
-            await ProbeRebootPendingAsync(computer, token).ConfigureAwait(false);
+            _degradedHosts.TryRemove(computer.Name, out _);
+            _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
+        }
+
+        // While the Windows Update view is up, keep the Pending Reboot column live — a small
+        // registry/SCCM-aggregated probe over WinRM, throttled so a large fleet doesn't open dozens
+        // of runspaces at once. But DON'T re-probe a box every 20s once it's known reboot-pending:
+        // the markers are sticky until it actually reboots, so re-probing only churns fresh WinRM
+        // shells (which can poison a degraded target). Probe when state is unknown/clear, or during
+        // the brief post-boot recheck window. A degraded host is backed off (re-tested only every
+        // DegradedRetryInterval) but DOES get retried so we notice it recovered.
+        bool degraded = _degradedHosts.TryGetValue(computer.Name, out DateTime retryAt);
+        bool backoffActive = degraded && DateTime.Now < retryAt;
+        bool degradedRetryDue = degraded && !backoffActive;
+        if (online && IsUpdateMode && !backoffActive)
+        {
+            bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
+            // A degraded-retry probes regardless of the reboot-pending skip — its job is to re-test WinRM.
+            if (computer.RebootRequired != true || recheck || degradedRetryDue)
+            {
+                await ProbeRebootPendingAsync(computer, token).ConfigureAwait(false);
+
+                if (recheck)
+                {
+                    // Stop the post-boot rechecks once we get a clean (not-pending) read; otherwise
+                    // spend down the budget so a stuck-pending box doesn't get probed forever.
+                    if (computer.RebootRequired == false)
+                    {
+                        _rebootRecheckBudget.TryRemove(computer.Name, out _);
+                    }
+                    else
+                    {
+                        _rebootRecheckBudget[computer.Name] = budget - 1;
+                    }
+                }
+            }
         }
 
         if (previous == online)
@@ -1306,6 +1431,20 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             bool? was = computer.RebootRequired;
             bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token).ConfigureAwait(false);
+
+            // We got here with no shell-init failure → WinRM is healthy. If this host was flagged
+            // degraded, it has recovered: clear the flag + the stale "WinRM unhealthy" message so the
+            // user sees it's working again (this is the path that self-heals after a real reboot).
+            if (_degradedHosts.TryRemove(computer.Name, out _))
+            {
+                if (computer.RebootMessage is { } stale && stale.StartsWith("WinRM unhealthy", StringComparison.Ordinal))
+                {
+                    computer.RebootMessage = null;
+                }
+
+                _activity.Info(computer.Name, "WinRM healthy again — resuming reboot probes.");
+            }
+
             if (pending.HasValue)
             {
                 computer.RebootRequired = pending.Value;
@@ -1333,9 +1472,22 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             throw;
         }
+        catch (RemoteShellInitException ex)
+        {
+            // The target's WinRM/PSRP shell init is failing (pending reboot / shell exhaustion).
+            // Back off — hammering a degraded box with fresh shells makes it worse — but keep
+            // retrying every DegradedRetryInterval so we notice when it recovers. Tell the user once.
+            bool firstTime = !_degradedHosts.ContainsKey(computer.Name);
+            _degradedHosts[computer.Name] = DateTime.Now + DegradedRetryInterval;
+            if (firstTime)
+            {
+                computer.RebootMessage = $"WinRM unhealthy on {computer.Name} — likely reboot-pending; reboot the target to clear it.";
+                _activity.Warn(computer.Name, $"WinRM/PSRP shell init failing — backing off reboot probes (retry every {DegradedRetryInterval.TotalMinutes:N0} min). {ex.Message}");
+            }
+        }
         catch
         {
-            // Swallow — don't spam the activity log every 20 s for a flaky host.
+            // Swallow other (transient) failures — don't spam the activity log every 20 s for a flaky host.
         }
         finally
         {
@@ -1416,7 +1568,8 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>Removes the currently-selected rows from the grid (Delete key / menu).</summary>
     public void RemoveSelected()
     {
-        foreach (Computer computer in SelectedComputers.ToList())
+        var removed = SelectedComputers.ToList();
+        foreach (Computer computer in removed)
         {
             Computers.Remove(computer);
         }
@@ -1427,6 +1580,16 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             FocusedComputer = null;
         }
+
+        if (removed.Count > 0)
+        {
+            _activity.Info(null, $"Removed {removed.Count} machine(s) from this tab.");
+        }
+
+        OnPropertyChanged(nameof(SelectionSummary));
+        OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(ScanButtonLabel));
+        OnPropertyChanged(nameof(InstallButtonLabel));
     }
 
     /// <summary>Mirrors the grid's selection into <see cref="SelectedComputers"/> (called from code-behind).</summary>
@@ -1441,6 +1604,8 @@ public partial class WorkspaceViewModel : ObservableObject
         // Toolbar Scan/Install labels reflect the current target (selected count, or "all").
         OnPropertyChanged(nameof(ScanButtonLabel));
         OnPropertyChanged(nameof(InstallButtonLabel));
+        OnPropertyChanged(nameof(SelectionSummary));
+        OnPropertyChanged(nameof(HasSelection));
     }
 
     // --- selection-aware toolbar (Scan/Install act on the selection, or all rows when none) ------
@@ -1528,6 +1693,56 @@ public partial class WorkspaceViewModel : ObservableObject
             }
         }
     }
+
+    /// <summary>
+    /// Force-reboots the selected machines now (<c>shutdown /r /f /t 5</c> — the small delay lets the
+    /// WinRM call return cleanly before the box goes down). The most common Windows-Update follow-up;
+    /// invoked from the context menu after the user confirms. The monitor reports each box back online.
+    /// </summary>
+    public async Task RebootForceSelectedAsync(CancellationToken token = default)
+    {
+        const string script = "shutdown.exe /r /f /t 5 /c \"Vivre forced reboot\"";
+        foreach (Computer computer in SelectedComputers.ToList())
+        {
+            computer.LastError = null;
+            computer.LastStatus = "Rebooting (force)…";
+            try
+            {
+                PSExecutionResult result = IsLocalHost(computer.Name)
+                    ? await _powerShell.RunLocalAsync(script, token)
+                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+
+                if (result.HadErrors)
+                {
+                    computer.LastStatus = "Reboot command failed";
+                    computer.LastError = result.Errors.Count > 0 ? result.Errors[0] : "shutdown reported an error";
+                    _activity.Error(computer.Name, $"Force reboot failed — {computer.LastError}");
+                }
+                else
+                {
+                    computer.LastStatus = "Reboot forced — going down";
+                    computer.RebootMessage = $"Forced reboot sent {DateTime.Now:HH:mm}";
+                    _activity.Info(computer.Name, "Forced reboot (shutdown /r /f /t 5)");
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                computer.LastStatus = "Cancelled";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                computer.LastStatus = "Reboot command failed";
+                computer.LastError = ex.Message;
+                _activity.Error(computer.Name, $"Force reboot failed — {ex.Message}");
+            }
+        }
+    }
+
+    private static bool IsLocalHost(string host) =>
+        string.IsNullOrWhiteSpace(host)
+        || host is "localhost" or "127.0.0.1" or "::1" or "."
+        || string.Equals(host, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
 
     private static string SummarizeHealth(SccmClientInfo health)
     {
