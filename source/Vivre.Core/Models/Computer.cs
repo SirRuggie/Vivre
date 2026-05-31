@@ -41,6 +41,11 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial string? AgentVersion { get; set; }
 
+    /// <summary>OS caption + build (e.g. "Windows Server 2022 Standard — 10.0.20348"); filled by a
+    /// health check or on-demand when the detail window opens. Null until known.</summary>
+    [ObservableProperty]
+    public partial string? OperatingSystem { get; set; }
+
     /// <summary>Most recent status message from an action or health check.</summary>
     [ObservableProperty]
     public partial string? LastStatus { get; set; }

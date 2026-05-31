@@ -28,7 +28,6 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 - **Reboot-and-wait** after install (auto-reboot + watch for the box to return) — the on-target
   agent already reboots; only the UI toggle + "waiting…" status is missing.
-- **Scheduled reboot** (today only scheduled *install* exists).
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Accessibility polish deferred as low-value for a single sighted user: full screen-reader naming
   on the grids + automation IDs; light-theme tuning of the script editor's highlight colours.

@@ -72,12 +72,16 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
-                    <ui:TextBlock Grid.Row="0" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,2" Text="Reboot pending" />
-                    <ui:TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,2"
+                    <ui:TextBlock Grid.Row="0" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,2" Text="OS" />
+                    <ui:TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,2" TextWrapping="Wrap"
+                                  Text="{Binding Computer.OperatingSystem, TargetNullValue='—'}" />
+                    <ui:TextBlock Grid.Row="1" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,2" Text="Reboot pending" />
+                    <ui:TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,0,2"
                                   Text="{Binding Computer.RebootRequired, Converter={StaticResource YesNo}}" />
-                    <ui:TextBlock Grid.Row="1" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,0" Text="Scheduled" />
-                    <ui:TextBlock Grid.Row="1" Grid.Column="1"
+                    <ui:TextBlock Grid.Row="2" Grid.Column="0" Appearance="Secondary" Margin="0,0,12,0" Text="Scheduled" />
+                    <ui:TextBlock Grid.Row="2" Grid.Column="1"
                                   Text="{Binding Computer.ScheduledNextRun, StringFormat=g, TargetNullValue='—'}" />
                 </Grid>
             </StackPanel>

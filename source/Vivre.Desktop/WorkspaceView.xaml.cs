@@ -245,10 +245,6 @@ public partial class WorkspaceView : UserControl
             install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
             updates.Items.Add(install);
 
-            var schedule = new MenuItem { Header = $"Schedule install… ({selCount})", IsEnabled = anyActionable };
-            schedule.Click += OnScheduleInstall;
-            updates.Items.Add(schedule);
-
             _gridMenu.Items.Add(updates);
             _gridMenu.Items.Add(new Separator());
         }
@@ -257,6 +253,20 @@ public partial class WorkspaceView : UserControl
         var rebootForce = new MenuItem { Header = "Reboot (force now)…", IsEnabled = hasSelection };
         rebootForce.Click += OnRebootForce;
         _gridMenu.Items.Add(rebootForce);
+
+        // Timed actions: a one-time SYSTEM task that runs at a chosen time (works in either mode).
+        var schedule = new MenuItem { Header = "Schedule", IsEnabled = hasSelection };
+        var schedInstall = new MenuItem { Header = "Install updates…" };
+        schedInstall.Click += OnScheduleInstall;
+        schedule.Items.Add(schedInstall);
+        var schedReboot = new MenuItem { Header = "Reboot…" };
+        schedReboot.Click += OnScheduleReboot;
+        schedule.Items.Add(schedReboot);
+        schedule.Items.Add(new Separator());
+        var schedCancel = new MenuItem { Header = "Cancel scheduled task" };
+        schedCancel.Click += OnCancelScheduled;
+        schedule.Items.Add(schedCancel);
+        _gridMenu.Items.Add(schedule);
 
         _gridMenu.Items.Add(new Separator());
 
@@ -442,6 +452,8 @@ public partial class WorkspaceView : UserControl
         if (ViewModel is { } vm && ContextOrFocused() is { } computer)
         {
             new ComputerDetailWindow(computer, vm.Activity) { Owner = OwnerWindow }.Show();
+            // Fill in the OS on demand (the window binds the live model, so it appears when ready).
+            _ = vm.FetchOperatingSystemAsync(computer);
         }
     }
 
@@ -467,10 +479,40 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        var dialog = new ScheduleWindow { Owner = OwnerWindow };
+        var dialog = new ScheduleWindow("install") { Owner = OwnerWindow };
         if (dialog.ShowDialog() == true && dialog.Value is { } at)
         {
             await vm.ScheduleInstallSelectedAsync(targets, at);
+        }
+    }
+
+    /// <summary>Schedule a one-time force-reboot of the selected machines at a chosen time.</summary>
+    private async void OnScheduleReboot(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        var targets = vm.SelectedComputers.ToList();
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        var dialog = new ScheduleWindow("reboot") { Owner = OwnerWindow };
+        if (dialog.ShowDialog() == true && dialog.Value is { } at)
+        {
+            await vm.ScheduleRebootSelectedAsync(targets, at);
+        }
+    }
+
+    /// <summary>Cancel any pending Vivre scheduled task (install or reboot) on the selected machines.</summary>
+    private async void OnCancelScheduled(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm && vm.SelectedComputers.Count > 0)
+        {
+            await vm.CancelScheduledTaskSelectedAsync([.. vm.SelectedComputers]);
         }
     }
 

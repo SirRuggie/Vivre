@@ -7,9 +7,19 @@ namespace Vivre.Desktop;
 /// <see cref="Value"/> when <c>ShowDialog()</c> is true.</summary>
 public partial class ScheduleWindow : FluentWindow
 {
-    public ScheduleWindow()
+    /// <param name="action">What's being scheduled ("install" or "reboot") — tunes the title + blurb.</param>
+    public ScheduleWindow(string action = "install")
     {
         InitializeComponent();
+
+        bool reboot = string.Equals(action, "reboot", StringComparison.OrdinalIgnoreCase);
+        Title = reboot ? "Schedule reboot" : "Schedule install";
+        Bar.Title = Title;
+        Intro.Text = reboot
+            ? "Pick when the reboot should run on the selected machine(s). A one-time task runs as "
+              + "SYSTEM at that time and force-restarts the box — any unsaved work on it is lost."
+            : "Pick when the install should run on the selected machine(s). A one-time task runs as "
+              + "SYSTEM at that time; reboot is reported, not forced.";
 
         for (int h = 0; h < 24; h++)
         {
