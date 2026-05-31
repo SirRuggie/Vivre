@@ -5,8 +5,7 @@ namespace Vivre.Core.Credentials;
 
 /// <summary>
 /// A credential used for remote operations. Session-only — held in memory, never
-/// written to disk (per the current decision; DPAPI-backed persistence / a per-machine
-/// Password Manager can come later, REBUILD_PLAN.md §3/§13).
+/// written to disk (by design; DPAPI-backed persistence could come later).
 /// </summary>
 public sealed class ConnectionCredential
 {

@@ -4,9 +4,8 @@ namespace Vivre.Core.PowerShell;
 
 /// <summary>
 /// Outcome of running a script through <see cref="IPowerShellHost"/>. Captures the
-/// object pipeline plus the error/warning streams — the legacy app swallowed those,
-/// which is exactly why failures were silent (REBUILD_PLAN.md §8.2). Errors and
-/// warnings are pre-formatted strings so callers can log/show them without taking a
+/// object pipeline plus the error/warning streams (so failures are never silent).
+/// Errors and warnings are pre-formatted strings so callers can log/show them without taking a
 /// dependency on the System.Management.Automation record types.
 /// </summary>
 /// <param name="Output">Objects emitted on the success pipeline.</param>
