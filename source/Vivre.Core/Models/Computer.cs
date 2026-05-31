@@ -5,11 +5,8 @@ using Vivre.Core.Updates;
 namespace Vivre.Core.Models;
 
 /// <summary>
-/// A single SCCM client shown in the computer grid. Observable so the WPF
-/// DataGrid updates live as ping/health results arrive (no backend yet —
-/// Session 2 loads test data).
-///
-/// Faithful to the legacy <c>ComputerType</c> POCO (REBUILD_PLAN.md §11/§12):
+/// A single machine shown in the computer grid. Observable so the WPF DataGrid
+/// updates live as ping / health / update results arrive. Grid-row fields:
 /// <list type="bullet">
 ///   <item>Name        ← ComputerName</item>
 ///   <item>IsOnline     ← OnlineStatus (legacy used an Int16 tri-state; a bool is
@@ -84,7 +81,7 @@ public partial class Computer : ObservableObject
     [NotifyPropertyChangedFor(nameof(LastRebootDisplay))]
     public partial DateTime? LastBootTime { get; set; }
 
-    // --- Windows Update lane (the BatchPatch-replacement view; see REBUILD_PLAN.md A1) ---
+    // --- Windows Update lane (the BatchPatch-replacement view; see UPDATE_PLAN.md) ---
 
     /// <summary>Per-host update status for the "Windows update message" column (e.g. "Installing 3 of 8").</summary>
     [ObservableProperty]

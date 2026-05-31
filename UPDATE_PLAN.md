@@ -1,86 +1,139 @@
-# Vivre — Windows Update (WUA) lane: the BatchPatch replacement
+# Windows Update (WUA) lane
 
-> **Status (2026-05-27):** Phase 1 **built** on branch `feature/wua-update-lane` — Windows
-> `dotnet build` + `dotnet test` green (86 tests); **live-server verification pending**. This doc is the
-> WUA-first companion to `REBUILD_PLAN.md` (see its §0 resume bullet). It supersedes the earlier
-> SCCM-first draft — the SCCM update-**install** lane is deferred (see below).
+How Vivre patches machines — the deep-dive that complements **[README.md](README.md)** (overview)
+and **[CLAUDE.md](CLAUDE.md)** (architecture + conventions). This is the major feature on the
+`feature/wua-update-lane` branch.
 
-## Why WUA-first (the decision that reshaped this plan)
+---
 
-An earlier draft led with an **SCCM lane** (`CCM_SoftwareUpdatesManager.InstallUpdates`). That only
-installs updates an SCCM admin has **deployed** to the box — and the user's SCCM admin deploys nothing,
-so that lane would install *nothing*. The real BatchPatch-equivalent is the **Windows Update Agent
-(WUA) lane**: it scans/downloads/installs whatever is applicable directly on each target via the
-`Microsoft.Update.Session` COM API — no SCCM deployment required. That's where the **Update Source
-toggle** (Windows Update vs Microsoft Update vs Managed/WSUS) and the **exclude-by-name list** live.
+## What it is
 
-**Existing SCCM features are untouched** — the Machines view keeps all its SCCM client-health checks
-and right-click client actions. We simply don't add a deployment-based update installer; patching goes
-via WUA.
+A built-in Windows Update manager — the BatchPatch-equivalent. It scans, installs, uninstalls, and
+schedules updates directly on each target via the **Windows Update Agent (WUA)** COM API — **no SCCM
+deployment required** (an SCCM-deployment lane would only install updates an admin has deployed, and
+this environment deploys none, so it would install nothing). The **Update Source** choice (Windows
+Update / Microsoft Update / Managed-WSUS) and the **exclude-by-name** list live here.
+
+In a tab, switch to **View ▸ Windows Update** to get the update grid + patch actions over the same
+machine list. The Machines-view features (SCCM health, client actions, Run Script) are untouched.
+
+---
 
 ## Two operations, two transports
 
-- **Scan** — a search script run directly over WinRM (`IPowerShellHost.RunRemoteAsync`). Read-only,
-  fast, returns the applicable-update list + count for the chosen source.
-- **Install** — WUA install will **not** run inside a WinRM network-logon session
-  (`WU_E_NO_INTERACTIVE_USER`). So the lane writes a worker script to `C:\Windows\Temp` on the target
-  and runs it from a **one-time SYSTEM scheduled task**; the worker does search→download→install
-  locally as SYSTEM and writes a **progress JSON** after each state change; the controller **polls the
-  JSON over WinRM**, then deletes the task + files. Register/start is **WinRM-first with a DCOM
-  `Win32_Process.Create` fallback** (the `WinRmEnabler` plumbing). No SMB, no pushed binary.
+- **Scan** — a read-only WUA search script run over WinRM (`PSRunspaceHost.RunRemoteAsync`). Fast;
+  returns the applicable (or already-installed) update list + count for the chosen source.
+- **Install / Uninstall** — WUA install will **not** run inside a WinRM network-logon session
+  (`WU_E_NO_INTERACTIVE_USER`). So the lane drops a compiled agent + a JSON config onto the target,
+  runs it from a **one-time SYSTEM scheduled task**, and streams the agent's progress back over a
+  **single persistent WinRM session**.
 
-## What shipped (Phase 1)
+---
 
-**Core (`source/Vivre.Core/Updates/`):** `UpdateSource` (+ `WuaServerSelection` mapping →
-`ServerSelection` 2 / 3+`ServiceID` / 1), `SoftwareUpdate`, `PatchOptions` (Source · exclude-by-name ·
-`RunBehavior` InstallNow/ScheduleAt · `RebootBehavior` ReportOnly/RebootAndWait · concurrency throttle ·
-per-host timeout · poll interval/stuck threshold), `HostPatchStatus`/`PatchPhase`,
-`IPatchService`/`PatchService` (WUA-only), and `WuaUpdateLane` (scan script, SYSTEM-task install worker,
-register/poll/cleanup, DCOM fallback). The progress-JSON parser isolates the object by its braces, so
-the UTF-8 BOM that Windows PowerShell 5.1's `Set-Content -Encoding UTF8` prepends is handled.
+## The compiled agent (`Vivre.UpdateAgent`)
 
-**Model (`Models/Computer.cs`):** new `[ObservableProperty]` fields — `UpdateMessage`, `RebootMessage`,
-`UpdateProgress`, `UpdatesAvailable`, `UpdatePhase`, `UpdateError`, `ScheduledAction`,
-`ScheduledNextRun`. (Ping = existing `IsOnline`; Pending reboot = `RebootRequired`; Command messages =
-`CommandResult`.)
+A ~25 KB **net48** console EXE (net48 runs on every modern Windows target with no runtime to
+deploy). It does search → download → install/uninstall locally as SYSTEM and writes append-only
+progress JSONL that the controller tails.
 
-**Desktop:** per-tab **`IsUpdateMode`** toggle in `WorkspaceView` flips between the Machines grid and a
-new **Windows Update grid** over the same list, with columns **Name · Ping · Reboot message · Windows
-update message · Progress · Scheduled task action · Scheduled task next run time · Pending reboot ·
-Command messages**, a patch command bar (Source toggle + Exclude box + Scan/Install), and a right-click
-**Updates ▸**. `UpdateSourceNameConverter` gives the Source toggle friendly labels. `WorkspaceViewModel`
-gained `ScanUpdates`/`InstallUpdates` commands on a `SemaphoreSlim` throttle + per-host timeout, reusing
-the existing Stop-race. `App` constructs `PatchService` + a shared session-only `PatchOptions`.
+- It uses WUA's own `IDownloadProgressChangedCallback` / `IInstallationProgressChangedCallback` for
+  **ground-truth percent** — the thing PowerShell can't supply.
+- WUA COM is referenced via a **committed `Interop.WUApiLib.dll`** (generated once with `tlbimp.exe`).
+  `COMReference` / `ResolveComReference` do **not** work under `dotnet`'s .NET-Core MSBuild, so the
+  committed tlbimp output is what keeps `dotnet build` headless.
+- The Desktop csproj copy targets bundle `Vivre.UpdateAgent.exe` beside `Vivre.exe`.
 
-**Tests (`source/Vivre.Core.Tests/Updates/`):** source→`ServerSelection` mapping, exclude filter, scan
-parse, progress-JSON parse, scan over the `FakeHost` double.
+---
 
-## Deferred
+## Scan / Install / Uninstall / Schedule
 
-- **Phase 2** — reboot-and-wait (poll `WmiHostProbe.CanReachAsync`); **scheduled** install/reboot as a
-  one-time SYSTEM task with the two **Scheduled task** columns read back from the target; per-host
-  update-detail window; per-host "All messages" (activity log filtered by machine).
-- **Phase 3 (optional)** — an SCCM update-install lane (`SccmUpdateLane`, `UpdateEvaluationState`),
-  only if updates ever get deployed through SCCM.
+- **Scan** fills the per-machine checklist (Applicable scope) or the installed-updates list
+  (Installed scope). The exclude-by-name list filters titles fleet-wide; `Type='Software'` hides
+  drivers unless **Include drivers** is on.
+- **Install** installs the ticked KBs (or all applicable if nothing's ticked), with live progress
+  (download maps to 0–50% of the bar, install 50–100%). Reboot is **reported, not forced** by
+  default (`RebootBehavior.ReportOnly`).
+- **Uninstall** = **WUA then DISM**. WUA `BeginUninstall` (live %) when WUA can remove the update,
+  otherwise **`dism /Online /Remove-Package`** (the supported path — `wusa /uninstall` is deprecated
+  for cumulative updates). The Installed scan only marks a row removable when **WUA reports
+  `IsUninstallable`**. **Note:** modern cumulative updates are **non-removable by design** — Windows
+  refuses with `0x800F0825` (permanent SSU/package). That's expected, not a tool bug; the per-KB
+  reason is surfaced to the user.
+- **Schedule install** (right-click → *Updates ▸ Schedule install…*) registers the SYSTEM task with
+  a one-time trigger (`RunBehavior.ScheduleAt`) instead of running now. The two **Scheduled task**
+  columns show what's queued + when; they clear once the trigger time has passed (client-side — no
+  per-tick polling of the target).
 
-## Verify live (on a real target SERVER — can't be driven from the build box)
+---
 
-1. **Step 0 source probe** — registry `HKLM\…\WindowsUpdate` (`WUServer`, `UseWUServer`,
-   `DoNotConnectToWindowsUpdateInternetLocations`, `AllowMUUpdateService`) + a manual WUA search per
-   `ServerSelection`; confirms which source returns updates → sets the toggle default and whether a
-   "Managed (WSUS)" default is needed.
-2. **Scan** — flip to Windows Update mode, pick a source, Scan → a count appears; Windows Update vs
-   Microsoft Update differ (SQL/Office/.NET appear only under Microsoft Update); add "SQL" to Exclude
-   and confirm it drops out.
-3. **Install** — Install drives Downloading→Installing (progress bar moves)→PendingReboot; row shows
-   "Installed N, reboot required". Confirm the SYSTEM task is created + cleaned up, the re-run is
-   idempotent, and Stop mid-install frees the grid.
-4. **Known live risk:** a network-logon user running a Microsoft-Update-*online* scan may hit a
-   double-hop — if so, route the scan through the SYSTEM-task path too.
+## Reliability & safety (load-bearing — don't regress)
 
-## Critical files
+These mechanisms exist because of real production failures. Don't undo them without understanding why.
 
-`source/Vivre.Core/Updates/*` (new); `Models/Computer.cs`; `Desktop/ViewModels/WorkspaceViewModel.cs`,
-`Desktop/WorkspaceView.xaml(.cs)`, `Desktop/UpdateSourceNameConverter.cs`, `Desktop/App.xaml.cs`;
-`scripts/Windows Update/{Count missing updates,Download and install updates}.ps1` (extended with source
-selection + exclude + progress-JSON writes); `source/Vivre.Core.Tests/Updates/*`.
+- **SYSTEM scheduled task, not a direct WinRM call** — WUA install dies in a network-logon
+  (`WU_E_NO_INTERACTIVE_USER`); the one-time SYSTEM task is the workaround.
+- **One persistent streaming WinRM session per install — NOT per-poll shells.** The old per-poll
+  pattern opened a fresh shell every progress poll and hit `MaxShellsPerUser` (default 30), which
+  surfaced as silent stalls and the `InitialSessionState` type-initializer error. Don't go back to it.
+- **Don't reintroduce the Add-Type WUA COM-callback shims.** That path was tried and reverted (it
+  hung `$searcher.Search()` after the managed CCW registration). The compiled agent is the answer.
+- **A reboot-pending target poisons WinRM/PSRP** — a pending reboot corrupts shell init (the
+  `InitialSessionState` error, cleared only by actually rebooting the box). So the monitor must not
+  hammer it: it **skips re-probing a known-reboot-pending host**, **backs off "degraded" hosts** (on
+  the shell-init error) and **periodically re-tests them** so they self-heal once WinRM responds —
+  never opening fresh shells every 20s against a sick box.
+- **Heartbeat watchdog** — the on-target controller heartbeats every ~15s while the session is alive.
+  The client fails a session that goes **fully silent** (no progress **and** no heartbeat) for
+  `PatchOptions.NoResponseTimeout` (90s) so a dead/hung session surfaces instead of freezing on stale
+  progress. It keys off heartbeat **liveness**, not percent, so it never trips on a slow-but-working
+  update.
+- **Typed remoting exceptions** — `PSRunspaceHost.TranslateRemotingException` maps raw failures to
+  `RemoteSessionLostException` / `RemoteShellInitException` (at both the connect and invoke phases),
+  so the UI shows actionable messages, never "The pipeline has been stopped." or the raw
+  InitialSessionState text. A user Stop still maps to "Cancelled"; genuine in-script errors pass through.
+- **Servicing-collision guards** — the agent's `BootBusyGuard` defers cleanly if a reboot /
+  offline-servicing pass is already staged (CBS `RebootPending`, `pending.xml`,
+  `PendingFileRenameOperations`); `-StartWhenAvailable` was removed from the task (a missed trigger
+  could re-fire at boot); the agent releases its WUA COM RCWs before scheduling any reboot.
+- **Per-host serialization** — `PatchService` refuses two CBS/DISM ops (install / uninstall /
+  Installed-scope scan) on the same host at once, which also catches the cross-tab "same host in two
+  tabs" case the per-row UI guard can't see.
+
+---
+
+## UI surfaces
+
+- **Windows Update grid** — Name · Ping · **Status chip** · Reboot message · Windows-update message ·
+  **Progress** · Scheduled-task action · next run time · Pending reboot · Command messages.
+- **Side panel** (focused machine) — its update checklist with an **Applicable | Installed** scope
+  toggle, All/None, and Install / Uninstall buttons.
+- **Command bar** (Update mode) — Scan and Install, labelled for the current target ("…selected (N)"
+  vs "…all"). Source / Include-drivers / Exclude live under the **Updates** menu.
+- **Right-click** — Scan / Install / **Schedule install** selected · **Reboot (force now)** ·
+  **Details…** · **Show messages** · Run script… · Client actions ▸ · Enable WinRM.
+- **Per-machine detail window** (Details…) — live state (chip, messages, progress, reboot, scheduled)
+  + tabs for Applicable / Installed updates / that machine's Messages.
+
+---
+
+## Status
+
+**Done:** scan; install with live progress; uninstall (WUA + DISM, with the cumulative-update reason
+surfaced); schedule install; the reliability mechanisms above; the per-machine detail window;
+force-reboot.
+
+**Deferred:**
+- Reboot-and-wait as an install option (the agent can reboot; no UI toggle / "waiting…" status yet).
+- Scheduled *reboot* (only scheduled *install* exists today).
+- An SCCM-deployment update lane (only if updates ever get deployed through SCCM here).
+
+**Pending live verification** (can't be driven from the build box — needs a real target server):
+1. **Scan** shows a count; Windows Update vs Microsoft Update differ; an Exclude term drops a title.
+2. **Install** drives Downloading → Installing (bar moves) → PendingReboot; the SYSTEM task is
+   created and cleaned up; Stop mid-install frees the row.
+3. **Uninstall** of a WUA-removable KB (live %) and a DISM-only KB; a cumulative update correctly
+   reports "can't be removed (`0x800F0825`)" rather than failing silently.
+4. **Schedule** — the one-time task registers and fires at the set time; the Scheduled-task columns
+   populate then clear.
+5. **Degraded / hung handling** — the "WinRM unhealthy" flag self-heals within ~5 min of the target
+   recovering; a dead/hung session surfaces "No response from \<host\>…" within ~90s.

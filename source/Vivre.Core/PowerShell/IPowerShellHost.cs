@@ -3,13 +3,9 @@ using System.Management.Automation;
 namespace Vivre.Core.PowerShell;
 
 /// <summary>
-/// Hosts a PowerShell engine for the app and its plugins (the §5 plugin contract
-/// hands this to every action). It is the native replacement for the legacy
-/// <c>sccmclictr.automation</c> library / <c>System.Management.Automation 3.0</c>.
-///
-/// <see cref="RunRemoteAsync"/> is the real remoting replacement; it is implemented
-/// but still pending live verification against a reachable target (REBUILD_PLAN.md
-/// §0 / Spike #1 <c>RunRemote()</c>) — drive it with the <c>tools/RemoteRun</c> runner.
+/// Hosts a PowerShell engine for the app: runs a script locally or on a remote host over
+/// WinRM, capturing the output plus the error/warning streams. The single place remoting
+/// happens. Exercise <see cref="RunRemoteAsync"/> ad-hoc with the <c>tools/RemoteRun</c> runner.
 /// </summary>
 public interface IPowerShellHost
 {

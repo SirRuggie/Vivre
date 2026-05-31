@@ -2,8 +2,7 @@ namespace Vivre.Core.Scripts;
 
 /// <summary>
 /// A folder of reusable PowerShell scripts the user can pick, edit, and run against
-/// selected machines (the PsScript feature — consolidates the legacy psscripts /
-/// localpsscripts plugins, REBUILD_PLAN.md §7).
+/// selected machines (the Run Script feature).
 /// </summary>
 public interface IScriptLibrary
 {
