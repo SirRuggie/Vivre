@@ -114,6 +114,56 @@ public class WuaUpdateLaneTests
         Assert.False(WuaUpdateLane.TryParseProgress(raw, out _));
     }
 
+    [Fact]
+    public void TryParseProgress_reads_the_failed_count_on_an_uninstall_summary()
+    {
+        // The by-design "N could not be removed" (0x800F0825) outcome rides on FailedCount being parsed.
+        const string json =
+            """{"phase":"Error","message":"Uninstalled 0, 2 could not be removed","percent":null,"failed":2,"rebootPending":false}""";
+
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.Equal(2, status.FailedCount);
+        Assert.Null(status.Percent); // percent:null must map to null, not throw
+    }
+
+    [Theory]
+    [InlineData("""{"phase":"Installing","percent":"oops"}""")]   // non-integer
+    [InlineData("""{"phase":"Installing","percent":99999999999}""")] // overflows Int32
+    public void TryParseProgress_tolerates_a_garbled_percent(string json)
+    {
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.Null(status.Percent);
+    }
+
+    [Fact]
+    public void ParseScan_reads_InstalledAt_when_present_and_null_when_absent()
+    {
+        var withDate = ScanRow("Cumulative (installed)", "5031234", downloaded: true, sizeMb: 40);
+        var when = new DateTime(2026, 5, 1, 9, 30, 0, DateTimeKind.Local);
+        withDate.Properties.Add(new PSNoteProperty("InstalledAt", when));
+        var noDate = ScanRow("Optional (installed)", "5045678", downloaded: true, sizeMb: 20);
+
+        IReadOnlyList<SoftwareUpdate> updates = WuaUpdateLane.ParseScan([withDate, noDate]);
+
+        Assert.Equal(when, updates[0].InstalledAt);
+        Assert.Null(updates[1].InstalledAt);
+    }
+
+    [Fact]
+    public async Task ScanAsync_reports_installed_count_for_the_installed_scope()
+    {
+        var result = new PSExecutionResult(
+            [ScanRow("Installed cumulative", "5037782", downloaded: true, sizeMb: 0)], [], [], HadErrors: false);
+        var service = new PatchService(new FakeHost(result));
+        var options = new PatchOptions { Scope = UpdateScope.Installed };
+
+        HostPatchStatus status = await service.ScanAsync("NYC-SRV1", options, credential: null);
+
+        Assert.Equal(PatchPhase.Available, status.Phase);
+        Assert.Equal(1, status.AvailableCount);
+        Assert.Contains("1 installed update", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // --- scan over the (fake) host ---
 
     [Fact]

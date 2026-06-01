@@ -35,10 +35,7 @@ public sealed class HostRebootProbe : IHostRebootProbe
         return value is bool b ? b : null;
     }
 
-    private static bool IsLocal(string host) =>
-        string.IsNullOrWhiteSpace(host)
-        || host is "localhost" or "127.0.0.1" or "::1" or "."
-        || string.Equals(host, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+    private static bool IsLocal(string host) => HostName.IsLocal(host);
 
     private const string Script = """
         $ErrorActionPreference = 'SilentlyContinue'

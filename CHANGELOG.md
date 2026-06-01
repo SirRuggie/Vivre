@@ -49,6 +49,17 @@ it ships, then gets a dated heading.
     controller (heartbeat filtering, watchdog, typed-exception handling, user-cancel), per-host
     serialization release on fault, the cross-framework agent-config JSON contract, and DISM
     exit-code translation. No behaviour change — these lock the existing behaviour in.
+  - The monitor's reboot probe no longer swallows a persistent failure silently — a lost session or
+    sustained error now backs off and is logged once (matching the WinRM-unhealthy path), instead of
+    leaving the row dark with no trace.
+  - Removing machines (Remove Offline / Delete) now prunes their per-host monitor state, so stale
+    name-keyed entries don't linger or affect a later re-add.
+  - The fatal-error handler writes straight to the log file instead of through the shutting-down UI
+    dispatcher, so the one line naming a fatal crash isn't lost during teardown.
+- The Windows Update agent is now **hash-verified on the target** (SHA-256) before it runs as SYSTEM,
+  so a tampered/replaced binary in the shared temp dir is caught instead of executed.
+- Monitor/reboot-probe updates now consistently marshal to the UI thread, and the local-vs-remote
+  host check is centralised in one helper (was copy-pasted across five files).
 - Remoting failures no longer leak raw SDK strings — they're translated to clear, host-named
   messages ("Lost connection to …", "WinRM unhealthy — reboot the target", "No response from …").
 - The monitor no longer hammers reboot-pending / degraded hosts (the cause of WinRM/PSRP poisoning);
