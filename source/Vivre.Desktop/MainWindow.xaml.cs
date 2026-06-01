@@ -210,6 +210,48 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    // --- activity-log copy (right-click a line, or Copy all) ---
+
+    /// <summary>
+    /// Right-clicking a line selects it first (unless it's already part of a multi-selection), so the
+    /// context-menu Copy acts on what was clicked.
+    /// </summary>
+    private void OnActivityRowRightClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is DataGridRow { IsSelected: false } row)
+        {
+            ActivityGrid.SelectedItems.Clear();
+            row.IsSelected = true;
+        }
+    }
+
+    private void OnActivityCopy(object sender, RoutedEventArgs e) => CopyActivityEntries(ActivityGrid.SelectedItems);
+
+    private void OnActivityCopyAll(object sender, RoutedEventArgs e) => CopyActivityEntries(ActivityGrid.Items);
+
+    /// <summary>Copies the given log entries to the clipboard as tab-separated time / machine / message lines.</summary>
+    private static void CopyActivityEntries(System.Collections.IEnumerable items)
+    {
+        var sb = new StringBuilder();
+        foreach (object item in items)
+        {
+            if (item is Core.Logging.LogEntry entry)
+            {
+                sb.Append(entry.Timestamp.ToString("HH:mm:ss"))
+                  .Append('\t')
+                  .Append(entry.Machine ?? string.Empty)
+                  .Append('\t')
+                  .AppendLine(entry.Message);
+            }
+        }
+
+        if (sb.Length > 0)
+        {
+            try { Clipboard.SetText(sb.ToString()); }
+            catch { /* the clipboard can be transiently locked by another app — not worth surfacing */ }
+        }
+    }
+
     // --- theme (app-wide, persisted to %APPDATA%\Vivre\settings.json) ---
 
     private void OnThemeLight(object sender, RoutedEventArgs e) => SetTheme("Light");
