@@ -73,6 +73,19 @@ public partial class MaintenanceWindow : FluentWindow
         Close();
     }
 
+    // Keep the action button's label in step with the chosen mode (Enter -> "Set maintenance",
+    // Exit -> "Exit maintenance"). EnterRadio's initial IsChecked="True" can raise Checked during
+    // InitializeComponent — before RunButton exists — so guard against the not-yet-realized controls.
+    private void OnModeChanged(object sender, RoutedEventArgs e)
+    {
+        if (RunButton is null || EnterRadio is null)
+        {
+            return;
+        }
+
+        RunButton.Content = EnterRadio.IsChecked == true ? "Set maintenance" : "Exit maintenance";
+    }
+
     private void ShowStatus(string message)
     {
         StatusText.Text = message;
