@@ -62,6 +62,10 @@ public partial class WorkspaceViewModel : ObservableObject
     // Tracked as a set rather than a single field so independent operations can overlap — Stop
     // cancels them all, and IsBusy stays true until the last one finishes. This is what lets you
     // add + scan a new machine while another machine is mid-install.
+    // INVARIANT: UI-thread-only. BeginOperation/EndOperation/Stop are reached from [RelayCommand]
+    // handlers whose sweeps await WITHOUT ConfigureAwait(false), so their continuations resume on
+    // the UI context — this plain List needs no locking only because of that. If you ever add
+    // ConfigureAwait(false) to a sweep's own awaits, switch this to a ConcurrentDictionary/lock.
     private readonly List<CancellationTokenSource> _activeCts = [];
     // Install/uninstall throttle (heavy SYSTEM-task operations — kept low).
     private readonly SemaphoreSlim _patchThrottle;

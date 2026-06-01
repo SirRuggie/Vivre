@@ -10,6 +10,14 @@ mismatches), plus 1 from a completeness pass. **This is a document-only review �
 Severity tags: **[CRITICAL]** correctness/safety/data-loss · **[IMPROVEMENT]** real bug or worthwhile fix ·
 **[SUGGESTION]** lowest actionable tier (nit / consistency / regression-guard).
 
+> **Status (2026-06-01):** the quick-win batch is **done** — remediation-plan items **#1–#5** (DISM KB
+> token match, DISM stderr drain, activity-log write isolation, agent progress-write resilience,
+> `PSDataCollection` disposal) plus the trivial cleanups (stale `IsUninstallable` doc,
+> `InverseBooleanConverter` `object?` signature, `PatchService` host guards + dead `?? string.Empty`,
+> `_activeCts` UI-thread invariant comment). Build clean, 129 tests green. The test-coverage items
+> (#6–#9), the async `ConfigureAwait` cleanup (#10), the SYSTEM-drop hardening (#11), and the remaining
+> lower-priority items are **still open**.
+
 ## Headline
 
 - **No confirmed CRITICAL issues.** Every finding initially rated CRITICAL was **downgraded** on

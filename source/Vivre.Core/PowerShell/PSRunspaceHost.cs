@@ -238,7 +238,10 @@ public sealed class PSRunspaceHost : IPowerShellHost
         // Pre-allocate the output collection so streaming-mode handlers can subscribe
         // before the pipeline starts producing items. In non-streaming mode this is the
         // same end-state collection that the synchronous overload would return.
-        var output = new PSDataCollection<PSObject>();
+        // `using`: PSDataCollection<T> holds a wait handle (and, in streaming mode, the DataAdded
+        // closure capturing onOutput) — without disposal each remote call leaks a handle until GC.
+        // The result is snapshotted via [.. output] before return, so disposing afterwards is safe.
+        using var output = new PSDataCollection<PSObject>();
         if (onOutput is not null)
         {
             output.DataAdded += (sender, args) =>
