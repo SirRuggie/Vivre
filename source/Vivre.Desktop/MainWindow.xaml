@@ -258,7 +258,10 @@
                         <StackPanel.ContextMenu>
                             <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                                 <MenuItem Header="Rename…" Click="OnRenameTab" InputGestureText="F2" />
+                                <Separator />
                                 <MenuItem Header="Close tab" Click="OnCloseTab" InputGestureText="Ctrl+W" />
+                                <MenuItem Header="Close other tabs" Click="OnCloseOtherTabs" />
+                                <MenuItem Header="Close tabs to the right" Click="OnCloseTabsToRight" />
                             </ContextMenu>
                         </StackPanel.ContextMenu>
                         <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />

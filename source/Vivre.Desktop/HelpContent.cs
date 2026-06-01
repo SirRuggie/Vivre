@@ -81,13 +81,14 @@ public static class HelpContent
         new HelpTopic
         {
             Category = GettingStarted, Icon = SymbolRegular.Tabs24, Title = "How do I work with tabs?",
-            Keywords = "tab new close rename workspace multiple",
+            Keywords = "tab new close rename workspace multiple close others right",
             Lines =
             [
                 "Each tab is independent — its own machine list, selection, and running operations.",
                 "• New tab: the \"+\" by the tabs, or Ctrl+T.",
                 "• Rename: double-click the tab (or F2).",
                 "• Close: the \"✕\" on the tab, or Ctrl+W (it asks first if the tab has machines or a running op).",
+                "• Right-click a tab for Close other tabs / Close tabs to the right (browser-style).",
             ],
         },
         new HelpTopic
@@ -324,10 +325,11 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.ArrowDownload24, Title = "How do I install updates?",
-            Keywords = "install patch download progress reboot",
+            Keywords = "install patch download progress reboot pending pre-flight winrm",
             Lines =
             [
                 "Select machines, then click Install (it confirms the count first). Or Ctrl+Enter.",
+                "If any target already has a reboot pending, Install warns first and offers to reboot those before installing — a pending reboot can jam WinRM and fail the install.",
                 "Progress shows live download then install percent; the chip turns green (Done) or amber (reboot pending).",
                 "A required reboot is reported, not forced — reboot when you're ready.",
             ],
