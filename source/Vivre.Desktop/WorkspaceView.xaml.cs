@@ -22,11 +22,11 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class WorkspaceView : UserControl
 {
-    /// <summary>Default side-panel width when a machine is first focused; the user's drag is
+    /// <summary>Default detail-panel height when a machine is first focused; the user's drag is
     /// preserved across machine switches via <see cref="_lastFocused"/>.</summary>
-    private static readonly GridLength ChecklistOpenWidth = new(280);
+    private static readonly GridLength ChecklistOpenHeight = new(320);
 
-    /// <summary>Tracks the previous focused machine so the column width only resets when
+    /// <summary>Tracks the previous focused machine so the row height only resets when
     /// transitioning from "no machine" to "a machine" — not when switching between machines,
     /// where the user's splitter drag should be kept.</summary>
     private Computer? _lastFocused;
@@ -52,7 +52,7 @@ public partial class WorkspaceView : UserControl
         if (e.NewValue is WorkspaceViewModel newVm)
         {
             newVm.PropertyChanged += OnViewModelPropertyChanged;
-            UpdateChecklistColumnWidth(newVm.FocusedComputer);
+            UpdateChecklistRowHeight(newVm.FocusedComputer);
         }
     }
 
@@ -60,27 +60,27 @@ public partial class WorkspaceView : UserControl
     {
         if (e.PropertyName == nameof(WorkspaceViewModel.FocusedComputer) && sender is WorkspaceViewModel vm)
         {
-            UpdateChecklistColumnWidth(vm.FocusedComputer);
+            UpdateChecklistRowHeight(vm.FocusedComputer);
         }
     }
 
-    private void UpdateChecklistColumnWidth(Computer? focused)
+    private void UpdateChecklistRowHeight(Computer? focused)
     {
-        if (ChecklistColumn is null)
+        if (ChecklistRow is null)
         {
             return;
         }
 
         if (focused is null)
         {
-            ChecklistColumn.Width = new GridLength(0);
+            ChecklistRow.Height = new GridLength(0);
         }
         else if (_lastFocused is null)
         {
-            // Transitioning from "panel closed" to "panel opening" — apply the default width.
-            // Switching from one focused machine to another leaves the column alone so any
+            // Transitioning from "panel closed" to "panel opening" — apply the default height.
+            // Switching from one focused machine to another leaves the row alone so any
             // splitter drag the user made is preserved.
-            ChecklistColumn.Width = ChecklistOpenWidth;
+            ChecklistRow.Height = ChecklistOpenHeight;
         }
 
         _lastFocused = focused;
