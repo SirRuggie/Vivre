@@ -82,6 +82,46 @@ public class PatchServiceTests
         await Task.WhenAll(first, second);
     }
 
+    [Fact]
+    public async Task A_faulted_installed_scan_releases_the_host_so_it_can_be_claimed_again()
+    {
+        // The guard's whole value is that a crashed op must NOT wedge a host as permanently
+        // "in progress" — Release runs in the finally even when the in-flight op throws.
+        var host = new FaultingHost(() => new InvalidOperationException("boom"), failTimes: 1);
+        var service = new PatchService(host);
+        var installed = new PatchOptions { Scope = UpdateScope.Installed };
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.ScanAsync("HOSTA", installed, credential: null));
+
+        // Released → a later op on the SAME host re-enters; it is NOT skipped as already-in-progress.
+        HostPatchStatus second = await service.ScanAsync("HOSTA", installed, credential: null);
+
+        Assert.NotEqual(PatchPhase.Idle, second.Phase);
+        Assert.DoesNotContain("already in progress", second.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(host.Entered >= 2);
+    }
+
+    [Fact]
+    public async Task A_faulted_install_releases_the_host_so_a_later_install_can_claim_it()
+    {
+        // The test environment has no bundled agent EXE, so an install faults early and InstallAsync
+        // throws — the point is that PatchService's finally still RELEASES the per-host claim on the
+        // throw path. (failTimes:0 → the host itself never faults; it only serves the cleanup call.)
+        var host = new FaultingHost(() => new InvalidOperationException("unused"), failTimes: 0);
+        var service = new PatchService(host);
+        var options = new PatchOptions();
+        var progress = new Progress<HostPatchStatus>();
+
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => service.InstallAsync("HOSTA", options, credential: null, progress));
+
+        // If the claim had NOT been released, this second call would be skipped (return Idle) without
+        // re-entering. That it faults again proves it re-claimed the host — i.e. Release ran.
+        await Assert.ThrowsAnyAsync<Exception>(
+            () => service.InstallAsync("HOSTA", options, credential: null, progress));
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         var sw = Stopwatch.StartNew();
@@ -122,5 +162,40 @@ public class PatchServiceTests
             await gate.Task;
             return Empty;
         }
+    }
+
+    /// <summary>A host whose remote calls throw the given exception the first <c>failTimes</c> times,
+    /// then succeed — so a test can fault an in-flight op and then prove the host is claimable again.</summary>
+    private sealed class FaultingHost(Func<Exception> fault, int failTimes) : IPowerShellHost
+    {
+        private static readonly PSExecutionResult Empty = new([], [], [], HadErrors: false);
+        private int _failsRemaining = failTimes;
+        private int _entered;
+
+        public int Entered => _entered;
+
+        private PSExecutionResult Handle()
+        {
+            Interlocked.Increment(ref _entered);
+            if (Interlocked.Decrement(ref _failsRemaining) >= 0)
+            {
+                throw fault();
+            }
+
+            return Empty;
+        }
+
+        // Local path isn't exercised (tests use a remote host name), but a leftover cleanup call must
+        // not fault — keep it benign.
+        public Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Empty);
+
+        public Task<PSExecutionResult> RunRemoteAsync(
+            string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
+            CancellationToken cancellationToken = default) => Task.FromResult(Handle());
+
+        public Task<PSExecutionResult> RunRemoteStreamingAsync(
+            string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
+            bool useSsl = false, CancellationToken cancellationToken = default) => Task.FromResult(Handle());
     }
 }

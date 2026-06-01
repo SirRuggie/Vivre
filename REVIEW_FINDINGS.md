@@ -10,13 +10,19 @@ mismatches), plus 1 from a completeness pass. **This is a document-only review �
 Severity tags: **[CRITICAL]** correctness/safety/data-loss · **[IMPROVEMENT]** real bug or worthwhile fix ·
 **[SUGGESTION]** lowest actionable tier (nit / consistency / regression-guard).
 
-> **Status (2026-06-01):** the quick-win batch is **done** — remediation-plan items **#1–#5** (DISM KB
-> token match, DISM stderr drain, activity-log write isolation, agent progress-write resilience,
-> `PSDataCollection` disposal) plus the trivial cleanups (stale `IsUninstallable` doc,
-> `InverseBooleanConverter` `object?` signature, `PatchService` host guards + dead `?? string.Empty`,
-> `_activeCts` UI-thread invariant comment). Build clean, 129 tests green. The test-coverage items
-> (#6–#9), the async `ConfigureAwait` cleanup (#10), the SYSTEM-drop hardening (#11), and the remaining
-> lower-priority items are **still open**.
+> **Status (2026-06-01):**
+> - **Batch 1 — done.** Remediation-plan items **#1–#5** (DISM KB token match, DISM stderr drain,
+>   activity-log write isolation, agent progress-write resilience, `PSDataCollection` disposal) plus
+>   the trivial cleanups (stale `IsUninstallable` doc, `InverseBooleanConverter` `object?` signature,
+>   `PatchService` host guards + dead `?? string.Empty`, `_activeCts` UI-thread invariant comment).
+> - **Batch 2 — done.** Test-coverage items **#6–#9**: the load-bearing install/uninstall streaming
+>   controller (`RunWorkerTaskAsync` — heartbeat filter, last-status-wins, bootstrap-failed,
+>   watchdog, typed-exception arms, user-cancel), per-host release on the fault path, the
+>   cross-framework agent-config JSON round-trip, and DISM exit-code translation. Enabled by a
+>   test-only watchdog-poll-interval + agent-bytes seam on `WuaUpdateLane` and splitting `AgentConfig`
+>   into a linkable POCO + loader. **+15 tests (144 total), all green; clean `-warnaserror` build.**
+> - **Still open:** the async `ConfigureAwait` cleanup (#10), the SYSTEM-drop hardening (#11), and the
+>   remaining lower-priority SUGGESTIONs.
 
 ## Headline
 

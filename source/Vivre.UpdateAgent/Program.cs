@@ -30,7 +30,7 @@ namespace Vivre.UpdateAgent
                     return 2;
                 }
 
-                AgentConfig config = AgentConfig.Load(args[0]);
+                AgentConfig config = AgentConfigLoader.Load(args[0]);
                 progress = new ProgressWriter(config.ProgressPath);
 
                 // Never touch the servicing stack (WUA/DISM) while a reboot is already pending or a

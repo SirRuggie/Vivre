@@ -1,3 +1,7 @@
+// Nullable-oblivious (net48 agent; <Nullable>disable</Nullable>). Stated explicitly so the file
+// stays warning-clean when linked into the nullable-enabled test project.
+#nullable disable
+
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -64,7 +68,7 @@ namespace Vivre.UpdateAgent
         /// "can't be removed" cases — most importantly 0x800F0825 (a permanent/required package,
         /// which is normal and by-design for cumulative & servicing-stack updates).
         /// </summary>
-        private static string DescribeDismExit(int exit)
+        internal static string DescribeDismExit(int exit)
         {
             uint code = unchecked((uint)exit);
             string hex = "0x" + code.ToString("X8");

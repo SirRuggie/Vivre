@@ -23,9 +23,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- The agent is net48 and can't be ProjectReferenced from net10, so link its PURE
-         boot-busy decision (no registry/IO/COM deps) to unit-test it here. -->
+    <!-- The agent is net48 and can't be ProjectReferenced from net10, so link its PURE,
+         dependency-free pieces to unit-test them here:
+           - BootServicingState: the boot-busy decision (no registry/IO/COM deps).
+           - DismHelper: DescribeDismExit, the DISM exit-code → reason map (load-bearing 0x800F0825).
+           - AgentConfig: the POCO whose property names are the cross-framework JSON contract
+             (the loader that needs net48's JavaScriptSerializer lives in a separate, unlinked file). -->
     <Compile Include="..\Vivre.UpdateAgent\BootServicingState.cs" Link="Updates\BootServicingState.cs" />
+    <Compile Include="..\Vivre.UpdateAgent\DismHelper.cs" Link="Updates\DismHelper.cs" />
+    <Compile Include="..\Vivre.UpdateAgent\AgentConfig.cs" Link="Updates\AgentConfig.cs" />
   </ItemGroup>
 
 </Project>

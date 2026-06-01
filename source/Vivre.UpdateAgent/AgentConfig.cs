@@ -1,13 +1,16 @@
-using System.IO;
-using System.Text;
-using System.Web.Script.Serialization;
+// Nullable-oblivious (net48 agent; <Nullable>disable</Nullable>). Stated explicitly so the file
+// stays warning-clean when linked into the nullable-enabled test project.
+#nullable disable
 
 namespace Vivre.UpdateAgent
 {
     /// <summary>
     /// The settings <c>WuaUpdateLane</c> writes next to the agent EXE on the target and the
-    /// agent reads from <c>args[0]</c>. Plain JSON (JavaScriptSerializer, in the net48
-    /// framework — no NuGet). Property names match the JSON keys the lane emits.
+    /// agent reads from <c>args[0]</c>. Property names match the JSON keys the lane emits — that
+    /// cross-framework contract (the lane serializes with System.Text.Json on net10; the agent
+    /// deserializes with JavaScriptSerializer on net48) is asserted by a round-trip test that links
+    /// this POCO. The deserialization itself lives in <see cref="AgentConfigLoader"/> so this type
+    /// stays free of net48-only dependencies and can be compiled into the net10 test project.
     /// </summary>
     internal sealed class AgentConfig
     {
@@ -34,12 +37,5 @@ namespace Vivre.UpdateAgent
 
         /// <summary>The append-only progress JSONL the controller tails.</summary>
         public string ProgressPath { get; set; }
-
-        public static AgentConfig Load(string path)
-        {
-            string json = File.ReadAllText(path, Encoding.UTF8);
-            var ser = new JavaScriptSerializer();
-            return ser.Deserialize<AgentConfig>(json);
-        }
     }
 }
