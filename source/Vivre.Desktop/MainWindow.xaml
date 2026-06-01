@@ -35,6 +35,7 @@
         <CommandBinding Command="{x:Static local:MainWindow.ToggleModeKey}" Executed="OnToggleModeKey" />
         <CommandBinding Command="{x:Static local:MainWindow.RefreshKey}" Executed="OnRefreshKey" />
         <CommandBinding Command="{x:Static local:MainWindow.InstallKey}" Executed="OnInstallKey" />
+        <CommandBinding Command="{x:Static local:MainWindow.HelpKey}" Executed="OnHelpKey" />
     </ui:FluentWindow.CommandBindings>
     <ui:FluentWindow.InputBindings>
         <KeyBinding Modifiers="Control" Key="T" Command="{x:Static local:MainWindow.NewTabKey}" />
@@ -44,6 +45,7 @@
         <KeyBinding Modifiers="Control" Key="M" Command="{x:Static local:MainWindow.ToggleModeKey}" />
         <KeyBinding Key="F5" Command="{x:Static local:MainWindow.RefreshKey}" />
         <KeyBinding Modifiers="Control" Key="Return" Command="{x:Static local:MainWindow.InstallKey}" />
+        <KeyBinding Key="F1" Command="{x:Static local:MainWindow.HelpKey}" />
     </ui:FluentWindow.InputBindings>
 
     <Grid>
@@ -121,6 +123,8 @@
                 </MenuItem>
             </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="_How to use Vivre…" Click="OnOpenHelp" InputGestureText="F1" />
+                <Separator />
                 <MenuItem Header="_About Vivre" Click="OnOpenAbout" />
             </MenuItem>
         </Menu>
