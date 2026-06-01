@@ -268,6 +268,12 @@ public partial class WorkspaceView : UserControl
         schedule.Items.Add(schedCancel);
         _gridMenu.Items.Add(schedule);
 
+        // WhatsUp Gold maintenance mode (enter before patching / exit after) for the selection, else
+        // the whole tab. Runs locally against the WUG server — prompts for the WUG login.
+        var wugMaintenance = new MenuItem { Header = "WhatsUp Gold maintenance…" };
+        wugMaintenance.Click += OnWugMaintenance;
+        _gridMenu.Items.Add(wugMaintenance);
+
         _gridMenu.Items.Add(new Separator());
 
         // Run a saved (or pasted) script: opens the Run Script window, which lists the library
@@ -441,6 +447,26 @@ public partial class WorkspaceView : UserControl
         {
             await vm.RebootForceSelectedAsync();
         }
+    }
+
+    private void OnWugMaintenance(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        // Target the selection, else every machine in the tab (matches Install/Scan scoping).
+        IReadOnlyList<Computer> targets = vm.SelectedComputers.Count > 0
+            ? [.. vm.SelectedComputers]
+            : [.. vm.Computers];
+
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        new MaintenanceWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
     }
 
     /// <summary>The machine the menu acts on: the right-clicked row, else the focused/first-selected.</summary>

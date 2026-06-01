@@ -24,6 +24,12 @@ it ships, then gets a dated heading.
   **install anyway**, or **cancel** — heading off the WinRM-unhealthy failure instead of reacting to it.
 - **Browser-style tab menu** — right-click a tab for **Close other tabs** and **Close tabs to the
   right** (alongside Rename / Close tab); a single confirm covers any tabs that still have work.
+- **WhatsUp Gold maintenance mode** — right-click ▸ *WhatsUp Gold maintenance…* puts the selected
+  machines (or all in the tab) into/out of WUG maintenance via the `WhatsUpGoldPS` module: pick
+  Enter/Exit, enter the WUG server + login, and it maps the names to WUG devices and sets it. The
+  WUG credential is prompted each time and never stored (only the server is remembered); it runs
+  locally against the WUG server (not on the targets), auto-installs the module for the current user
+  if it's missing, and surfaces a clear reason at every step if something fails.
 - **How to use Vivre** guide (Help ▸ How to use Vivre, or F1) — a searchable, collapsible in-app
   manual covering both Machines and Windows Update modes, grouped into Getting started / Machines /
   Windows Update / Tips & shortcuts / Troubleshooting; the search filters and auto-expands matches.

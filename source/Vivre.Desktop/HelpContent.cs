@@ -238,6 +238,19 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I put machines into WhatsUp Gold maintenance?",
+            Keywords = "whatsup gold wug maintenance mode monitoring alerts suppress enter exit patching",
+            Lines =
+            [
+                "Select the machines (or none = all), right-click ▸ WhatsUp Gold maintenance….",
+                "Pick Enter (suppress alerts) or Exit (resume), enter the WUG server + your WUG login, and Set maintenance.",
+                "It matches your machine names to WUG devices by IP and sets maintenance on them — handy to silence monitoring while you patch, then resume after.",
+                "It reports how many devices were set and lists any names that didn't match a WUG device.",
+            ],
+            Tip = "Runs on this PC against the WUG server (not on the targets). The WUG login is asked each time and never saved (only the server address is remembered); the WhatsUpGoldPS module auto-installs for your user if it's missing.",
+        },
+        new HelpTopic
+        {
             Category = Machines, Icon = SymbolRegular.Eye24, Title = "How do I see one machine's full details?",
             Keywords = "details window os operating system per machine",
             Lines =

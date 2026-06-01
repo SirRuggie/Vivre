@@ -9,6 +9,10 @@ public sealed class AppSettings
 {
     /// <summary>"Light" | "Dark" | "System". Applied on startup.</summary>
     public string Theme { get; set; } = "Dark";
+
+    /// <summary>WhatsUp Gold server address, remembered for the maintenance-mode dialog (the
+    /// credentials are NOT saved — only this address).</summary>
+    public string WugServer { get; set; } = "10.70.25.111";
 }
 
 /// <summary>

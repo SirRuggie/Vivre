@@ -15,6 +15,7 @@ using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
 using Vivre.Core.Updates;
+using Vivre.Core.Wug;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
@@ -1993,6 +1994,79 @@ public partial class WorkspaceViewModel : ObservableObject
                 computer.LastError = ex.Message;
                 _activity.Error(computer.Name, $"Force reboot failed — {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>
+    /// Sets WhatsUp Gold maintenance mode (enter/exit) for <paramref name="computers"/> in the
+    /// background (fire-and-forget from the caller): it runs the WUG set under Windows PowerShell 5.1
+    /// (mapping names → WUG DeviceIds server-side — it does NOT run on the target machines) and reports
+    /// progress live into each row's <c>Command result</c> column + the activity log, so the caller can
+    /// close its dialog and keep working. <paramref name="password"/> is the WhatsUp Gold login, kept
+    /// separate from the target/remote credential and never stored; it's turned into plaintext only to
+    /// hand to the child process via an environment variable (never logged or put on a command line).
+    /// </summary>
+    public async Task SetWugMaintenanceAsync(
+        IReadOnlyList<Computer> computers,
+        bool enable,
+        string server,
+        string username,
+        System.Security.SecureString password,
+        string reason,
+        CancellationToken token = default)
+    {
+        if (computers.Count == 0)
+        {
+            return;
+        }
+
+        string mode = enable ? "ON" : "OFF";
+        IReadOnlyList<string> names = [.. computers.Select(c => c.Name)];
+
+        // Immediate per-row feedback in the grid + a start line in the activity log.
+        foreach (Computer c in computers)
+        {
+            c.CommandResult = $"WhatsUp Gold: setting maintenance {mode}…";
+        }
+
+        _activity.Info(null, $"WhatsUp Gold: setting maintenance {mode} for {names.Count} machine(s)…");
+
+        WugMaintenanceResult result;
+        try
+        {
+            string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
+            result = await WugMaintenance.RunAsync(names, enable, server, username, plain, reason, TimeSpan.FromMinutes(3), token);
+        }
+        catch (Exception ex)
+        {
+            foreach (Computer c in computers)
+            {
+                c.CommandResult = $"WhatsUp Gold: failed — {ex.Message}";
+            }
+
+            _activity.Error(null, $"WhatsUp Gold maintenance failed — {ex.Message}");
+            return;
+        }
+
+        // Per-row outcome: matched rows reflect the set; names with no WUG device are called out.
+        var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
+        foreach (Computer c in computers)
+        {
+            c.CommandResult = unmatched.Contains(c.Name)
+                ? "WhatsUp Gold: no matching device (by IP)"
+                : result.Ok
+                    ? $"WhatsUp Gold: maintenance {mode}"
+                    : "WhatsUp Gold: failed";
+        }
+
+        if (result.Ok)
+        {
+            _activity.Info(null, $"WhatsUp Gold maintenance {mode} for {result.DevicesSet} device(s)"
+                + (result.Unmatched.Count > 0 ? $" ({result.Unmatched.Count} unmatched)" : string.Empty));
+        }
+        else
+        {
+            _activity.Error(null, $"WhatsUp Gold maintenance failed — {result.Error}");
         }
     }
 
