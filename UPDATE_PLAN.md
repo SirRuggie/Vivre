@@ -127,6 +127,10 @@ detail window; force-reboot.
 **Deferred:**
 - Reboot-and-wait as an install option (the agent can reboot; no UI toggle / "waiting…" status yet).
 - An SCCM-deployment update lane (only if updates ever get deployed through SCCM here).
+- An **update-centric pivot** view — one row per KB across the selected machines ("applies to N,
+  install everywhere") for planning a maintenance window by update instead of by machine. Standard in
+  fleet patch tools (WSUS/Action1/PDQ); worth building only if by-KB planning becomes a real need.
+  The per-machine detail panel covers today's "install all applicable + reboot" workflow.
 
 **Verified live on real targets (2026-05):** scan (with counts), install with live progress,
 uninstall (including a cumulative update correctly reporting "can't be removed" / `0x800F0825`),
