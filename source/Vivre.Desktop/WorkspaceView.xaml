@@ -189,6 +189,8 @@
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <!-- Right gutter so the trimmed text never butts into the next column. -->
+                            <Setter Property="Padding" Value="0,0,16,0" />
                             <Setter Property="ToolTip" Value="{Binding RebootMessage}" />
                         </Style>
                     </DataGridTextColumn.ElementStyle>
@@ -197,6 +199,7 @@
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="Padding" Value="0,0,16,0" />
                             <Setter Property="ToolTip" Value="{Binding UpdateMessage}" />
                             <!-- Colour the message by state (red error / green done / amber reboot / blue working). -->
                             <Setter Property="Foreground" Value="{Binding PatchState, Converter={StaticResource PhaseBrush}}" />
