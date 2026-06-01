@@ -43,6 +43,12 @@ it ships, then gets a dated heading.
   - The update agent could exit with **no error line** if a transient file lock hit its progress write;
     the write now retries briefly and never throws.
   - The streaming PowerShell output collection is now disposed (was leaking a wait handle per remote call).
+  - The update agent now fails with a clear "config was empty or malformed" message instead of a bare
+    NullReferenceException when handed an unreadable config.
+  - Regression coverage added for the load-bearing WUA paths: the install/uninstall streaming
+    controller (heartbeat filtering, watchdog, typed-exception handling, user-cancel), per-host
+    serialization release on fault, the cross-framework agent-config JSON contract, and DISM
+    exit-code translation. No behaviour change — these lock the existing behaviour in.
 - Remoting failures no longer leak raw SDK strings — they're translated to clear, host-named
   messages ("Lost connection to …", "WinRM unhealthy — reboot the target", "No response from …").
 - The monitor no longer hammers reboot-pending / degraded hosts (the cause of WinRM/PSRP poisoning);

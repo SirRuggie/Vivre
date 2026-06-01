@@ -24,8 +24,25 @@ namespace Vivre.Core.Updates;
 public sealed class WuaUpdateLane
 {
     private readonly IPowerShellHost _powerShell;
+    private readonly TimeSpan _watchdogPollInterval;
+    private readonly Func<byte[]> _agentBytes;
 
-    public WuaUpdateLane(IPowerShellHost powerShell) => _powerShell = powerShell;
+    /// <param name="powerShell">The remoting host all transport goes through.</param>
+    /// <param name="watchdogPollInterval">How often the liveness watchdog wakes to check for total
+    /// silence. Defaults to 15s; overridden only by tests so the watchdog can be exercised without a
+    /// real-time wait.</param>
+    /// <param name="agentBytesProvider">Supplies the compiled agent EXE bytes to drop on the target.
+    /// Defaults to reading <c>Vivre.UpdateAgent.exe</c> from the app directory; overridden only by
+    /// tests (which have no bundled agent) so the install/uninstall streaming path can be tested.</param>
+    public WuaUpdateLane(
+        IPowerShellHost powerShell,
+        TimeSpan? watchdogPollInterval = null,
+        Func<byte[]>? agentBytesProvider = null)
+    {
+        _powerShell = powerShell;
+        _watchdogPollInterval = watchdogPollInterval ?? TimeSpan.FromSeconds(15);
+        _agentBytes = agentBytesProvider ?? ReadAgentBytes;
+    }
 
     // --- scan -------------------------------------------------------------
 
@@ -113,7 +130,7 @@ public sealed class WuaUpdateLane
         // not a generated PowerShell script. Ship it + its config to the target as base64 so the
         // bootstrap can drop both with no here-string quoting concerns; the SYSTEM task runs the
         // EXE and it writes the same progress JSONL the streaming controller below tails.
-        string base64Exe = Convert.ToBase64String(ReadAgentBytes());
+        string base64Exe = Convert.ToBase64String(_agentBytes());
         string base64Config = Convert.ToBase64String(
             System.Text.Encoding.UTF8.GetBytes(BuildAgentConfigJson(options, progressPath, mode)));
         string bootstrap = BuildBootstrapScript(taskName, exePath, configPath, progressPath, base64Exe, base64Config, options);
@@ -136,7 +153,7 @@ public sealed class WuaUpdateLane
             {
                 while (!watchdogCts.IsCancellationRequested)
                 {
-                    await Task.Delay(TimeSpan.FromSeconds(15), watchdogCts.Token).ConfigureAwait(false);
+                    await Task.Delay(_watchdogPollInterval, watchdogCts.Token).ConfigureAwait(false);
                     long idle = DateTime.UtcNow.Ticks - System.Threading.Interlocked.Read(ref lastLineTicks[0]);
                     if (idle > options.NoResponseTimeout.Ticks)
                     {
