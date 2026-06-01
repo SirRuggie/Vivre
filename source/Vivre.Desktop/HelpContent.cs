@@ -121,6 +121,43 @@ public static class HelpContent
                 "Settings ▸ Theme ▸ Light / Dark / System. Your choice is remembered across launches.",
             ],
         },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Filter24, Title = "How do I filter or find machines in a big list?",
+            Keywords = "filter search find chip errors reboot pending offline done updates available subset narrow",
+            Lines =
+            [
+                "Use the filter bar above the grid (works in both Machines and Windows Update views).",
+                "• Type in the search box to show only machines whose name contains that text.",
+                "• Click a chip to show only a state: Updates available · Reboot pending · Errors · Offline · Done. Click All to clear.",
+                "The \"Showing N of M\" count tells you how many match. Filters update live — a machine that errors mid-run pops into the Errors chip on its own.",
+            ],
+            Tip = "Filtering is the fast way to work a large fleet: filter to Errors to see only what failed, or Reboot pending to find what still needs a restart.",
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.CheckboxChecked24, Title = "How do I act on just the failed (or filtered) machines?",
+            Keywords = "select shown subset retry failed errors reinstall reboot filtered just those",
+            Lines =
+            [
+                "1. Filter the grid to the subset you want (e.g. the Errors chip).",
+                "2. Click Select shown — it selects every row the filter is showing.",
+                "3. Run the action (Install, Scan, right-click ▸ Reboot, etc.) — it acts on just that selection.",
+                "So \"retry the failures\" is: Errors → Select shown → Install.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Save24, Title = "How do I export a report (for a ticket / write-up)?",
+            Keywords = "export csv report excel ticket maintenance window save what got patched",
+            Lines =
+            [
+                "File ▸ Export to CSV… saves the rows currently shown (it respects the filter) to a CSV.",
+                "Columns: machine, online, status, updates available, update/reboot messages, last error, OS, and any scheduled task.",
+                "Opens cleanly in Excel.",
+            ],
+            Tip = "Filter first to scope the report — e.g. filter to Done and export to record exactly what got patched this window.",
+        },
 
         // ---------------- Machines view ----------------
         new HelpTopic

@@ -5,6 +5,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
              xmlns:local="clr-namespace:Vivre.Desktop"
+             xmlns:vm="clr-namespace:Vivre.Desktop.ViewModels"
              mc:Ignorable="d">
 
     <UserControl.Resources>
@@ -15,12 +16,98 @@
         <local:PhaseChipBrushConverter x:Key="PhaseBrush" />
         <local:PhaseChipLabelConverter x:Key="PhaseLabel" />
         <local:PhaseChipForegroundConverter x:Key="PhaseForeground" />
+        <local:EnumEqualsConverter x:Key="EnumEquals" />
+        <local:StringToVisibilityConverter x:Key="StringToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- A filter "chip": a pill-shaped ToggleButton themed with the app's Fluent brushes — subtle
+             fill by default, accent fill + light text when active. Checked state binds to ActiveFilter
+             via the enum⇄bool converter, so the chips behave as one radio group. -->
+        <Style x:Key="FilterChip" TargetType="ToggleButton">
+            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Chip" CornerRadius="14" Padding="12,5"
+                                Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="Chip" Property="Background" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                <Setter TargetName="Chip" Property="BorderBrush" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Filter bar: name search + quick state chips + "select shown" + the showing/total count.
+             Applies to whichever grid is visible (both share the Computers view). Hidden until the
+             tab has machines. -->
+        <Grid Grid.Row="0" Margin="12,4,12,8"
+              Visibility="{Binding HasComputers, Converter={StaticResource BoolToVis}}">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <ui:TextBox Grid.Column="0" Width="220" VerticalAlignment="Center"
+                        Icon="{ui:SymbolIcon Search24}"
+                        ClearButtonEnabled="True"
+                        PlaceholderText="Filter by name…"
+                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+                <ToggleButton Style="{StaticResource FilterChip}" Content="All" Margin="0"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}" Content="Updates"
+                              ToolTip="Machines with updates available to install"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.UpdatesAvailable}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}" Content="Reboot pending"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}" Content="Errors"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}" Content="Offline"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}" Content="Done"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}" />
+
+                <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding FilterStatus}"
+                           Visibility="{Binding FilterStatus, Converter={StaticResource StringToVis}}" />
+            </StackPanel>
+
+            <ui:Button Grid.Column="2" VerticalAlignment="Center"
+                       Icon="{ui:SymbolIcon CheckboxChecked24}" Content="Select shown"
+                       Click="OnSelectShown"
+                       ToolTip="Select every row currently shown by the filter, so you can act on just that subset (e.g. filter to Errors, Select shown, then Install)." />
+        </Grid>
+
         <!-- Machines grid (default mode). -->
         <ui:DataGrid x:Name="ComputerGrid"
+                     Grid.Row="1"
                      Visibility="{Binding IsMachineMode, Converter={StaticResource BoolToVis}}"
                      ItemsSource="{Binding Computers}"
                      AutoGenerateColumns="False"
@@ -123,7 +210,7 @@
         </ui:DataGrid>
 
         <!-- Windows Update view (update mode): machine grid (left) + per-machine update checklist (right). -->
-        <Grid Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="1" Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />

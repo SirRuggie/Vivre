@@ -21,6 +21,9 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
 - **Windows Update lane** — scan, install, uninstall, and schedule updates per machine with live
   progress (a built-in BatchPatch-style patcher). See `UPDATE_PLAN.md`.
+- **Filter & report** — filter the grid by name or state (Updates / Reboot pending / Errors /
+  Offline / Done), **Select shown** to act on just that subset, and **Export to CSV** for a
+  maintenance-window write-up.
 - **Named machine lists** and a **searchable activity log** (in-app panel + rolling file).
 - Session credentials (current login by default, or supply your own in Settings).
 

@@ -3,6 +3,8 @@ using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Management.Automation;
+using System.Text;
+using System.Windows.Data;
 using Vivre.Core.Computers;
 using Vivre.Core.Credentials;
 using Vivre.Core.Logging;
@@ -17,6 +19,28 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 
 namespace Vivre.Desktop.ViewModels;
+
+/// <summary>The grid's quick state filter (paired with the name search). Drives which rows show.</summary>
+public enum RowFilter
+{
+    /// <summary>Everything (default — no state filtering).</summary>
+    All,
+
+    /// <summary>Rows with updates available to install.</summary>
+    UpdatesAvailable,
+
+    /// <summary>Rows with a pending reboot.</summary>
+    RebootPending,
+
+    /// <summary>Rows whose last operation errored.</summary>
+    Errors,
+
+    /// <summary>Rows that are offline.</summary>
+    Offline,
+
+    /// <summary>Rows that finished cleanly (Done).</summary>
+    Done,
+}
 
 /// <summary>
 /// One independent workspace = one tab: its own computer list, selection, and
@@ -73,6 +97,9 @@ public partial class WorkspaceViewModel : ObservableObject
     // scan near-simultaneously (BatchPatch-style) instead of in small waves.
     private readonly SemaphoreSlim _scanThrottle;
     private CancellationTokenSource? _monitorCts;
+    // The grid's default view, with a live filter (name search + state). Both mode grids bind
+    // Computers, so they share this view — filtering once affects whichever grid is showing.
+    private readonly ICollectionView _computersView;
 
     /// <summary>Tab title (editable — double-click the tab header to rename).</summary>
     [ObservableProperty]
@@ -103,6 +130,97 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>ConfigMgr client actions shown in the grid's right-click menu.</summary>
     public IReadOnlyList<ScheduleAction> ClientActions => Core.Sccm.ClientActions.All;
+
+    // --- grid filter (name search + state chips) -------------------------------------------
+
+    /// <summary>True once the tab has any machines — drives the filter bar's visibility.</summary>
+    public bool HasComputers => Computers.Count > 0;
+
+    /// <summary>Free-text name filter for the grid (substring, case-insensitive).</summary>
+    [ObservableProperty]
+    public partial string FilterText { get; set; } = string.Empty;
+
+    /// <summary>The active quick state-filter chip.</summary>
+    [ObservableProperty]
+    public partial RowFilter ActiveFilter { get; set; } = RowFilter.All;
+
+    partial void OnFilterTextChanged(string value) => RefreshFilter();
+
+    partial void OnActiveFilterChanged(RowFilter value) => RefreshFilter();
+
+    private void RefreshFilter()
+    {
+        _computersView.Refresh();
+        OnPropertyChanged(nameof(IsFilterActive));
+        OnPropertyChanged(nameof(FilterStatus));
+    }
+
+    /// <summary>True when a name filter or a non-All state filter is in effect.</summary>
+    public bool IsFilterActive => ActiveFilter != RowFilter.All || !string.IsNullOrWhiteSpace(FilterText);
+
+    /// <summary>"Showing N of M" while filtered, otherwise empty.</summary>
+    public string FilterStatus =>
+        IsFilterActive ? $"Showing {VisibleRowCount} of {Computers.Count}" : string.Empty;
+
+    /// <summary>Number of rows currently shown (the filtered set) — also what an export/CSV includes.</summary>
+    public int VisibleRowCount => _computersView.Cast<Computer>().Count();
+
+    /// <summary>The grid filter predicate: name-substring AND the active state chip.</summary>
+    private bool RowMatchesFilter(object obj)
+    {
+        if (obj is not Computer c)
+        {
+            return false;
+        }
+
+        string q = FilterText?.Trim() ?? string.Empty;
+        if (q.Length > 0 && !(c.Name?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false))
+        {
+            return false;
+        }
+
+        return ActiveFilter switch
+        {
+            RowFilter.Offline => c.IsOnline == false,
+            RowFilter.UpdatesAvailable => c.PatchState == PatchState.Available || (c.UpdatesAvailable ?? 0) > 0 || c.MissingUpdates == true,
+            RowFilter.RebootPending => c.RebootRequired == true || c.PatchState == PatchState.RebootPending,
+            RowFilter.Errors => c.PatchState == PatchState.Error || !string.IsNullOrEmpty(c.LastError) || !string.IsNullOrEmpty(c.UpdateError),
+            RowFilter.Done => c.PatchState == PatchState.Done,
+            _ => true,
+        };
+    }
+
+    /// <summary>Builds a CSV report of the rows currently shown (respects the filter) for a
+    /// maintenance-window write-up / ticket: machine, online, state, updates, reboot, error, OS, schedule.</summary>
+    public string BuildReportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Name,Online,Status,Updates available,Update message,Reboot pending,Reboot message,Last error,OS,Scheduled,Scheduled time");
+        foreach (Computer c in _computersView.Cast<Computer>())
+        {
+            sb.AppendLine(string.Join(",", new[]
+            {
+                Csv(c.Name),
+                Csv(c.IsOnline switch { true => "Online", false => "Offline", _ => "?" }),
+                Csv(c.PatchState.ToString()),
+                Csv(c.UpdatesAvailable?.ToString() ?? string.Empty),
+                Csv(c.UpdateMessage ?? c.LastStatus ?? string.Empty),
+                Csv(c.RebootRequired switch { true => "Yes", false => "No", _ => "?" }),
+                Csv(c.RebootMessage ?? string.Empty),
+                Csv(c.LastError ?? c.UpdateError ?? string.Empty),
+                Csv(c.OperatingSystem ?? string.Empty),
+                Csv(c.ScheduledAction ?? string.Empty),
+                Csv(c.ScheduledNextRun?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty),
+            }));
+        }
+
+        return sb.ToString();
+    }
+
+    private static string Csv(string value) =>
+        value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r')
+            ? "\"" + value.Replace("\"", "\"\"") + "\""
+            : value;
 
     /// <summary>True while a sweep (Ping All / Check All) is running — drives the busy indicator and button enable-state.</summary>
     [ObservableProperty]
@@ -290,6 +408,25 @@ public partial class WorkspaceViewModel : ObservableObject
         IsInstalledMode = patchOptions.Scope == UpdateScope.Installed;
         // Keep the status-bar online/total live as rows are added/removed and their state changes.
         Computers.CollectionChanged += OnComputersChanged;
+
+        // The grid filter: a live-shaped view over Computers so a row that (e.g.) errors mid-sweep
+        // appears under the Errors filter automatically. With the default filter (All + no text)
+        // every row passes, so this is inert until the user filters.
+        _computersView = CollectionViewSource.GetDefaultView(Computers);
+        _computersView.Filter = RowMatchesFilter;
+        if (_computersView is ICollectionViewLiveShaping live && live.CanChangeLiveFiltering)
+        {
+            foreach (string prop in (string[])
+                [nameof(Computer.Name), nameof(Computer.IsOnline), nameof(Computer.PatchState),
+                 nameof(Computer.RebootRequired), nameof(Computer.LastError), nameof(Computer.UpdateError),
+                 nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates)])
+            {
+                live.LiveFilteringProperties.Add(prop);
+            }
+
+            live.IsLiveFiltering = true;
+        }
+
         // No seeding — the grid starts empty; the user opens a saved list or pastes one.
         IsMonitoring = true; // start watching online/offline straight away
     }
@@ -314,6 +451,7 @@ public partial class WorkspaceViewModel : ObservableObject
         }
 
         OnPropertyChanged(nameof(OnlineSummary));
+        OnPropertyChanged(nameof(HasComputers));
         RaiseFleetChanged();
     }
 
@@ -342,6 +480,8 @@ public partial class WorkspaceViewModel : ObservableObject
         OnPropertyChanged(nameof(IsPatchOperationActive));
         OnPropertyChanged(nameof(FleetProgress));
         OnPropertyChanged(nameof(ShowUpdateFirstRunHint));
+        // Live filtering can change the shown count as rows change state under an active filter.
+        OnPropertyChanged(nameof(FilterStatus));
     }
 
     // --- fleet aggregates (Status band + bottom bar + first-run hint) ---------------------

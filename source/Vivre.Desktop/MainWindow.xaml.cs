@@ -1,7 +1,10 @@
+using System.IO;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Vivre.Desktop.ViewModels;
 using Wpf.Ui.Controls;
 using MenuItem = System.Windows.Controls.MenuItem;
@@ -522,9 +525,61 @@ public partial class MainWindow : FluentWindow
 
         FileMenu.Items.Add(new Separator());
 
+        var exportItem = new MenuItem { Header = "_Export to CSV…", IsEnabled = vm is { HasComputers: true } };
+        exportItem.Click += (_, _) => { if (vm is not null) { ExportTabCsv(vm); } };
+        FileMenu.Items.Add(exportItem);
+
+        FileMenu.Items.Add(new Separator());
+
         var exitItem = new MenuItem { Header = "E_xit" };
         exitItem.Click += (_, _) => Close();
         FileMenu.Items.Add(exitItem);
+    }
+
+    /// <summary>Exports the active tab's currently-shown rows (respecting the grid filter) to a CSV —
+    /// machine · online · state · updates · reboot · error · OS · schedule — for a maintenance-window
+    /// write-up. Writes UTF-8 with a BOM so Excel opens it cleanly.</summary>
+    private void ExportTabCsv(WorkspaceViewModel vm)
+    {
+        if (vm.VisibleRowCount == 0)
+        {
+            Log?.Warn(null, "Export: nothing to export (no rows shown).");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export tab to CSV",
+            Filter = "CSV file (*.csv)|*.csv|All files (*.*)|*.*",
+            FileName = $"{SanitizeFileName(vm.Title)}-report.csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, vm.BuildReportCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            Log?.Info(null, $"Exported {vm.VisibleRowCount} row(s) to {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            Log?.Error(null, $"Export failed: {ex.Message}");
+        }
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (char invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "tab" : name;
     }
 
     private static void AddListItems(MenuItem parent, IReadOnlyList<string> lists, Action<string> onClick)
