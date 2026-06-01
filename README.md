@@ -31,6 +31,10 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Accessibility polish deferred as low-value for a single sighted user: full screen-reader naming
   on the grids + automation IDs; light-theme tuning of the script editor's highlight colours.
+- **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
+  `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
+  own (it touches the load-bearing monitor/reboot logic, now backed by tests). A full multi-agent code
+  review (2026-06) addressed everything else it found.
 
 ## Build & run
 
