@@ -8,10 +8,11 @@ namespace Vivre.Core.Updates;
 /// <param name="ArticleId">The KB article id without the "KB" prefix (e.g. "5037782"); null if the update has none.</param>
 /// <param name="IsDownloaded">True if WUA already has the payload cached locally.</param>
 /// <param name="SizeMb">Approximate download size in MB (0 when unknown).</param>
-/// <param name="IsUninstallable">Whether the update can be removed by <em>some</em> supported
-/// engine — the Installed scan sets this to (WUA <c>IsUninstallable</c> OR a removable DISM
-/// <c>Package_for_KB</c> exists), so a false value means neither Windows Update nor DISM can
-/// remove it. Only meaningful for <see cref="UpdateScope.Installed"/> scans; the Applicable scan
+/// <param name="IsUninstallable">Whether Windows reports the update as removable — the Installed
+/// scan sets this purely from WUA's <c>IsUninstallable</c> property (the DISM <c>Package_for_KB</c>
+/// presence test was dropped because it over-promised on permanent SSU/cumulative updates). A false
+/// value means Windows reports it as non-removable; the agent may still attempt DISM as a runtime
+/// fallback. Only meaningful for <see cref="UpdateScope.Installed"/> scans; the Applicable scan
 /// emits <c>true</c> so the checklist's checkboxes stay enabled for install.</param>
 /// <param name="InstalledAt">When this update was installed (best-effort, from WUA's history) —
 /// populated only for <see cref="UpdateScope.Installed"/> scans; null for Applicable rows and for

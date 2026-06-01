@@ -53,7 +53,28 @@ namespace Vivre.UpdateAgent
             string line = _serializer.Serialize(obj);
             lock (_gate)
             {
-                File.AppendAllText(_path, line + Environment.NewLine, new UTF8Encoding(false));
+                // Best-effort with a short retry, and NEVER throw. A transient sharing violation
+                // (AV/indexer touching the file in C:\Windows\Temp) must not abort the operation —
+                // and this is called from Main's error path too, so a throw here would escape Main
+                // and leave the controller with only its generic timeout. The controller tolerates a
+                // missed line via the next ts-bumped line + the heartbeat.
+                for (int attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        File.AppendAllText(_path, line + Environment.NewLine, new UTF8Encoding(false));
+                        return;
+                    }
+                    catch (IOException) when (attempt < 4)
+                    {
+                        System.Threading.Thread.Sleep(50);
+                    }
+                    catch (Exception)
+                    {
+                        // Give up on this one line rather than throw into the caller.
+                        return;
+                    }
+                }
             }
         }
     }

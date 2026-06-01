@@ -33,6 +33,16 @@ it ships, then gets a dated heading.
   when there are more tabs than fit.
 
 ### Fixed
+- **From the code review (`REVIEW_FINDINGS.md`):**
+  - Uninstall could remove the **wrong** update: the DISM fallback matched a KB against installed
+    packages by bare substring (`KB5000` matched `KB5000802`). It now matches the KB as a whole token.
+  - DISM package enumeration could **deadlock** the SYSTEM worker if DISM wrote a lot to stderr; both
+    DISM calls now drain stderr concurrently.
+  - A failure writing the activity-log file could **throw out of a caller's catch block** and bury the
+    original error; the file write is now isolated (the in-memory entry is the source of truth).
+  - The update agent could exit with **no error line** if a transient file lock hit its progress write;
+    the write now retries briefly and never throws.
+  - The streaming PowerShell output collection is now disposed (was leaking a wait handle per remote call).
 - Remoting failures no longer leak raw SDK strings — they're translated to clear, host-named
   messages ("Lost connection to …", "WinRM unhealthy — reboot the target", "No response from …").
 - The monitor no longer hammers reboot-pending / degraded hosts (the cause of WinRM/PSRP poisoning);

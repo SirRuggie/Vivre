@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 
 namespace Vivre.UpdateAgent
 {
@@ -82,10 +84,16 @@ namespace Vivre.UpdateAgent
         private static string ResolvePackage(string kb)
         {
             EnsurePackages();
-            string needle = "KB" + kb;
+
+            // Match the KB as a whole token, NOT a bare substring. CBS identities carry the article
+            // as "KB<digits>" bounded by non-digits (e.g. Package_for_KB5000802~31bf3856…), and KB
+            // numbers vary in length, so a substring match for "KB5000" would also hit "KB5000802"
+            // and DISM would remove the WRONG (likely cumulative/security) update. Require a non-digit
+            // (or string end) on both sides so KB5000 cannot match KB5000802.
+            var token = new Regex(@"(?<![0-9])KB" + Regex.Escape(kb) + @"(?![0-9])", RegexOptions.IgnoreCase);
             foreach (KeyValuePair<string, string> pkg in _packages)
             {
-                if (pkg.Key.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0
+                if (token.IsMatch(pkg.Key)
                     && pkg.Value.IndexOf("Installed", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     return pkg.Key;
@@ -115,8 +123,12 @@ namespace Vivre.UpdateAgent
 
             using (var proc = Process.Start(psi))
             {
+                // Drain stderr concurrently so a chatty DISM (servicing-stack warnings, corrupt
+                // packages) can't deadlock by filling the stderr pipe while we block on stdout.
+                Task<string> errTask = proc.StandardError.ReadToEndAsync();
                 string output = proc.StandardOutput.ReadToEnd();
                 proc.WaitForExit();
+                errTask.GetAwaiter().GetResult();
 
                 // /format:list emits blocks of "Package Identity : X" then "State : Installed", etc.
                 string currentIdentity = null;
@@ -157,10 +169,12 @@ namespace Vivre.UpdateAgent
 
             using (var proc = Process.Start(psi))
             {
-                // Drain the pipes so a chatty DISM can't deadlock on a full buffer.
+                // Drain both pipes concurrently so a chatty DISM can't deadlock on a full buffer
+                // (reading stdout to end first would hang if DISM blocks writing a full stderr pipe).
+                Task<string> errTask = proc.StandardError.ReadToEndAsync();
                 proc.StandardOutput.ReadToEnd();
-                proc.StandardError.ReadToEnd();
                 proc.WaitForExit();
+                errTask.GetAwaiter().GetResult();
                 return proc.ExitCode;
             }
         }

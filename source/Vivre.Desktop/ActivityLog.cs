@@ -60,7 +60,19 @@ public sealed class ActivityLog : IActivityLog
             }
         });
 
-        _file.Write(ToLevel(severity), "{Machine} {Message}", machine ?? "-", message);
+        // The in-memory entry above is the user-visible record; the file write is best-effort and
+        // must NEVER throw here. Info/Warn/Error are called from inside callers' catch blocks, so a
+        // Serilog sink failure (disk full, file locked by AV) would otherwise propagate out of that
+        // catch and bury the original failure — the very "never die silently" mechanism hiding the
+        // cause. The message is already in Entries, so on a sink failure there's nothing to surface.
+        try
+        {
+            _file.Write(ToLevel(severity), "{Machine} {Message}", machine ?? "-", message);
+        }
+        catch
+        {
+            // Logging must not become a new failure source; the in-memory entry already has it.
+        }
     }
 
     private static void OnUi(Action action)

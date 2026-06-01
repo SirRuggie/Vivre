@@ -37,6 +37,7 @@ public sealed class PatchService : IPatchService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
 
         // Applicable-scope scan is read-only (no CBS/DISM) — let it run anytime.
         if (options.Scope != UpdateScope.Installed)
@@ -66,7 +67,9 @@ public sealed class PatchService : IPatchService
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(progress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
 
         if (!TryClaim(host))
         {
@@ -91,7 +94,9 @@ public sealed class PatchService : IPatchService
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(progress);
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
 
         if (!TryClaim(host))
         {
@@ -109,9 +114,10 @@ public sealed class PatchService : IPatchService
         }
     }
 
-    private bool TryClaim(string host) => _inFlight.TryAdd(host ?? string.Empty, 0);
+    // host is validated non-null/whitespace at each public entry point.
+    private bool TryClaim(string host) => _inFlight.TryAdd(host, 0);
 
-    private void Release(string host) => _inFlight.TryRemove(host ?? string.Empty, out _);
+    private void Release(string host) => _inFlight.TryRemove(host, out _);
 
     private static HostPatchStatus AlreadyInProgress =>
         new(PatchPhase.Idle, "Skipped — an update operation is already in progress on this host.");
