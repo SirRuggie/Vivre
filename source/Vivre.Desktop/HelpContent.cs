@@ -1,0 +1,417 @@
+using CommunityToolkit.Mvvm.ComponentModel;
+using Wpf.Ui.Controls;
+
+namespace Vivre.Desktop;
+
+/// <summary>
+/// One how-to entry in the Help window — a collapsible, searchable card. Task-oriented ("How do
+/// I…"), grouped by <see cref="Category"/>, with concise verb-first steps.
+/// </summary>
+public partial class HelpTopic : ObservableObject
+{
+    public required string Category { get; init; }
+    public required string Title { get; init; }
+    public SymbolRegular Icon { get; init; } = SymbolRegular.Info24;
+
+    /// <summary>Extra search terms not already in the title/steps.</summary>
+    public string Keywords { get; init; } = string.Empty;
+
+    /// <summary>The steps / points — already prefixed ("1.", "2.", "•") in the text.</summary>
+    public required IReadOnlyList<string> Lines { get; init; }
+
+    /// <summary>Optional tip / caveat shown in a subtle box at the bottom.</summary>
+    public string? Tip { get; init; }
+
+    /// <summary>Collapsed by default; the search auto-expands matches.</summary>
+    [ObservableProperty]
+    public partial bool IsExpanded { get; set; }
+
+    /// <summary>Lower-cased text the search matches against.</summary>
+    public string Haystack => $"{Title} {Keywords} {string.Join(" ", Lines)} {Tip}".ToLowerInvariant();
+}
+
+/// <summary>The full "How to use Vivre" guide, in usage order. Edit here to add/adjust topics.</summary>
+public static class HelpContent
+{
+    public const string GettingStarted = "Getting started";
+    public const string Machines = "Machines view";
+    public const string Updates = "Windows Update view";
+    public const string Tips = "Tips & shortcuts";
+    public const string Trouble = "Troubleshooting";
+
+    public static IReadOnlyList<HelpTopic> Topics { get; } =
+    [
+        // ---------------- Getting started ----------------
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Info24, Title = "What is Vivre?",
+            Keywords = "overview about intro what does",
+            Lines =
+            [
+                "Vivre manages your Windows / SCCM machines at scale from one tabbed grid.",
+                "• Each row is one machine; ping it, pull its health, run scripts or SCCM actions, and patch it.",
+                "• A tab has two views: Machines (health & actions) and Windows Update (patching).",
+                "• Pick machines, then act on them from the toolbar or the right-click menu.",
+            ],
+            Tip = "Most per-machine actions live on the right-click menu. Select rows first, then right-click.",
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Add24, Title = "How do I load machines into a tab?",
+            Keywords = "add computer paste import names list",
+            Lines =
+            [
+                "Quick add: type a name in the \"Add computer…\" box (top-right) and press Enter.",
+                "A list: click the Paste button (or File ▸ Paste computers…) and paste names, one per line.",
+                "A saved list: File ▸ Open list ▸ pick one.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Save24, Title = "How do I save and reuse a machine list?",
+            Keywords = "named lists save open delete",
+            Lines =
+            [
+                "1. Load the machines you want in the tab.",
+                "2. File ▸ Save tab as list… and give it a name.",
+                "3. Later, File ▸ Open list to load it into a tab; File ▸ Delete list to remove a saved one.",
+            ],
+            Tip = "Lists are plain .txt files under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Tabs24, Title = "How do I work with tabs?",
+            Keywords = "tab new close rename workspace multiple",
+            Lines =
+            [
+                "Each tab is independent — its own machine list, selection, and running operations.",
+                "• New tab: the \"+\" by the tabs, or Ctrl+T.",
+                "• Rename: double-click the tab (or F2).",
+                "• Close: the \"✕\" on the tab, or Ctrl+W (it asks first if the tab has machines or a running op).",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.Person24, Title = "How do I set the account Vivre uses?",
+            Keywords = "credentials login password settings admin remote",
+            Lines =
+            [
+                "1. Settings ▸ Credentials….",
+                "2. Keep \"Use my Windows login\", or pick \"Use these credentials\" and enter Domain / Username / Password.",
+                "These are used for all remote actions (health checks, Run Script, reboots, patching, Enable WinRM).",
+            ],
+            Tip = "Credentials are held in memory for the session only — never written to disk. Set an admin account here if your login can't reach the targets.",
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.ArrowSwap24, Title = "How do I switch between Machines and Windows Update?",
+            Keywords = "mode view toggle switch update",
+            Lines =
+            [
+                "Use the View menu ▸ Machines or Windows Update (or press Ctrl+M to toggle).",
+                "The setting is per-tab, so different tabs can be in different views.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = GettingStarted, Icon = SymbolRegular.PaintBrush24, Title = "How do I change the theme?",
+            Keywords = "dark light system appearance color",
+            Lines =
+            [
+                "Settings ▸ Theme ▸ Light / Dark / System. Your choice is remembered across launches.",
+            ],
+        },
+
+        // ---------------- Machines view ----------------
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.ArrowSync24, Title = "How do I check if machines are online?",
+            Keywords = "ping reachable online offline status dot",
+            Lines =
+            [
+                "Click Ping All (or F5). Use the Ping All dropdown ▸ Ping Offline only to re-check just the dark ones.",
+                "The Ping dot shows: green ✓ online · red ✕ offline · grey ? not checked yet.",
+            ],
+            Tip = "Ping is ICMP. If you've set explicit credentials, Vivre also tries an authenticated WMI check, so ping-blocked boxes can still show online.",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Heart24, Title = "How do I pull SCCM client health?",
+            Keywords = "check all health site code agent version reboot pending missing updates",
+            Lines =
+            [
+                "Click Check All. For each machine it fills: site code, agent version, last reboot, and the health dots.",
+                "Health dots (green = good, red = needs attention): Reboot pending · Updates missing · Install running · Users online.",
+            ],
+            Tip = "Triggering health/actions usually needs admin rights on the target — set credentials in Settings if you see \"access denied\".",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Pulse24, Title = "How do I keep statuses live?",
+            Keywords = "monitor watch continuous auto refresh",
+            Lines =
+            [
+                "Turn on the Monitor toggle — Vivre re-checks online/offline for every machine on a timer.",
+                "Click Stop to halt it (and any other running operation in the tab).",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Play24, Title = "How do I run a PowerShell script?",
+            Keywords = "run script powershell saved library command",
+            Lines =
+            [
+                "1. Select the machines.",
+                "2. Right-click ▸ Run script… (opens the Run Script window).",
+                "3. Pick a saved script (grouped by category) or paste your own, review it, then click Run.",
+                "Output lands per-machine in the Command result column and in the window's log.",
+            ],
+            Tip = "The window opens for review — it never auto-runs — so a stray click can't fire a script across your fleet.",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I run an SCCM client action?",
+            Keywords = "client action machine policy hardware inventory update scan trigger schedule",
+            Lines =
+            [
+                "Select the machines, then right-click ▸ Client actions ▸ and pick one (Machine Policy, Hardware Inventory, Update Scan, …).",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.PlugConnected24, Title = "How do I enable WinRM on a machine?",
+            Keywords = "winrm psremoting enable dcom remoting unreachable",
+            Lines =
+            [
+                "Select the machine(s), right-click ▸ Enable WinRM (PSRemoting)…, and confirm.",
+                "It runs Enable-PSRemoting over DCOM — a different channel — so it works on boxes WinRM can't reach yet.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.ArrowClockwise24, Title = "How do I reboot machines now?",
+            Keywords = "reboot restart force shutdown",
+            Lines =
+            [
+                "Select the machines, right-click ▸ Reboot (force now)…, and confirm (it lists the count + names).",
+                "Runs shutdown /r /f — any unsaved work on those machines is lost.",
+            ],
+            Tip = "To reboot at a set time instead, use right-click ▸ Schedule ▸ Reboot….",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Eye24, Title = "How do I see one machine's full details?",
+            Keywords = "details window os operating system per machine",
+            Lines =
+            [
+                "Right-click the machine ▸ Details….",
+                "Shows its OS (caption + build), update state, reboot status, scheduled task, and that machine's messages.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.History24, Title = "How do I see a machine's history?",
+            Keywords = "messages activity log history per machine",
+            Lines =
+            [
+                "Right-click the machine ▸ Show messages — opens the activity log filtered to just that machine.",
+                "Or open the full log any time: View ▸ Activity log (search by machine or text).",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Copy24, Title = "How do I copy info out (e.g. to Excel)?",
+            Keywords = "copy export clipboard names rows online offline",
+            Lines =
+            [
+                "Right-click ▸ Copy ▸, then choose what to copy:",
+                "• The clicked row's Update message / Reboot message / Command result / Last error.",
+                "• Name(s) or Selected rows (all columns) for the current selection.",
+                "• All online devices / All offline devices.",
+                "Everything is copied newline-separated, ready to paste into Excel.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Delete24, Title = "How do I remove machines from a tab?",
+            Keywords = "remove delete offline clear",
+            Lines =
+            [
+                "Remove Offline drops every offline (red) machine from the tab.",
+                "Or select machines and press Delete (it confirms for large selections).",
+            ],
+            Tip = "Removing only takes them out of this tab — they stay in any saved list, so you can re-load them.",
+        },
+
+        // ---------------- Windows Update view ----------------
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.ArrowSwap24, Title = "How do I get to Windows Update?",
+            Keywords = "switch update mode view patching",
+            Lines =
+            [
+                "View ▸ Windows Update (or Ctrl+M). The grid swaps to the patch columns and the patch actions appear.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Settings24, Title = "How do I choose the update source?",
+            Keywords = "source windows microsoft update wsus managed drivers exclude",
+            Lines =
+            [
+                "Updates menu ▸ Source ▸ Windows Update / Microsoft Update / Managed (WSUS/SCCM).",
+                "Updates ▸ Include drivers to also scan/install drivers (off by default).",
+                "Updates ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Search24, Title = "How do I scan for updates?",
+            Keywords = "scan find applicable available count",
+            Lines =
+            [
+                "Select machines (or none = all), then click Scan. To scan one, click it and use the side panel's Scan.",
+                "Each row's Status chip and Windows update message show what was found; the side panel lists that machine's updates.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.CheckboxChecked24, Title = "How do I pick which updates to install?",
+            Keywords = "select choose checklist applicable tick side panel",
+            Lines =
+            [
+                "Click a machine to open its side panel. With the scope set to Applicable, tick/untick updates.",
+                "Use All / None to select quickly. Install then targets only the ticked ones (or everything applicable if you don't scan first).",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.ArrowDownload24, Title = "How do I install updates?",
+            Keywords = "install patch download progress reboot",
+            Lines =
+            [
+                "Select machines, then click Install (it confirms the count first). Or Ctrl+Enter.",
+                "Progress shows live download then install percent; the chip turns green (Done) or amber (reboot pending).",
+                "A required reboot is reported, not forced — reboot when you're ready.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Subtract24, Title = "How do I uninstall updates?",
+            Keywords = "uninstall remove dism installed scope",
+            Lines =
+            [
+                "1. Click a machine, set the side-panel scope to Installed, and Scan.",
+                "2. Tick the updates to remove (greyed rows can't be removed by any engine), then click Uninstall checked.",
+                "Vivre uses Windows Update's remover first, then DISM.",
+            ],
+            Tip = "Cumulative & servicing-stack updates are permanent — Windows refuses to remove them (error 0x800F0825). That's expected, not a bug.",
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.CalendarClock24, Title = "How do I schedule an install or reboot for later?",
+            Keywords = "schedule task later time install reboot cancel one-time",
+            Lines =
+            [
+                "Select machines, right-click ▸ Schedule ▸, then:",
+                "• Install updates… — pick a date/time to install.",
+                "• Reboot… — pick a date/time to force-reboot.",
+                "• Cancel scheduled task — clears a pending one.",
+                "The Scheduled task columns show what's queued and when; they clear once the time passes.",
+            ],
+            Tip = "Scheduling registers a one-time task that runs as SYSTEM, so it needs admin rights on the target.",
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Color24, Title = "How do I read the status chips and progress?",
+            Keywords = "chip color status progress bar meaning idle scanning done error",
+            Lines =
+            [
+                "The Status chip colour: grey = idle · blue = working (scanning/downloading/installing) · steel = updates available · amber = reboot pending · green = done · red = error.",
+                "During install the Progress bar fills (download is the first half, install the second).",
+                "When an operation finishes while you're watching, a banner summarises how many succeeded / failed.",
+            ],
+        },
+
+        // ---------------- Tips & shortcuts ----------------
+        new HelpTopic
+        {
+            Category = Tips, Icon = SymbolRegular.Keyboard24, Title = "Keyboard shortcuts",
+            Keywords = "keyboard shortcuts hotkeys accelerators ctrl f5 f2",
+            Lines =
+            [
+                "• Ctrl+T new tab · Ctrl+W close tab · F2 rename tab · Ctrl+L focus the add box.",
+                "• Ctrl+M switch Machines / Windows Update · F5 Ping All · Ctrl+Enter Install.",
+                "• Shift+F10 (or the Menu key) opens the right-click menu from the keyboard.",
+                "• Delete removes the selected machines · Ctrl+C copies the selected rows.",
+                "• F1 opens this guide.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Tips, Icon = SymbolRegular.Cursor24, Title = "Getting around faster",
+            Keywords = "tips selection multi-select right click count",
+            Lines =
+            [
+                "• Right-click is the hub — Reboot, Schedule, Details, Run script, Client actions, Enable WinRM all live there.",
+                "• Select multiple machines with Ctrl+click / Shift+click; the bottom bar shows the selected count.",
+                "• Status dots use colour AND shape (✓ / ✕ / ?), so they're readable at a glance.",
+                "• Buttons and actions show what they'll target — \"Install on 12 machines\", \"Scan selected (3)\".",
+            ],
+        },
+
+        // ---------------- Troubleshooting ----------------
+        new HelpTopic
+        {
+            Category = Trouble, Icon = SymbolRegular.Warning24, Title = "\"Online · no ConfigMgr client\"",
+            Keywords = "no configmgr client sccm not installed health",
+            Lines =
+            [
+                "The machine is reachable but has no SCCM client, so client actions and SCCM health won't apply.",
+                "Ping/Run Script/reboot/Windows Update still work (those don't need the SCCM client).",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Trouble, Icon = SymbolRegular.PlugDisconnected24, Title = "A machine won't respond to remote actions",
+            Keywords = "winrm unreachable access denied credentials cannot connect",
+            Lines =
+            [
+                "• Try right-click ▸ Enable WinRM (over DCOM) to turn on remoting.",
+                "• Set an admin account in Settings ▸ Credentials if your login can't reach the target.",
+                "• Confirm the box is online (Ping All) and not blocked by firewall.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Trouble, Icon = SymbolRegular.PlugDisconnected24, Title = "\"WinRM unhealthy — reboot the target\"",
+            Keywords = "winrm unhealthy reboot pending stuck initialsessionstate",
+            Lines =
+            [
+                "A pending reboot has jammed that machine's remoting (a known Windows issue). Reboot the box to clear it.",
+                "Vivre stops hammering it, re-tests every few minutes, and clears the message once it recovers.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Trouble, Icon = SymbolRegular.Prohibited24, Title = "An update \"could not be removed\"",
+            Keywords = "uninstall failed 0x800F0825 permanent cumulative servicing stack",
+            Lines =
+            [
+                "Cumulative and servicing-stack updates are permanent — Windows blocks removal (error 0x800F0825).",
+                "This is by design, on any tool. The per-update reason is shown so you can tell it apart from a real failure.",
+            ],
+        },
+        new HelpTopic
+        {
+            Category = Trouble, Icon = SymbolRegular.Clock24, Title = "An install seems stuck / \"No response\"",
+            Keywords = "stuck hung no response frozen downloading timeout dead session",
+            Lines =
+            [
+                "A genuinely slow update keeps sending heartbeats and is fine — leave it.",
+                "If the session goes fully silent (~90s, no heartbeat), Vivre flags \"No response\" — the box dropped or hung.",
+                "Hit Stop, then re-scan once it's reachable to see its true state.",
+            ],
+        },
+    ];
+}

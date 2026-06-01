@@ -26,6 +26,7 @@ public partial class MainWindow : FluentWindow
     public static readonly RoutedUICommand ToggleModeKey = new("Toggle mode", nameof(ToggleModeKey), typeof(MainWindow));
     public static readonly RoutedUICommand RefreshKey = new("Refresh", nameof(RefreshKey), typeof(MainWindow));
     public static readonly RoutedUICommand InstallKey = new("Install", nameof(InstallKey), typeof(MainWindow));
+    public static readonly RoutedUICommand HelpKey = new("Help", nameof(HelpKey), typeof(MainWindow));
 
     /// <summary>Persisted preferences (theme) — injected by the composition root.</summary>
     internal AppSettingsStore? Settings { get; set; }
@@ -250,6 +251,25 @@ public partial class MainWindow : FluentWindow
 
     private void OnOpenAbout(object sender, RoutedEventArgs e) =>
         new AboutWindow { Owner = this }.ShowDialog();
+
+    private void OnOpenHelp(object sender, RoutedEventArgs e) => ShowHelp();
+
+    private void OnHelpKey(object sender, ExecutedRoutedEventArgs e) => ShowHelp();
+
+    private void ShowHelp()
+    {
+        // Reuse the open guide if there is one, otherwise open it modeless.
+        foreach (Window w in Application.Current.Windows)
+        {
+            if (w is HelpWindow existing)
+            {
+                existing.Activate();
+                return;
+            }
+        }
+
+        new HelpWindow { Owner = this }.Show();
+    }
 
     private void OnOpenExcludeDialog(object sender, RoutedEventArgs e)
     {
