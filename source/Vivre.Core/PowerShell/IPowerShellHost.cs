@@ -18,6 +18,20 @@ public interface IPowerShellHost
     Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Runs <paramref name="script"/> in a local runspace, binding <paramref name="arguments"/> to the
+    /// script's <c>param()</c> block — so a typed value (e.g. a <see cref="PSCredential"/> or a
+    /// <c>string[]</c>) is passed as a real parameter rather than interpolated into the script text
+    /// (no quoting hazards, nothing sensitive to leak if the script is logged). Same result shape as
+    /// <see cref="RunLocalAsync(string,CancellationToken)"/>. Optional capability: hosts that don't
+    /// implement it throw <see cref="NotSupportedException"/>.
+    /// </summary>
+    Task<PSExecutionResult> RunLocalAsync(
+        string script,
+        IReadOnlyDictionary<string, object?> arguments,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This host does not support parameterized local runs.");
+
+    /// <summary>
     /// Runs <paramref name="script"/> on <paramref name="host"/> over WinRM and returns
     /// the same shape of result as <see cref="RunLocalAsync"/>.
     /// </summary>

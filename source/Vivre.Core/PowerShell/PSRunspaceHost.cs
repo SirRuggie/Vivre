@@ -23,7 +23,27 @@ public sealed class PSRunspaceHost : IPowerShellHost
         using Runspace runspace = RunspaceFactory.CreateRunspace();
         runspace.Open();
 
-        return await RunInRunspaceAsync(runspace, script, onOutput: null, cancellationToken).ConfigureAwait(false);
+        return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="script"/> locally, binding <paramref name="arguments"/> to its
+    /// <c>param()</c> block — used for runs that need a typed value passed in (e.g. a
+    /// <see cref="PSCredential"/>) without baking it into the script text.
+    /// </summary>
+    public async Task<PSExecutionResult> RunLocalAsync(
+        string script,
+        IReadOnlyDictionary<string, object?> arguments,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(script);
+        ArgumentNullException.ThrowIfNull(arguments);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using Runspace runspace = RunspaceFactory.CreateRunspace();
+        runspace.Open();
+
+        return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments, cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<PSExecutionResult> RunRemoteAsync(
@@ -79,7 +99,7 @@ public sealed class PSRunspaceHost : IPowerShellHost
 
         try
         {
-            return await RunInRunspaceAsync(runspace, script, onOutput: null, cancellationToken).ConfigureAwait(false);
+            return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments: null, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -131,7 +151,7 @@ public sealed class PSRunspaceHost : IPowerShellHost
 
         try
         {
-            return await RunInRunspaceAsync(runspace, script, onOutput, cancellationToken).ConfigureAwait(false);
+            return await RunInRunspaceAsync(runspace, script, onOutput, arguments: null, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -202,11 +222,23 @@ public sealed class PSRunspaceHost : IPowerShellHost
         Runspace runspace,
         string script,
         Action<PSObject>? onOutput,
+        IReadOnlyDictionary<string, object?>? arguments,
         CancellationToken cancellationToken)
     {
         using var ps = SmaPowerShell.Create();
         ps.Runspace = runspace;
         ps.AddScript(script);
+
+        // Bind named arguments to the script's param() block. Passing values (e.g. a PSCredential
+        // or a string[]) as real parameters keeps sensitive/awkward data out of the script TEXT —
+        // no interpolation, no quoting hazards, nothing to leak if the script is ever logged.
+        if (arguments is not null)
+        {
+            foreach (KeyValuePair<string, object?> arg in arguments)
+            {
+                ps.AddParameter(arg.Key, arg.Value);
+            }
+        }
 
         // Cancellation stops the running pipeline; the SDK then surfaces a
         // PipelineStoppedException, which we translate to OperationCanceledException.
