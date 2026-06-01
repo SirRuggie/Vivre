@@ -10,6 +10,9 @@ it ships, then gets a dated heading.
 - **Windows Update lane** — scan, install, and uninstall updates per machine with live progress,
   driven by a compiled SYSTEM agent. Update Source toggle (Windows Update / Microsoft Update /
   Managed-WSUS) + an exclude-by-name list. (See `UPDATE_PLAN.md`.)
+- **How to use Vivre** guide (Help ▸ How to use Vivre, or F1) — a searchable, collapsible in-app
+  manual covering both Machines and Windows Update modes, grouped into Getting started / Machines /
+  Windows Update / Tips & shortcuts / Troubleshooting; the search filters and auto-expands matches.
 - **Schedule ▸ menu** (right-click) — schedule a one-time **install** or **reboot** at a chosen
   time, or **Cancel** a pending scheduled task. Works in either view; the "Scheduled task" columns
   show what's queued.
@@ -40,5 +43,7 @@ it ships, then gets a dated heading.
   all-failed run as an error rather than a green "Done"; cumulative updates are correctly reported
   as non-removable.
 - Copy ▸ \<field\> copies the right-clicked row, not a stale multi-selection.
+- The Update grid's "Reboot message" and "Windows update message" cells no longer butt together
+  (they had no gutter, so trimmed text read as one run-on sentence) — added a right-hand gutter.
 - The scan-complete summary counts machines that actually have updates, not every scanned machine.
 - Settings no longer silently clears a stored credential when the username is left blank.

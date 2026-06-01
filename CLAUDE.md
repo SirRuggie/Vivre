@@ -8,6 +8,7 @@ This file guides Claude Code (claude.ai/code) when working in this repository.
 (SCCM/MEMCM) clients at scale: a tabbed grid of computers you ping, health-check, run SCCM client
 actions / arbitrary PowerShell against, and patch through a built-in Windows Update lane. Named for
 the One Piece *Vivre Card* — every grid row tracks one machine's life force (see **Help ▸ About Vivre**).
+End-user how-to lives in-app under **Help ▸ How to use Vivre** (`HelpContent.cs`), not here.
 
 Threat model: a single admin running it against their own environment — favour usability and
 maintainability over enterprise hardening. It's a dense power tool, not a consumer app.

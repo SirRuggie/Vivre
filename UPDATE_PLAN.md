@@ -1,8 +1,7 @@
 # Windows Update (WUA) lane
 
 How Vivre patches machines — the deep-dive that complements **[README.md](README.md)** (overview)
-and **[CLAUDE.md](CLAUDE.md)** (architecture + conventions). This is the major feature on the
-`feature/wua-update-lane` branch.
+and **[CLAUDE.md](CLAUDE.md)** (architecture + conventions). The lane is merged into `master`.
 
 ---
 
@@ -129,13 +128,8 @@ detail window; force-reboot.
 - Reboot-and-wait as an install option (the agent can reboot; no UI toggle / "waiting…" status yet).
 - An SCCM-deployment update lane (only if updates ever get deployed through SCCM here).
 
-**Pending live verification** (can't be driven from the build box — needs a real target server):
-1. **Scan** shows a count; Windows Update vs Microsoft Update differ; an Exclude term drops a title.
-2. **Install** drives Downloading → Installing (bar moves) → PendingReboot; the SYSTEM task is
-   created and cleaned up; Stop mid-install frees the row.
-3. **Uninstall** of a WUA-removable KB (live %) and a DISM-only KB; a cumulative update correctly
-   reports "can't be removed (`0x800F0825`)" rather than failing silently.
-4. **Schedule** — the one-time task registers and fires at the set time; the Scheduled-task columns
-   populate then clear.
-5. **Degraded / hung handling** — the "WinRM unhealthy" flag self-heals within ~5 min of the target
-   recovering; a dead/hung session surfaces "No response from \<host\>…" within ~90s.
+**Verified live on real targets (2026-05):** scan (with counts), install with live progress,
+uninstall (including a cumulative update correctly reporting "can't be removed" / `0x800F0825`),
+a scheduled reboot firing at its set time, and the "WinRM unhealthy" degraded-host flag coming and
+going as the self-heal re-tests. One box flapped WinRM-unhealthy intermittently — confirmed to be
+the back-off / self-heal working as designed, not a regression.
