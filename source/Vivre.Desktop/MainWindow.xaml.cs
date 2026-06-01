@@ -214,11 +214,18 @@ public partial class MainWindow : FluentWindow
 
     /// <summary>
     /// Right-clicking a line selects it first (unless it's already part of a multi-selection), so the
-    /// context-menu Copy acts on what was clicked.
+    /// context-menu Copy acts on what was clicked. Handled at the grid level — walking up the visual
+    /// tree to the row — rather than via a row Style, so we don't override WPF-UI's themed DataGridRow.
     /// </summary>
-    private void OnActivityRowRightClick(object sender, MouseButtonEventArgs e)
+    private void OnActivityGridRightClick(object sender, MouseButtonEventArgs e)
     {
-        if (sender is DataGridRow { IsSelected: false } row)
+        DependencyObject? d = e.OriginalSource as DependencyObject;
+        while (d is not null and not DataGridRow)
+        {
+            d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+        }
+
+        if (d is DataGridRow { IsSelected: false } row)
         {
             ActivityGrid.SelectedItems.Clear();
             row.IsSelected = true;
