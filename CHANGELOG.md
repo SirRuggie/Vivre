@@ -10,6 +10,15 @@ it ships, then gets a dated heading.
 - **Windows Update lane** — scan, install, and uninstall updates per machine with live progress,
   driven by a compiled SYSTEM agent. Update Source toggle (Windows Update / Microsoft Update /
   Managed-WSUS) + an exclude-by-name list. (See `UPDATE_PLAN.md`.)
+- **Grid filter + state chips** — a filter bar on both views: search machines by name and one-click
+  quick filters (Updates available · Reboot pending · Errors · Offline · Done), with a live
+  "Showing N of M" count. Filters the whole tab and updates mid-sweep (a row that errors appears
+  under the Errors chip automatically).
+- **Select shown** — one click selects every row the filter currently shows, so you can act on just
+  that subset (e.g. filter to Errors → Select shown → Install) without hand-picking rows.
+- **Export to CSV** (File ▸ Export to CSV…) — writes the rows currently shown (respecting the filter)
+  to a CSV report (machine · online · state · updates · reboot · error · OS · schedule) for a
+  maintenance-window write-up / ticket.
 - **How to use Vivre** guide (Help ▸ How to use Vivre, or F1) — a searchable, collapsible in-app
   manual covering both Machines and Windows Update modes, grouped into Getting started / Machines /
   Windows Update / Tips & shortcuts / Troubleshooting; the search filters and auto-expands matches.

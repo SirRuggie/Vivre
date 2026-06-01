@@ -532,6 +532,15 @@ public partial class WorkspaceView : UserControl
         }
     }
 
+    /// <summary>"Select shown": selects every row the filter currently shows in the active grid, so
+    /// the user can act on just that subset (e.g. filter to Errors → Select shown → Install).</summary>
+    private void OnSelectShown(object sender, RoutedEventArgs e)
+    {
+        DataGrid grid = ViewModel?.IsUpdateMode == true ? UpdateGrid : ComputerGrid;
+        grid.Focus();
+        grid.SelectAll();
+    }
+
     private void OnGridRightClick(object sender, MouseButtonEventArgs e)
     {
         if (ViewModel is not { } vm || sender is not DataGrid grid)
