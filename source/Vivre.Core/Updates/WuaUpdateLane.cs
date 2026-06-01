@@ -130,10 +130,14 @@ public sealed class WuaUpdateLane
         // not a generated PowerShell script. Ship it + its config to the target as base64 so the
         // bootstrap can drop both with no here-string quoting concerns; the SYSTEM task runs the
         // EXE and it writes the same progress JSONL the streaming controller below tails.
-        string base64Exe = Convert.ToBase64String(_agentBytes());
+        byte[] agentBytes = _agentBytes();
+        string base64Exe = Convert.ToBase64String(agentBytes);
+        // The bootstrap verifies the dropped EXE against this hash before launching it as SYSTEM, so a
+        // tampered/replaced binary in the (world-writable) temp dir is caught instead of executed.
+        string agentSha256 = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(agentBytes));
         string base64Config = Convert.ToBase64String(
             System.Text.Encoding.UTF8.GetBytes(BuildAgentConfigJson(options, progressPath, mode)));
-        string bootstrap = BuildBootstrapScript(taskName, exePath, configPath, progressPath, base64Exe, base64Config, options);
+        string bootstrap = BuildBootstrapScript(taskName, exePath, configPath, progressPath, base64Exe, base64Config, agentSha256, options);
 
         HostPatchStatus last = new(PatchPhase.Scanning, startingMessage);
         bool progressSeen = false;
@@ -667,6 +671,7 @@ public sealed class WuaUpdateLane
         string progressPath,
         string base64Exe,
         string base64Config,
+        string expectedSha256,
         PatchOptions options)
     {
         string trigger = options is { RunBehavior: RunBehavior.ScheduleAt, ScheduleAt: { } at }
@@ -683,6 +688,18 @@ public sealed class WuaUpdateLane
             $ErrorActionPreference = 'Stop'
             [System.IO.File]::WriteAllBytes('{{exePath}}', [Convert]::FromBase64String('{{base64Exe}}'))
             [System.IO.File]::WriteAllBytes('{{configPath}}', [Convert]::FromBase64String('{{base64Config}}'))
+
+            # Integrity gate: the EXE lands in a world-writable temp dir and runs as SYSTEM, so verify
+            # the bytes on disk match the agent we shipped before we launch it. This catches a tampered
+            # or replaced binary (closing most of the drop->run TOCTOU window).
+            $expectedHash = '{{expectedSha256}}'
+            $actualHash = (Get-FileHash -LiteralPath '{{exePath}}' -Algorithm SHA256).Hash
+            if ($actualHash -ne $expectedHash) {
+                Remove-Item '{{exePath}}' -ErrorAction SilentlyContinue
+                Remove-Item '{{configPath}}' -ErrorAction SilentlyContinue
+                throw "Vivre agent integrity check failed on the target - the dropped agent did not match the expected SHA-256; aborting to avoid running a tampered binary as SYSTEM."
+            }
+
             Remove-Item '{{progressPath}}' -ErrorAction SilentlyContinue
             {{trigger}}
             $action    = New-ScheduledTaskAction -Execute '{{exePath}}' -Argument '"{{configPath}}"'
@@ -811,10 +828,7 @@ public sealed class WuaUpdateLane
 
     // --- helpers ----------------------------------------------------------
 
-    private static bool IsLocal(string host) =>
-        string.IsNullOrWhiteSpace(host)
-        || host is "localhost" or "127.0.0.1" or "::1" or "."
-        || string.Equals(host, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+    private static bool IsLocal(string host) => HostName.IsLocal(host);
 
     private static string? Str(PSObject row, string name)
     {

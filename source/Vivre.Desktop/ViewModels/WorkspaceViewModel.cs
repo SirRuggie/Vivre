@@ -831,6 +831,7 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             Computers.Remove(computer);
             SelectedComputers.Remove(computer);
+            ForgetHostState(computer.Name);
         }
 
         if (FocusedComputer is { } focused && !Computers.Contains(focused))
@@ -1436,7 +1437,9 @@ public partial class WorkspaceViewModel : ObservableObject
             // A degraded-retry probes regardless of the reboot-pending skip — its job is to re-test WinRM.
             if (computer.RebootRequired != true || recheck || degradedRetryDue)
             {
-                await ProbeRebootPendingAsync(computer, token).ConfigureAwait(false);
+                // No ConfigureAwait(false): this method mutates data-bound Computer state after the
+                // await (and below), so keep the continuation on the captured UI context.
+                await ProbeRebootPendingAsync(computer, token);
 
                 if (recheck)
                 {
@@ -1523,11 +1526,15 @@ public partial class WorkspaceViewModel : ObservableObject
     /// </summary>
     private async Task ProbeRebootPendingAsync(Computer computer, CancellationToken token)
     {
-        await _rebootProbeThrottle.WaitAsync(token).ConfigureAwait(false);
+        // No ConfigureAwait(false) on either await: the result-application below mutates data-bound
+        // Computer state (RebootRequired/RebootMessage/UpdateMessage/WentOfflineAt), so the
+        // continuation must stay on the captured UI context (losing it at the throttle wait would
+        // also strand the probe continuation off-thread).
+        await _rebootProbeThrottle.WaitAsync(token);
         try
         {
             bool? was = computer.RebootRequired;
-            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token).ConfigureAwait(false);
+            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token);
 
             // We got here with no shell-init failure → WinRM is healthy. If this host was flagged
             // degraded, it has recovered: clear the flag + the stale "WinRM unhealthy" message so the
@@ -1569,22 +1576,25 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             throw;
         }
-        catch (RemoteShellInitException ex)
+        catch (Exception ex)
         {
-            // The target's WinRM/PSRP shell init is failing (pending reboot / shell exhaustion).
-            // Back off — hammering a degraded box with fresh shells makes it worse — but keep
-            // retrying every DegradedRetryInterval so we notice when it recovers. Tell the user once.
+            // ANY remote failure means this host's probe isn't working — including a lost session or
+            // a persistent error, which previously fell into a bare catch and left no trace at all.
+            // Back off (don't hammer a sick box with fresh shells every tick) but keep retrying every
+            // DegradedRetryInterval so we notice recovery, and surface it ONCE so a stuck monitor is
+            // diagnosable instead of silently dark. The actionable reboot-pending case gets a specific
+            // row message; other failures just get the back-off + a single activity-log line.
             bool firstTime = !_degradedHosts.ContainsKey(computer.Name);
             _degradedHosts[computer.Name] = DateTime.Now + DegradedRetryInterval;
             if (firstTime)
             {
-                computer.RebootMessage = $"WinRM unhealthy on {computer.Name} — likely reboot-pending; reboot the target to clear it.";
-                _activity.Warn(computer.Name, $"WinRM/PSRP shell init failing — backing off reboot probes (retry every {DegradedRetryInterval.TotalMinutes:N0} min). {ex.Message}");
+                if (ex is RemoteShellInitException)
+                {
+                    computer.RebootMessage = $"WinRM unhealthy on {computer.Name} — likely reboot-pending; reboot the target to clear it.";
+                }
+
+                _activity.Warn(computer.Name, $"Reboot probe failing — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min). {ex.Message}");
             }
-        }
-        catch
-        {
-            // Swallow other (transient) failures — don't spam the activity log every 20 s for a flaky host.
         }
         finally
         {
@@ -1669,6 +1679,7 @@ public partial class WorkspaceViewModel : ObservableObject
         foreach (Computer computer in removed)
         {
             Computers.Remove(computer);
+            ForgetHostState(computer.Name);
         }
 
         SelectedComputers.Clear();
@@ -1687,6 +1698,15 @@ public partial class WorkspaceViewModel : ObservableObject
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(ScanButtonLabel));
         OnPropertyChanged(nameof(InstallButtonLabel));
+    }
+
+    /// <summary>Drops a removed machine's per-host monitor state so stale name-keyed entries don't
+    /// linger for the tab's lifetime (and can't prematurely clear a re-added machine's columns).</summary>
+    private void ForgetHostState(string name)
+    {
+        _degradedHosts.TryRemove(name, out _);
+        _rebootRecheckBudget.TryRemove(name, out _);
+        _scheduledTasks.TryRemove(name, out _);
     }
 
     /// <summary>Mirrors the grid's selection into <see cref="SelectedComputers"/> (called from code-behind).</summary>
@@ -1872,10 +1892,7 @@ public partial class WorkspaceViewModel : ObservableObject
         }
     }
 
-    private static bool IsLocalHost(string host) =>
-        string.IsNullOrWhiteSpace(host)
-        || host is "localhost" or "127.0.0.1" or "::1" or "."
-        || string.Equals(host, Environment.MachineName, StringComparison.OrdinalIgnoreCase);
+    private static bool IsLocalHost(string host) => HostName.IsLocal(host);
 
     private static string SummarizeHealth(SccmClientInfo health)
     {

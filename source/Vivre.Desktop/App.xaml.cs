@@ -50,7 +50,10 @@ public partial class App : Application
         {
             if (args.ExceptionObject is Exception ex)
             {
-                activity.Error(null, $"Fatal error: {ex.GetType().Name}: {ex.Message}");
+                // Fatal, usually off the UI thread, during teardown — write straight to the file sink.
+                // Routing through the dispatcher (activity.Error) can throw/block as it shuts down,
+                // losing this line.
+                activity.Fatal(null, $"Fatal error: {ex.GetType().Name}: {ex.Message}");
             }
         };
         TaskScheduler.UnobservedTaskException += (_, args) =>

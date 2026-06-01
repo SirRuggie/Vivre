@@ -21,8 +21,20 @@ Severity tags: **[CRITICAL]** correctness/safety/data-loss · **[IMPROVEMENT]** 
 >   cross-framework agent-config JSON round-trip, and DISM exit-code translation. Enabled by a
 >   test-only watchdog-poll-interval + agent-bytes seam on `WuaUpdateLane` and splitting `AgentConfig`
 >   into a linkable POCO + loader. **+15 tests (144 total), all green; clean `-warnaserror` build.**
-> - **Still open:** the async `ConfigureAwait` cleanup (#10), the SYSTEM-drop hardening (#11), and the
->   remaining lower-priority SUGGESTIONs.
+> - **Batch 3 — done.** #10 (monitor/probe continuations kept on the UI thread — dropped
+>   `ConfigureAwait(false)` on the probe awaits), #11 (the agent EXE is SHA-256-verified on the
+>   target before it runs as SYSTEM), #12 (fatal `AppDomain` handler writes straight to the file
+>   sink), #13 (the reboot-probe bare `catch` now backs off + logs once instead of swallowing
+>   persistent failures), #14 (the copy-pasted local-vs-remote predicate consolidated into one
+>   `HostName.IsLocal` helper), the per-row dictionary pruning on row removal, and the #16 parser
+>   guards (FailedCount / garbled-percent, `InstalledAt` + installed-scope message, case-insensitive
+>   host claim, bootstrap integrity check). **+7 tests (151 total), all green; clean `-warnaserror`.**
+> - **Deliberately not done** (low value / high churn / debatable): primary-constructor conversions
+>   (cosmetic), the `WorkspaceViewModel` god-object extraction (large, risky, touches the load-bearing
+>   monitor logic), the context-menu rebuild (review judged the current code fine), the Update-grid
+>   left-click focus guard (debatable — "follow the cursor" is arguably the better behaviour), and the
+>   orphaned-cleanup `Warn` (would require threading a logger into Core's `WuaUpdateLane` — most
+>   invasive SUGGESTION for the least benefit).
 
 ## Headline
 

@@ -20,6 +20,7 @@ public class BootstrapScriptTests
             progressPath: @"C:\Windows\Temp\Vivre_WUA_test_progress.json",
             base64Exe: "QUJD",
             base64Config: "e30=",
+            expectedSha256: "0000000000000000000000000000000000000000000000000000000000000000",
             options: options);
     }
 
@@ -39,5 +40,16 @@ public class BootstrapScriptTests
 
         Assert.DoesNotContain("-StartWhenAvailable", script);
         Assert.Contains("-ExecutionTimeLimit", script);
+    }
+
+    [Fact]
+    public void Bootstrap_verifies_the_dropped_agent_hash_before_running_it_as_system()
+    {
+        string script = Bootstrap(RunBehavior.InstallNow);
+
+        // The EXE lands in a world-writable temp dir and runs as SYSTEM, so the bootstrap must
+        // hash-check it against the expected SHA-256 before launch.
+        Assert.Contains("Get-FileHash", script);
+        Assert.Contains("integrity check failed", script);
     }
 }

@@ -83,6 +83,31 @@ public class PatchServiceTests
     }
 
     [Fact]
+    public async Task Host_claim_is_case_insensitive_so_the_same_box_in_different_casing_is_serialized()
+    {
+        // Windows host names are case-insensitive, so HOSTA and hosta are the same physical box — the
+        // CBS/DISM serialization guard must treat them as one (a comparer regression would let two
+        // installs collide on the same machine).
+        var gate = new TaskCompletionSource<bool>();
+        var entered = new ConcurrentBag<string>();
+        var host = new BlockingHost(gate, entered);
+        var service = new PatchService(host);
+        var installed = new PatchOptions { Scope = UpdateScope.Installed };
+
+        Task<HostPatchStatus> first = service.ScanAsync("HOSTA", installed, credential: null);
+        await WaitUntil(() => entered.Contains("HOSTA"));
+
+        HostPatchStatus skip = await service.ScanAsync("hosta", installed, credential: null);
+
+        Assert.Equal(PatchPhase.Idle, skip.Phase);
+        Assert.Contains("already in progress", skip.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("hosta", entered); // the lower-cased call was skipped, never re-entered the host
+
+        gate.SetResult(true);
+        await first;
+    }
+
+    [Fact]
     public async Task A_faulted_installed_scan_releases_the_host_so_it_can_be_claimed_again()
     {
         // The guard's whole value is that a crashed op must NOT wedge a host as permanently

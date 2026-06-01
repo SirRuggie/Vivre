@@ -47,6 +47,25 @@ public sealed class ActivityLog : IActivityLog
         OnUi(Entries.Clear);
     }
 
+    /// <summary>
+    /// Writes a fatal line straight to the rolling file, bypassing the UI dispatcher. For the
+    /// <see cref="AppDomain.UnhandledException"/> net, which fires (usually off the UI thread) while
+    /// the process is tearing down — <see cref="System.Windows.Threading.Dispatcher.Invoke(Action)"/>
+    /// can throw or block then, losing the very line you most want. The in-memory list isn't updated
+    /// (the window won't render as the app dies); the durable record is the file.
+    /// </summary>
+    public void Fatal(string? machine, string message)
+    {
+        try
+        {
+            _file.Write(LogEventLevel.Error, "{Machine} {Message}", machine ?? "-", message);
+        }
+        catch
+        {
+            // Last-ditch: nothing more we can do as the process is ending.
+        }
+    }
+
     private void Add(LogSeverity severity, string? machine, string message)
     {
         var entry = new LogEntry(DateTime.Now, severity, machine, message);
