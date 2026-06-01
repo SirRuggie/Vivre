@@ -72,3 +72,24 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see UPDATE_PLAN.md).
 - Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
   changes or a feature lands — they're the human-readable source of truth.
+
+## Commit messages
+
+Follow **[Conventional Commits](https://www.conventionalcommits.org/)** — `type: imperative summary`:
+
+- **Type** (required prefix): `feat` (new feature) · `fix` (bug fix) · `docs` (docs only) ·
+  `refactor` (no behaviour change) · `perf` (performance) · `test` (tests) ·
+  `chore` (build / deps / housekeeping) · `style` (formatting only) · `ci` (pipeline).
+- **Subject**: imperative mood ("add", not "added"/"adds"), lower-case after the colon,
+  **≤ 72 chars**, **no trailing period**. One logical change per commit.
+- **Body** (optional, for non-trivial commits): blank line after the subject, wrap at ~72 cols,
+  explain **what & why** — not how. Use `-` bullets for multiple points.
+- Still applies: **no `Co-Authored-By` / AI attribution trailer**, commit **only when asked**,
+  and commits are **unsigned**.
+
+Examples:
+```
+feat: add searchable "How to use Vivre" help guide
+fix: stop reboot and update message columns from colliding
+docs: bring CHANGELOG and UPDATE_PLAN current
+```
