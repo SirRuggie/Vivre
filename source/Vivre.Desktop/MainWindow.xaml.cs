@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using Vivre.Core.Models;
 using Vivre.Desktop.ViewModels;
 using Wpf.Ui.Controls;
 using MenuItem = System.Windows.Controls.MenuItem;
@@ -303,10 +304,49 @@ public partial class MainWindow : FluentWindow
 
         // Mirror InstallTarget's scope: the selected rows, or every row when nothing is selected.
         bool hasSelection = vm.SelectedComputers.Count > 0;
-        int count = hasSelection ? vm.SelectedComputers.Count : vm.Computers.Count;
+        IReadOnlyList<Computer> targets = hasSelection ? [.. vm.SelectedComputers] : [.. vm.Computers];
+        int count = targets.Count;
         if (count == 0 || !vm.InstallTargetCommand.CanExecute(null))
         {
             return; // nothing to target / a sweep is already running
+        }
+
+        // Pre-flight: a reboot-pending target can jam WinRM and fail the install (the WinRM-unhealthy
+        // failure mode). Offer to reboot those first instead of wasting the run on them. "Install
+        // anyway" is itself the install confirmation, so we don't double-prompt in that case.
+        List<Computer> pending = [.. targets.Where(c => c.RebootRequired == true)];
+        if (pending.Count > 0)
+        {
+            var nudge = new MessageBox
+            {
+                Title = "Reboot pending",
+                Content = $"{pending.Count} of {count} target machine(s) have a reboot pending.\n\n"
+                          + "A pending reboot can jam WinRM and make the install fail. You can reboot those first "
+                          + "(then install once they're back), or install anyway.",
+                PrimaryButtonText = $"Reboot the {pending.Count} first",
+                SecondaryButtonText = "Install anyway",
+                CloseButtonText = "Cancel",
+            };
+
+            MessageBoxResult choice = await nudge.ShowDialogAsync();
+            if (choice == MessageBoxResult.Primary)
+            {
+                await vm.RebootForceSelectedAsync(pending);
+                return; // don't install now — the user re-runs install once they're back online
+            }
+
+            if (choice != MessageBoxResult.Secondary)
+            {
+                return; // Cancel / closed
+            }
+
+            // "Install anyway" → proceed straight to the install (this dialog was the confirmation).
+            if (vm.InstallTargetCommand.CanExecute(null))
+            {
+                vm.InstallTargetCommand.Execute(null);
+            }
+
+            return;
         }
 
         string scope = hasSelection ? $"the {count} selected machine(s)" : $"all {count} machine(s) in this tab";
@@ -408,6 +448,59 @@ public partial class MainWindow : FluentWindow
         }
 
         Shell?.CloseTabCommand.Execute(workspace);
+    }
+
+    private void OnCloseOtherTabs(object sender, RoutedEventArgs e)
+    {
+        if (Shell is { } shell && sender is FrameworkElement { DataContext: WorkspaceViewModel keep })
+        {
+            CloseTabs([.. shell.Tabs.Where(t => t != keep)]);
+        }
+    }
+
+    private void OnCloseTabsToRight(object sender, RoutedEventArgs e)
+    {
+        if (Shell is { } shell && sender is FrameworkElement { DataContext: WorkspaceViewModel anchor })
+        {
+            int index = shell.Tabs.IndexOf(anchor);
+            if (index >= 0)
+            {
+                CloseTabs([.. shell.Tabs.Skip(index + 1)]);
+            }
+        }
+    }
+
+    /// <summary>Closes a set of tabs (browser-style "close others / to the right"). Confirms once
+    /// up front if any of them still has work, rather than prompting per tab.</summary>
+    private async void CloseTabs(IReadOnlyList<WorkspaceViewModel> tabs)
+    {
+        if (Shell is not { } shell || tabs.Count == 0)
+        {
+            return;
+        }
+
+        int withWork = tabs.Count(t => t.HasWork);
+        if (withWork > 0)
+        {
+            var confirm = new MessageBox
+            {
+                Title = "Close tabs",
+                Content = $"Close {tabs.Count} tab(s)? {withWork} still ha{(withWork == 1 ? "s" : "ve")} machines or a running operation.\n\n"
+                          + "Machines stay in any saved list — re-open to bring them back.",
+                PrimaryButtonText = $"Close {tabs.Count}",
+                CloseButtonText = "Keep open",
+            };
+
+            if (await confirm.ShowDialogAsync() != MessageBoxResult.Primary)
+            {
+                return;
+            }
+        }
+
+        foreach (WorkspaceViewModel tab in tabs)
+        {
+            shell.CloseTabCommand.Execute(tab);
+        }
     }
 
     private void OnTabHeaderClick(object sender, MouseButtonEventArgs e)

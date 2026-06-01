@@ -1956,10 +1956,10 @@ public partial class WorkspaceViewModel : ObservableObject
     /// WinRM call return cleanly before the box goes down). The most common Windows-Update follow-up;
     /// invoked from the context menu after the user confirms. The monitor reports each box back online.
     /// </summary>
-    public async Task RebootForceSelectedAsync(CancellationToken token = default)
+    public async Task RebootForceSelectedAsync(IReadOnlyList<Computer>? rows = null, CancellationToken token = default)
     {
         const string script = "shutdown.exe /r /f /t 5 /c \"Vivre forced reboot\"";
-        foreach (Computer computer in SelectedComputers.ToList())
+        foreach (Computer computer in rows ?? SelectedComputers.ToList())
         {
             computer.LastError = null;
             computer.LastStatus = "Rebooting (force)…";

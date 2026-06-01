@@ -19,6 +19,11 @@ it ships, then gets a dated heading.
 - **Export to CSV** (File ▸ Export to CSV…) — writes the rows currently shown (respecting the filter)
   to a CSV report (machine · online · state · updates · reboot · error · OS · schedule) for a
   maintenance-window write-up / ticket.
+- **Pre-install reboot-pending check** — Install first checks the targets: if any already have a
+  reboot pending (which can jam WinRM and fail the install), it offers to **reboot those first**,
+  **install anyway**, or **cancel** — heading off the WinRM-unhealthy failure instead of reacting to it.
+- **Browser-style tab menu** — right-click a tab for **Close other tabs** and **Close tabs to the
+  right** (alongside Rename / Close tab); a single confirm covers any tabs that still have work.
 - **How to use Vivre** guide (Help ▸ How to use Vivre, or F1) — a searchable, collapsible in-app
   manual covering both Machines and Windows Update modes, grouped into Getting started / Machines /
   Windows Update / Tips & shortcuts / Troubleshooting; the search filters and auto-expands matches.
