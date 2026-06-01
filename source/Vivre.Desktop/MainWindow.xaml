@@ -325,13 +325,10 @@
                       IsReadOnly="True"
                       CanUserAddRows="False"
                       HeadersVisibility="Column"
-                      GridLinesVisibility="None">
-                <!-- Right-click a line to copy it (the row is selected first); Copy all grabs the shown list. -->
-                <DataGrid.RowStyle>
-                    <Style TargetType="DataGridRow" BasedOn="{StaticResource {x:Type DataGridRow}}">
-                        <EventSetter Event="PreviewMouseRightButtonDown" Handler="OnActivityRowRightClick" />
-                    </Style>
-                </DataGrid.RowStyle>
+                      GridLinesVisibility="None"
+                      PreviewMouseRightButtonDown="OnActivityGridRightClick">
+                <!-- Right-click selects the line under the cursor (handled at grid level so we don't
+                     override the themed row style), then the context menu copies it. -->
                 <DataGrid.ContextMenu>
                     <ContextMenu>
                         <MenuItem Header="Copy" Click="OnActivityCopy" />
