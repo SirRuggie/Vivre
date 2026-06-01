@@ -2031,11 +2031,16 @@ public partial class WorkspaceViewModel : ObservableObject
 
         _activity.Info(null, $"WhatsUp Gold: setting maintenance {mode} for {names.Count} machine(s)…");
 
+        // Live step updates from the run (constructed here, on the UI thread, so reports marshal back
+        // to it). The WUG inventory pull is genuinely slow on a large install, so we show progress and
+        // give it a generous cap rather than cutting a working run off at an arbitrary few minutes.
+        var progress = new Progress<string>(step => _activity.Info(null, $"WhatsUp Gold: {step}"));
+
         WugMaintenanceResult result;
         try
         {
             string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
-            result = await WugMaintenance.RunAsync(names, enable, server, username, plain, reason, TimeSpan.FromMinutes(3), token);
+            result = await WugMaintenance.RunAsync(names, enable, server, username, plain, reason, TimeSpan.FromMinutes(10), token, progress);
         }
         catch (Exception ex)
         {

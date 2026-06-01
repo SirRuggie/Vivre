@@ -34,6 +34,9 @@ public static class WugMaintenance
         $ErrorActionPreference = 'Stop'
         $result = [ordered]@{ ok = $false; devicesSet = 0; unmatched = @(); error = $null }
         function Emit($r) { $r | ConvertTo-Json -Compress -Depth 4 }
+        # Live step markers the host reads off stdout and pushes to the activity log, so a slow run
+        # shows what it's doing (and, on timeout, the last step reached) instead of a silent wait.
+        function Progress($m) { Write-Output "__WUGP__$m" }
 
         $names  = @($env:VIVRE_WUG_NAMES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $server = $env:VIVRE_WUG_SERVER
@@ -49,7 +52,11 @@ public static class WugMaintenance
 
         # 1. Ensure the WhatsUpGoldPS module: import, else install for the current user, else explain.
         try {
+            Progress 'Loading the WhatsUpGoldPS module...'
             if (-not (Get-Module -ListAvailable -Name WhatsUpGoldPS)) {
+                # PowerShell Gallery requires TLS 1.2; 5.1 doesn't always negotiate it by default, and
+                # without this Install-Module can hang on the handshake until the caller's timeout kills it.
+                try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
                 try {
                     if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
                         Install-PackageProvider -Name NuGet -Scope CurrentUser -Force -ErrorAction Stop | Out-Null
@@ -71,50 +78,67 @@ public static class WugMaintenance
 
         # 2. Connect to the WUG server (HTTPS, ignoring the cert as the standalone script does).
         try {
+            Progress "Connecting to WhatsUp Gold at $server..."
             Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
         } catch {
             $result.error = "Couldn't connect to WhatsUp Gold at $server`: $($_.Exception.Message). Check the address, that the server is reachable, and the WUG username/password."
             Emit $result; return
         }
 
-        # 3. Map each machine name -> WUG DeviceId via networkAddress (DNS-resolve non-IP entries).
-        try {
-            $idMap = @{}
-            foreach ($dev in (Get-WUGDevice -DeviceGroupID -1 -View overview -ErrorAction Stop)) {
-                $ip = $dev.networkAddress
-                if ($ip -match '^(?:\d{1,3}\.){3}\d{1,3}$') { $idMap[$ip] = $dev.id }
-            }
-        } catch {
-            $result.error = "Connected, but couldn't list WhatsUp Gold devices: $($_.Exception.Message)."
-            Emit $result; return
-        }
-
+        # 3. Resolve each machine to its WUG DeviceId with a targeted SearchValue lookup - one call per
+        #    entry, NOT a full inventory pull (which is slow on a large WUG install). SearchValue takes a
+        #    hostname or IP; on a miss for a name we DNS-resolve and retry by IP. Mirrors the proven
+        #    standalone Set-WUGMaintenanceMode_SearchValue script.
         $deviceIds = @()
         $unmatched = @()
-        foreach ($srv in $names) {
-            if ($srv -match '^(?:\d{1,3}\.){3}\d{1,3}$') {
-                $addrs = @($srv)
-            } else {
-                try {
-                    $addrs = [System.Net.Dns]::GetHostAddresses($srv) |
-                             Where-Object AddressFamily -eq 'InterNetwork' |
-                             ForEach-Object ToString
-                } catch { $addrs = @() }
+        $total = $names.Count
+        $i = 0
+        try {
+            foreach ($srv in $names) {
+                $i++
+                Progress "Looking up $srv ($i of $total)..."
+                $match = $null
+
+                $results = @(Get-WUGDevice -SearchValue $srv -View overview -ErrorAction SilentlyContinue)
+                if ($results.Count -gt 0) {
+                    # Prefer an exact hit on name or IP; fall back to the first result.
+                    $match = $results | Where-Object { $_.displayName -eq $srv -or $_.networkAddress -eq $srv } | Select-Object -First 1
+                    if (-not $match) { $match = $results[0] }
+                }
+                elseif ($srv -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') {
+                    # A name with no direct hit - resolve to IP and search again by address.
+                    try {
+                        $ip = [System.Net.Dns]::GetHostAddresses($srv) |
+                              Where-Object AddressFamily -eq 'InterNetwork' |
+                              Select-Object -First 1 -ExpandProperty IPAddressToString
+                    } catch { $ip = $null }
+                    if ($ip) {
+                        Progress "  $srv resolved to $ip, retrying..."
+                        $results2 = @(Get-WUGDevice -SearchValue $ip -View overview -ErrorAction SilentlyContinue)
+                        if ($results2.Count -gt 0) {
+                            $match = $results2 | Where-Object { $_.networkAddress -eq $ip } | Select-Object -First 1
+                            if (-not $match) { $match = $results2[0] }
+                        }
+                    }
+                }
+
+                if ($null -ne $match) { $deviceIds += $match.id } else { $unmatched += $srv }
             }
-            $matchedId = $null
-            foreach ($ip in $addrs) { if ($idMap.ContainsKey($ip)) { $matchedId = $idMap[$ip]; break } }
-            if ($null -ne $matchedId) { $deviceIds += $matchedId } else { $unmatched += $srv }
+        } catch {
+            $result.error = "Connected, but couldn't search WhatsUp Gold devices: $($_.Exception.Message)."
+            Emit $result; return
         }
 
         $result.unmatched = @($unmatched)
 
         if ($deviceIds.Count -eq 0) {
-            $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device by IP. Unmatched: $($unmatched -join ', ')."
+            $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device. Unmatched: $($unmatched -join ', ')."
             Emit $result; return
         }
 
         # 4. Set maintenance mode.
         try {
+            Progress "Setting maintenance for $($deviceIds.Count) device(s)..."
             Set-WUGDeviceMaintenance -DeviceId $deviceIds -Enabled $enable -Reason $reason -ErrorAction Stop | Out-Null
             $result.ok = $true
             $result.devicesSet = $deviceIds.Count
@@ -125,9 +149,14 @@ public static class WugMaintenance
         Emit $result
         """;
 
+    // Prefix the on-host script puts on each live status line (see the script's Progress helper).
+    private const string ProgressMarker = "__WUGP__";
+
     /// <summary>
     /// Runs the maintenance set under Windows PowerShell 5.1 and returns a typed result. Bounded by
-    /// <paramref name="timeout"/> so it can never hang indefinitely.
+    /// <paramref name="timeout"/> so it can never hang indefinitely. <paramref name="progress"/>, if
+    /// supplied, receives a line per step (loading module, connecting, listing devices, setting) so a
+    /// slow run can show what it's doing and, on timeout, the last step it reached.
     /// </summary>
     public static async Task<WugMaintenanceResult> RunAsync(
         IReadOnlyList<string> names,
@@ -137,7 +166,8 @@ public static class WugMaintenance
         string password,
         string reason,
         TimeSpan timeout,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IProgress<string>? progress = null)
     {
         string psExe = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         if (!File.Exists(psExe))
@@ -168,7 +198,24 @@ public static class WugMaintenance
             using var proc = new Process { StartInfo = psi };
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
-            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) { stdout.AppendLine(e.Data); } };
+            proc.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is null)
+                {
+                    return;
+                }
+
+                // Live status lines go to the progress callback; everything else (incl. the final
+                // JSON result) is buffered for parsing once the process exits.
+                if (e.Data.StartsWith(ProgressMarker, StringComparison.Ordinal))
+                {
+                    progress?.Report(e.Data[ProgressMarker.Length..]);
+                }
+                else
+                {
+                    stdout.AppendLine(e.Data);
+                }
+            };
             proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) { stderr.AppendLine(e.Data); } };
 
             if (!proc.Start())
