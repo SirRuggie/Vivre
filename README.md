@@ -19,6 +19,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   OS vitals (disk, memory, CPU, uptime, OS build), scored into a 0–100 **vitality** chip (green/amber/red)
   with a fleet tally and an **Unhealthy** filter — at-a-glance triage of which boxes are sick. Stopped
   auto-services and recent error events are shown for context but not scored (too noisy on their own).
+  From a machine's **Details ▸ Vitals** you can **act in place** — start a stopped service, free up
+  disk space, or end a runaway process — and the score re-checks on the spot.
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
