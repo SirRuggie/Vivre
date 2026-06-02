@@ -13,9 +13,12 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 ## Features
 
 - **Tabbed workspaces** — each tab is an independent set of machines and operations, run side by side.
-- **Ping All / Check All** — reachability plus SCCM client health (site code, agent version,
-  reboot-pending / missing-updates / install-running / users-online, last reboot), shown as
-  colour-coded status dots.
+- **Ping All** — reachability, shown as colour-coded status dots.
+- **Check Vitals** — one read-only pull per machine that gathers SCCM client health (site code, agent
+  version, reboot-pending / missing-updates / install-running / users-online, last reboot) **and** deep
+  OS vitals (disk, memory, CPU, uptime, OS build), scored into a 0–100 **vitality** chip (green/amber/red)
+  with a fleet tally and an **Unhealthy** filter — at-a-glance triage of which boxes are sick. Stopped
+  auto-services and recent error events are shown for context but not scored (too noisy on their own).
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
