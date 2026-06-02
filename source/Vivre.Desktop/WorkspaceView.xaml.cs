@@ -372,7 +372,7 @@ public partial class WorkspaceView : UserControl
     {
         if (ViewModel is { } vm && ContextOrFocused() is { } computer)
         {
-            new ComputerDetailWindow(computer, vm.Activity) { Owner = OwnerWindow }.Show();
+            new ComputerDetailWindow(vm.CreateDetailViewModel(computer)) { Owner = OwnerWindow }.Show();
             // Fill in the OS on demand (the window binds the live model, so it appears when ready).
             _ = vm.FetchOperatingSystemAsync(computer);
         }

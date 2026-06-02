@@ -15,6 +15,7 @@ using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
 using Vivre.Core.Updates;
+using Vivre.Core.Remediation;
 using Vivre.Core.Vitals;
 using Vivre.Core.Wug;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -71,6 +72,7 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IHostRebootProbe _rebootProbe;
     private readonly IPowerShellHost _powerShell;
     private readonly IVitalsProbe _vitals;
+    private readonly IRemediationService _remediation;
     // Vitals is a read-only multi-CIM pull (heavier than ping, lighter than an install): bound it
     // like the scan, and give each host a modest timeout so a hung WinRM session can't stall the sweep.
     private readonly SemaphoreSlim _vitalsThrottle;
@@ -398,7 +400,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -416,6 +418,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _vitalsThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
         _rebootProbe = rebootProbe;
         _vitals = vitals;
+        _remediation = remediation;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
@@ -738,6 +741,12 @@ public partial class WorkspaceViewModel : ObservableObject
         await CheckRowAsync(computer, token);
         await CheckVitalsRowAsync(computer, token);
     }
+
+    /// <summary>Builds the per-machine Details view-model, wired for triage: the remediation service,
+    /// the session credential, and a refresh that re-checks just this machine's vitals after an action
+    /// (so the score/readings update in place once a service is started, space freed, or a process ended).</summary>
+    public ComputerDetailViewModel CreateDetailViewModel(Computer computer) =>
+        new(computer, _activity, _remediation, CurrentPsCredential, () => CheckVitalsSelectedAsync([computer]));
 
     // --- Windows Update lane (scan / install) ---
 
