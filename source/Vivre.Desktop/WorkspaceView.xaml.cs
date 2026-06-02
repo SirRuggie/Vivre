@@ -1,4 +1,3 @@
-using System.ComponentModel;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
@@ -22,15 +21,6 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class WorkspaceView : UserControl
 {
-    /// <summary>Default detail-panel height when a machine is first focused; the user's drag is
-    /// preserved across machine switches via <see cref="_lastFocused"/>.</summary>
-    private static readonly GridLength ChecklistOpenHeight = new(320);
-
-    /// <summary>Tracks the previous focused machine so the row height only resets when
-    /// transitioning from "no machine" to "a machine" — not when switching between machines,
-    /// where the user's splitter drag should be kept.</summary>
-    private Computer? _lastFocused;
-
     /// <summary>The row the user right-clicked — the anchor for the per-field Copy ▸ submenu, so it
     /// copies THIS row's field regardless of any (possibly stale, multi-row) grid selection. Set in
     /// <see cref="OnGridRightClick"/> immediately before the menu is built.</summary>
@@ -39,148 +29,6 @@ public partial class WorkspaceView : UserControl
     public WorkspaceView()
     {
         InitializeComponent();
-        DataContextChanged += OnDataContextChanged;
-    }
-
-    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.OldValue is WorkspaceViewModel oldVm)
-        {
-            oldVm.PropertyChanged -= OnViewModelPropertyChanged;
-        }
-
-        if (e.NewValue is WorkspaceViewModel newVm)
-        {
-            newVm.PropertyChanged += OnViewModelPropertyChanged;
-            UpdateChecklistRowHeight(newVm.FocusedComputer);
-        }
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(WorkspaceViewModel.FocusedComputer) && sender is WorkspaceViewModel vm)
-        {
-            UpdateChecklistRowHeight(vm.FocusedComputer);
-            ApplyUpdateFilter(vm.FocusedComputer);
-        }
-    }
-
-    // --- per-machine update-list filter (the "Filter by KB or title" box in the update panel) ---
-
-    private string _updateFilter = string.Empty;
-
-    private void OnUpdateFilterChanged(object sender, TextChangedEventArgs e)
-    {
-        _updateFilter = (sender as System.Windows.Controls.TextBox)?.Text?.Trim() ?? string.Empty;
-        ApplyUpdateFilter(ViewModel?.FocusedComputer);
-    }
-
-    /// <summary>
-    /// Filters both per-scope update lists by KB or title. Applied to each collection's default view
-    /// (which the tab grids bind to), so it survives tab switches and the focused machine changing.
-    /// </summary>
-    private void ApplyUpdateFilter(Computer? focused)
-    {
-        if (focused is null)
-        {
-            return;
-        }
-
-        ApplyUpdateFilterTo(focused.ApplicableUpdates);
-        ApplyUpdateFilterTo(focused.InstalledUpdates);
-    }
-
-    private void ApplyUpdateFilterTo(System.Collections.IEnumerable collection)
-    {
-        ICollectionView? view = System.Windows.Data.CollectionViewSource.GetDefaultView(collection);
-        if (view is null)
-        {
-            return;
-        }
-
-        if (_updateFilter.Length == 0)
-        {
-            view.Filter = null;
-        }
-        else
-        {
-            string f = _updateFilter;
-            view.Filter = o => o is Vivre.Core.Updates.SelectableUpdate u
-                && ((u.Kb?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
-                    || (u.Title?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false));
-        }
-    }
-
-    private void UpdateChecklistRowHeight(Computer? focused)
-    {
-        if (ChecklistRow is null)
-        {
-            return;
-        }
-
-        if (focused is null)
-        {
-            ChecklistRow.Height = new GridLength(0);
-        }
-        else if (_lastFocused is null)
-        {
-            // Transitioning from "panel closed" to "panel opening" — apply the default height.
-            // Switching from one focused machine to another leaves the row alone so any
-            // splitter drag the user made is preserved.
-            ChecklistRow.Height = ChecklistOpenHeight;
-        }
-
-        _lastFocused = focused;
-    }
-
-    /// <summary>
-    /// Close (✕) on the checklist panel — clears <see cref="WorkspaceViewModel.FocusedComputer"/>
-    /// so the auto-collapse listener takes the panel back to 0 width and the grid gets the full
-    /// window back. The grid's selected row stays selected.
-    /// </summary>
-    private void OnCloseChecklist(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel is { } vm)
-        {
-            vm.FocusedComputer = null;
-        }
-    }
-
-    /// <summary>
-    /// Uninstall confirmation. Pops a small Wpf.Ui MessageBox before kicking the per-machine
-    /// uninstall sweep — uninstalls are destructive enough to deserve a "yes, really" prompt,
-    /// especially with multi-select. The VM only exposes the command; the dialog lives here so
-    /// the VM doesn't pop UI directly.
-    /// </summary>
-    private async void OnUninstallChecked(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel is not { FocusedComputer: { } c } vm)
-        {
-            return;
-        }
-
-        // The Uninstall button is only visible in Installed scope, so the relevant cache here is
-        // InstalledUpdates (the user can only have ticked rows from that scope's list).
-        int count = c.InstalledUpdates.Count(u => u.IsSelected && u.IsUninstallable);
-        if (count == 0)
-        {
-            return;
-        }
-
-        var confirm = new MessageBox
-        {
-            Title = "Uninstall updates",
-            Content = $"Uninstall {count} update(s) from {c.Name}?\n\n"
-                      + "This may require a reboot. Use with care — once removed, some updates "
-                      + "can't be reinstalled through normal scans (Windows may consider them superseded).",
-            PrimaryButtonText = "Uninstall",
-            CloseButtonText = "Cancel",
-        };
-
-        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
-        {
-            await vm.UninstallCheckedAsync();
-        }
     }
 
     /// <summary>

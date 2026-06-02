@@ -298,65 +298,322 @@
                       Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
                       Visibility="Collapsed" />
 
-        <!-- Activity log (shared across all tabs) — search filters machine OR message.
-             Hidden by default; shown via View ▸ Activity log. -->
-        <Grid x:Name="ActivityPanel" Grid.Row="6" Margin="8,0,8,8" Visibility="Collapsed" DataContext="{Binding ActivityLog}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
+        <!-- Unified bottom dock (shared across all tabs): an Activity tab + a per-machine Updates
+             tab, with a Close button to dismiss the whole dock. Hidden by default; opened via the
+             View ▸ Activity log menu OR when a machine is focused in Windows Update mode. -->
+        <Grid x:Name="ActivityPanel" Grid.Row="6" Margin="8,0,8,8" Visibility="Collapsed">
+            <TabControl x:Name="BottomDockTabs">
+                <!-- Close button floats over the tab strip, on the right. -->
+                <TabControl.Template>
+                    <ControlTemplate TargetType="TabControl">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+                            <DockPanel Grid.Row="0">
+                                <ui:Button DockPanel.Dock="Right"
+                                           Margin="6,0,0,0"
+                                           VerticalAlignment="Center"
+                                           Appearance="Secondary"
+                                           Icon="{ui:SymbolIcon Dismiss24}"
+                                           Content="Close"
+                                           Click="OnCloseBottomDock"
+                                           AutomationProperties.Name="Close panel"
+                                           ToolTip="Close this panel (gives the grid the full window height back)" />
+                                <StackPanel IsItemsHost="True" Orientation="Horizontal" />
+                            </DockPanel>
+                            <Border Grid.Row="1"
+                                    Margin="0,4,0,0"
+                                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                    BorderThickness="0,1,0,0">
+                                <ContentPresenter ContentSource="SelectedContent" />
+                            </Border>
+                        </Grid>
+                    </ControlTemplate>
+                </TabControl.Template>
 
-            <Grid Grid.Row="0" Margin="0,0,0,4">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <ui:TextBlock Grid.Column="0" Text="Activity" FontTypography="BodyStrong" VerticalAlignment="Center" />
-                <ui:TextBox Grid.Column="1" Margin="12,0"
-                            PlaceholderText="Search activity (machine or text)…"
-                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-                <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
-            </Grid>
+                <!-- Activity tab (always present). Its content root keeps the ActivityLog DataContext. -->
+                <TabItem x:Name="ActivityTab" Header="Activity">
+                    <Grid Margin="0,8,0,0" DataContext="{Binding ActivityLog}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-            <DataGrid Grid.Row="1" x:Name="ActivityGrid"
-                      ItemsSource="{Binding Entries}"
-                      AutoGenerateColumns="False"
-                      IsReadOnly="True"
-                      CanUserAddRows="False"
-                      HeadersVisibility="Column"
-                      GridLinesVisibility="None"
-                      PreviewMouseRightButtonDown="OnActivityGridRightClick">
-                <!-- Right-click selects the line under the cursor (handled at grid level so we don't
-                     override the themed row style), then the context menu copies it. -->
-                <DataGrid.ContextMenu>
-                    <ContextMenu>
-                        <MenuItem Header="Copy" Click="OnActivityCopy" />
-                        <MenuItem Header="Copy all" Click="OnActivityCopyAll" />
-                    </ContextMenu>
-                </DataGrid.ContextMenu>
-                <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="" Width="Auto">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <ui:SymbolIcon Margin="6,0" FontSize="14"
-                                               Symbol="{Binding Severity, Converter={StaticResource SeveritySymbol}}"
-                                               Foreground="{Binding Severity, Converter={StaticResource SeverityBrush}}"
-                                               ToolTip="{Binding Severity}" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
-                    <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="Auto" />
-                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
-                        <DataGridTextColumn.ElementStyle>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Foreground" Value="{Binding Severity, Converter={StaticResource SeverityBrush}}" />
-                            </Style>
-                        </DataGridTextColumn.ElementStyle>
-                    </DataGridTextColumn>
-                </DataGrid.Columns>
-            </DataGrid>
+                        <Grid Grid.Row="0" Margin="0,0,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <ui:TextBlock Grid.Column="0" Text="Activity" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                            <ui:TextBox Grid.Column="1" Margin="12,0"
+                                        PlaceholderText="Search activity (machine or text)…"
+                                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                            <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
+                        </Grid>
+
+                        <DataGrid Grid.Row="1" x:Name="ActivityGrid"
+                                  ItemsSource="{Binding Entries}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  CanUserAddRows="False"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="None"
+                                  PreviewMouseRightButtonDown="OnActivityGridRightClick">
+                            <!-- Right-click selects the line under the cursor (handled at grid level so we don't
+                                 override the themed row style), then the context menu copies it. -->
+                            <DataGrid.ContextMenu>
+                                <ContextMenu>
+                                    <MenuItem Header="Copy" Click="OnActivityCopy" />
+                                    <MenuItem Header="Copy all" Click="OnActivityCopyAll" />
+                                </ContextMenu>
+                            </DataGrid.ContextMenu>
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="" Width="Auto">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ui:SymbolIcon Margin="6,0" FontSize="14"
+                                                           Symbol="{Binding Severity, Converter={StaticResource SeveritySymbol}}"
+                                                           Foreground="{Binding Severity, Converter={StaticResource SeverityBrush}}"
+                                                           ToolTip="{Binding Severity}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
+                                <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="Auto" />
+                                <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{Binding Severity, Converter={StaticResource SeverityBrush}}" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </TabItem>
+
+                <!-- Updates tab (relocated per-machine update detail). Only visible/selectable when a
+                     machine is focused in Windows Update mode; otherwise the TabItem is collapsed.
+                     Its content root sets the active tab's WorkspaceViewModel as DataContext so all the
+                     panel's existing bindings resolve unchanged. -->
+                <TabItem x:Name="UpdatesTab" Header="Updates" DataContext="{Binding SelectedTab}">
+                    <Grid Margin="0,8,0,0">
+                        <DockPanel>
+                            <StackPanel DockPanel.Dock="Top" Margin="0,4,0,8">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="{Binding FocusedComputer.Name}" FontWeight="SemiBold" FontSize="14"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <!-- Scope is chosen by the Applicable / Installed tabs below. -->
+
+                                        <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
+                                                   Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
+                                            <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" /><Run Text="{Binding FocusedComputer.LastScannedApplicable, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
+                                        </TextBlock>
+                                        <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
+                                                   Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
+                                            <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" /><Run Text="{Binding FocusedComputer.LastScannedInstalled, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
+                                        </TextBlock>
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,6,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                                IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}">
+                                        <ui:Button Content="All" Appearance="Secondary" Padding="10,2" Command="{Binding SelectAllUpdatesCommand}" />
+                                        <ui:Button Content="None" Appearance="Secondary" Padding="10,2" Margin="6,0,0,0" Command="{Binding SelectNoUpdatesCommand}" />
+                                    </StackPanel>
+                                    <ui:TextBox Grid.Column="1" x:Name="UpdateFilterBox" Width="220" HorizontalAlignment="Right"
+                                                Icon="{ui:SymbolIcon Search24}" ClearButtonEnabled="True"
+                                                PlaceholderText="Filter by KB or title…"
+                                                TextChanged="OnUpdateFilterChanged" />
+                                </Grid>
+                            </StackPanel>
+
+                            <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                       Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
+                                       Command="{Binding InstallCheckedCommand}"
+                                       Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
+                                       ToolTip="Install only the ticked updates on this machine (one-time SYSTEM task). Reboot is reported, not forced. Disabled while a reboot is pending — restart first." />
+
+                            <!-- Reboot-pending warning: after an install WUA still reports the just-installed
+                                 update as applicable until the reboot finalizes it. Restart before installing
+                                 more (and the agent would defer an install on a reboot-pending box anyway). -->
+                            <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
+                                    Background="#33D9A300" BorderBrush="#D9A300" BorderThickness="1"
+                                    Visibility="{Binding IsFocusedRebootPending, Converter={StaticResource BoolToVis}}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Warning24" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                    <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12"
+                                               Text="Reboot pending. Just-installed updates may still show as applicable until you restart — reboot this machine before installing more." />
+                                </StackPanel>
+                            </Border>
+                            <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                       Appearance="Primary" Icon="{ui:SymbolIcon Delete24}" Content="Uninstall checked"
+                                       Click="OnUninstallChecked"
+                                       IsEnabled="{Binding CanUninstallChecked}"
+                                       Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
+                                       ToolTip="Uninstall the ticked updates on this machine (Windows Update first, then DISM). Greyed rows can't be removed by either. May require a reboot. Disabled until at least one removable update is ticked." />
+
+                            <TabControl>
+                                <TabItem Header="Applicable"
+                                         IsSelected="{Binding IsInstalledMode, Converter={StaticResource InverseBool}, Mode=TwoWay}">
+                                    <Grid>
+                                        <ui:DataGrid ItemsSource="{Binding FocusedComputer.ApplicableUpdates}"
+                                                     IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
+                                                     AutoGenerateColumns="False" IsReadOnly="True"
+                                                     CanUserAddRows="False" CanUserDeleteRows="False"
+                                                     HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                                     SelectionMode="Single" SelectionUnit="FullRow">
+                                            <ui:DataGrid.Columns>
+                                                <DataGridTemplateColumn Width="Auto">
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
+                                                <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                                            <Setter Property="ToolTip" Value="{Binding Title}" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                                            </ui:DataGrid.Columns>
+                                        </ui:DataGrid>
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding FocusedComputer.ApplicableUpdates.Count}" Value="0">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <TextBlock Text="{Binding FocusedComputer.ApplicableMessage, TargetNullValue='Nothing here yet — scan this machine.'}"
+                                                       TextWrapping="Wrap" TextAlignment="Center" FontSize="13"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                       HorizontalAlignment="Center" IsHitTestVisible="False" />
+                                            <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
+                                                       Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
+                                                       Command="{Binding ScanFocusedCommand}"
+                                                       ToolTip="Scan only this machine. The toolbar Scan (top bar) scans every machine in the tab.">
+                                                <ui:Button.Style>
+                                                    <Style TargetType="{x:Type ui:Button}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding FocusedComputer.LastScannedApplicable}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:Button.Style>
+                                            </ui:Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </TabItem>
+                                <TabItem Header="Installed"
+                                         IsSelected="{Binding IsInstalledMode, Mode=TwoWay}">
+                                    <Grid>
+                                        <ui:DataGrid ItemsSource="{Binding FocusedComputer.InstalledUpdates}"
+                                                     IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
+                                                     AutoGenerateColumns="False" IsReadOnly="True"
+                                                     CanUserAddRows="False" CanUserDeleteRows="False"
+                                                     HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                                     SelectionMode="Single" SelectionUnit="FullRow">
+                                            <ui:DataGrid.Columns>
+                                                <DataGridTemplateColumn Width="Auto">
+                                                    <DataGridTemplateColumn.CellTemplate>
+                                                        <DataTemplate>
+                                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                      IsEnabled="{Binding IsUninstallable}"
+                                                                      HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                <CheckBox.Style>
+                                                                    <Style TargetType="CheckBox">
+                                                                        <Style.Triggers>
+                                                                            <Trigger Property="IsEnabled" Value="False">
+                                                                                <Setter Property="ToolTip" Value="Neither Windows Update nor DISM can remove this update." />
+                                                                            </Trigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </CheckBox.Style>
+                                                            </CheckBox>
+                                                        </DataTemplate>
+                                                    </DataGridTemplateColumn.CellTemplate>
+                                                </DataGridTemplateColumn>
+                                                <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
+                                                <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                                            <Setter Property="ToolTip" Value="{Binding Title}" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                                <DataGridTextColumn Header="Installed" Binding="{Binding InstalledAt, StringFormat=yyyy-MM-dd}" Width="Auto" MinWidth="90" SortMemberPath="InstalledAt">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="ToolTip" Value="{Binding InstalledAt, StringFormat=F}" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
+                                            </ui:DataGrid.Columns>
+                                        </ui:DataGrid>
+                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                                            <StackPanel.Style>
+                                                <Style TargetType="StackPanel">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding FocusedComputer.InstalledUpdates.Count}" Value="0">
+                                                            <Setter Property="Visibility" Value="Visible" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </StackPanel.Style>
+                                            <TextBlock Text="{Binding FocusedComputer.InstalledMessage, TargetNullValue='Nothing here yet — scan this machine on the Installed tab.'}"
+                                                       TextWrapping="Wrap" TextAlignment="Center" FontSize="13"
+                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                       HorizontalAlignment="Center" IsHitTestVisible="False" />
+                                            <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
+                                                       Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
+                                                       Command="{Binding ScanFocusedCommand}"
+                                                       ToolTip="Scan only this machine. The toolbar Scan (top bar) scans every machine in the tab.">
+                                                <ui:Button.Style>
+                                                    <Style TargetType="{x:Type ui:Button}">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding FocusedComputer.LastScannedInstalled}" Value="{x:Null}">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:Button.Style>
+                                            </ui:Button>
+                                        </StackPanel>
+                                    </Grid>
+                                </TabItem>
+                            </TabControl>
+                        </DockPanel>
+                    </Grid>
+                </TabItem>
+            </TabControl>
         </Grid>
 
         <!-- Bottom status bar: live online/total + update tally for the active tab. (Copy actions
