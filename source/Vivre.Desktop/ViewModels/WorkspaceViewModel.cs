@@ -15,6 +15,7 @@ using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
 using Vivre.Core.Updates;
+using Vivre.Core.Vitals;
 using Vivre.Core.Wug;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -41,6 +42,9 @@ public enum RowFilter
 
     /// <summary>Rows that finished cleanly (Done).</summary>
     Done,
+
+    /// <summary>Rows whose vitality is Warning / Critical / Offline (the sick ones, for triage).</summary>
+    Unhealthy,
 }
 
 /// <summary>
@@ -66,6 +70,11 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly PatchOptions _patchOptions;
     private readonly IHostRebootProbe _rebootProbe;
     private readonly IPowerShellHost _powerShell;
+    private readonly IVitalsProbe _vitals;
+    // Vitals is a read-only multi-CIM pull (heavier than ping, lighter than an install): bound it
+    // like the scan, and give each host a modest timeout so a hung WinRM session can't stall the sweep.
+    private readonly SemaphoreSlim _vitalsThrottle;
+    private const int VitalsPerHostTimeoutSeconds = 120;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
@@ -187,6 +196,7 @@ public partial class WorkspaceViewModel : ObservableObject
             RowFilter.RebootPending => c.RebootRequired == true || c.PatchState == PatchState.RebootPending,
             RowFilter.Errors => c.PatchState == PatchState.Error || !string.IsNullOrEmpty(c.LastError) || !string.IsNullOrEmpty(c.UpdateError),
             RowFilter.Done => c.PatchState == PatchState.Done,
+            RowFilter.Unhealthy => c.VitalityBand is VitalityBand.Warning or VitalityBand.Critical or VitalityBand.Offline,
             _ => true,
         };
     }
@@ -228,6 +238,7 @@ public partial class WorkspaceViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(nameof(PingAllCommand))]
     [NotifyCanExecuteChangedFor(nameof(PingOfflineCommand))]
     [NotifyCanExecuteChangedFor(nameof(CheckAllCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CheckVitalsCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallUpdatesCommand))]
     [NotifyCanExecuteChangedFor(nameof(InstallCheckedCommand))]
@@ -387,7 +398,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -402,7 +413,9 @@ public partial class WorkspaceViewModel : ObservableObject
         _patchOptions = patchOptions;
         _patchThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentHosts));
         _scanThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
+        _vitalsThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
         _rebootProbe = rebootProbe;
+        _vitals = vitals;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
@@ -420,7 +433,7 @@ public partial class WorkspaceViewModel : ObservableObject
             foreach (string prop in (string[])
                 [nameof(Computer.Name), nameof(Computer.IsOnline), nameof(Computer.PatchState),
                  nameof(Computer.RebootRequired), nameof(Computer.LastError), nameof(Computer.UpdateError),
-                 nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates)])
+                 nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates), nameof(Computer.VitalityBand)])
             {
                 live.LiveFilteringProperties.Add(prop);
             }
@@ -468,6 +481,7 @@ public partial class WorkspaceViewModel : ObservableObject
             // overall bar. (Cheap: a LINQ group over the in-memory list, only on actual state change.)
             case nameof(Computer.PatchState):
             case nameof(Computer.UpdateProgress):
+            case nameof(Computer.VitalityBand):
                 RaiseFleetChanged();
                 break;
         }
@@ -478,6 +492,8 @@ public partial class WorkspaceViewModel : ObservableObject
     {
         OnPropertyChanged(nameof(FleetSummary));
         OnPropertyChanged(nameof(HasFleetSummary));
+        OnPropertyChanged(nameof(VitalsFleetSummary));
+        OnPropertyChanged(nameof(HasVitalsFleetSummary));
         OnPropertyChanged(nameof(IsPatchOperationActive));
         OnPropertyChanged(nameof(FleetProgress));
         OnPropertyChanged(nameof(ShowUpdateFirstRunHint));
@@ -518,6 +534,38 @@ public partial class WorkspaceViewModel : ObservableObject
 
     /// <summary>Whether <see cref="FleetSummary"/> is non-empty (drives the bottom-bar separator dot).</summary>
     public bool HasFleetSummary => FleetSummary.Length > 0;
+
+    /// <summary>Per-band vitality tally for the bottom bar, e.g.
+    /// "Vitals: Healthy 40 · Warning 6 · Critical 2". Empty until a vitals sweep has scored a row.</summary>
+    public string VitalsFleetSummary
+    {
+        get
+        {
+            int healthy = 0, warning = 0, critical = 0, offline = 0, unknown = 0;
+            foreach (Computer c in Computers)
+            {
+                switch (c.VitalityBand)
+                {
+                    case VitalityBand.Healthy: healthy++; break;
+                    case VitalityBand.Warning: warning++; break;
+                    case VitalityBand.Critical: critical++; break;
+                    case VitalityBand.Offline: offline++; break;
+                    case VitalityBand.Unknown: unknown++; break;
+                }
+            }
+
+            var parts = new List<string>(5);
+            if (healthy > 0) parts.Add($"Healthy {healthy}");
+            if (warning > 0) parts.Add($"Warning {warning}");
+            if (critical > 0) parts.Add($"Critical {critical}");
+            if (offline > 0) parts.Add($"Offline {offline}");
+            if (unknown > 0) parts.Add($"Unknown {unknown}");
+            return parts.Count == 0 ? string.Empty : "Vitals: " + string.Join(" · ", parts);
+        }
+    }
+
+    /// <summary>Whether <see cref="VitalsFleetSummary"/> is non-empty (drives its bottom-bar separator).</summary>
+    public bool HasVitalsFleetSummary => VitalsFleetSummary.Length > 0;
 
     /// <summary>True while any row is actively scanning/downloading/installing — drives the band's visibility.</summary>
     public bool IsPatchOperationActive =>
@@ -672,6 +720,24 @@ public partial class WorkspaceViewModel : ObservableObject
     /// <summary>Pings and pulls SCCM client health for every row (health is attempted even if ping fails).</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
     private Task CheckAllAsync() => RunSweepAsync([.. Computers], CheckRowAsync);
+
+    /// <summary>The single "Check Vitals" button: SCCM client health AND deep OS vitals (disk / memory /
+    /// CPU / uptime / stopped services / recent errors, scored 0-100) for every row — one click does
+    /// both. Read-only, no confirm. Vitals are gated by <see cref="_vitalsThrottle"/> inside
+    /// <see cref="CheckVitalsRowAsync"/>.</summary>
+    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    private Task CheckVitalsAsync() => RunSweepAsync([.. Computers], CheckHealthAndVitalsRowAsync);
+
+    /// <summary>Reads vitals for just the given rows (right-click ▸ Triage on a single row); empty ⇒ all.</summary>
+    public Task CheckVitalsSelectedAsync(IReadOnlyList<Computer> rows) =>
+        RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], CheckVitalsRowAsync);
+
+    /// <summary>Per-row work for the combined "Check Vitals" sweep: SCCM client health, then OS vitals.</summary>
+    private async Task CheckHealthAndVitalsRowAsync(Computer computer, CancellationToken token)
+    {
+        await CheckRowAsync(computer, token);
+        await CheckVitalsRowAsync(computer, token);
+    }
 
     // --- Windows Update lane (scan / install) ---
 
@@ -1811,6 +1877,118 @@ public partial class WorkspaceViewModel : ObservableObject
             computer.LastError = ex.Message;
             _activity.Warn(computer.Name, $"Check failed — {ex.Message}");
         }
+    }
+
+    // Reads deep OS vitals for one row and scores it. Mirrors CheckRowAsync's clear→pull→catch-ladder
+    // shape; stays on the UI context (no ConfigureAwait(false)) so the row-property writes that drive
+    // the grid are marshalled correctly. Concurrency is bounded by _vitalsThrottle (acquired here so a
+    // plain RunSweepAsync still can't flood WinRM), and a per-host timeout stops a hung box stalling it.
+    private async Task CheckVitalsRowAsync(Computer computer, CancellationToken token)
+    {
+        await _vitalsThrottle.WaitAsync(token);
+        try
+        {
+            ResetVitals(computer);
+            computer.LastStatus = "Reading vitals…";
+
+            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+            perHost.CancelAfter(TimeSpan.FromSeconds(VitalsPerHostTimeoutSeconds));
+            try
+            {
+                MachineVitals v = await _vitals.GetVitalsAsync(computer.Name, CurrentPsCredential(), perHost.Token);
+                ApplyVitals(computer, v);
+            }
+            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                // Per-host timeout (not a user Stop): mark it unknown and let the rest of the sweep run.
+                computer.LastError = $"Vitals read timed out after {VitalsPerHostTimeoutSeconds}s";
+                computer.LastStatus = "Vitals timed out";
+                computer.VitalityScore = null;
+                computer.VitalityBand = VitalityBand.Unknown;
+                _activity.Warn(computer.Name, computer.LastError);
+            }
+            catch (OperationCanceledException)
+            {
+                computer.LastStatus = "Cancelled";
+                throw;
+            }
+            catch (VitalsProbeException ex)
+            {
+                // Reached (or tried) the box but couldn't read it — score Offline if ping says down,
+                // else Unknown. Surface the reason; never an empty catch.
+                computer.VitalityScore = null;
+                computer.VitalityBand = computer.IsOnline == false ? VitalityBand.Offline : VitalityBand.Unknown;
+                computer.VitalityReasons = [ex.Message];
+                computer.LastError = ex.Message;
+                computer.LastStatus = "Vitals unavailable";
+                _activity.Warn(computer.Name, $"Vitals unavailable — {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                computer.VitalityScore = null;
+                computer.VitalityBand = VitalityBand.Unknown;
+                computer.LastError = ex.Message;
+                computer.LastStatus = "Vitals failed";
+                _activity.Warn(computer.Name, $"Vitals failed — {ex.Message}");
+            }
+        }
+        finally
+        {
+            _vitalsThrottle.Release();
+        }
+    }
+
+    /// <summary>Clears a row's vitals before a (re-)read so a failure can't leave stale numbers showing.</summary>
+    private static void ResetVitals(Computer computer)
+    {
+        computer.LastError = null;
+        computer.SystemDriveFreePercent = null;
+        computer.MemoryUsedPercent = null;
+        computer.CpuLoadPercent = null;
+        computer.StoppedAutoServiceCount = null;
+        computer.RecentErrorEventCount = null;
+        computer.Vitals = null;
+        computer.VitalityReasons = [];
+    }
+
+    /// <summary>Copies a vitals snapshot onto the row and runs the scorer (the one source of truth).</summary>
+    private void ApplyVitals(Computer computer, MachineVitals v)
+    {
+        computer.IsOnline = true; // it answered the remoting pull
+        computer.SystemDriveFreePercent = v.SystemDriveFreePercent;
+        computer.MemoryUsedPercent = v.MemoryUsedPercent;
+        computer.CpuLoadPercent = v.CpuLoadPercent;
+        computer.StoppedAutoServiceCount = v.StoppedAutoServiceCount;
+        computer.RecentErrorEventCount = v.RecentErrorEventCount;
+        if (v.LastBootTime is { } boot)
+        {
+            computer.LastBootTime = boot;
+        }
+
+        if (v.RebootPending is { } pending)
+        {
+            computer.RebootRequired = pending;
+        }
+
+        // OS comes free with the vitals CIM pull — set it now so Details/grid don't lazy-load it later.
+        if (!string.IsNullOrWhiteSpace(v.OperatingSystem))
+        {
+            computer.OperatingSystem = v.OperatingSystem;
+        }
+
+        computer.Vitals = v;
+        computer.VitalsCheckedAt = DateTime.Now;
+
+        VitalityResult r = VitalityScorer.Score(v, computer.IsOnline);
+        computer.VitalityScore = r.Score;
+        computer.VitalityBand = r.Band;
+        computer.VitalityReasons = r.Reasons;
+        computer.LastStatus = r.Score is { } s
+            ? $"Vitality {s} ({r.Band})"
+            : r.Band.ToString();
+        _activity.Info(computer.Name,
+            $"Vitals: {r.Band}{(r.Score is { } sc ? $" {sc}" : string.Empty)}"
+            + (r.Reasons.Count > 0 ? " — " + string.Join(", ", r.Reasons) : string.Empty));
     }
 
     /// <summary>Removes the currently-selected rows from the grid (Delete key / menu).</summary>

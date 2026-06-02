@@ -178,10 +178,24 @@ public static class HelpContent
             Keywords = "check all health site code agent version reboot pending missing updates",
             Lines =
             [
-                "Click Check All. For each machine it fills: site code, agent version, last reboot, and the health dots.",
+                "Click Check Vitals. For each machine it pulls SCCM client health — site code, agent version, last reboot, the health dots — and its Vitals score in the same pass (see the Vitals topic).",
                 "Health dots (green = good, red = needs attention): Reboot pending · Updates missing · Install running · Users online.",
             ],
             Tip = "Triggering health/actions usually needs admin rights on the target — set credentials in Settings if you see \"access denied\".",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.Pulse24, Title = "How do I see why a machine is sick? (Vitals)",
+            Keywords = "vitals vitality score health disk memory cpu uptime stopped services event log unhealthy triage",
+            Lines =
+            [
+                "Click Check Vitals — the same button that pulls SCCM client health also reads deep OS health: system-drive free space, memory and CPU load, uptime, plus (for context) stopped auto-start services and recent Critical/Error events.",
+                "It rolls the reliable signals (disk, memory, CPU, uptime, reboot-pending) into a 0–100 vitality score shown as a coloured chip in the Vitals column: green = Healthy (80+), amber = Warning (50–79), red = Critical (under 50). Offline/Unknown show grey.",
+                "Stopped services and event counts are shown for triage but NOT scored — they're too noisy (idle-by-design services, benign errors like DCOM 10016) to trust on their own.",
+                "Hover the chip to see why (the top reasons), or right-click ▸ Details… ▸ Vitals for the full breakdown — drives, services by name, and recent events. The bottom bar tallies the fleet, e.g. \"Vitals: Healthy 40 · Warning 6 · Critical 2\".",
+                "Use the Unhealthy filter chip to show just the Warning/Critical/Offline machines, then sort by the Vitals column to put the sickest first.",
+            ],
+            Tip = "Read-only — one click, no confirm. Reading services / the event log over WinRM needs admin rights on the target; anything it can't read is skipped rather than counted against the score.",
         },
         new HelpTopic
         {

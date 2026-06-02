@@ -28,7 +28,8 @@ Keep this file and UPDATE_PLAN current when a decision changes or a feature land
   - **`Vivre.Core`** (net10.0) — non-UI logic: `Models`, `Net` (ping), `PowerShell`
     (`PSRunspaceHost` — the one place remoting happens), `Sccm` (`ConfigMgrClient`, client actions),
     `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
-    store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md).
+    store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md),
+    `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output

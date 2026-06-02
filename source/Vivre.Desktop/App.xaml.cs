@@ -8,6 +8,7 @@ using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
 using Vivre.Core.Updates;
+using Vivre.Core.Vitals;
 using Vivre.Desktop.ViewModels;
 
 namespace Vivre.Desktop;
@@ -35,6 +36,7 @@ public partial class App : Application
         var activity = new ActivityLog();
         var scripts = new ScriptLibrary();
         var patch = new PatchService(powerShell);
+        var vitals = new VitalsProbe(powerShell);
         // Session-only, shared across tabs (consistent with the in-memory credential model).
         var patchOptions = new PatchOptions();
 
@@ -79,7 +81,7 @@ public partial class App : Application
         ApplyTheme(settings.Theme);
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals);
 
         var shell = new ShellViewModel(NewWorkspace, credentials, activity);
         var window = new MainWindow { DataContext = shell, Settings = settingsStore, Log = activity };
