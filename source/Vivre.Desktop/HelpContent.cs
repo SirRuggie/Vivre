@@ -243,9 +243,9 @@ public static class HelpContent
             Lines =
             [
                 "Select the machines (or none = all), right-click ▸ WhatsUp Gold maintenance….",
-                "Pick Enter (suppress alerts) or Exit (resume), enter the WUG server + your WUG login, and Set maintenance.",
-                "It matches your machine names to WUG devices by IP and sets maintenance on them — handy to silence monitoring while you patch, then resume after.",
-                "It reports how many devices were set and lists any names that didn't match a WUG device.",
+                "Pick Enter (suppress alerts) or Exit (resume) — the button label follows your choice — enter the WUG server + your WUG login, then click it.",
+                "The window closes right away and the work runs in the background: each machine's row shows progress, with a summary in the activity log — handy to silence monitoring while you patch, then resume after.",
+                "It matches your machine names to WUG devices (by name, then by IP) and calls out any that didn't match a WUG device.",
             ],
             Tip = "Runs on this PC against the WUG server (not on the targets). The WUG login is asked each time and never saved (only the server address is remembered); the WhatsUpGoldPS module auto-installs for your user if it's missing.",
         },
@@ -267,6 +267,7 @@ public static class HelpContent
             [
                 "Right-click the machine ▸ Show messages — opens the activity log filtered to just that machine.",
                 "Or open the full log any time: View ▸ Activity log (search by machine or text).",
+                "In the log, right-click a line ▸ Copy (or Copy all) to copy entries out — they paste as tab-separated time / machine / message.",
             ],
         },
         new HelpTopic
@@ -306,6 +307,19 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Updates, Icon = SymbolRegular.Tabs24, Title = "Where do a machine's updates and the activity log show?",
+            Keywords = "bottom panel dock tab activity updates close hide collapse",
+            Lines =
+            [
+                "Both share one panel at the bottom of the window, with tabs:",
+                "• Updates — opens when you click a machine in Windows Update view; shows its Applicable / Installed updates, with a filter box and All / None.",
+                "• Activity — the shared log (also opened by View ▸ Activity log).",
+                "Click a machine to jump straight to its Updates tab. Drag the panel's top edge to resize it.",
+                "Click Close (top-right of the panel) to dismiss it and hand the grid back the full height.",
+            ],
+        },
+        new HelpTopic
+        {
             Category = Updates, Icon = SymbolRegular.Settings24, Title = "How do I choose the update source?",
             Keywords = "source windows microsoft update wsus managed drivers exclude",
             Lines =
@@ -321,18 +335,19 @@ public static class HelpContent
             Keywords = "scan find applicable available count",
             Lines =
             [
-                "Select machines (or none = all), then click Scan. To scan one, click it and use the side panel's Scan.",
-                "Each row's Status chip and Windows update message show what was found; the side panel lists that machine's updates.",
+                "Select machines (or none = all), then click Scan. To scan just one, click it and use the \"Scan this machine\" button in the Updates tab.",
+                "Each row's Status chip and Windows update message show what was found; clicking a machine opens the Updates tab at the bottom, which lists that machine's updates.",
             ],
         },
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.CheckboxChecked24, Title = "How do I pick which updates to install?",
-            Keywords = "select choose checklist applicable tick side panel",
+            Keywords = "select choose checklist applicable tick tab bottom panel filter",
             Lines =
             [
-                "Click a machine to open its side panel. With the scope set to Applicable, tick/untick updates.",
-                "Use All / None to select quickly. Install then targets only the ticked ones (or everything applicable if you don't scan first).",
+                "Click a machine — its Updates tab opens at the bottom. On the Applicable tab, tick/untick the updates you want.",
+                "Use All / None to select quickly, or the filter box to find an update by KB or title.",
+                "Install then targets only the ticked ones (or everything applicable if you don't tick anything).",
             ],
         },
         new HelpTopic
@@ -353,7 +368,7 @@ public static class HelpContent
             Keywords = "uninstall remove dism installed scope",
             Lines =
             [
-                "1. Click a machine, set the side-panel scope to Installed, and Scan.",
+                "1. Click a machine to open its Updates tab, switch to the Installed tab, and Scan.",
                 "2. Tick the updates to remove (greyed rows can't be removed by any engine), then click Uninstall checked.",
                 "Vivre uses Windows Update's remover first, then DISM.",
             ],

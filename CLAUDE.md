@@ -72,6 +72,10 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see UPDATE_PLAN.md).
 - Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
   changes or a feature lands — they're the human-readable source of truth.
+- **After every commit, verify the in-app how-to guide** (`HelpContent.cs`, surfaced as **Help ▸ How
+  to use Vivre**). Any user-facing change — a new/renamed action, moved or restyled UI, or a changed
+  workflow — likely needs a matching how-to topic. Update it in the same commit (or an immediate
+  follow-up) so the guide never describes UI that no longer exists.
 
 ## Commit messages
 
