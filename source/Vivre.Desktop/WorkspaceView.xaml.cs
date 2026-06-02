@@ -61,6 +61,53 @@ public partial class WorkspaceView : UserControl
         if (e.PropertyName == nameof(WorkspaceViewModel.FocusedComputer) && sender is WorkspaceViewModel vm)
         {
             UpdateChecklistRowHeight(vm.FocusedComputer);
+            ApplyUpdateFilter(vm.FocusedComputer);
+        }
+    }
+
+    // --- per-machine update-list filter (the "Filter by KB or title" box in the update panel) ---
+
+    private string _updateFilter = string.Empty;
+
+    private void OnUpdateFilterChanged(object sender, TextChangedEventArgs e)
+    {
+        _updateFilter = (sender as System.Windows.Controls.TextBox)?.Text?.Trim() ?? string.Empty;
+        ApplyUpdateFilter(ViewModel?.FocusedComputer);
+    }
+
+    /// <summary>
+    /// Filters both per-scope update lists by KB or title. Applied to each collection's default view
+    /// (which the tab grids bind to), so it survives tab switches and the focused machine changing.
+    /// </summary>
+    private void ApplyUpdateFilter(Computer? focused)
+    {
+        if (focused is null)
+        {
+            return;
+        }
+
+        ApplyUpdateFilterTo(focused.ApplicableUpdates);
+        ApplyUpdateFilterTo(focused.InstalledUpdates);
+    }
+
+    private void ApplyUpdateFilterTo(System.Collections.IEnumerable collection)
+    {
+        ICollectionView? view = System.Windows.Data.CollectionViewSource.GetDefaultView(collection);
+        if (view is null)
+        {
+            return;
+        }
+
+        if (_updateFilter.Length == 0)
+        {
+            view.Filter = null;
+        }
+        else
+        {
+            string f = _updateFilter;
+            view.Filter = o => o is Vivre.Core.Updates.SelectableUpdate u
+                && ((u.Kb?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (u.Title?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false));
         }
     }
 
