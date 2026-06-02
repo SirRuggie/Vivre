@@ -185,6 +185,19 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Machines, Icon = SymbolRegular.Pulse24, Title = "How do I see why a machine is sick? (Vitals)",
+            Keywords = "vitals vitality score health disk memory cpu uptime stopped services event log unhealthy triage",
+            Lines =
+            [
+                "Click Check Vitals. For each machine Vivre reads deep OS health — system-drive free space, memory and CPU load, uptime, stopped auto-start services, and Critical/Error events from the last 24h.",
+                "It rolls those into a 0–100 vitality score shown as a coloured chip in the Vitals column: green = Healthy (80+), amber = Warning (50–79), red = Critical (under 50). Offline/Unknown show grey.",
+                "Hover the chip for the one-line digest (disk %, memory %, CPU %, stopped services). The bottom bar tallies the fleet, e.g. \"Vitals: Healthy 40 · Warning 6 · Critical 2\".",
+                "Use the Unhealthy filter chip to show just the Warning/Critical/Offline machines, then sort by the Vitals column to put the sickest first.",
+            ],
+            Tip = "Vitals is read-only — one click, no confirm. Reading services / the event log over WinRM needs admin rights on the target; anything it can't read is skipped rather than counted against the score.",
+        },
+        new HelpTopic
+        {
             Category = Machines, Icon = SymbolRegular.Pulse24, Title = "How do I keep statuses live?",
             Keywords = "monitor watch continuous auto refresh",
             Lines =

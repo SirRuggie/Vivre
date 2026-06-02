@@ -153,6 +153,8 @@
                 </ui:SplitButton>
                 <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Heart24}" Content="Check All" Command="{Binding SelectedTab.CheckAllCommand}"
                            ToolTip="Run the full SCCM client-health sweep (site, agent, reboot/updates, last boot) across every machine." />
+                <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Pulse24}" Content="Check Vitals" Command="{Binding SelectedTab.CheckVitalsCommand}"
+                           ToolTip="Read deep OS vitals (disk, memory, CPU, uptime, stopped services, recent errors) and score each machine 0–100. Read-only." />
                 <ToggleButton Margin="8,0,0,0" Padding="11,6"
                               VerticalAlignment="Center"
                               IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
@@ -641,6 +643,14 @@
                 <TextBlock Text="{Binding SelectedTab.FleetSummary}" FontSize="12"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            VerticalAlignment="Center" />
+                <TextBlock Text="·" Margin="10,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
+                <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           VerticalAlignment="Center"
+                           Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
             </StackPanel>
         </Border>
     </Grid>

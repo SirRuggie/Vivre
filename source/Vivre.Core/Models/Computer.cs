@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Vivre.Core.Updates;
+using Vivre.Core.Vitals;
 
 namespace Vivre.Core.Models;
 
@@ -85,6 +86,67 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LastRebootDisplay))]
     public partial DateTime? LastBootTime { get; set; }
+
+    // --- Vitals & triage (deep OS health → a 0-100 "life force" score; see VitalityScorer) ---
+
+    /// <summary>Free space on the system drive (%), null until vitals are read.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VitalsSummary))]
+    public partial double? SystemDriveFreePercent { get; set; }
+
+    /// <summary>Physical memory in use (%), null until vitals are read.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VitalsSummary))]
+    public partial double? MemoryUsedPercent { get; set; }
+
+    /// <summary>Instantaneous CPU load (%), null until vitals are read.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VitalsSummary))]
+    public partial double? CpuLoadPercent { get; set; }
+
+    /// <summary>Count of auto-start services found stopped, null until vitals are read.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(VitalsSummary))]
+    public partial int? StoppedAutoServiceCount { get; set; }
+
+    /// <summary>Count of Critical/Error events in the last 24h, null until vitals are read.</summary>
+    [ObservableProperty]
+    public partial int? RecentErrorEventCount { get; set; }
+
+    /// <summary>When vitals were last read for this row (null = never).</summary>
+    [ObservableProperty]
+    public partial DateTime? VitalsCheckedAt { get; set; }
+
+    /// <summary>The 0-100 vitality score shown in the grid's Vitals chip; null = unknown/offline.
+    /// Set by the view model after running <see cref="VitalityScorer.Score"/>.</summary>
+    [ObservableProperty]
+    public partial int? VitalityScore { get; set; }
+
+    /// <summary>The health band the score falls into; drives the Vitals chip colour. Null until scored.</summary>
+    [ObservableProperty]
+    public partial VitalityBand? VitalityBand { get; set; }
+
+    /// <summary>The worst contributing factors behind the score (the "why"), for the triage panel.</summary>
+    public IReadOnlyList<string> VitalityReasons { get; set; } = [];
+
+    /// <summary>The full vitals snapshot behind the score, kept off the observable surface for the
+    /// triage panel's per-drive / per-event breakdown. Null until vitals are read.</summary>
+    public MachineVitals? Vitals { get; set; }
+
+    /// <summary>One-line vitals digest for the chip tooltip / triage header
+    /// (e.g. "Disk 4% · Mem 92% · CPU 30% · 3 stopped svc"); null until any vital is read.</summary>
+    public string? VitalsSummary
+    {
+        get
+        {
+            var parts = new List<string>();
+            if (SystemDriveFreePercent is { } disk) { parts.Add($"Disk {disk:0.#}% free"); }
+            if (MemoryUsedPercent is { } mem) { parts.Add($"Mem {mem:0}%"); }
+            if (CpuLoadPercent is { } cpu) { parts.Add($"CPU {cpu:0}%"); }
+            if (StoppedAutoServiceCount is { } svc && svc > 0) { parts.Add($"{svc} stopped svc"); }
+            return parts.Count > 0 ? string.Join(" · ", parts) : null;
+        }
+    }
 
     // --- Windows Update lane (the BatchPatch-replacement view; see UPDATE_PLAN.md) ---
 

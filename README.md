@@ -16,6 +16,9 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Ping All / Check All** — reachability plus SCCM client health (site code, agent version,
   reboot-pending / missing-updates / install-running / users-online, last reboot), shown as
   colour-coded status dots.
+- **Check Vitals** — a read-only deep-health pull (disk, memory, CPU, uptime, stopped auto-services,
+  recent error events) scored into a 0–100 **vitality** chip per machine (green/amber/red), with a
+  fleet tally and an **Unhealthy** filter — at-a-glance triage of which boxes are sick.
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
