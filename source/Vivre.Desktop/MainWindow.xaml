@@ -158,7 +158,7 @@
                               IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
                               ToolTip="Continuously re-check online/offline for all machines. Stop halts it.">
                     <StackPanel Orientation="Horizontal">
-                        <ui:SymbolIcon Symbol="Pulse24" Margin="0,0,8,0" />
+                        <ui:SymbolIcon Symbol="Eye24" Margin="0,0,8,0" />
                         <TextBlock Text="Monitor" VerticalAlignment="Center" />
                     </StackPanel>
                 </ToggleButton>
