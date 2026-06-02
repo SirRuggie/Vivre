@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -51,6 +52,7 @@ public partial class MainWindow : FluentWindow
             BuildFileMenu();
             StartRelativeTimeRefresh();
             HookOperationToasts();
+            HookBottomDock();
             UpdateThemeChecks(SavedTheme);
         };
     }
@@ -166,36 +168,163 @@ public partial class MainWindow : FluentWindow
 
     private void OnTrayExit(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
 
-    // --- View menu: activity log panel (hidden by default) ---
+    // --- unified bottom dock (Activity tab + per-machine Updates tab) ---
 
+    /// <summary>Remembered (possibly user-resized) dock height, restored when the dock reopens.</summary>
     private GridLength _activityHeight = new(170);
 
-    private void OnToggleActivityLog(object sender, RoutedEventArgs e)
-    {
-        bool show = ActivityLogMenuItem.IsChecked;
-        if (show)
-        {
-            ActivityRow.Height = _activityHeight;
-            SplitterRow.Height = GridLength.Auto;
-            ActivitySplitter.Visibility = Visibility.Visible;
-            ActivityPanel.Visibility = Visibility.Visible;
-        }
-        else
-        {
-            // Remember the current (possibly user-resized) height so reopening restores it.
-            if (ActivityRow.ActualHeight > 0)
-            {
-                _activityHeight = new GridLength(ActivityRow.ActualHeight);
-            }
+    /// <summary>The shell whose <see cref="ShellViewModel.SelectedTab"/> we're currently subscribed to —
+    /// tracked so we can re-subscribe when the active tab changes.</summary>
+    private WorkspaceViewModel? _observedTab;
 
-            ActivitySplitter.Visibility = Visibility.Collapsed;
-            ActivityPanel.Visibility = Visibility.Collapsed;
-            SplitterRow.Height = new GridLength(0);
-            ActivityRow.Height = new GridLength(0);
+    /// <summary>
+    /// Wire up cross-tab observation: the shell's SelectedTab changing, and the active tab's
+    /// FocusedComputer / IsUpdateMode changing — any of which can open/close the dock or flip which
+    /// tab should be selected. Re-subscribes to the new SelectedTab whenever it changes.
+    /// </summary>
+    private void HookBottomDock()
+    {
+        if (Shell is not { } shell)
+        {
+            return;
+        }
+
+        shell.PropertyChanged += OnShellPropertyChanged;
+        SubscribeToSelectedTab(shell.SelectedTab);
+        RecomputeBottomDock();
+    }
+
+    private void OnShellPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(ShellViewModel.SelectedTab))
+        {
+            SubscribeToSelectedTab(Shell?.SelectedTab);
+            RecomputeBottomDock();
         }
     }
 
-    /// <summary>Opens the activity-log panel filtered to one machine (right-click "Show messages").</summary>
+    private void SubscribeToSelectedTab(WorkspaceViewModel? tab)
+    {
+        if (ReferenceEquals(_observedTab, tab))
+        {
+            return;
+        }
+
+        if (_observedTab is not null)
+        {
+            _observedTab.PropertyChanged -= OnSelectedTabPropertyChanged;
+        }
+
+        _observedTab = tab;
+
+        if (_observedTab is not null)
+        {
+            _observedTab.PropertyChanged += OnSelectedTabPropertyChanged;
+        }
+    }
+
+    private void OnSelectedTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(WorkspaceViewModel.FocusedComputer) or nameof(WorkspaceViewModel.IsUpdateMode))
+        {
+            RecomputeBottomDock();
+
+            // Clicking a machine in Update view is an explicit "show me this machine" — land on the
+            // Updates tab (RecomputeBottomDock has just made it visible), even if Activity was showing.
+            if (e.PropertyName == nameof(WorkspaceViewModel.FocusedComputer) && UpdatesTriggerActive)
+            {
+                BottomDockTabs.SelectedItem = UpdatesTab;
+            }
+        }
+    }
+
+    /// <summary>True when the per-machine Updates panel should be shown: a machine is focused in
+    /// Windows Update mode on the active tab.</summary>
+    private bool UpdatesTriggerActive =>
+        Shell?.SelectedTab is { IsUpdateMode: true, FocusedComputer: not null };
+
+    /// <summary>
+    /// Single source of truth for the dock: shows/hides the Updates tab, opens or collapses the dock
+    /// per the open rule (activity requested OR a focused machine in Update mode), auto-selects the
+    /// right tab, and re-applies the KB/title filter to the (possibly new) focused machine.
+    /// </summary>
+    private void RecomputeBottomDock()
+    {
+        bool updates = UpdatesTriggerActive;
+        bool activity = ActivityLogMenuItem.IsChecked;
+
+        // The Updates tab is only selectable when a machine is focused in Update mode.
+        UpdatesTab.Visibility = updates ? Visibility.Visible : Visibility.Collapsed;
+        if (!updates && BottomDockTabs.SelectedItem == UpdatesTab)
+        {
+            BottomDockTabs.SelectedItem = ActivityTab;
+        }
+
+        if (activity || updates)
+        {
+            ShowDock();
+        }
+        else
+        {
+            HideDock();
+        }
+
+        // Keep the filter box pointed at whatever machine is now focused.
+        ApplyUpdateFilter(Shell?.SelectedTab?.FocusedComputer);
+    }
+
+    private void ShowDock()
+    {
+        ActivityRow.Height = _activityHeight;
+        SplitterRow.Height = GridLength.Auto;
+        ActivitySplitter.Visibility = Visibility.Visible;
+        ActivityPanel.Visibility = Visibility.Visible;
+    }
+
+    private void HideDock()
+    {
+        // Remember the current (possibly user-resized) height so reopening restores it.
+        if (ActivityRow.ActualHeight > 0)
+        {
+            _activityHeight = new GridLength(ActivityRow.ActualHeight);
+        }
+
+        ActivitySplitter.Visibility = Visibility.Collapsed;
+        ActivityPanel.Visibility = Visibility.Collapsed;
+        SplitterRow.Height = new GridLength(0);
+        ActivityRow.Height = new GridLength(0);
+    }
+
+    /// <summary>View ▸ Activity log — opens the dock on the Activity tab (or closes it, unless the
+    /// per-machine Updates trigger still keeps the dock open).</summary>
+    private void OnToggleActivityLog(object sender, RoutedEventArgs e)
+    {
+        if (ActivityLogMenuItem.IsChecked)
+        {
+            BottomDockTabs.SelectedItem = ActivityTab;
+        }
+
+        RecomputeBottomDock();
+    }
+
+    /// <summary>
+    /// The dock Close button — dismisses the whole dock: turn activity-requested off AND clear the
+    /// focused machine, then collapse the dock. Mirrors the old close path exactly.
+    /// </summary>
+    private void OnCloseBottomDock(object sender, RoutedEventArgs e)
+    {
+        ActivityLogMenuItem.IsChecked = false;
+        if (Shell?.SelectedTab is { } vm)
+        {
+            vm.FocusedComputer = null;
+        }
+
+        // FocusedComputer = null fires RecomputeBottomDock via the observer, but clear explicitly in
+        // case nothing was focused (so the activity-off still collapses the dock).
+        RecomputeBottomDock();
+    }
+
+    /// <summary>Opens the activity-log dock filtered to one machine (right-click "Show messages").</summary>
     public void ShowActivityForMachine(string machine)
     {
         if (Shell is { } shell)
@@ -203,10 +332,90 @@ public partial class MainWindow : FluentWindow
             shell.ActivityLog.SearchText = machine;
         }
 
-        if (!ActivityLogMenuItem.IsChecked)
+        ActivityLogMenuItem.IsChecked = true;
+        BottomDockTabs.SelectedItem = ActivityTab;
+        RecomputeBottomDock();
+    }
+
+    // --- per-machine update-list filter (the "Filter by KB or title" box in the Updates tab) ---
+
+    private string _updateFilter = string.Empty;
+
+    private void OnUpdateFilterChanged(object sender, TextChangedEventArgs e)
+    {
+        _updateFilter = (sender as System.Windows.Controls.TextBox)?.Text?.Trim() ?? string.Empty;
+        ApplyUpdateFilter(Shell?.SelectedTab?.FocusedComputer);
+    }
+
+    /// <summary>
+    /// Filters both per-scope update lists by KB or title. Applied to each collection's default view
+    /// (which the grids bind to), so it survives tab switches and the focused machine changing.
+    /// </summary>
+    private void ApplyUpdateFilter(Computer? focused)
+    {
+        if (focused is null)
         {
-            ActivityLogMenuItem.IsChecked = true;
-            OnToggleActivityLog(ActivityLogMenuItem, new RoutedEventArgs());
+            return;
+        }
+
+        ApplyUpdateFilterTo(focused.ApplicableUpdates);
+        ApplyUpdateFilterTo(focused.InstalledUpdates);
+    }
+
+    private void ApplyUpdateFilterTo(System.Collections.IEnumerable collection)
+    {
+        ICollectionView? view = System.Windows.Data.CollectionViewSource.GetDefaultView(collection);
+        if (view is null)
+        {
+            return;
+        }
+
+        if (_updateFilter.Length == 0)
+        {
+            view.Filter = null;
+        }
+        else
+        {
+            string f = _updateFilter;
+            view.Filter = o => o is Vivre.Core.Updates.SelectableUpdate u
+                && ((u.Kb?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false)
+                    || (u.Title?.Contains(f, StringComparison.OrdinalIgnoreCase) ?? false));
+        }
+    }
+
+    /// <summary>
+    /// Uninstall confirmation (the Updates tab's "Uninstall checked" button). Pops a Wpf.Ui MessageBox
+    /// before kicking the per-machine uninstall sweep — uninstalls are destructive enough to deserve a
+    /// "yes, really" prompt. Only counts ticked rows that are actually removable.
+    /// </summary>
+    private async void OnUninstallChecked(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is not { FocusedComputer: { } c } vm)
+        {
+            return;
+        }
+
+        // The Uninstall button is only visible in Installed scope, so the relevant cache here is
+        // InstalledUpdates (the user can only have ticked rows from that scope's list).
+        int count = c.InstalledUpdates.Count(u => u.IsSelected && u.IsUninstallable);
+        if (count == 0)
+        {
+            return;
+        }
+
+        var confirm = new MessageBox
+        {
+            Title = "Uninstall updates",
+            Content = $"Uninstall {count} update(s) from {c.Name}?\n\n"
+                      + "This may require a reboot. Use with care — once removed, some updates "
+                      + "can't be reinstalled through normal scans (Windows may consider them superseded).",
+            PrimaryButtonText = "Uninstall",
+            CloseButtonText = "Cancel",
+        };
+
+        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
+        {
+            await vm.UninstallCheckedAsync();
         }
     }
 

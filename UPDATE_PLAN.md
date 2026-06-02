@@ -106,10 +106,15 @@ These mechanisms exist because of real production failures. Don't undo them with
 
 - **Windows Update grid** — Name · Ping · **Status chip** · Reboot message · Windows-update message ·
   **Progress** · Scheduled-task action · next run time · Pending reboot · Command messages.
-- **Bottom panel** (focused machine, full width) — **Applicable | Installed** tabs (each grid carries
-  only its relevant columns: Applicable shows download Size, Installed shows the install date), a
-  KB/title **filter box**, All/None, a "scanned HH:mm" freshness stamp, and Install / Uninstall
-  buttons. Resizable via the splitter; closes back to the full-height grid with the ✕.
+- **Unified bottom dock** (shared, full width) — one tabbed panel with a **Close** button that hands
+  the height back to the grid. Tabs:
+  - **Activity** (always present) — the searchable activity log (right-click a line to Copy / Copy all).
+  - **Updates** (focused machine; shown only in Windows Update mode with a row focused) — **Applicable |
+    Installed** sub-tabs (each grid carries only its relevant columns: Applicable shows download Size,
+    Installed shows the install date), a KB/title **filter box**, All/None, a "scanned HH:mm" freshness
+    stamp, and Install / Uninstall buttons.
+  Opening: View ▸ Activity log lands on Activity; clicking a machine in Update view opens + lands on
+  Updates. Resizable via the splitter.
 - **Command bar** (Update mode) — Scan and Install, labelled for the current target ("…selected (N)"
   vs "…all"). Source / Include-drivers / Exclude live under the **Updates** menu.
 - **Right-click** — Scan / Install selected · **Reboot (force now)** · **Schedule ▸** (Install
