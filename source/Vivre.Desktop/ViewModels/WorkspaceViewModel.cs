@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Management.Automation;
 using System.Text;
 using System.Windows.Data;
+using Vivre.Core.Columns;
 using Vivre.Core.Computers;
 using Vivre.Core.Credentials;
 using Vivre.Core.Deploy;
@@ -77,6 +78,16 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IRemediationService _remediation;
     private readonly IDeploymentService _deployment;
     private readonly ISoftwareProbe _software;
+    private readonly ICustomColumnProbe _customColumns;
+    private readonly AppSettingsStore _appSettings = new();
+
+    /// <summary>User-defined custom columns (machine mode), loaded from settings; the view builds a grid
+    /// column per entry and the CSV export appends them. Mutated via Add/Remove which persist.</summary>
+    public ObservableCollection<CustomColumnSpec> CustomColumns { get; } = [];
+
+    /// <summary>Built-in machine-grid column headers the user has hidden (Name is never hideable); the
+    /// view applies these to the grid. Mutated via SetColumnHidden which persists.</summary>
+    public ObservableCollection<string> HiddenColumns { get; } = [];
     // Vitals is a read-only multi-CIM pull (heavier than ping, lighter than an install): bound it
     // like the scan, and give each host a modest timeout so a hung WinRM session can't stall the sweep.
     private readonly SemaphoreSlim _vitalsThrottle;
@@ -212,11 +223,20 @@ public partial class WorkspaceViewModel : ObservableObject
     /// maintenance-window write-up / ticket: machine, online, state, updates, reboot, error, OS, schedule.</summary>
     public string BuildReportCsv()
     {
+        // Append a column per user-defined custom column so the export reflects the grid the user built.
+        List<CustomColumnSpec> custom = [.. CustomColumns];
+
         var sb = new StringBuilder();
-        sb.AppendLine("Name,Online,Status,Updates available,Update message,Reboot pending,Reboot message,Last error,OS,Scheduled,Scheduled time");
+        string header = "Name,Online,Status,Updates available,Update message,Reboot pending,Reboot message,Last error,OS,Scheduled,Scheduled time";
+        if (custom.Count > 0)
+        {
+            header += "," + string.Join(",", custom.Select(c => Csv(c.Name)));
+        }
+
+        sb.AppendLine(header);
         foreach (Computer c in _computersView.Cast<Computer>())
         {
-            sb.AppendLine(string.Join(",", new[]
+            var fields = new List<string>
             {
                 Csv(c.Name),
                 Csv(c.IsOnline switch { true => "Online", false => "Offline", _ => "?" }),
@@ -229,7 +249,9 @@ public partial class WorkspaceViewModel : ObservableObject
                 Csv(c.OperatingSystem ?? string.Empty),
                 Csv(c.ScheduledAction ?? string.Empty),
                 Csv(c.ScheduledNextRun?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty),
-            }));
+            };
+            fields.AddRange(custom.Select(col => Csv(c.CustomValues[col.Name] ?? string.Empty)));
+            sb.AppendLine(string.Join(",", fields));
         }
 
         return sb.ToString();
@@ -441,7 +463,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -462,6 +484,8 @@ public partial class WorkspaceViewModel : ObservableObject
         _remediation = remediation;
         _deployment = deployment;
         _software = software;
+        _customColumns = customColumns;
+        LoadColumnLayout();
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
@@ -869,6 +893,160 @@ public partial class WorkspaceViewModel : ObservableObject
                 computer.SoftwareCheck = "check failed";
                 computer.LastError = ex.Message;
                 _activity.Warn(computer.Name, $"Software check '{query}' failed — {ex.Message}");
+            }
+        }
+        finally
+        {
+            _scanThrottle.Release();
+        }
+    }
+
+    // --- Custom grid columns (user-defined script-backed columns + hide/show built-ins) ---
+
+    private void LoadColumnLayout()
+    {
+        try
+        {
+            AppSettings s = _appSettings.Load();
+            foreach (CustomColumnSpec spec in s.CustomColumns)
+            {
+                CustomColumns.Add(spec);
+            }
+
+            foreach (string header in s.HiddenColumns)
+            {
+                HiddenColumns.Add(header);
+            }
+        }
+        catch (Exception ex)
+        {
+            _activity.Warn(null, $"Couldn't load saved column layout — using defaults. {ex.Message}");
+        }
+    }
+
+    // Load-modify-save so we don't clobber other settings (theme, etc.) saved meanwhile.
+    private void SaveColumnLayout()
+    {
+        try
+        {
+            AppSettings s = _appSettings.Load();
+            s.CustomColumns = [.. CustomColumns];
+            s.HiddenColumns = [.. HiddenColumns];
+            _appSettings.Save(s);
+        }
+        catch (Exception ex)
+        {
+            _activity.Warn(null, $"Couldn't save column layout: {ex.Message}");
+        }
+    }
+
+    /// <summary>Adds (or replaces by name) a custom column and persists. The view picks up the collection
+    /// change to build the grid column; the caller typically runs it afterwards to fill values.</summary>
+    public void AddCustomColumn(CustomColumnSpec spec)
+    {
+        CustomColumnSpec? existing = CustomColumns.FirstOrDefault(c => string.Equals(c.Name, spec.Name, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            CustomColumns.Remove(existing);
+        }
+
+        CustomColumns.Add(spec);
+        SaveColumnLayout();
+    }
+
+    /// <summary>Removes a custom column by name and persists. The view removes the grid column.</summary>
+    public void RemoveCustomColumn(string name)
+    {
+        CustomColumnSpec? existing = CustomColumns.FirstOrDefault(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (existing is not null)
+        {
+            CustomColumns.Remove(existing);
+            SaveColumnLayout();
+        }
+    }
+
+    /// <summary>Hides/shows a built-in column (by header) and persists; the view applies the visibility.</summary>
+    public void SetColumnHidden(string header, bool hidden)
+    {
+        bool has = HiddenColumns.Contains(header);
+        if (hidden && !has)
+        {
+            HiddenColumns.Add(header);
+        }
+        else if (!hidden && has)
+        {
+            HiddenColumns.Remove(header);
+        }
+        else
+        {
+            return;
+        }
+
+        SaveColumnLayout();
+    }
+
+    /// <summary>Runs every custom column's script across the given rows (empty ⇒ all) and fills each row's
+    /// values. One combined call per host (not per column). Read-only; no confirm.</summary>
+    public Task RunCustomColumnsSelectedAsync(IReadOnlyList<Computer> rows)
+    {
+        if (CustomColumns.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        IReadOnlyList<CustomColumnSpec> specs = [.. CustomColumns];
+        return RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, specs, ct));
+    }
+
+    /// <summary>Runs a single custom column's script across the rows (empty ⇒ all) — used when a column is
+    /// added, so only the new column fills and the others' already-fetched values aren't re-run.</summary>
+    public Task RunCustomColumnAsync(IReadOnlyList<Computer> rows, CustomColumnSpec spec) =>
+        RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, [spec], ct));
+
+    // Per-row: one combined custom-column call, bounded by the scan throttle with a per-host timeout.
+    private async Task RunCustomColumnRowAsync(Computer computer, IReadOnlyList<CustomColumnSpec> specs, CancellationToken token)
+    {
+        await _scanThrottle.WaitAsync(token);
+        try
+        {
+            foreach (CustomColumnSpec spec in specs)
+            {
+                computer.CustomValues[spec.Name] = "…";
+            }
+
+            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+            perHost.CancelAfter(TimeSpan.FromSeconds(SoftwarePerHostTimeoutSeconds));
+            try
+            {
+                IReadOnlyDictionary<string, string?> values =
+                    await _customColumns.RunAsync(computer.Name, specs, CurrentPsCredential(), perHost.Token);
+                foreach (CustomColumnSpec spec in specs)
+                {
+                    computer.CustomValues[spec.Name] = values.TryGetValue(spec.Name, out string? v) ? v : null;
+                }
+            }
+            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                foreach (CustomColumnSpec spec in specs)
+                {
+                    computer.CustomValues[spec.Name] = "timed out";
+                }
+
+                _activity.Warn(computer.Name, $"Custom columns timed out after {SoftwarePerHostTimeoutSeconds}s");
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                foreach (CustomColumnSpec spec in specs)
+                {
+                    computer.CustomValues[spec.Name] = "error";
+                }
+
+                computer.LastError = ex.Message;
+                _activity.Warn(computer.Name, $"Custom columns failed — {ex.Message}");
             }
         }
         finally

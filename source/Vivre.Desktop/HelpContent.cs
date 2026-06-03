@@ -266,6 +266,20 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Machines, Icon = SymbolRegular.Settings24, Title = "How do I customize the grid columns?",
+            Keywords = "columns custom hide show add column grid layout serial bitlocker script one-liner customize remove tailor probe",
+            Lines =
+            [
+                "Right-click the grid ▸ Columns… (machine mode).",
+                "• Hide columns you don't use — untick them under \"Show columns\" (Name always stays). Saved across launches.",
+                "• Add a predefined column from the gallery (Serial, Model, Days since reboot, Free C: GB, BitLocker, …) — one click.",
+                "• Add your own — a column name + a PowerShell one-liner. It runs on every machine and whatever it prints fills the cell, e.g. (Get-CimInstance Win32_BIOS).SerialNumber.",
+                "Custom columns sort (numeric-aware) and are included when you Export tab to CSV. Use Refresh values to re-run them.",
+            ],
+            Tip = "Custom columns are read-only — they run your one-liner per machine and show the result, nothing more. A column whose script errors shows \"ERR: …\" for that machine; the rest still fill.",
+        },
+        new HelpTopic
+        {
             Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I run an SCCM client action?",
             Keywords = "client action machine policy hardware inventory update scan trigger schedule",
             Lines =

@@ -1,5 +1,6 @@
 using System.Windows;
 using Wpf.Ui.Appearance;
+using Vivre.Core.Columns;
 using Vivre.Core.Computers;
 using Vivre.Core.Credentials;
 using Vivre.Core.Deploy;
@@ -43,6 +44,7 @@ public partial class App : Application
         var remediation = new RemediationService(powerShell);
         var deployment = new DeploymentService(powerShell);
         var software = new SoftwareProbe(powerShell);
+        var customColumns = new CustomColumnProbe(powerShell);
         // Session-only, shared across tabs (consistent with the in-memory credential model).
         var patchOptions = new PatchOptions();
 
@@ -87,7 +89,7 @@ public partial class App : Application
         ApplyTheme(settings.Theme);
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns);
 
         var shell = new ShellViewModel(NewWorkspace, credentials, activity);
         var window = new MainWindow { DataContext = shell, Settings = settingsStore, Log = activity };

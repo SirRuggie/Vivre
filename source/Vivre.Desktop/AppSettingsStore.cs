@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using Vivre.Core.Columns;
 
 namespace Vivre.Desktop;
 
@@ -29,6 +30,14 @@ public sealed class AppSettings
         // matches DisplayName OR Publisher, so "SentinelOne" finds it. Service: SentinelAgent.
         ["SentinelOne"] = "SentinelAgent",
     };
+
+    /// <summary>User-defined custom machine-grid columns (name + PowerShell one-liner). Each runs on every
+    /// machine and its output fills that column. Empty by default; grows as the user adds columns.</summary>
+    public List<CustomColumnSpec> CustomColumns { get; set; } = [];
+
+    /// <summary>Built-in machine-grid column headers the user has hidden (the Name column is never
+    /// hideable). Empty by default.</summary>
+    public List<string> HiddenColumns { get; set; } = [];
 }
 
 /// <summary>

@@ -38,7 +38,9 @@ Keep this file and UPDATE_PLAN current when a decision changes or a feature land
     version was dropped — watching an install over a session that EDR agents tear down mid-install
     proved unreliable; delivering files and letting the admin's scripts install is robust),
     `Software` (`SoftwareProbe` — check whether a named product is installed per machine → the grid's
-    Software column; registry-based, read-only).
+    Software column; registry-based, read-only),
+    `Columns` (`CustomColumnProbe` — run a user PowerShell one-liner per machine → a custom grid column;
+    the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output
