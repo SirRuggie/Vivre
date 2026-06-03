@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Vivre.Core.Models;
+using Vivre.Core.Updates;
 using Vivre.Desktop.ViewModels;
 using Wpf.Ui.Controls;
 using MenuItem = System.Windows.Controls.MenuItem;
@@ -511,17 +512,50 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    /// <summary>Ticks the active theme in the menu (the three items are a manual radio group).</summary>
+    /// <summary>Selects the active theme's radio dot in the menu (the three are a radio group).</summary>
     private void UpdateThemeChecks(string theme)
     {
-        if (LightThemeItem is null)
+        if (LightThemeRadio is null)
         {
             return;
         }
 
-        LightThemeItem.IsChecked = theme == "Light";
-        DarkThemeItem.IsChecked = theme == "Dark";
-        SystemThemeItem.IsChecked = theme == "System";
+        LightThemeRadio.IsChecked = theme == "Light";
+        DarkThemeRadio.IsChecked = theme == "Dark";
+        SystemThemeRadio.IsChecked = theme == "System";
+    }
+
+    // --- View mode + update source (radio menu items; the click sets the state, the bound RadioButton
+    //     reflects it). ---
+
+    private void OnSelectMachinesMode(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is { } vm)
+        {
+            vm.IsUpdateMode = false;
+        }
+    }
+
+    private void OnSelectUpdateMode(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is { } vm)
+        {
+            vm.IsUpdateMode = true;
+        }
+    }
+
+    private void OnSourceWindowsUpdate(object sender, RoutedEventArgs e) => SetSource(UpdateSource.WindowsUpdate);
+
+    private void OnSourceMicrosoftUpdate(object sender, RoutedEventArgs e) => SetSource(UpdateSource.MicrosoftUpdate);
+
+    private void OnSourceManaged(object sender, RoutedEventArgs e) => SetSource(UpdateSource.Managed);
+
+    private void SetSource(UpdateSource source)
+    {
+        if (Shell?.SelectedTab is { } vm)
+        {
+            vm.SelectedSource = source;
+        }
     }
 
     private void OnOpenSettings(object sender, RoutedEventArgs e)
