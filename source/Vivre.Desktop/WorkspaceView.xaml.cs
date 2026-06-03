@@ -1,10 +1,15 @@
+using System.Collections;
+using System.ComponentModel;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using Microsoft.Win32;
+using Vivre.Core.Columns;
 using Vivre.Core.Models;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
@@ -31,6 +36,174 @@ public partial class WorkspaceView : UserControl
     public WorkspaceView()
     {
         InitializeComponent();
+        Loaded += OnViewLoaded;
+    }
+
+    // The runtime-built custom columns by name (DataGridColumn has no Tag, so we track them here to tell
+    // them apart from the XAML built-ins).
+    private readonly Dictionary<string, DataGridColumn> _customGridColumns = new(StringComparer.OrdinalIgnoreCase);
+    private bool _columnsWired;
+    private string? _customSortKey;
+    private bool _customSortAscending = true;
+
+    /// <summary>Once the tab's view-model is attached, apply the saved column layout and keep the grid in
+    /// step with it (built-in show/hide + the user's custom script columns), and wire custom-column sorting.</summary>
+    private void OnViewLoaded(object sender, RoutedEventArgs e)
+    {
+        if (_columnsWired || ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        _columnsWired = true;
+        vm.CustomColumns.CollectionChanged += (_, _) => SyncColumns();
+        vm.HiddenColumns.CollectionChanged += (_, _) => SyncColumns();
+        ComputerGrid.Sorting += OnComputerGridSorting;
+        SyncColumns();
+    }
+
+    /// <summary>Brings the machine grid in line with the view-model's saved layout: hides/shows the
+    /// built-in columns and creates/removes a text column per custom-column spec (bound to the row's
+    /// per-key <see cref="Computer.CustomValues"/> store so cells fill live during a sweep).</summary>
+    private void SyncColumns()
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        // Hide/show built-ins (key by header text; never hide Name; leave our custom columns alone).
+        var customCols = new HashSet<DataGridColumn>(_customGridColumns.Values);
+        foreach (DataGridColumn col in ComputerGrid.Columns)
+        {
+            if (customCols.Contains(col))
+            {
+                continue;
+            }
+
+            string header = GetColumnKey(col);
+            if (header.Length == 0 || header == "Name")
+            {
+                continue;
+            }
+
+            col.Visibility = vm.HiddenColumns.Contains(header) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        // Remove custom columns whose spec is gone.
+        var wanted = vm.CustomColumns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach ((string name, DataGridColumn col) in _customGridColumns.ToList())
+        {
+            if (!wanted.Contains(name))
+            {
+                ComputerGrid.Columns.Remove(col);
+                _customGridColumns.Remove(name);
+            }
+        }
+
+        // Add a column for any spec that doesn't have one yet.
+        foreach (CustomColumnSpec spec in vm.CustomColumns)
+        {
+            if (!_customGridColumns.ContainsKey(spec.Name))
+            {
+                DataGridColumn col = MakeCustomColumn(spec.Name);
+                ComputerGrid.Columns.Add(col);
+                _customGridColumns[spec.Name] = col;
+            }
+        }
+    }
+
+    private static DataGridTextColumn MakeCustomColumn(string name) => new()
+    {
+        Header = name,
+        Width = DataGridLength.Auto,
+        MinWidth = 90,
+        MaxWidth = 320,
+        Binding = new Binding($"CustomValues[{name}]"),
+        ElementStyle = TrimmedCellStyle(),
+    };
+
+    // TextBlock cell style: ellipsis when narrow + full value on hover (matches the built-in text columns).
+    private static Style TrimmedCellStyle()
+    {
+        var style = new Style(typeof(TextBlock));
+        style.Setters.Add(new Setter(TextBlock.TextTrimmingProperty, TextTrimming.CharacterEllipsis));
+        style.Setters.Add(new Setter(FrameworkElement.ToolTipProperty, new Binding { RelativeSource = RelativeSource.Self, Path = new PropertyPath(TextBlock.TextProperty) }));
+        return style;
+    }
+
+    /// <summary>A stable string key/label for a built-in column, handling both plain string headers and
+    /// the two-line <see cref="TextBlock"/> headers (e.g. "Reboot Pending") used by the status columns —
+    /// without it those columns couldn't be listed or hidden.</summary>
+    private static string GetColumnKey(DataGridColumn col) => col.Header switch
+    {
+        string s => s,
+        TextBlock tb => HeaderText(tb),
+        { } other => other.ToString() ?? string.Empty,
+        null => string.Empty,
+    };
+
+    private static string HeaderText(TextBlock tb)
+    {
+        var sb = new StringBuilder();
+        foreach (Inline inline in tb.Inlines)
+        {
+            if (inline is Run run)
+            {
+                sb.Append(run.Text);
+            }
+            else if (inline is LineBreak)
+            {
+                sb.Append(' ');
+            }
+        }
+
+        string text = sb.ToString().Trim();
+        return text.Length > 0 ? text : tb.Text ?? string.Empty;
+    }
+
+    /// <summary>Custom columns can't sort via the default (indexer) path, so sort the view ourselves with a
+    /// numeric-aware comparer on the row's CustomValues; built-in columns keep their normal sort.</summary>
+    private void OnComputerGridSorting(object sender, DataGridSortingEventArgs e)
+    {
+        if (ViewModel is not { } vm || e.Column.Header is not string key || !_customGridColumns.ContainsKey(key))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        ListSortDirection dir = _customSortKey == key && _customSortAscending
+            ? ListSortDirection.Descending
+            : ListSortDirection.Ascending;
+        _customSortKey = key;
+        _customSortAscending = dir == ListSortDirection.Ascending;
+
+        if (CollectionViewSource.GetDefaultView(vm.Computers) is ListCollectionView view)
+        {
+            view.CustomSort = new CustomColumnComparer(key, dir);
+        }
+
+        foreach (DataGridColumn col in ComputerGrid.Columns)
+        {
+            col.SortDirection = null;
+        }
+
+        e.Column.SortDirection = dir;
+    }
+
+    /// <summary>Compares two rows by a custom column's value — numeric when both parse as numbers (so
+    /// "Days since reboot" sorts 2 &lt; 10), otherwise case-insensitive text.</summary>
+    private sealed class CustomColumnComparer(string key, ListSortDirection direction) : IComparer
+    {
+        public int Compare(object? x, object? y)
+        {
+            string a = (x as Computer)?.CustomValues[key] ?? string.Empty;
+            string b = (y as Computer)?.CustomValues[key] ?? string.Empty;
+            int cmp = double.TryParse(a, out double da) && double.TryParse(b, out double db)
+                ? da.CompareTo(db)
+                : string.Compare(a, b, StringComparison.OrdinalIgnoreCase);
+            return direction == ListSortDirection.Ascending ? cmp : -cmp;
+        }
     }
 
     /// <summary>
@@ -199,6 +372,14 @@ public partial class WorkspaceView : UserControl
         var exportSoftware = new MenuItem { Header = "Export software report (CSV)…", IsEnabled = vm.HasSoftwareResults };
         exportSoftware.Click += OnExportSoftwareReport;
         _gridMenu.Items.Add(exportSoftware);
+
+        // Customize the machine grid: hide built-in columns, add predefined/custom script-backed columns.
+        if (vm.IsMachineMode)
+        {
+            var columns = new MenuItem { Header = "Columns…" };
+            columns.Click += OnManageColumns;
+            _gridMenu.Items.Add(columns);
+        }
 
         _gridMenu.Items.Add(new Separator());
 
@@ -463,6 +644,25 @@ public partial class WorkspaceView : UserControl
         {
             vm.Activity.Error(null, $"Software report export failed: {ex.Message}");
         }
+    }
+
+    /// <summary>Opens the Columns manager for the machine grid (hide built-ins, add predefined/custom
+    /// script columns). Passes the current built-in headers so the dialog can list them.</summary>
+    private void OnManageColumns(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        var customCols = new HashSet<DataGridColumn>(_customGridColumns.Values);
+        var builtins = ComputerGrid.Columns
+            .Where(c => !customCols.Contains(c))
+            .Select(GetColumnKey)
+            .Where(k => k.Length > 0 && k != "Name")
+            .ToList();
+
+        new ColumnsWindow(vm, builtins) { Owner = OwnerWindow }.ShowDialog();
     }
 
     private static string SanitizeFileName(string name)

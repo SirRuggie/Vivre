@@ -100,6 +100,10 @@ public partial class Computer : ObservableObject
     /// <summary>When the last software check ran for this row (null = never).</summary>
     public DateTime? SoftwareCheckedAt { get; set; }
 
+    /// <summary>Per-machine values for user-defined custom columns (column name → value). Bindable per key
+    /// (<c>{Binding CustomValues[Name]}</c>) so a custom column's cell updates live as a sweep fills it.</summary>
+    public CustomValueStore CustomValues { get; } = new();
+
     // Health signals (null = unknown/not checked). true = condition present.
     /// <summary>A reboot is pending.</summary>
     [ObservableProperty]
