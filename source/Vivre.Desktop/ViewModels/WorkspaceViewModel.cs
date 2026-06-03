@@ -7,6 +7,7 @@ using System.Text;
 using System.Windows.Data;
 using Vivre.Core.Computers;
 using Vivre.Core.Credentials;
+using Vivre.Core.Deploy;
 using Vivre.Core.Logging;
 using Vivre.Core.Models;
 using Vivre.Core.Net;
@@ -73,6 +74,7 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IPowerShellHost _powerShell;
     private readonly IVitalsProbe _vitals;
     private readonly IRemediationService _remediation;
+    private readonly IDeploymentService _deployment;
     // Vitals is a read-only multi-CIM pull (heavier than ping, lighter than an install): bound it
     // like the scan, and give each host a modest timeout so a hung WinRM session can't stall the sweep.
     private readonly SemaphoreSlim _vitalsThrottle;
@@ -400,7 +402,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -419,6 +421,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _rebootProbe = rebootProbe;
         _vitals = vitals;
         _remediation = remediation;
+        _deployment = deployment;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
@@ -771,6 +774,64 @@ public partial class WorkspaceViewModel : ObservableObject
     /// time passes.</summary>
     public Task ScheduleInstallSelectedAsync(IReadOnlyList<Computer> rows, DateTime at) =>
         RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct, at), "Schedule");
+
+    // --- Software deploy (push a package + run it as SYSTEM) ---
+
+    /// <summary>
+    /// Stages an admin-supplied package to the given rows (right-click ▸ Stage software…). The source +
+    /// destination are chosen in the Stage window; this runs a per-row copy through
+    /// <see cref="IDeploymentService"/> (SMB, else WinRM) using the bounded patch sweep (a payload copy
+    /// is heavy on the wire). Nothing is installed — the files are just delivered for the admin to run.
+    /// </summary>
+    /// <param name="sourcePath">The file or folder on this machine to copy.</param>
+    /// <param name="sourceIsFolder">True when the source is a folder.</param>
+    /// <param name="targetPath">The final file/folder path on each target.</param>
+    /// <param name="packageName">For the activity log + row status.</param>
+    public Task StageSelectedAsync(IReadOnlyList<Computer> rows, string sourcePath, bool sourceIsFolder, string targetPath, string packageName) =>
+        // Bounded by the conservative patch throttle (a payload copy is heavy on the wire). No
+        // operationLabel: staging tracks Command result, not PatchState, so the patch-style completion
+        // summary doesn't apply — per-row results + the activity log carry the outcome.
+        RunPatchSweepAsync(
+            rows.Count > 0 ? rows : [.. Computers],
+            (c, ct) => StageRowAsync(c, sourcePath, sourceIsFolder, targetPath, packageName, ct),
+            operationLabel: null,
+            _patchThrottle);
+
+    /// <summary>Per-host stage: copy the package to the target and reflect the result on the row's
+    /// Command result + the activity log. Nothing is executed on the target.</summary>
+    private async Task StageRowAsync(Computer computer, string sourcePath, bool sourceIsFolder, string targetPath, string packageName, CancellationToken token)
+    {
+        computer.LastError = null;
+        computer.CommandResult = $"Staging {packageName}…";
+        try
+        {
+            StageResult result = await _deployment.StageAsync(
+                computer.Name, sourcePath, sourceIsFolder, targetPath, CurrentPsCredential(), token);
+
+            if (result.Ok)
+            {
+                computer.CommandResult = $"{packageName}: staged to {targetPath}";
+                _activity.Info(computer.Name, $"Staged '{packageName}' to {targetPath}");
+            }
+            else
+            {
+                computer.CommandResult = $"{packageName}: {result.Message}";
+                computer.LastError = result.Message;
+                _activity.Error(computer.Name, $"Stage '{packageName}' failed — {result.Message}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            computer.CommandResult = $"{packageName}: cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.LastError = ex.Message;
+            computer.CommandResult = $"{packageName}: failed — {ex.Message}";
+            _activity.Error(computer.Name, $"Stage '{packageName}' failed — {ex.Message}");
+        }
+    }
 
     /// <summary>
     /// Registers a one-time SYSTEM scheduled task (<c>Vivre_Reboot</c>) on each selected machine that

@@ -1,0 +1,78 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.DeployWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
+        mc:Ignorable="d"
+        Title="Stage software"
+        Height="560" Width="540"
+        MinHeight="460" MinWidth="480"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Stage software"
+                     Icon="{ui:SymbolIcon Copy24}" />
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,8,24,0">
+            <StackPanel>
+                <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+                <!-- Package picker: dropdown of the Packages folder + Browse… (file or folder) -->
+                <ui:TextBlock Text="Package" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Grid Margin="0,0,0,4">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ComboBox x:Name="PackageBox" Grid.Column="0"
+                              VerticalAlignment="Center"
+                              SelectionChanged="OnPackageChanged"
+                              ToolTip="Packages found in your package library folder. Or Browse… to a file/folder anywhere." />
+                    <ui:Button Grid.Column="1" Margin="8,0,0,0" Content="Browse file…" Click="OnBrowseFile" />
+                    <ui:Button Grid.Column="2" Margin="8,0,0,0" Content="Browse folder…" Click="OnBrowseFolder" />
+                </Grid>
+                <ui:TextBlock x:Name="PackageHint" Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,2" />
+                <ui:HyperlinkButton x:Name="SetLibraryButton" Content="Set package library folder…"
+                                    Padding="0" Margin="0,0,0,12" HorizontalAlignment="Left"
+                                    Click="OnSetLibraryFolder"
+                                    ToolTip="Choose a folder of packages to list in the dropdown (remembered for next time)." />
+
+                <!-- Where to drop the files on each target -->
+                <ui:TextBlock Text="Stage to (on each machine)" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBox x:Name="StagePathBox" Margin="0,0,0,4"
+                            TextChanged="OnStagePathChanged"
+                            PlaceholderText="C:\Windows\Temp\VivrePackages" />
+                <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap"
+                              Text="A single installer drops in here; a folder gets its own subfolder. Vivre only copies the files — it does not run them." />
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Destination preview / status: read-only so it's visible AND selectable. -->
+        <TextBox Grid.Row="2" x:Name="StatusText"
+                 Margin="24,8,24,0"
+                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                 FontFamily="Cascadia Code, Consolas, monospace" FontSize="12"
+                 BorderThickness="0" Background="Transparent"
+                 MaxHeight="100" VerticalScrollBarVisibility="Auto"
+                 Visibility="Collapsed" />
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
+            <ui:Button x:Name="StageButton" Appearance="Primary" Icon="{ui:SymbolIcon Copy24}"
+                       Content="Stage" Click="OnStage" IsDefault="True" />
+            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnClose" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

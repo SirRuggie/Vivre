@@ -182,6 +182,12 @@ public partial class WorkspaceView : UserControl
         runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
         _gridMenu.Items.Add(runAll);
 
+        // Copy a package (MSI/EXE or a folder of files) to the selection (else all) — same scoping as
+        // Run script. Opens the review-before-run Stage window; Vivre copies the files, doesn't install.
+        var stage = new MenuItem { Header = "Stage software…" };
+        stage.Click += OnStageSoftware;
+        _gridMenu.Items.Add(stage);
+
         _gridMenu.Items.Add(new Separator());
 
         // The five SCCM client-action triggers grouped under one submenu (was five flat items).
@@ -362,6 +368,27 @@ public partial class WorkspaceView : UserControl
         }
 
         new MaintenanceWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+    }
+
+    /// <summary>Opens the Stage software window for the selection, else every machine in the tab
+    /// (matches Run script / Install scoping). The window reviews before copying — it never auto-runs.</summary>
+    private void OnStageSoftware(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        IReadOnlyList<Computer> targets = vm.SelectedComputers.Count > 0
+            ? [.. vm.SelectedComputers]
+            : [.. vm.Computers];
+
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        new DeployWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
     }
 
     /// <summary>The machine the menu acts on: the right-clicked row, else the focused/first-selected.</summary>
