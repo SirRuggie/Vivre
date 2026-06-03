@@ -89,22 +89,44 @@
                 <MenuItem x:Name="ActivityLogMenuItem" Header="_Activity log"
                           IsCheckable="True" IsChecked="False" Click="OnToggleActivityLog" />
                 <Separator />
-                <!-- Mode switch, directly selectable (the two are a radio pair via the inverse binding). -->
-                <MenuItem Header="_Machines" IsCheckable="True"
-                          IsChecked="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource InverseBool}, Mode=TwoWay}"
-                          InputGestureText="Ctrl+M" />
-                <MenuItem Header="_Windows Update" IsCheckable="True"
-                          IsChecked="{Binding SelectedTab.IsUpdateMode, Mode=TwoWay}"
-                          InputGestureText="Ctrl+M" />
+                <!-- Mutually-exclusive mode → radio dots (inline, no submenu). The RadioButton sits in the
+                     icon slot purely as the indicator; the click sets the mode (IsHitTestVisible=False so
+                     the menu item handles the click). -->
+                <MenuItem Header="_Machines" InputGestureText="Ctrl+M" Click="OnSelectMachinesMode">
+                    <MenuItem.Icon>
+                        <RadioButton IsChecked="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource InverseBool}}"
+                                     IsHitTestVisible="False" Focusable="False" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <MenuItem Header="_Windows Update" InputGestureText="Ctrl+M" Click="OnSelectUpdateMode">
+                    <MenuItem.Icon>
+                        <RadioButton IsChecked="{Binding SelectedTab.IsUpdateMode}" IsHitTestVisible="False" Focusable="False" />
+                    </MenuItem.Icon>
+                </MenuItem>
             </MenuItem>
-            <MenuItem Header="_Updates">
+            <!-- Update config is only relevant while patching, so this whole menu shows only in Windows
+                 Update mode — it stays off the Machines view (no toolbar real-estate cost). -->
+            <MenuItem Header="_Updates"
+                      Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}">
                 <MenuItem Header="_Source">
-                    <MenuItem Header="Windows _Update" IsCheckable="True"
-                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.WindowsUpdate}, Mode=TwoWay}" />
-                    <MenuItem Header="_Microsoft Update" IsCheckable="True"
-                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.MicrosoftUpdate}, Mode=TwoWay}" />
-                    <MenuItem Header="Mana_ged (WSUS/SCCM)" IsCheckable="True"
-                              IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.Managed}, Mode=TwoWay}" />
+                    <MenuItem Header="Windows _Update" Click="OnSourceWindowsUpdate">
+                        <MenuItem.Icon>
+                            <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.WindowsUpdate}}"
+                                         IsHitTestVisible="False" Focusable="False" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Microsoft Update" Click="OnSourceMicrosoftUpdate">
+                        <MenuItem.Icon>
+                            <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.MicrosoftUpdate}}"
+                                         IsHitTestVisible="False" Focusable="False" />
+                        </MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="Mana_ged (WSUS/SCCM)" Click="OnSourceManaged">
+                        <MenuItem.Icon>
+                            <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.Managed}}"
+                                         IsHitTestVisible="False" Focusable="False" />
+                        </MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="Include _drivers" IsCheckable="True"
@@ -117,9 +139,15 @@
                 <MenuItem Header="_Credentials…" Click="OnOpenSettings" />
                 <Separator />
                 <MenuItem Header="_Theme">
-                    <MenuItem x:Name="LightThemeItem" Header="_Light" IsCheckable="True" Click="OnThemeLight" />
-                    <MenuItem x:Name="DarkThemeItem" Header="_Dark" IsCheckable="True" Click="OnThemeDark" />
-                    <MenuItem x:Name="SystemThemeItem" Header="_System" IsCheckable="True" Click="OnThemeSystem" />
+                    <MenuItem Header="_Light" Click="OnThemeLight">
+                        <MenuItem.Icon><RadioButton x:Name="LightThemeRadio" IsHitTestVisible="False" Focusable="False" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_Dark" Click="OnThemeDark">
+                        <MenuItem.Icon><RadioButton x:Name="DarkThemeRadio" IsHitTestVisible="False" Focusable="False" /></MenuItem.Icon>
+                    </MenuItem>
+                    <MenuItem Header="_System" Click="OnThemeSystem">
+                        <MenuItem.Icon><RadioButton x:Name="SystemThemeRadio" IsHitTestVisible="False" Focusable="False" /></MenuItem.Icon>
+                    </MenuItem>
                 </MenuItem>
                 <Separator />
                 <MenuItem x:Name="AutoCheckItem" Header="_Auto-check on load" IsCheckable="True" Click="OnToggleAutoCheck"
