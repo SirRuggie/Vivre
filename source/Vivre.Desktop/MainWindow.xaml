@@ -121,6 +121,9 @@
                     <MenuItem x:Name="DarkThemeItem" Header="_Dark" IsCheckable="True" Click="OnThemeDark" />
                     <MenuItem x:Name="SystemThemeItem" Header="_System" IsCheckable="True" Click="OnThemeSystem" />
                 </MenuItem>
+                <Separator />
+                <MenuItem x:Name="AutoCheckItem" Header="_Auto-check on load" IsCheckable="True" Click="OnToggleAutoCheck"
+                          ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals. Always just your loaded list." />
             </MenuItem>
             <MenuItem Header="_Help">
                 <MenuItem Header="_How to use Vivre…" Click="OnOpenHelp" InputGestureText="F1" />

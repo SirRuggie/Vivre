@@ -54,6 +54,7 @@ public partial class MainWindow : FluentWindow
             HookOperationToasts();
             HookBottomDock();
             UpdateThemeChecks(SavedTheme);
+            try { AutoCheckItem.IsChecked = Settings?.Load().AutoCheckOnLoad ?? true; } catch { AutoCheckItem.IsChecked = true; }
         };
     }
 
@@ -482,11 +483,31 @@ public partial class MainWindow : FluentWindow
         UpdateThemeChecks(theme);
         try
         {
-            Settings?.Save(new AppSettings { Theme = theme });
+            // Load-modify-save: saving a fresh AppSettings would wipe everything else (packages folder,
+            // software-service map, custom columns + hidden-column layout, auto-check flag).
+            AppSettings s = Settings?.Load() ?? new AppSettings();
+            s.Theme = theme;
+            Settings?.Save(s);
         }
         catch (Exception ex)
         {
             Log?.Warn(null, $"Couldn't save theme preference. {ex.Message}");
+        }
+    }
+
+    /// <summary>Settings ▸ Auto-check on load. Persists the flag; each tab reads it when a list loads to
+    /// decide whether to auto-ping + check vitals on the new machines.</summary>
+    private void OnToggleAutoCheck(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            AppSettings s = Settings?.Load() ?? new AppSettings();
+            s.AutoCheckOnLoad = AutoCheckItem.IsChecked;
+            Settings?.Save(s);
+        }
+        catch (Exception ex)
+        {
+            Log?.Warn(null, $"Couldn't save the auto-check setting. {ex.Message}");
         }
     }
 
