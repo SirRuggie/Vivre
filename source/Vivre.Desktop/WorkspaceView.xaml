@@ -184,6 +184,28 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
+                <!-- Software check (right-click ▸ Check software…): shows the matched product + version,
+                     or "<query> — not found" in red. Blank until a check is run for the row. -->
+                <DataGridTextColumn Header="Software" Binding="{Binding SoftwareCheck}" Width="Auto" MinWidth="120" MaxWidth="320" SortMemberPath="SoftwareCheck">
+                    <DataGridTextColumn.ElementStyle>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                            <Setter Property="ToolTip" Value="{Binding SoftwareCheck}" />
+                            <Style.Triggers>
+                                <!-- Found = green, missing = red; "installed but service not running" overrides to amber. -->
+                                <DataTrigger Binding="{Binding SoftwareFound}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding SoftwareFound}" Value="False">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding SoftwareServiceDown}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </DataGridTextColumn.ElementStyle>
+                </DataGridTextColumn>
                 <DataGridTextColumn Header="Site code" Binding="{Binding SiteCode}" Width="Auto" MinWidth="80" />
                 <DataGridTextColumn Header="Agent version" Binding="{Binding AgentVersion}" Width="Auto" MinWidth="100" />
                 <DataGridTextColumn Header="Last reboot" Binding="{Binding LastRebootDisplay}" Width="Auto" MinWidth="90">

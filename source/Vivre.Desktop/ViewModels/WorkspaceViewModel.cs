@@ -15,6 +15,7 @@ using Vivre.Core.PowerShell;
 using Vivre.Core.Remoting;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
+using Vivre.Core.Software;
 using Vivre.Core.Updates;
 using Vivre.Core.Remediation;
 using Vivre.Core.Vitals;
@@ -75,10 +76,12 @@ public partial class WorkspaceViewModel : ObservableObject
     private readonly IVitalsProbe _vitals;
     private readonly IRemediationService _remediation;
     private readonly IDeploymentService _deployment;
+    private readonly ISoftwareProbe _software;
     // Vitals is a read-only multi-CIM pull (heavier than ping, lighter than an install): bound it
     // like the scan, and give each host a modest timeout so a hung WinRM session can't stall the sweep.
     private readonly SemaphoreSlim _vitalsThrottle;
     private const int VitalsPerHostTimeoutSeconds = 120;
+    private const int SoftwarePerHostTimeoutSeconds = 60;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
@@ -226,6 +229,42 @@ public partial class WorkspaceViewModel : ObservableObject
                 Csv(c.OperatingSystem ?? string.Empty),
                 Csv(c.ScheduledAction ?? string.Empty),
                 Csv(c.ScheduledNextRun?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty),
+            }));
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>True when at least one shown row has had a software check — gates the "Export software
+    /// report" menu item so an all-blank report isn't offered.</summary>
+    public bool HasSoftwareResults => _computersView.Cast<Computer>().Any(c => c.SoftwareCheck is not null);
+
+    /// <summary>Builds an on-demand CSV of the software-check results for the rows currently shown
+    /// (respects the filter) — a per-machine report for handing off: machine, online, what was searched,
+    /// installed?, product + version, the service checked, and whether it's running.</summary>
+    public string BuildSoftwareReportCsv()
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("Machine,Online,Searched for,Installed,Product,Version,Service,Service running,Checked");
+        foreach (Computer c in _computersView.Cast<Computer>())
+        {
+            sb.AppendLine(string.Join(",", new[]
+            {
+                Csv(c.Name),
+                Csv(c.IsOnline switch { true => "Online", false => "Offline", _ => "Unknown" }),
+                Csv(c.SoftwareQuery ?? string.Empty),
+                Csv(c.SoftwareFound switch { true => "Yes", false => "No", _ => string.Empty }),
+                Csv(c.SoftwareName ?? string.Empty),
+                Csv(c.SoftwareVersion ?? string.Empty),
+                Csv(c.SoftwareServiceName ?? string.Empty),
+                Csv(c.SoftwareServiceState switch
+                {
+                    null => string.Empty,
+                    "not found" => "Not found",
+                    "Running" => "Yes",
+                    _ => "No",
+                }),
+                Csv(c.SoftwareCheckedAt?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty),
             }));
         }
 
@@ -402,7 +441,7 @@ public partial class WorkspaceViewModel : ObservableObject
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -422,6 +461,7 @@ public partial class WorkspaceViewModel : ObservableObject
         _vitals = vitals;
         _remediation = remediation;
         _deployment = deployment;
+        _software = software;
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
         IncludeDrivers = patchOptions.IncludeDrivers;
@@ -750,6 +790,92 @@ public partial class WorkspaceViewModel : ObservableObject
     /// (so the score/readings update in place once a service is started, space freed, or a process ended).</summary>
     public ComputerDetailViewModel CreateDetailViewModel(Computer computer) =>
         new(computer, _activity, _remediation, CurrentPsCredential, () => CheckVitalsSelectedAsync([computer]));
+
+    // --- Software check (ad-hoc "is product X installed?" → the Software column) ---
+
+    /// <summary>Checks the given rows for an installed product whose name contains <paramref name="query"/>
+    /// (right-click ▸ Check software…); empty ⇒ all rows. When <paramref name="serviceName"/> is given,
+    /// also reports whether the matching service is running. Fills each row's Software column with the
+    /// match + version (+ service state). Read-only; no confirm.</summary>
+    public Task CheckSoftwareSelectedAsync(IReadOnlyList<Computer> rows, string query, string? serviceName = null) =>
+        RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => CheckSoftwareRowAsync(c, query, serviceName, ct));
+
+    // Per-row software check: a light, read-only registry (+ optional service) query, bounded by the
+    // scan throttle with a per-host timeout so a hung box can't stall the sweep.
+    private async Task CheckSoftwareRowAsync(Computer computer, string query, string? serviceName, CancellationToken token)
+    {
+        await _scanThrottle.WaitAsync(token);
+        try
+        {
+            computer.SoftwareFound = null;
+            computer.SoftwareServiceDown = null;
+            computer.SoftwareCheck = $"Checking {query}…";
+            // Capture the raw fields for the on-demand CSV report (cleared per run, set on completion).
+            computer.SoftwareQuery = query;
+            computer.SoftwareServiceName = string.IsNullOrWhiteSpace(serviceName) ? null : serviceName;
+            computer.SoftwareName = null;
+            computer.SoftwareVersion = null;
+            computer.SoftwareServiceState = null;
+
+            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+            perHost.CancelAfter(TimeSpan.FromSeconds(SoftwarePerHostTimeoutSeconds));
+            try
+            {
+                SoftwareCheckResult r = await _software.CheckAsync(computer.Name, query, serviceName, CurrentPsCredential(), perHost.Token);
+                computer.SoftwareName = r.Name;
+                computer.SoftwareVersion = r.Version;
+                computer.SoftwareServiceState = r.ServiceState;
+                computer.SoftwareCheckedAt = DateTime.Now;
+                if (r.Found)
+                {
+                    string label = string.IsNullOrWhiteSpace(r.Version) ? r.Name ?? query : $"{r.Name} {r.Version}";
+                    // Append the service verdict when one was checked; flag "installed but not running" amber.
+                    bool serviceDown = r.ServiceState is not null && !string.Equals(r.ServiceState, "Running", StringComparison.OrdinalIgnoreCase);
+                    string servicePart = r.ServiceState switch
+                    {
+                        null => string.Empty,
+                        "Running" => " · running",
+                        "not found" => " · no service",
+                        _ => $" · {r.ServiceState.ToLowerInvariant()}",
+                    };
+                    computer.SoftwareFound = true;
+                    computer.SoftwareServiceDown = serviceDown;
+                    computer.SoftwareCheck = label + servicePart;
+                    _activity.Info(computer.Name, $"Software check '{query}' — found: {label}{servicePart}");
+                }
+                else
+                {
+                    computer.SoftwareFound = false;
+                    computer.SoftwareServiceDown = false;
+                    computer.SoftwareCheck = $"{query} — not found";
+                    _activity.Info(computer.Name, $"Software check '{query}' — not found");
+                }
+            }
+            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                computer.SoftwareFound = null;
+                computer.SoftwareCheck = "check timed out";
+                computer.LastError = $"Software check timed out after {SoftwarePerHostTimeoutSeconds}s";
+                _activity.Warn(computer.Name, computer.LastError);
+            }
+            catch (OperationCanceledException)
+            {
+                computer.SoftwareCheck = "cancelled";
+                throw;
+            }
+            catch (Exception ex)
+            {
+                computer.SoftwareFound = null;
+                computer.SoftwareCheck = "check failed";
+                computer.LastError = ex.Message;
+                _activity.Warn(computer.Name, $"Software check '{query}' failed — {ex.Message}");
+            }
+        }
+        finally
+        {
+            _scanThrottle.Release();
+        }
+    }
 
     // --- Windows Update lane (scan / install) ---
 

@@ -62,6 +62,44 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial string? CommandResult { get; set; }
 
+    // --- Software check (ad-hoc "is product X installed?" → a grid column; see SoftwareProbe) ---
+
+    /// <summary>Result of the most recent software check (e.g. "CrowdStrike Windows Sensor 7.18" or
+    /// "CrowdStrike — not found"); null until a check runs. Shown in the grid's Software column.</summary>
+    [ObservableProperty]
+    public partial string? SoftwareCheck { get; set; }
+
+    /// <summary>Whether the last software check found the product: true = present, false = absent,
+    /// null = not checked / errored. Drives the Software cell colour (green found / red missing).</summary>
+    [ObservableProperty]
+    public partial bool? SoftwareFound { get; set; }
+
+    /// <summary>True when the product is installed but its checked service isn't running (or is missing)
+    /// — the "present but not protecting" case. Overrides the green to amber in the Software column.</summary>
+    [ObservableProperty]
+    public partial bool? SoftwareServiceDown { get; set; }
+
+    // Raw software-check fields behind the display string, kept off the observable surface (like Vitals)
+    // — they back the on-demand "Export software report (CSV)" so the report has real per-column values.
+
+    /// <summary>What the last software check searched for (e.g. "CrowdStrike"); null until a check runs.</summary>
+    public string? SoftwareQuery { get; set; }
+
+    /// <summary>Matched product display name from the last check (null if not found / not checked).</summary>
+    public string? SoftwareName { get; set; }
+
+    /// <summary>Matched product version from the last check (null if not found / unversioned).</summary>
+    public string? SoftwareVersion { get; set; }
+
+    /// <summary>Service the last check looked at, or null when no service was checked.</summary>
+    public string? SoftwareServiceName { get; set; }
+
+    /// <summary>Last check's service result: "Running" / "Stopped" / "not found", or null when none checked.</summary>
+    public string? SoftwareServiceState { get; set; }
+
+    /// <summary>When the last software check ran for this row (null = never).</summary>
+    public DateTime? SoftwareCheckedAt { get; set; }
+
     // Health signals (null = unknown/not checked). true = condition present.
     /// <summary>A reboot is pending.</summary>
     [ObservableProperty]

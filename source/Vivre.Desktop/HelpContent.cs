@@ -251,6 +251,21 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Machines, Icon = SymbolRegular.Search24, Title = "How do I check what software is installed (e.g. is CrowdStrike on it)?",
+            Keywords = "software installed check agent crowdstrike sentinelone version column present missing inventory product app",
+            Lines =
+            [
+                "1. Select the machines (or none = all), then right-click ▸ Check software….",
+                "2. Type a product name (or part of one) — e.g. CrowdStrike, SentinelOne, Chrome — or tap a quick-pick button, then Check (or press Enter).",
+                "3. Optional: tick \"Also check its service is running\" to confirm the agent is actually live. The service name pre-fills (it's remembered per product — CrowdStrike → CSFalconService) — change it if needed.",
+                "4. Vivre fills the Software column: green = installed (and running), amber = installed but its service isn't running, red = \"<name> — not found\".",
+                "Click the Software column header to sort — e.g. the machines missing it (or amber) to the top.",
+                "Need a report for your boss? After a check, right-click ▸ Export software report (CSV)… saves a per-machine CSV (machine, product, version, installed, service running). On-demand only — checking never writes a file by itself.",
+            ],
+            Tip = "It searches the registry's installed-programs list (fast, and won't trigger an MSI repair the way Win32_Product can), plus the service list when asked. Handy to confirm an agent actually landed AND is running after a deploy. Read-only — it never changes the machine.",
+        },
+        new HelpTopic
+        {
             Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I run an SCCM client action?",
             Keywords = "client action machine policy hardware inventory update scan trigger schedule",
             Lines =
