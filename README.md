@@ -24,6 +24,11 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
+- **Stage software** — copy a package (a single MSI/EXE, or a folder of files) to the selected
+  machines (default `C:\Windows\Temp\VivrePackages`), with a per-machine result. Uses the fast SMB
+  admin share (like SCCM/PsExec), falling back to WinRM (chunked + SHA-256 verified) where SMB is
+  blocked. Vivre delivers the files; you run the install your way (e.g. Run script…). No install
+  runs, so EDR agents that disrupt WinRM mid-install can't break it.
 - **Windows Update lane** — scan, install, uninstall, and schedule updates per machine with live
   progress (a built-in BatchPatch-style patcher). See `UPDATE_PLAN.md`.
 - **Filter & report** — filter the grid by name or state (Updates / Reboot pending / Errors /

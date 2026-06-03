@@ -30,7 +30,13 @@ Keep this file and UPDATE_PLAN current when a decision changes or a feature land
     `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
     store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md),
     `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score),
-    `Remediation` (`RemediationService` — start a service / free disk / end a process from the Vitals triage view).
+    `Remediation` (`RemediationService` — start a service / free disk / end a process from the Vitals triage view),
+    `Deploy` (`DeploymentService` — **stage** a package: copy a file/folder to a temp dir on the
+    target, no execution. The admin runs the install themselves. Transport prefers the **SMB admin
+    share** (`\\host\C$`, like SCCM/PsExec — fast, single copy) and falls back to **WinRM** (zip →
+    chunked transfer → SHA-256 verify → expand) when SMB is blocked. An earlier install-as-SYSTEM
+    version was dropped — watching an install over a session that EDR agents tear down mid-install
+    proved unreliable; delivering files and letting the admin's scripts install is robust).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output

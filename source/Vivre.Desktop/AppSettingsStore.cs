@@ -13,6 +13,10 @@ public sealed class AppSettings
     /// <summary>WhatsUp Gold server address, remembered for the maintenance-mode dialog (the
     /// credentials are NOT saved — only this address).</summary>
     public string WugServer { get; set; } = "10.70.25.111";
+
+    /// <summary>Folder holding the stageable software packages (each subfolder or lone .msi/.exe is
+    /// one package). Populates the Stage software window's package dropdown; empty by default.</summary>
+    public string PackagesFolder { get; set; } = string.Empty;
 }
 
 /// <summary>

@@ -236,6 +236,21 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Machines, Icon = SymbolRegular.Copy24, Title = "How do I stage software to machines (without installing)?",
+            Keywords = "stage deploy software copy push package msi exe agent files folder script setup application install prep",
+            Lines =
+            [
+                "1. Select the machines (or none = all), then right-click ▸ Stage software….",
+                "2. Pick a package: a single .msi/.exe, or a folder of files (an installer plus your own install script).",
+                "   • Pick from the package library dropdown, or Browse… to a file/folder anywhere. (Set package library folder… remembers a folder of packages for next time.)",
+                "3. Set where to drop it (default C:\\Windows\\Temp\\VivrePackages). A single file lands right there; a folder gets its own subfolder so its files stay together.",
+                "4. Click Stage. Vivre copies the files to each machine and reports the path per row (Command result): \"staged to C:\\Windows\\Temp\\VivrePackages\\…\".",
+                "5. Install it your way — e.g. right-click ▸ Run script… pointing at the staged path (C:\\Windows\\Temp\\VivrePackages\\<package>\\install.ps1), or your normal batch / Company Portal flow.",
+            ],
+            Tip = "Vivre only delivers the files — it doesn't run them — so security agents (SentinelOne/CrowdStrike) that disrupt WinRM during an install can't break the copy, and you keep full control of the install. It copies over the fast SMB admin share (\\\\machine\\C$), falling back to WinRM (chunked + SHA-256 verified) where SMB is blocked. Either way it needs admin rights on the target.",
+        },
+        new HelpTopic
+        {
             Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I run an SCCM client action?",
             Keywords = "client action machine policy hardware inventory update scan trigger schedule",
             Lines =
