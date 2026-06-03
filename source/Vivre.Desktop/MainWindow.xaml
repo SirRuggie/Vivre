@@ -294,9 +294,21 @@
                     Severity="Informational"
                     Title="Operation complete" />
 
-        <GridSplitter x:Name="ActivitySplitter" Grid.Row="5" Height="6" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                      Background="Transparent" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
-                      Visibility="Collapsed" />
+        <!-- Resize grip for the bottom dock. A 10px strip (easy to grab) with a visible centre handle
+             and the N–S resize cursor, so it's findable instead of a hunt for an invisible 6px line. -->
+        <GridSplitter x:Name="ActivitySplitter" Grid.Row="5" Height="10" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                      Background="Transparent" Cursor="SizeNS" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
+                      ToolTip="Drag to resize the panel" Visibility="Collapsed">
+            <GridSplitter.Template>
+                <ControlTemplate TargetType="GridSplitter">
+                    <Border Background="{TemplateBinding Background}">
+                        <Rectangle Width="40" Height="4" RadiusX="2" RadiusY="2"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Fill="{DynamicResource ControlElevationBorderBrush}" />
+                    </Border>
+                </ControlTemplate>
+            </GridSplitter.Template>
+        </GridSplitter>
 
         <!-- Unified bottom dock (shared across all tabs): an Activity tab + a per-machine Updates
              tab, with a Close button to dismiss the whole dock. Hidden by default; opened via the

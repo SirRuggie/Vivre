@@ -357,7 +357,7 @@ public static class HelpContent
                 "Both share one panel at the bottom of the window, with tabs:",
                 "• Updates — opens when you click a machine in Windows Update view; shows its Applicable / Installed updates, with a filter box and All / None.",
                 "• Activity — the shared log (also opened by View ▸ Activity log).",
-                "Click a machine to jump straight to its Updates tab. Drag the panel's top edge to resize it.",
+                "Click a machine to jump straight to its Updates tab. Drag the handle on the panel's top edge (the divider bar) to resize it.",
                 "Click Close (top-right of the panel) to dismiss it and hand the grid back the full height.",
             ],
         },
