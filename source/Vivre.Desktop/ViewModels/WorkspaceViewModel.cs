@@ -754,10 +754,41 @@ public partial class WorkspaceViewModel : ObservableObject
             }
         }
 
+        if (added.Count == 0)
+        {
+            return;
+        }
+
         // Check newly-added rows right away rather than waiting for the next monitor tick.
-        if (added.Count > 0 && IsMonitoring && _monitorCts is { } cts)
+        if (IsMonitoring && _monitorCts is { } cts)
         {
             _ = MonitorRowsAsync(added, cts.Token);
+        }
+
+        // "Live by default": run the FULL Check Vitals pass on the new rows — exactly what the Check
+        // Vitals button does (SCCM client health, the health dots, AND the 0-100 vitals score) — so the
+        // grid's data is just there on load. Unless turned off (Settings ▸ Auto-check on load). Scoped to
+        // the rows just loaded; the manual button stays for re-checks.
+        if (AutoCheckOnLoadEnabled())
+        {
+            _ = RunSweepAsync(added, CheckHealthAndVitalsRowAsync);
+            // Also fill any saved custom columns — their values are runtime-only, so the restored columns
+            // would sit blank after a launch/reload without this (no-op when there are no custom columns).
+            _ = RunCustomColumnsSelectedAsync(added);
+        }
+    }
+
+    // Reads the persisted "auto-check on load" flag (default on). Read at load time so a runtime toggle
+    // in Settings takes effect on the next list load without restarting.
+    private bool AutoCheckOnLoadEnabled()
+    {
+        try
+        {
+            return _appSettings.Load().AutoCheckOnLoad;
+        }
+        catch
+        {
+            return true;
         }
     }
 

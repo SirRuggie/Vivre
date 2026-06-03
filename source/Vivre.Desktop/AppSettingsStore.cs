@@ -38,6 +38,11 @@ public sealed class AppSettings
     /// <summary>Built-in machine-grid column headers the user has hidden (the Name column is never
     /// hideable). Empty by default.</summary>
     public List<string> HiddenColumns { get; set; } = [];
+
+    /// <summary>When true (default), loading a list (or adding machines) auto-pings + checks vitals on
+    /// those machines so the grid's data is "just there". Off = manual (a frozen snapshot until you
+    /// click Ping All / Check Vitals). Always scoped to the loaded list; never the wider fleet.</summary>
+    public bool AutoCheckOnLoad { get; set; } = true;
 }
 
 /// <summary>
