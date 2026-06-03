@@ -36,7 +36,9 @@ Keep this file and UPDATE_PLAN current when a decision changes or a feature land
     share** (`\\host\C$`, like SCCM/PsExec — fast, single copy) and falls back to **WinRM** (zip →
     chunked transfer → SHA-256 verify → expand) when SMB is blocked. An earlier install-as-SYSTEM
     version was dropped — watching an install over a session that EDR agents tear down mid-install
-    proved unreliable; delivering files and letting the admin's scripts install is robust).
+    proved unreliable; delivering files and letting the admin's scripts install is robust),
+    `Software` (`SoftwareProbe` — check whether a named product is installed per machine → the grid's
+    Software column; registry-based, read-only).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output

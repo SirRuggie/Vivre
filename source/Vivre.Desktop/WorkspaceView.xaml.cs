@@ -1,8 +1,10 @@
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using Microsoft.Win32;
 using Vivre.Core.Models;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
@@ -187,6 +189,16 @@ public partial class WorkspaceView : UserControl
         var stage = new MenuItem { Header = "Stage software…" };
         stage.Click += OnStageSoftware;
         _gridMenu.Items.Add(stage);
+
+        // Check whether a named product is installed across the selection (else all) → the Software column.
+        var checkSoftware = new MenuItem { Header = "Check software…" };
+        checkSoftware.Click += OnCheckSoftware;
+        _gridMenu.Items.Add(checkSoftware);
+
+        // Save the software-check results as a CSV report (on-demand; enabled once a check has run).
+        var exportSoftware = new MenuItem { Header = "Export software report (CSV)…", IsEnabled = vm.HasSoftwareResults };
+        exportSoftware.Click += OnExportSoftwareReport;
+        _gridMenu.Items.Add(exportSoftware);
 
         _gridMenu.Items.Add(new Separator());
 
@@ -389,6 +401,78 @@ public partial class WorkspaceView : UserControl
         }
 
         new DeployWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+    }
+
+    /// <summary>Opens the Check software window for the selection, else every machine in the tab. Asks for
+    /// a product name, then fills each row's Software column with the match (read-only — no confirm).</summary>
+    private void OnCheckSoftware(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        IReadOnlyList<Computer> targets = vm.SelectedComputers.Count > 0
+            ? [.. vm.SelectedComputers]
+            : [.. vm.Computers];
+
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        new SoftwareCheckWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+    }
+
+    /// <summary>Saves the current tab's software-check results to a CSV the user picks (right-click ▸
+    /// Export software report). On-demand only — checking software never writes a file. Exports the rows
+    /// currently shown (respects the filter), like the tab's "Export tab to CSV".</summary>
+    private void OnExportSoftwareReport(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        if (!vm.HasSoftwareResults)
+        {
+            vm.Activity.Warn(null, "Export software report: run Check software… first — nothing to export.");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export software report to CSV",
+            Filter = "CSV file (*.csv)|*.csv|All files (*.*)|*.*",
+            FileName = $"{SanitizeFileName(vm.Title)}-software-report.csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+        };
+
+        if (dialog.ShowDialog(OwnerWindow) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, vm.BuildSoftwareReportCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            vm.Activity.Info(null, $"Exported software report to {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            vm.Activity.Error(null, $"Software report export failed: {ex.Message}");
+        }
+    }
+
+    private static string SanitizeFileName(string name)
+    {
+        foreach (char invalid in Path.GetInvalidFileNameChars())
+        {
+            name = name.Replace(invalid, '_');
+        }
+
+        return string.IsNullOrWhiteSpace(name) ? "tab" : name;
     }
 
     /// <summary>The machine the menu acts on: the right-clicked row, else the focused/first-selected.</summary>

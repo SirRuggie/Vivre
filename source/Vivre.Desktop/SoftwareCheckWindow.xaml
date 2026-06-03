@@ -1,0 +1,63 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.SoftwareCheckWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
+        mc:Ignorable="d"
+        Title="Check software"
+        Height="460" Width="470"
+        MinHeight="420" MinWidth="410"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Check software" Icon="{ui:SymbolIcon Search24}" />
+
+        <StackPanel Grid.Row="1" Margin="24,8,24,0">
+            <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+            <ui:TextBlock Text="Product name" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ui:TextBox x:Name="QueryBox" PlaceholderText="e.g. CrowdStrike, SentinelOne, Chrome"
+                        TextChanged="OnQueryChanged" KeyDown="OnQueryKeyDown" />
+            <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                          Text="Matches any installed product whose name contains this text." />
+
+            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                <ui:Button Content="CrowdStrike" Margin="0,0,8,0" Click="OnQuickPick" Tag="CrowdStrike|CSFalconService" />
+                <ui:Button Content="SentinelOne" Margin="0,0,8,0" Click="OnQuickPick" Tag="SentinelOne|SentinelAgent" />
+            </StackPanel>
+            <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,4,0,0"
+                          Text="Quick-picks fill the form (product + its service) — review, then click Check." />
+
+            <!-- Optional: also confirm its Windows service is running. Pre-filled with the product name
+                 (your "same name?" shortcut); change it if the service is named differently. Remembered. -->
+            <CheckBox x:Name="ServiceCheck" Content="Also check its service is running"
+                      Margin="0,16,0,0" Checked="OnServiceToggled" Unchecked="OnServiceToggled" />
+            <StackPanel x:Name="ServicePanel" Margin="0,8,0,0" Visibility="Collapsed">
+                <ui:TextBlock Text="Service name" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBox x:Name="ServiceBox" PlaceholderText="e.g. CSFalconService" />
+                <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
+                              Text="Pre-filled with the product name. If the service is named differently (CrowdStrike → CSFalconService), change it — Vivre remembers it for next time. An installed product whose service isn't running shows amber." />
+            </StackPanel>
+
+            <ui:TextBlock x:Name="StatusText" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                          TextWrapping="Wrap" Margin="0,12,0,0" Visibility="Collapsed" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
+            <ui:Button x:Name="CheckButton" Appearance="Primary" Icon="{ui:SymbolIcon Search24}"
+                       Content="Check" Click="OnCheck" IsDefault="True" />
+            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnClose" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>
