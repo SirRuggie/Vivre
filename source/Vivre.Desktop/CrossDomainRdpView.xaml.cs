@@ -33,9 +33,11 @@ public partial class CrossDomainRdpView : UserControl
 
     private void OnTreeDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        if (Vm is { SelectedNode: RdpHostNodeViewModel host })
+        // Connect only when a host row was actually double-clicked — not blank space below the tree (which
+        // would otherwise connect to whatever host was last selected).
+        if (NodeAt(e.OriginalSource as DependencyObject) is RdpHostNodeViewModel host)
         {
-            Vm.ConnectTo(host);
+            Vm?.ConnectTo(host);
         }
     }
 
@@ -70,6 +72,13 @@ public partial class CrossDomainRdpView : UserControl
     {
         _dragStart = e.GetPosition(null);
         _dragNode = NodeAt(e.OriginalSource as DependencyObject);
+
+        // Clicking empty space (below the last item) clears the selection — WPF's TreeView keeps it otherwise,
+        // which left a stale host "selected" (and connectable via the Connect button / a blank double-click).
+        if (_dragNode is null && Vm?.SelectedNode is { } selected)
+        {
+            selected.IsSelected = false;
+        }
     }
 
     private void OnTreeMouseMove(object sender, MouseEventArgs e)
