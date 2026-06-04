@@ -26,6 +26,8 @@ public partial class RdpSessionView : UserControl
     private System.Windows.Forms.Panel? _hostPanel;
     private RdpSessionViewModel? _vm;
     private bool _connectStarted;
+    private bool _connected; // reached the remote desktop at least once (login completed)
+    private bool _closing;   // tearing the control down ourselves — ignore its own disconnect event
     private readonly System.Windows.Threading.DispatcherTimer _resizeTimer;
 
     public RdpSessionView()
@@ -247,11 +249,30 @@ public partial class RdpSessionView : UserControl
         }
     }
 
-    private void OnRdpLoginComplete(object? sender, EventArgs e) =>
+    private void OnRdpLoginComplete(object? sender, EventArgs e)
+    {
+        _connected = true;
         SetStatus(RdpConnectionState.Connected, "Connected.");
+    }
 
     private void OnRdpDisconnected(object? sender, IMsTscAxEvents_OnDisconnectedEvent e)
     {
+        if (_closing)
+        {
+            return; // we're tearing the control down ourselves
+        }
+
+        // A session that had reached the desktop and is now gone — logged off, signed out, idle-timed-out,
+        // kicked, or ended by the server — can't be resumed in place, so close the tab (like mstsc closing its
+        // window on logoff). Brief network blips don't reach here; the control's auto-reconnect handles those.
+        // Reconnect is only useful for a connect that never succeeded, so for those keep the tab + show why.
+        if (_connected)
+        {
+            // Defer the close so the control's own disconnect callback unwinds before we dispose it.
+            Dispatcher.BeginInvoke(() => _vm?.RequestClose());
+            return;
+        }
+
         string message = DescribeDisconnect(e.discReason);
 
         // The classic cross-domain stumbling block: a server on another domain rejects the credentials with
@@ -354,6 +375,7 @@ public partial class RdpSessionView : UserControl
     /// <summary>Disconnects and tears the control down (called via Unloaded — see the ctor).</summary>
     public void DisposeSession()
     {
+        _closing = true;
         _resizeTimer.Stop();
 
         if (_vm is not null)

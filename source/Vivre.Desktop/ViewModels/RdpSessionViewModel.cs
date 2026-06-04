@@ -59,6 +59,12 @@ public partial class RdpSessionViewModel : ObservableObject
 
     public void RequestReconnect() => ReconnectRequested?.Invoke();
 
+    /// <summary>Raised when the session has ended for good (e.g. the remote user logged off) so the tab should
+    /// close instead of lingering with a Reconnect prompt. The owning view-model removes the session.</summary>
+    public event Action? CloseRequested;
+
+    public void RequestClose() => CloseRequested?.Invoke();
+
     partial void OnStateChanged(RdpConnectionState value)
     {
         OnPropertyChanged(nameof(IsConnected));
