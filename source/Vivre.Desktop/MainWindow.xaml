@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:local="clr-namespace:Vivre.Desktop"
+        xmlns:vm="clr-namespace:Vivre.Desktop.ViewModels"
         xmlns:tb="http://www.hardcodet.net/taskbar"
         xmlns:updates="clr-namespace:Vivre.Core.Updates;assembly=Vivre.Core"
         mc:Ignorable="d"
@@ -94,20 +95,28 @@
                      the menu item handles the click). -->
                 <MenuItem Header="_Machines" InputGestureText="Ctrl+M" Click="OnSelectMachinesMode">
                     <MenuItem.Icon>
-                        <RadioButton IsChecked="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource InverseBool}}"
-                                     IsHitTestVisible="False" Focusable="False" />
+                        <RadioButton IsChecked="{Binding IsMachinesView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
                     </MenuItem.Icon>
                 </MenuItem>
                 <MenuItem Header="_Windows Update" InputGestureText="Ctrl+M" Click="OnSelectUpdateMode">
                     <MenuItem.Icon>
-                        <RadioButton IsChecked="{Binding SelectedTab.IsUpdateMode}" IsHitTestVisible="False" Focusable="False" />
+                        <RadioButton IsChecked="{Binding IsWindowsUpdateView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
+                    </MenuItem.Icon>
+                </MenuItem>
+                <!-- Its own tab (not a mode of a machine tab), but presented as a peer view: clicking jumps to it,
+                     the dot shows when it's active, and Machines / Windows Update jump back. -->
+                <MenuItem Header="Cross-_Domain RDP" Click="OnOpenCrossDomainRdp"
+                          Visibility="{Binding IsCrossDomainRdpAvailable, Converter={StaticResource BoolToVis}}"
+                          ToolTip="Open the Cross-Domain RDP manager (folder tree of hosts + tabbed RDP sessions).">
+                    <MenuItem.Icon>
+                        <RadioButton IsChecked="{Binding IsCrossDomainRdpView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
             <!-- Update config is only relevant while patching, so this whole menu shows only in Windows
                  Update mode — it stays off the Machines view (no toolbar real-estate cost). -->
             <MenuItem Header="_Updates"
-                      Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}">
+                      Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
                 <MenuItem Header="_Source">
                     <MenuItem Header="Windows _Update" Click="OnSourceWindowsUpdate">
                         <MenuItem.Icon>
@@ -160,8 +169,10 @@
             </MenuItem>
         </Menu>
 
-        <!-- Shared command bar — actions on the left, quick-add on the right. Acts on the active tab. -->
-        <Grid Grid.Row="2" Margin="12,4,12,10">
+        <!-- Shared command bar — actions on the left, quick-add on the right. Acts on the active tab.
+             Hidden on the Cross-Domain RDP tab (machine-only chrome). -->
+        <Grid Grid.Row="2" Margin="12,4,12,10"
+              Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -231,7 +242,7 @@
         <Border Grid.Row="3" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
                 Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
-                Visibility="{Binding SelectedTab.IsPatchOperationActive, Converter={StaticResource BoolToVis}}">
+                Visibility="{Binding SelectedTab.IsPatchOperationActive, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -246,7 +257,7 @@
 
         <!-- One tab per independent workspace. Header = title + close; double-click or right-click to rename.
              A browser-style "+" sits right after the last tab (TabControl template below). -->
-        <TabControl x:Name="WorkspaceTabs" Grid.Row="4"
+        <local:TabControlEx x:Name="WorkspaceTabs" Grid.Row="4"
                     Margin="8,4,8,8"
                     ItemsSource="{Binding Tabs}"
                     SelectedItem="{Binding SelectedTab, Mode=TwoWay}">
@@ -276,7 +287,9 @@
                                 Margin="0,4,0,0"
                                 BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                                 BorderThickness="0,1,0,0">
-                            <ContentPresenter ContentSource="SelectedContent" />
+                            <!-- TabControlEx fills this with one kept-alive presenter per tab (so the
+                                 Cross-Domain RDP tab's live RDP sessions survive switching tabs). -->
+                            <Grid x:Name="PART_ItemsHolder" />
                         </Border>
                     </Grid>
                 </ControlTemplate>
@@ -302,17 +315,23 @@
                                 Background="Transparent"
                                 BorderThickness="0"
                                 Click="OnCloseTab"
+                                Visibility="{Binding CanClose, Converter={StaticResource BoolToVis}}"
                                 AutomationProperties.Name="Close tab"
                                 ToolTip="Close tab (Ctrl+W)" />
                     </StackPanel>
                 </DataTemplate>
             </TabControl.ItemTemplate>
-            <TabControl.ContentTemplate>
-                <DataTemplate>
+            <TabControl.Resources>
+                <!-- Type-keyed implicit templates: a machine workspace renders WorkspaceView; the Cross-Domain
+                     RDP tab renders CrossDomainRdpView. The ContentPresenter picks by the tab's runtime type. -->
+                <DataTemplate DataType="{x:Type vm:WorkspaceViewModel}">
                     <local:WorkspaceView />
                 </DataTemplate>
-            </TabControl.ContentTemplate>
-        </TabControl>
+                <DataTemplate DataType="{x:Type vm:CrossDomainRdpViewModel}">
+                    <local:CrossDomainRdpView />
+                </DataTemplate>
+            </TabControl.Resources>
+        </local:TabControlEx>
 
         <!-- Transient "operation finished" banner — shown in-window when a Scan/Install/Uninstall
              completes while the window is focused (the tray balloon covers the unfocused case).
@@ -662,6 +681,7 @@
         <!-- Bottom status bar: live online/total + update tally for the active tab. (Copy actions
              live in the grid's right-click Copy ▸ menu.) -->
         <Border Grid.Row="7"
+                Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">

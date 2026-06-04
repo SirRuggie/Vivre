@@ -7,6 +7,11 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Cross-Domain RDP — embedded remote-desktop manager** — a tab (opened from View ▸ Cross-Domain RDP,
+  beside your machine tabs) with a foldered tree of hosts and live, tabbed RDP sessions, full-screen, and
+  saved per-host/per-folder credentials (Windows DPAPI, per user). Built on the Microsoft RDP ActiveX
+  control, so it reaches hosts on other domains — turn NLA off per host if a login is rejected.
+  Right-click or drag in the tree to organize; sessions stay connected when you switch tabs.
 - **Windows Update lane** — scan, install, and uninstall updates per machine with live progress,
   driven by a compiled SYSTEM agent. Update Source toggle (Windows Update / Microsoft Update /
   Managed-WSUS) + an exclude-by-name list. (See `UPDATE_PLAN.md`.)

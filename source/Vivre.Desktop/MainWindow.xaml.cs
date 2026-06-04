@@ -74,7 +74,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        foreach (WorkspaceViewModel tab in shell.Tabs)
+        foreach (WorkspaceViewModel tab in shell.Tabs.OfType<WorkspaceViewModel>())
         {
             tab.OperationCompleted += OnOperationCompleted;
         }
@@ -177,7 +177,7 @@ public partial class MainWindow : FluentWindow
 
         SubscribeToSelectedTab(null); // detach the observed tab's PropertyChanged
 
-        foreach (WorkspaceViewModel tab in Shell?.Tabs.ToArray() ?? [])
+        foreach (IDisposable tab in Shell?.Tabs.OfType<IDisposable>().ToArray() ?? [])
         {
             tab.Dispose();
         }
@@ -192,7 +192,7 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        foreach (var computer in shell.Tabs.SelectMany(tab => tab.Computers))
+        foreach (var computer in shell.Tabs.OfType<WorkspaceViewModel>().SelectMany(tab => tab.Computers))
         {
             computer.RefreshRelativeTime();
         }
@@ -231,7 +231,7 @@ public partial class MainWindow : FluentWindow
         }
 
         shell.PropertyChanged += OnShellPropertyChanged;
-        SubscribeToSelectedTab(shell.SelectedTab);
+        SubscribeToSelectedTab(shell.SelectedTab as WorkspaceViewModel);
         RecomputeBottomDock();
     }
 
@@ -239,7 +239,7 @@ public partial class MainWindow : FluentWindow
     {
         if (e.PropertyName == nameof(ShellViewModel.SelectedTab))
         {
-            SubscribeToSelectedTab(Shell?.SelectedTab);
+            SubscribeToSelectedTab(Shell?.SelectedTab as WorkspaceViewModel);
             RecomputeBottomDock();
         }
     }
@@ -282,7 +282,7 @@ public partial class MainWindow : FluentWindow
     /// <summary>True when the per-machine Updates panel should be shown: a machine is focused in
     /// Windows Update mode on the active tab.</summary>
     private bool UpdatesTriggerActive =>
-        Shell?.SelectedTab is { IsUpdateMode: true, FocusedComputer: not null };
+        Shell?.SelectedTab is WorkspaceViewModel { IsUpdateMode: true, FocusedComputer: not null };
 
     /// <summary>
     /// Single source of truth for the dock: shows/hides the Updates tab, opens or collapses the dock
@@ -311,7 +311,7 @@ public partial class MainWindow : FluentWindow
         }
 
         // Keep the filter box pointed at whatever machine is now focused.
-        ApplyUpdateFilter(Shell?.SelectedTab?.FocusedComputer);
+        ApplyUpdateFilter((Shell?.SelectedTab as WorkspaceViewModel)?.FocusedComputer);
     }
 
     private void ShowDock()
@@ -355,7 +355,7 @@ public partial class MainWindow : FluentWindow
     private void OnCloseBottomDock(object sender, RoutedEventArgs e)
     {
         ActivityLogMenuItem.IsChecked = false;
-        if (Shell?.SelectedTab is { } vm)
+        if (Shell?.SelectedTab is WorkspaceViewModel vm)
         {
             vm.FocusedComputer = null;
         }
@@ -385,7 +385,7 @@ public partial class MainWindow : FluentWindow
     private void OnUpdateFilterChanged(object sender, TextChangedEventArgs e)
     {
         _updateFilter = (sender as System.Windows.Controls.TextBox)?.Text?.Trim() ?? string.Empty;
-        ApplyUpdateFilter(Shell?.SelectedTab?.FocusedComputer);
+        ApplyUpdateFilter((Shell?.SelectedTab as WorkspaceViewModel)?.FocusedComputer);
     }
 
     /// <summary>
@@ -431,7 +431,7 @@ public partial class MainWindow : FluentWindow
     /// </summary>
     private async void OnUninstallChecked(object sender, RoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is not { FocusedComputer: { } c } vm)
+        if (Shell?.SelectedTab is not WorkspaceViewModel { FocusedComputer: { } c } vm)
         {
             return;
         }
@@ -567,21 +567,9 @@ public partial class MainWindow : FluentWindow
     // --- View mode + update source (radio menu items; the click sets the state, the bound RadioButton
     //     reflects it). ---
 
-    private void OnSelectMachinesMode(object sender, RoutedEventArgs e)
-    {
-        if (Shell?.SelectedTab is { } vm)
-        {
-            vm.IsUpdateMode = false;
-        }
-    }
+    private void OnSelectMachinesMode(object sender, RoutedEventArgs e) => Shell?.ShowMachineView(updateMode: false);
 
-    private void OnSelectUpdateMode(object sender, RoutedEventArgs e)
-    {
-        if (Shell?.SelectedTab is { } vm)
-        {
-            vm.IsUpdateMode = true;
-        }
-    }
+    private void OnSelectUpdateMode(object sender, RoutedEventArgs e) => Shell?.ShowMachineView(updateMode: true);
 
     private void OnSourceWindowsUpdate(object sender, RoutedEventArgs e) => SetSource(UpdateSource.WindowsUpdate);
 
@@ -591,7 +579,7 @@ public partial class MainWindow : FluentWindow
 
     private void SetSource(UpdateSource source)
     {
-        if (Shell?.SelectedTab is { } vm)
+        if (Shell?.SelectedTab is WorkspaceViewModel vm)
         {
             vm.SelectedSource = source;
         }
@@ -607,6 +595,8 @@ public partial class MainWindow : FluentWindow
 
     private void OnOpenAbout(object sender, RoutedEventArgs e) =>
         new AboutWindow { Owner = this }.ShowDialog();
+
+    private void OnOpenCrossDomainRdp(object sender, RoutedEventArgs e) => Shell?.OpenCrossDomainRdpCommand.Execute(null);
 
     private void OnOpenHelp(object sender, RoutedEventArgs e) => ShowHelp();
 
@@ -629,7 +619,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnOpenExcludeDialog(object sender, RoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is not { } vm)
+        if (Shell?.SelectedTab is not WorkspaceViewModel vm)
         {
             return;
         }
@@ -649,7 +639,7 @@ public partial class MainWindow : FluentWindow
 
     private async void OnInstallClick(object sender, RoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is not { } vm)
+        if (Shell?.SelectedTab is not WorkspaceViewModel vm)
         {
             return;
         }
@@ -738,18 +728,18 @@ public partial class MainWindow : FluentWindow
 
     private void OnRenameTabKey(object sender, ExecutedRoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is { } tab)
+        if (Shell?.SelectedTab is WorkspaceViewModel tab)
         {
             RenameTab(tab);
         }
     }
 
     private void OnToggleModeKey(object sender, ExecutedRoutedEventArgs e) =>
-        Shell?.SelectedTab?.ToggleUpdateModeCommand.Execute(null);
+        (Shell?.SelectedTab as WorkspaceViewModel)?.ToggleUpdateModeCommand.Execute(null);
 
     private void OnRefreshKey(object sender, ExecutedRoutedEventArgs e)
     {
-        var cmd = Shell?.SelectedTab?.PingAllCommand;
+        var cmd = (Shell?.SelectedTab as WorkspaceViewModel)?.PingAllCommand;
         if (cmd?.CanExecute(null) == true)
         {
             cmd.Execute(null);
@@ -759,7 +749,7 @@ public partial class MainWindow : FluentWindow
     private void OnInstallKey(object sender, ExecutedRoutedEventArgs e)
     {
         // Ctrl+Enter installs — only where the toolbar Install button is shown (Update / Applicable scope).
-        if (Shell?.SelectedTab is { CanShowInstallToolbar: true })
+        if (Shell?.SelectedTab is WorkspaceViewModel { CanShowInstallToolbar: true })
         {
             OnInstallClick(sender, e);
         }
@@ -771,18 +761,20 @@ public partial class MainWindow : FluentWindow
 
     private void OnCloseTab(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: WorkspaceViewModel workspace })
+        if (sender is FrameworkElement { DataContext: ITabViewModel tab })
         {
-            CloseTabWithGuard(workspace);
+            CloseTabWithGuard(tab);
         }
     }
 
     /// <summary>Closes a tab — but confirms first when it holds work (loaded machines or a live
     /// monitor/sweep) so a curated list or running op isn't lost on a stray click. Empty, idle tabs
     /// close instantly so the guard never habituates.</summary>
-    private async void CloseTabWithGuard(WorkspaceViewModel workspace)
+    private async void CloseTabWithGuard(ITabViewModel tab)
     {
-        if (workspace.HasWork)
+        // Only a machine workspace holds unsaved "work" worth confirming; the Cross-Domain RDP tab's state lives
+        // on disk, so it (and idle workspaces) close instantly.
+        if (tab is WorkspaceViewModel { HasWork: true } workspace)
         {
             int n = workspace.Computers.Count;
             string detail = n > 0 ? $"{n} machine(s)" : "a running operation";
@@ -799,12 +791,12 @@ public partial class MainWindow : FluentWindow
             }
         }
 
-        Shell?.CloseTabCommand.Execute(workspace);
+        Shell?.CloseTabCommand.Execute(tab);
     }
 
     private void OnCloseOtherTabs(object sender, RoutedEventArgs e)
     {
-        if (Shell is { } shell && sender is FrameworkElement { DataContext: WorkspaceViewModel keep })
+        if (Shell is { } shell && sender is FrameworkElement { DataContext: ITabViewModel keep })
         {
             CloseTabs([.. shell.Tabs.Where(t => t != keep)]);
         }
@@ -812,7 +804,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnCloseTabsToRight(object sender, RoutedEventArgs e)
     {
-        if (Shell is { } shell && sender is FrameworkElement { DataContext: WorkspaceViewModel anchor })
+        if (Shell is { } shell && sender is FrameworkElement { DataContext: ITabViewModel anchor })
         {
             int index = shell.Tabs.IndexOf(anchor);
             if (index >= 0)
@@ -824,14 +816,14 @@ public partial class MainWindow : FluentWindow
 
     /// <summary>Closes a set of tabs (browser-style "close others / to the right"). Confirms once
     /// up front if any of them still has work, rather than prompting per tab.</summary>
-    private async void CloseTabs(IReadOnlyList<WorkspaceViewModel> tabs)
+    private async void CloseTabs(IReadOnlyList<ITabViewModel> tabs)
     {
         if (Shell is not { } shell || tabs.Count == 0)
         {
             return;
         }
 
-        int withWork = tabs.Count(t => t.HasWork);
+        int withWork = tabs.OfType<WorkspaceViewModel>().Count(t => t.HasWork);
         if (withWork > 0)
         {
             var confirm = new MessageBox
@@ -849,7 +841,7 @@ public partial class MainWindow : FluentWindow
             }
         }
 
-        foreach (WorkspaceViewModel tab in tabs)
+        foreach (ITabViewModel tab in tabs)
         {
             shell.CloseTabCommand.Execute(tab);
         }
@@ -895,7 +887,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnPasteList(object sender, RoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is { } vm)
+        if (Shell?.SelectedTab is WorkspaceViewModel vm)
         {
             new LoadComputersWindow(vm) { Owner = this }.ShowDialog();
         }
@@ -903,7 +895,7 @@ public partial class MainWindow : FluentWindow
 
     private void AddFromQuickBox()
     {
-        if (Shell?.SelectedTab is not { } vm)
+        if (Shell?.SelectedTab is not WorkspaceViewModel vm)
         {
             return;
         }
@@ -942,7 +934,7 @@ public partial class MainWindow : FluentWindow
 
         FileMenu.Items.Add(new Separator());
 
-        WorkspaceViewModel? vm = Shell?.SelectedTab;
+        WorkspaceViewModel? vm = Shell?.SelectedTab as WorkspaceViewModel;
 
         var newClear = new MenuItem { Header = "_Clear this tab", IsEnabled = vm is not null };
         newClear.Click += (_, _) => vm?.SetComputers([]);

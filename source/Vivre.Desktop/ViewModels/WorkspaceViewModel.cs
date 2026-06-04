@@ -57,7 +57,7 @@ public enum RowFilter
 /// Ping/Check sweeps. Remote operations use the credential from <see cref="Credentials"/>
 /// (app-wide, shared across tabs). Created per tab by <see cref="ShellViewModel"/>.
 /// </summary>
-public partial class WorkspaceViewModel : ObservableObject, IDisposable
+public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisposable
 {
     private const int PingTimeoutMs = 2000;
     private const int MonitorIntervalSeconds = 20;
@@ -132,6 +132,9 @@ public partial class WorkspaceViewModel : ObservableObject, IDisposable
     /// <summary>Tab title (editable — double-click the tab header to rename).</summary>
     [ObservableProperty]
     public partial string Title { get; set; } = "New tab";
+
+    /// <summary>Machine workspaces are always closeable (<see cref="ITabViewModel"/>).</summary>
+    public bool CanClose => true;
 
     /// <summary>Rows shown in the computer grid.</summary>
     public ObservableCollection<Computer> Computers { get; } = [];

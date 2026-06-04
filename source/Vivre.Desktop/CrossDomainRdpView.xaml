@@ -1,0 +1,215 @@
+<UserControl x:Class="Vivre.Desktop.CrossDomainRdpView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:local="clr-namespace:Vivre.Desktop"
+             xmlns:vm="clr-namespace:Vivre.Desktop.ViewModels"
+             mc:Ignorable="d"
+             d:DesignHeight="500" d:DesignWidth="900">
+
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" MinWidth="200" />
+            <ColumnDefinition Width="Auto" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- LEFT: host tree + toolbar -->
+        <Grid Grid.Column="0" Margin="12,12,6,12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <ui:Button Grid.Row="0" Content="Connect" Icon="{ui:SymbolIcon PlugConnected24}"
+                       Appearance="Primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                       Command="{Binding ConnectCommand}" />
+
+            <!-- 2x2 grid so all four buttons always fit the column (no clipping at any window size). -->
+            <UniformGrid Grid.Row="1" Columns="2" Margin="0,8,0,0">
+                <ui:Button Icon="{ui:SymbolIcon FolderAdd24}" Content="Folder" Click="OnAddFolder"
+                           ToolTip="Add a folder (top level, or inside the selected folder)"
+                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,0,3,3" />
+                <ui:Button Icon="{ui:SymbolIcon Add24}" Content="Host" Click="OnAddHost"
+                           ToolTip="Add a host (top level, or inside the selected folder)"
+                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="3,0,0,3" />
+                <ui:Button Icon="{ui:SymbolIcon Edit24}" Content="Edit" Click="OnEdit" IsEnabled="{Binding CanEditSelected}"
+                           ToolTip="Edit the selected folder or host"
+                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="0,3,3,0" />
+                <ui:Button Icon="{ui:SymbolIcon Delete24}" Content="Remove" Click="OnRemove" IsEnabled="{Binding CanRemoveSelected}"
+                           ToolTip="Remove the selected folder or host"
+                           HorizontalAlignment="Stretch" HorizontalContentAlignment="Center" Margin="3,3,0,0" />
+            </UniformGrid>
+
+            <TextBlock Grid.Row="2" Text="HOSTS" FontSize="11" FontWeight="SemiBold" Margin="2,16,0,6"
+                       Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+
+            <Border Grid.Row="3" CornerRadius="8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <TreeView x:Name="HostTree" ItemsSource="{Binding Nodes}"
+                          Background="Transparent" BorderThickness="0" Padding="4"
+                          AllowDrop="True"
+                          SelectedItemChanged="OnTreeSelectedItemChanged"
+                          PreviewMouseRightButtonDown="OnTreeRightClick"
+                          PreviewMouseLeftButtonDown="OnTreeMouseDown"
+                          MouseMove="OnTreeMouseMove"
+                          DragOver="OnTreeDragOver"
+                          Drop="OnTreeDrop"
+                          MouseDoubleClick="OnTreeDoubleClick">
+                    <TreeView.ContextMenu>
+                        <ContextMenu>
+                            <MenuItem Header="Connect" Click="OnContextConnect" />
+                            <Separator />
+                            <MenuItem Header="New folder" Click="OnAddFolder" />
+                            <MenuItem Header="New host" Click="OnAddHost" />
+                            <Separator />
+                            <MenuItem Header="Edit…" Click="OnEdit" />
+                            <MenuItem Header="Remove" Click="OnRemove" />
+                        </ContextMenu>
+                    </TreeView.ContextMenu>
+                    <TreeView.ItemContainerStyle>
+                        <!-- BasedOn keeps WPF-UI's Fluent TreeViewItem look (without it the items fall back to
+                             the dated default Windows style); we just add the bindings + a little breathing room. -->
+                        <Style TargetType="TreeViewItem" BasedOn="{StaticResource {x:Type TreeViewItem}}">
+                            <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+                            <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
+                            <Setter Property="Padding" Value="4,3" />
+                            <Setter Property="Margin" Value="0,1" />
+                        </Style>
+                    </TreeView.ItemContainerStyle>
+                    <TreeView.Resources>
+                        <HierarchicalDataTemplate DataType="{x:Type vm:RdpFolderNodeViewModel}" ItemsSource="{Binding Children}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Folder24" FontSize="16" Margin="0,0,8,0"
+                                               Foreground="{DynamicResource SystemAccentColorSecondaryBrush}" />
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="Medium"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                        </HierarchicalDataTemplate>
+                        <DataTemplate DataType="{x:Type vm:RdpHostNodeViewModel}">
+                            <StackPanel Orientation="Horizontal">
+                                <ui:SymbolIcon Symbol="Desktop24" FontSize="16" Margin="0,0,8,0"
+                                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </TreeView.Resources>
+                </TreeView>
+            </Border>
+        </Grid>
+
+        <GridSplitter Grid.Column="1" Width="4" HorizontalAlignment="Center" VerticalAlignment="Stretch"
+                      Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
+
+        <!-- RIGHT: session tab strip + live session bodies -->
+        <DockPanel Grid.Column="2" Margin="0,8,8,8">
+            <DockPanel DockPanel.Dock="Top" Margin="0,0,0,6">
+                <ui:Button DockPanel.Dock="Right" Content="Full screen" Icon="{ui:SymbolIcon FullScreenMaximize24}"
+                           Command="{Binding FullScreenCommand}" Margin="4,0,0,0" />
+                <ui:Button DockPanel.Dock="Right" Content="Disconnect" Icon="{ui:SymbolIcon PlugDisconnected24}"
+                           Command="{Binding DisconnectCommand}" />
+                <ListBox ItemsSource="{Binding Sessions}" SelectedItem="{Binding SelectedSession, Mode=TwoWay}"
+                         BorderThickness="0" Background="Transparent" ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <!-- Rounded, Fluent tab look matching the app's main tabs (the default ListBoxItem is a hard
+                         square highlight). Selected = accent fill; the title + ✕ inherit the item's Foreground so
+                         they stay readable on it. -->
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Margin" Value="0,0,4,0" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Bd" CornerRadius="6" Background="Transparent" Padding="12,6">
+                                            <ContentPresenter VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal">
+                                <StackPanel.ContextMenu>
+                                    <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                        <MenuItem Header="Reconnect" Click="OnSessionReconnect" />
+                                        <MenuItem Header="Close" Click="OnSessionClose" />
+                                    </ContextMenu>
+                                </StackPanel.ContextMenu>
+                                <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                <Button Content="✕" Tag="{Binding}" Click="OnCloseSession"
+                                        Background="Transparent" BorderThickness="0" Padding="4,0" Margin="8,0,0,0"
+                                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                                        ToolTip="Disconnect and close this session" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
+
+            <Grid>
+                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" TextAlignment="Center"
+                           Text="Select a host on the left and click Connect (or double-click it).">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasSessions}" Value="False">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- All sessions realized + kept alive; only the active one is visible (an ItemsControl, NOT a
+                     TabControl, so switching sessions doesn't tear down / reconnect the others). -->
+                <ItemsControl ItemsSource="{Binding Sessions}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <Grid />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <!-- Stretch each session view to fill the pane (so the host container gets a real size). -->
+                    <ItemsControl.ItemContainerStyle>
+                        <Style TargetType="ContentPresenter">
+                            <Setter Property="HorizontalAlignment" Value="Stretch" />
+                            <Setter Property="VerticalAlignment" Value="Stretch" />
+                        </Style>
+                    </ItemsControl.ItemContainerStyle>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <local:RdpSessionView Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </DockPanel>
+    </Grid>
+</UserControl>
