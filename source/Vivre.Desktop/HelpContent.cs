@@ -272,7 +272,7 @@ public static class HelpContent
             Keywords = "columns custom hide show add column grid layout serial bitlocker script one-liner customize remove tailor probe",
             Lines =
             [
-                "Right-click the grid ▸ Columns… (machine mode).",
+                "Right-click the grid ▸ Columns… (machine mode) — works even before you've added any machines.",
                 "• Hide columns you don't use — untick them under \"Show columns\" (Name always stays). Saved across launches.",
                 "• Add a predefined column from the gallery (Serial, Model, Days since reboot, Free C: GB, BitLocker, …) — one click.",
                 "• Add your own — a column name + a PowerShell one-liner. It runs on every machine and whatever it prints fills the cell, e.g. (Get-CimInstance Win32_BIOS).SerialNumber.",

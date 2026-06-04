@@ -811,7 +811,15 @@ public partial class WorkspaceView : UserControl
         DataGridRow? row = FindParent<DataGridRow>(e.OriginalSource as DependencyObject);
         if (row is null)
         {
-            return; // right-clicked a header / empty area
+            // Header / empty area (e.g. an empty grid before any machines are loaded): no per-machine
+            // actions, but still offer column customization so columns can be set up ahead of time.
+            if (vm.IsMachineMode)
+            {
+                ShowColumnsOnlyMenu(grid);
+                e.Handled = true;
+            }
+
+            return;
         }
 
         // Anchor the per-field Copy items on the right-clicked row, independent of the (possibly
@@ -830,6 +838,20 @@ public partial class WorkspaceView : UserControl
         _gridMenu.PlacementTarget = row;
         _gridMenu.IsOpen = true;
         e.Handled = true;
+    }
+
+    // Minimal right-click menu for the empty grid / header — just column customization, so columns can be
+    // arranged before any machines exist. (The full per-machine menu needs a clicked row.)
+    private void ShowColumnsOnlyMenu(DataGrid grid)
+    {
+        _gridMenu.Items.Clear();
+        var columns = new MenuItem { Header = "Columns…" };
+        columns.Click += OnManageColumns;
+        _gridMenu.Items.Add(columns);
+
+        grid.ContextMenu = _gridMenu;
+        _gridMenu.PlacementTarget = grid;
+        _gridMenu.IsOpen = true;
     }
 
     private void OnRowDoubleClick(object sender, MouseButtonEventArgs e)
