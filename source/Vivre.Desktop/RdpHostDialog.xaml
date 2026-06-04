@@ -1,0 +1,92 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.RdpHostDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
+        mc:Ignorable="d"
+        Title="Host"
+        Width="480" SizeToContent="Height"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" x:Name="TitleBarControl" Title="Host" />
+
+        <StackPanel Grid.Row="1" Margin="24,12,24,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="92" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Name" />
+                <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="NameBox"
+                              PlaceholderText="Display name (optional — defaults to the server)" />
+
+                <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Server" />
+                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="ServerBox"
+                              PlaceholderText="hostname or IP" />
+
+                <ui:TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Port" />
+                <ui:TextBox   Grid.Row="2" Grid.Column="1" x:Name="PortBox" Width="90" HorizontalAlignment="Left" Text="3389" />
+            </Grid>
+
+            <ui:ToggleSwitch x:Name="NlaSwitch" Margin="0,12,0,0" IsChecked="True"
+                             Content="Network Level Authentication (NLA)" />
+            <ui:TextBlock Appearance="Secondary" Margin="0,2,0,0" TextWrapping="Wrap"
+                          Text="Turn NLA off if a cross-domain host rejects the saved credentials." />
+
+            <Separator Margin="0,14,0,10" />
+
+            <ui:TextBlock FontTypography="BodyStrong" Text="Credentials" />
+            <ui:TextBlock Appearance="Secondary" Margin="0,2,0,10" TextWrapping="Wrap"
+                          Text="Leave the username blank to inherit the folder's credentials. When editing, leave the password blank to keep the current one." />
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="92" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Domain" />
+                <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="DomainBox"
+                              PlaceholderText="optional (blank for a local account)" />
+
+                <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Username" />
+                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserBox" />
+
+                <ui:TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Password" />
+                <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox" Height="32" VerticalContentAlignment="Center" />
+            </Grid>
+
+            <ui:TextBlock x:Name="ErrorText" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                          Margin="0,10,0,0" TextWrapping="Wrap" Visibility="Collapsed" />
+        </StackPanel>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,16,24,16">
+            <ui:Button Appearance="Primary" Content="Save" Click="OnSave" IsDefault="True" />
+            <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

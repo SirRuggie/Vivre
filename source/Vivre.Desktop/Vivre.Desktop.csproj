@@ -5,8 +5,7 @@
     <!-- Build the net48 Windows Update agent first so it ships beside Vivre.exe (copied by the
          targets below). ReferenceOutputAssembly=false: it's a standalone net48 EXE dropped onto
          targets by WuaUpdateLane, not a managed reference of this net10 app. -->
-    <ProjectReference Include="..\Vivre.UpdateAgent\Vivre.UpdateAgent.csproj"
-                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\Vivre.UpdateAgent\Vivre.UpdateAgent.csproj" ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -16,6 +15,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- UseWindowsForms adds System.Windows.Forms + System.Drawing to the implicit global usings, which
+         collide with WPF's System.Windows.* types (Application, Control, UserControl, ContextMenu,
+         KeyEventArgs, …). Drop those globals so all the existing WPF code keeps resolving to WPF types; the
+         RDP session control (the only WinForms consumer) imports/qualifies System.Windows.Forms itself. -->
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- NU1701: AxMSTSCLib ships as a .NET Framework assembly, but it's a thin interop wrapper over the OS
+         RDP ActiveX control (mstscax.dll) and works fine on net10 — suppress the TFM-mismatch advisory. -->
+    <PackageReference Include="AxMSTSCLib" Version="1.0.1" NoWarn="NU1701" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
     <PackageReference Include="AvalonEdit" Version="6.3.1.120" />
     <PackageReference Include="Hardcodet.NotifyIcon.Wpf" Version="2.0.1" />
@@ -46,6 +57,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <!-- Hosts the Microsoft RDP ActiveX control (AxMsRdpClient9, via the AxMSTSCLib interop over the OS
+         mstscax.dll) inside a WindowsFormsHost for the Cross-Domain RDP embedded remote-desktop tab. -->
+    <UseWindowsForms>true</UseWindowsForms>
     <!-- Ship as Vivre.exe with Vivre identity in Explorer / Task Manager. RootNamespace stays
          Vivre.Desktop (matches the XAML x:Class), only the output assembly name is shortened. -->
     <AssemblyName>Vivre</AssemblyName>
@@ -55,7 +69,7 @@
     <!-- Version: bump VersionPrefix by hand for real releases (e.g. 1.6.0). Every build auto-stamps its
          build date/time into the informational version (shown in Help ▸ About), so any zip is
          identifiable without changing the human version number. -->
-    <VersionPrefix>1.6.3</VersionPrefix>
+    <VersionPrefix>1.6.4</VersionPrefix>
     <InformationalVersion>$(VersionPrefix)+build.$([System.DateTime]::Now.ToString('yyyyMMddHHmm'))</InformationalVersion>
     <!-- Icon shown on the .exe itself (Explorer / pinned taskbar). -->
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
@@ -73,20 +87,14 @@
     <ItemGroup>
       <_PSSdkModulesBuild Include="$(OutDir)runtimes\win\lib\net10.0\Modules\**\*.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(_PSSdkModulesBuild)"
-          DestinationFiles="@(_PSSdkModulesBuild->'$(OutDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Condition="'@(_PSSdkModulesBuild)' != ''" />
+    <Copy SourceFiles="@(_PSSdkModulesBuild)" DestinationFiles="@(_PSSdkModulesBuild->'$(OutDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'@(_PSSdkModulesBuild)' != ''" />
   </Target>
 
   <Target Name="CopyPowerShellSdkModulesAfterPublish" AfterTargets="Publish">
     <ItemGroup>
       <_PSSdkModulesPublish Include="$(PublishDir)runtimes\win\lib\net10.0\Modules\**\*.*" />
     </ItemGroup>
-    <Copy SourceFiles="@(_PSSdkModulesPublish)"
-          DestinationFiles="@(_PSSdkModulesPublish->'$(PublishDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')"
-          SkipUnchangedFiles="true"
-          Condition="'@(_PSSdkModulesPublish)' != ''" />
+    <Copy SourceFiles="@(_PSSdkModulesPublish)" DestinationFiles="@(_PSSdkModulesPublish->'$(PublishDir)Modules\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" Condition="'@(_PSSdkModulesPublish)' != ''" />
   </Target>
 
   <!--
@@ -100,17 +108,11 @@
   </PropertyGroup>
 
   <Target Name="CopyUpdateAgentAfterBuild" AfterTargets="Build">
-    <Copy SourceFiles="$(_UpdateAgentExe)"
-          DestinationFolder="$(OutDir)"
-          SkipUnchangedFiles="true"
-          Condition="Exists('$(_UpdateAgentExe)')" />
+    <Copy SourceFiles="$(_UpdateAgentExe)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" Condition="Exists('$(_UpdateAgentExe)')" />
   </Target>
 
   <Target Name="CopyUpdateAgentAfterPublish" AfterTargets="Publish">
-    <Copy SourceFiles="$(_UpdateAgentExe)"
-          DestinationFolder="$(PublishDir)"
-          SkipUnchangedFiles="true"
-          Condition="Exists('$(_UpdateAgentExe)')" />
+    <Copy SourceFiles="$(_UpdateAgentExe)" DestinationFolder="$(PublishDir)" SkipUnchangedFiles="true" Condition="Exists('$(_UpdateAgentExe)')" />
   </Target>
 
 </Project>

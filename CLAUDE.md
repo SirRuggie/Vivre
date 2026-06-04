@@ -40,11 +40,17 @@ Keep this file and UPDATE_PLAN current when a decision changes or a feature land
     `Software` (`SoftwareProbe` — check whether a named product is installed per machine → the grid's
     Software column; registry-based, read-only),
     `Columns` (`CustomColumnProbe` — run a user PowerShell one-liner per machine → a custom grid column;
-    the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData).
+    the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData),
+    `Rdp` (`RdpHostStore` — the Cross-Domain RDP folder/host tree; `RdpCredentialStore` — DPAPI-per-user saved RDP
+    logins + the credential-inheritance resolver. UI-free — the embedded RDP ActiveX control + its
+    WindowsFormsHost live in Vivre.Desktop only).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output
     assembly is `Vivre` but the namespaces stay `Vivre.Desktop`.
+    - **Cross-Domain RDP is machine-gated:** the View ▸ Cross-Domain RDP item only appears (and only
+      opens) when `Environment.MachineName` matches the `ShellViewModel.CrossDomainRdpMachine` const
+      (currently `"APVHOP"`). To re-target it to another PC, change that one const.
   - **`Vivre.UpdateAgent`** (net48) — tiny compiled EXE run as SYSTEM on the target to do WUA
     install/uninstall with real progress callbacks; bundled beside `Vivre.exe` (see UPDATE_PLAN.md).
   - **`Vivre.Core.Tests`** (net10.0, xUnit).

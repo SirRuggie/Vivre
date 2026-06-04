@@ -38,6 +38,7 @@ public static class HelpContent
     public const string Updates = "Windows Update view";
     public const string Tips = "Tips & shortcuts";
     public const string Trouble = "Troubleshooting";
+    public const string CrossDomainRdp = "Cross-Domain RDP";
 
     public static IReadOnlyList<HelpTopic> Topics { get; } =
     [
@@ -551,6 +552,47 @@ public static class HelpContent
                 "A genuinely slow update keeps sending heartbeats and is fine — leave it.",
                 "If the session goes fully silent (~90s, no heartbeat), Vivre flags \"No response\" — the box dropped or hung.",
                 "Hit Stop, then re-scan once it's reachable to see its true state.",
+            ],
+        },
+
+        // ---------------- Cross-Domain RDP ----------------
+        new HelpTopic
+        {
+            Category = CrossDomainRdp, Icon = SymbolRegular.Desktop24, Title = "What is Cross-Domain RDP?",
+            Keywords = "rdp remote desktop cross domain sessions tree hosts folders",
+            Lines =
+            [
+                "Cross-Domain RDP is an embedded remote-desktop manager built into Vivre.",
+                "• Open it from View ▸ Cross-Domain RDP; it's a tab beside your machine tabs.",
+                "• A folder tree of hosts on the left; live, tabbed RDP sessions on the right.",
+                "• Sessions stay connected when you switch to a machine tab and back.",
+            ],
+            Tip = "It's for hosts on other domains — Vivre hands the saved credentials straight to the session.",
+        },
+        new HelpTopic
+        {
+            Category = CrossDomainRdp, Icon = SymbolRegular.Folder24, Title = "How do I add a folder or host (and save its login)?",
+            Keywords = "add folder host credentials password domain username save dpapi inherit move drag",
+            Lines =
+            [
+                "1. Select where it should go (a folder to nest inside, or nothing for the top level).",
+                "2. Click \"Folder\" or \"Host\" and fill in the details.",
+                "3. For a host, enter the Server, then a Domain / Username / Password to log in with.",
+                "4. Leave a host's Username blank to inherit the folder's credentials instead.",
+                "Right-click an item for Edit / Remove / Connect; drag a host or folder to move it.",
+            ],
+            Tip = "Passwords are encrypted with Windows DPAPI (your Windows account, this PC) in %APPDATA%\\Vivre\\rdpcreds.json — they don't roam to other users or machines.",
+        },
+        new HelpTopic
+        {
+            Category = CrossDomainRdp, Icon = SymbolRegular.Desktop24, Title = "How do I connect, go full-screen, and disconnect?",
+            Keywords = "connect double click full screen disconnect session tab",
+            Lines =
+            [
+                "Connect: select a host and click Connect, or just double-click it — it opens a session tab on the right.",
+                "Switch sessions with the tabs above the remote view; switch to a machine tab and back without dropping them.",
+                "Full screen: click Full screen (Ctrl+Alt+Break toggles back out).",
+                "Disconnect: click the ✕ on a session tab, or select it and click Disconnect.",
             ],
         },
     ];

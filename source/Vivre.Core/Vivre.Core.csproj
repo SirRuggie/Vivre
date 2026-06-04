@@ -20,6 +20,10 @@
     <!-- CIM/WMI. Used for EnableWinRM over DCOM (DComSessionOptions) — a channel
          that does NOT require WinRM, which is the whole point of that action. -->
     <PackageReference Include="Microsoft.Management.Infrastructure" Version="3.0.0" />
+    <!-- DPAPI (ProtectedData) for the Cross-Domain RDP saved passwords — not in the BCL on modern .NET.
+         Windows-only; this is a Windows-only tool. Encrypts per Windows user (CurrentUser scope).
+         Pinned to 10.0.5 to match the version PowerShell.SDK already pulls in transitively (avoids NU1605). -->
+    <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.5" />
   </ItemGroup>
 
 </Project>
