@@ -134,6 +134,7 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         }
 
         var session = new RdpSessionViewModel(hostNode.Name, settings);
+        session.CloseRequested += () => CloseSession(session); // e.g. the remote user logs off → close the tab
         Sessions.Add(session);
         OnPropertyChanged(nameof(HasSessions));
         SelectedSession = session;
@@ -154,6 +155,11 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
     public void CloseSession(RdpSessionViewModel session)
     {
         int index = Sessions.IndexOf(session);
+        if (index < 0)
+        {
+            return; // already removed (e.g. a logoff-close raced with a manual close)
+        }
+
         bool wasSelected = ReferenceEquals(SelectedSession, session);
 
         Sessions.Remove(session); // removing unloads the view → RdpSessionView disconnects + disposes the control
