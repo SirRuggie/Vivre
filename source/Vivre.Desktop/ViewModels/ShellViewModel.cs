@@ -55,7 +55,6 @@ public partial class ShellViewModel : ObservableObject
         }
 
         int index = Tabs.IndexOf(workspace);
-        workspace.IsMonitoring = false; // stop the closed tab's background monitor loop
         Tabs.Remove(workspace);
 
         if (Tabs.Count == 0)
@@ -66,5 +65,9 @@ public partial class ShellViewModel : ObservableObject
         {
             SelectedTab = Tabs[Math.Clamp(index, 0, Tabs.Count - 1)];
         }
+
+        // Now that selection has moved off it, tear the closed tab down: stop its monitor loop + any
+        // in-flight sweeps and release its cancellation source (rather than leaving it all to the GC).
+        workspace.Dispose();
     }
 }

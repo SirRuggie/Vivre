@@ -1,3 +1,4 @@
+using System.Collections.Specialized;
 using System.Windows;
 using System.Windows.Controls;
 using Vivre.Core.Columns;
@@ -56,12 +57,15 @@ public partial class ColumnsWindow : FluentWindow
         }
 
         CustomList.ItemsSource = _vm.CustomColumns;   // live — updates as columns are added/removed
-        _vm.CustomColumns.CollectionChanged += (_, _) => UpdateNoCustomHint();
+        _vm.CustomColumns.CollectionChanged += OnCustomColumnsChanged;
+        Closed += (_, _) => _vm.CustomColumns.CollectionChanged -= OnCustomColumnsChanged;
         UpdateNoCustomHint();
 
         GalleryBox.ItemsSource = Gallery;
         GalleryBox.SelectedIndex = 0;
     }
+
+    private void OnCustomColumnsChanged(object? sender, NotifyCollectionChangedEventArgs e) => UpdateNoCustomHint();
 
     private void UpdateNoCustomHint() =>
         NoCustomHint.Visibility = _vm.CustomColumns.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

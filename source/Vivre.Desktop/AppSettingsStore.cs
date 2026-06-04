@@ -54,6 +54,13 @@ public sealed class AppSettingsStore
 {
     private readonly string _path;
 
+    // Process-wide in-memory snapshot of settings.json. Every AppSettingsStore instance points at the same
+    // file (per-tab view-models + the main window), and every read/write runs on the UI thread, so a single
+    // static cache is safe without locking. Load() touches disk only to populate the cache the first time;
+    // Save() rewrites the file AND re-seats the cache, so a runtime change (e.g. the Auto-check-on-load
+    // toggle) is visible to the next Load() without another disk read.
+    private static AppSettings? _cache;
+
     public AppSettingsStore()
     {
         string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vivre");
@@ -61,11 +68,16 @@ public sealed class AppSettingsStore
         _path = Path.Combine(dir, "settings.json");
     }
 
-    public AppSettings Load() =>
+    public AppSettings Load() => _cache ??= ReadFromDisk();
+
+    private AppSettings ReadFromDisk() =>
         File.Exists(_path)
             ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
             : new AppSettings();
 
-    public void Save(AppSettings settings) =>
+    public void Save(AppSettings settings)
+    {
         File.WriteAllText(_path, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        _cache = settings;
+    }
 }

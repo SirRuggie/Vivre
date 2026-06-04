@@ -57,6 +57,10 @@ public partial class MainWindow : FluentWindow
             UpdateThemeChecks(SavedTheme);
             try { AutoCheckItem.IsChecked = Settings?.Load().AutoCheckOnLoad ?? true; } catch { AutoCheckItem.IsChecked = true; }
         };
+
+        // App-lifetime teardown (single main window): stop timers, drop cross-tab subscriptions, and dispose
+        // the tray icon + any open tabs. Cosmetic at process exit, but leaves nothing dangling.
+        Closed += OnWindowClosed;
     }
 
     private ShellViewModel? Shell => DataContext as ShellViewModel;
@@ -137,13 +141,48 @@ public partial class MainWindow : FluentWindow
 
     // --- keep relative times ("Last reboot") current between health checks ---
 
+    private DispatcherTimer? _relativeTimeTimer;
+
     private void StartRelativeTimeRefresh()
     {
-        // LastRebootDisplay is relative to DateTime.Now, so it drifts; tick every minute to
-        // re-evaluate it on every row. One app-level timer (rooted by the dispatcher while running).
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
-        timer.Tick += OnRefreshRelativeTimes;
-        timer.Start();
+        // LastRebootDisplay is relative to DateTime.Now, so it drifts; tick every minute to re-evaluate it on
+        // every row. One app-level timer (rooted by the dispatcher while running; stopped in OnWindowClosed).
+        _relativeTimeTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(60) };
+        _relativeTimeTimer.Tick += OnRefreshRelativeTimes;
+        _relativeTimeTimer.Start();
+    }
+
+    /// <summary>App-lifetime teardown (wired in the ctor). Stops the timers, drops the shell/observed-tab
+    /// subscriptions, disposes any tabs still open, and disposes the tray icon.</summary>
+    private void OnWindowClosed(object? sender, EventArgs e)
+    {
+        if (_relativeTimeTimer is { } rt)
+        {
+            rt.Stop();
+            rt.Tick -= OnRefreshRelativeTimes;
+            _relativeTimeTimer = null;
+        }
+
+        if (_completionBarTimer is { } cb)
+        {
+            cb.Stop();
+            cb.Tick -= OnCompletionBarTick;
+            _completionBarTimer = null;
+        }
+
+        if (Shell is { } shell)
+        {
+            shell.PropertyChanged -= OnShellPropertyChanged;
+        }
+
+        SubscribeToSelectedTab(null); // detach the observed tab's PropertyChanged
+
+        foreach (WorkspaceViewModel tab in Shell?.Tabs.ToArray() ?? [])
+        {
+            tab.Dispose();
+        }
+
+        TrayIcon?.Dispose();
     }
 
     private void OnRefreshRelativeTimes(object? sender, EventArgs e)

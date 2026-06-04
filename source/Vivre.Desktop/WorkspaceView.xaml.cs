@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Text;
@@ -37,12 +38,15 @@ public partial class WorkspaceView : UserControl
     {
         InitializeComponent();
         Loaded += OnViewLoaded;
+        Unloaded += OnViewUnloaded;
     }
 
     // The runtime-built custom columns by name (DataGridColumn has no Tag, so we track them here to tell
     // them apart from the XAML built-ins).
     private readonly Dictionary<string, DataGridColumn> _customGridColumns = new(StringComparer.OrdinalIgnoreCase);
     private bool _columnsWired;
+    // The view-model we wired layout subscriptions to (held so OnViewUnloaded detaches from the SAME one).
+    private WorkspaceViewModel? _wiredVm;
     private string? _customSortKey;
     private bool _customSortAscending = true;
 
@@ -56,11 +60,35 @@ public partial class WorkspaceView : UserControl
         }
 
         _columnsWired = true;
-        vm.CustomColumns.CollectionChanged += (_, _) => SyncColumns();
-        vm.HiddenColumns.CollectionChanged += (_, _) => SyncColumns();
+        _wiredVm = vm;
+        vm.CustomColumns.CollectionChanged += OnLayoutChanged;
+        vm.HiddenColumns.CollectionChanged += OnLayoutChanged;
         ComputerGrid.Sorting += OnComputerGridSorting;
         SyncColumns();
     }
+
+    /// <summary>The TabControl recreates this view when you switch tabs, so drop the layout subscriptions
+    /// when it leaves the visual tree — otherwise the (longer-lived) view-model's collections keep the
+    /// detached view alive. OnViewLoaded re-wires it if the view comes back.</summary>
+    private void OnViewUnloaded(object sender, RoutedEventArgs e)
+    {
+        if (!_columnsWired)
+        {
+            return;
+        }
+
+        _columnsWired = false;
+        if (_wiredVm is { } vm)
+        {
+            vm.CustomColumns.CollectionChanged -= OnLayoutChanged;
+            vm.HiddenColumns.CollectionChanged -= OnLayoutChanged;
+        }
+
+        _wiredVm = null;
+        ComputerGrid.Sorting -= OnComputerGridSorting;
+    }
+
+    private void OnLayoutChanged(object? sender, NotifyCollectionChangedEventArgs e) => SyncColumns();
 
     /// <summary>Brings the machine grid in line with the view-model's saved layout: hides/shows the
     /// built-in columns and creates/removes a text column per custom-column spec (bound to the row's

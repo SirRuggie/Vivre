@@ -57,7 +57,7 @@ public enum RowFilter
 /// Ping/Check sweeps. Remote operations use the credential from <see cref="Credentials"/>
 /// (app-wide, shared across tabs). Created per tab by <see cref="ShellViewModel"/>.
 /// </summary>
-public partial class WorkspaceViewModel : ObservableObject
+public partial class WorkspaceViewModel : ObservableObject, IDisposable
 {
     private const int PingTimeoutMs = 2000;
     private const int MonitorIntervalSeconds = 20;
@@ -711,6 +711,7 @@ public partial class WorkspaceViewModel : ObservableObject
     partial void OnIsMonitoringChanged(bool value)
     {
         _monitorCts?.Cancel();
+        _monitorCts?.Dispose();
         _monitorCts = null;
 
         if (value)
@@ -1432,6 +1433,26 @@ public partial class WorkspaceViewModel : ObservableObject
         {
             IsBusy = false;
         }
+    }
+
+    private bool _disposed;
+
+    /// <summary>Releases the tab's background work when it's closed (and on app shutdown): cancels every
+    /// in-flight operation and the continuous monitor loop, and disposes the monitor cancellation source.
+    /// The scan/install/vitals SemaphoreSlim throttles are intentionally NOT disposed — a sweep just
+    /// cancelled here may still call Release() as it unwinds, and they hold no unmanaged handle (we only use
+    /// WaitAsync/Release, never AvailableWaitHandle), so the GC reclaims them safely once the work finishes.</summary>
+    public void Dispose()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        _disposed = true;
+        Stop();                 // cancels every active operation and flips IsMonitoring off (disposing _monitorCts)
+        _monitorCts?.Dispose(); // belt-and-suspenders: covers the case where monitoring was already off
+        _monitorCts = null;
     }
 
     /// <summary>Drops the offline rows from the grid.</summary>
