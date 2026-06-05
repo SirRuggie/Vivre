@@ -2588,6 +2588,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.LastStatus = "Reboot forced — going down";
                     computer.RebootMessage = $"Forced reboot sent {DateTime.Now:HH:mm}";
                     _activity.Info(computer.Name, "Forced reboot (shutdown /r /f /t 5)");
+                    // Once the machine comes back online the monitor will re-probe reboot-pending status
+                    // (up to PostBootRebootRechecks times) so the Reboot Pending column clears automatically.
+                    _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
                 }
             }
             catch (OperationCanceledException)
