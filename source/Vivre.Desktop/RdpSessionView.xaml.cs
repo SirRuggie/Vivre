@@ -50,6 +50,11 @@ public partial class RdpSessionView : UserControl
         }
 
         _vm = vm;
+        // Fresh control — clear any teardown/connection flags in case this view is ever re-loaded after a
+        // previous DisposeSession, so close-on-logoff isn't silently disabled by a stale _closing.
+        _closing = false;
+        _connected = false;
+        _connectStarted = false;
 
         // Ax control fills an intermediate WinForms Panel; the Panel (which accepts any size) is the host's
         // Child — NOT the Ax control (whose fixed default size makes the host collapse).
@@ -63,8 +68,8 @@ public partial class RdpSessionView : UserControl
 
         ApplyHostSize(); // give the host an explicit size now (Stretch is ignored on WindowsFormsHost)
 
-        _rdp.OnConnecting += (_, _) => SetStatus(RdpConnectionState.Connecting, "Connecting…");
-        _rdp.OnConnected += (_, _) => SetStatus(RdpConnectionState.Connecting, "Authenticating…");
+        _rdp.OnConnecting += OnRdpConnecting;
+        _rdp.OnConnected += OnRdpConnected;
         _rdp.OnLoginComplete += OnRdpLoginComplete;
         _rdp.OnDisconnected += OnRdpDisconnected;
         _rdp.OnFatalError += OnRdpFatalError;
@@ -249,6 +254,12 @@ public partial class RdpSessionView : UserControl
         }
     }
 
+    private void OnRdpConnecting(object? sender, EventArgs e) =>
+        SetStatus(RdpConnectionState.Connecting, "Connecting…");
+
+    private void OnRdpConnected(object? sender, EventArgs e) =>
+        SetStatus(RdpConnectionState.Connecting, "Authenticating…");
+
     private void OnRdpLoginComplete(object? sender, EventArgs e)
     {
         _connected = true;
@@ -353,7 +364,7 @@ public partial class RdpSessionView : UserControl
     {
         if (_vm is not null)
         {
-            Dispatcher.Invoke(() => _vm.FullScreen = value);
+            Dispatcher.BeginInvoke(() => _vm.FullScreen = value);
         }
     }
 
@@ -364,8 +375,9 @@ public partial class RdpSessionView : UserControl
             return;
         }
 
-        // RDP control events can arrive off the UI thread — marshal before touching the bound VM.
-        Dispatcher.Invoke(() =>
+        // RDP control events can arrive off the UI thread — marshal before touching the bound VM. BeginInvoke
+        // (not Invoke) so an event raised while the UI thread is busy in a COM call can't deadlock.
+        Dispatcher.BeginInvoke(() =>
         {
             _vm.State = state;
             _vm.StatusText = text;
@@ -377,6 +389,7 @@ public partial class RdpSessionView : UserControl
     {
         _closing = true;
         _resizeTimer.Stop();
+        _resizeTimer.Tick -= OnResizeSettled;
 
         if (_vm is not null)
         {
@@ -388,6 +401,18 @@ public partial class RdpSessionView : UserControl
         {
             return;
         }
+
+        // Detach every control event BEFORE disconnecting, so the COM Disconnect() can't re-enter our handlers
+        // mid-teardown (the _closing guard backs this up).
+        _rdp.OnConnecting -= OnRdpConnecting;
+        _rdp.OnConnected -= OnRdpConnected;
+        _rdp.OnLoginComplete -= OnRdpLoginComplete;
+        _rdp.OnDisconnected -= OnRdpDisconnected;
+        _rdp.OnFatalError -= OnRdpFatalError;
+        _rdp.OnAutoReconnecting -= OnRdpAutoReconnecting;
+        _rdp.OnAutoReconnected -= OnRdpAutoReconnected;
+        _rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
+        _rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
 
         try
         {
@@ -401,13 +426,6 @@ public partial class RdpSessionView : UserControl
             // Best-effort teardown: the control may already be disconnecting.
         }
 
-        _rdp.OnDisconnected -= OnRdpDisconnected;
-        _rdp.OnFatalError -= OnRdpFatalError;
-        _rdp.OnAutoReconnecting -= OnRdpAutoReconnecting;
-        _rdp.OnAutoReconnected -= OnRdpAutoReconnected;
-        _rdp.OnLoginComplete -= OnRdpLoginComplete;
-        _rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
-        _rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
         RdpHostElement.Child = null;
         _rdp.Dispose();
         _rdp = null;
