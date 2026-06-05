@@ -294,6 +294,41 @@
                     </Grid>
                 </ControlTemplate>
             </TabControl.Template>
+            <!-- TabItem appearance: inactive tabs get a visible card background so they're readable in dark mode;
+                 the selected tab uses the accent colour with white text. -->
+            <TabControl.ItemContainerStyle>
+                <Style TargetType="TabItem">
+                    <Setter Property="Padding" Value="14,6" />
+                    <Setter Property="Margin" Value="0,0,3,0" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="TabItem">
+                                <Border x:Name="Bd" CornerRadius="6,6,0,0" Padding="{TemplateBinding Padding}"
+                                        Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1,1,1,0">
+                                    <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Bd" Property="Background"
+                                                Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Bd" Property="Background"
+                                                Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                        <Setter TargetName="Bd" Property="BorderBrush"
+                                                Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                        <Setter Property="Foreground"
+                                                Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </TabControl.ItemContainerStyle>
+
             <TabControl.ItemTemplate>
                 <DataTemplate>
                     <StackPanel Orientation="Horizontal"
@@ -314,6 +349,7 @@
                                 Padding="4,0"
                                 Background="Transparent"
                                 BorderThickness="0"
+                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"
                                 Click="OnCloseTab"
                                 Visibility="{Binding CanClose, Converter={StaticResource BoolToVis}}"
                                 AutomationProperties.Name="Close tab"
