@@ -154,8 +154,8 @@ public static class HelpContent
             Keywords = "export csv report excel ticket maintenance window save what got patched",
             Lines =
             [
-                "File ▸ Export to CSV… saves the rows currently shown (it respects the filter) to a CSV.",
-                "Columns: machine, online, status, updates available, update/reboot messages, last error, OS, and any scheduled task.",
+                "File ▸ Export to CSV… — or right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
+                "Columns: machine, online, status, updates available, update/reboot messages, last error, OS, scheduled task, plus any custom columns you've added.",
                 "Opens cleanly in Excel.",
             ],
             Tip = "Filter first to scope the report — e.g. filter to Done and export to record exactly what got patched this window.",
@@ -230,7 +230,7 @@ public static class HelpContent
             Lines =
             [
                 "1. Select the machines.",
-                "2. Right-click ▸ Run script… (opens the Run Script window).",
+                "2. Right-click ▸ Run script ▸ Selected machines… (or All machines…) — opens the Run Script window.",
                 "3. Pick a saved script (grouped by category) or paste your own, review it, then click Run.",
                 "Output lands per-machine in the Command result column and in the window's log.",
             ],
@@ -242,12 +242,12 @@ public static class HelpContent
             Keywords = "stage deploy software copy push package msi exe agent files folder script setup application install prep",
             Lines =
             [
-                "1. Select the machines (or none = all), then right-click ▸ Stage software….",
+                "1. Select the machines (or none = all), then right-click ▸ Software ▸ Stage software….",
                 "2. Pick a package: a single .msi/.exe, or a folder of files (an installer plus your own install script).",
                 "   • Pick from the package library dropdown, or Browse… to a file/folder anywhere. (Set package library folder… remembers a folder of packages for next time.)",
                 "3. Set where to drop it (default C:\\Windows\\Temp\\VivrePackages). A single file lands right there; a folder gets its own subfolder so its files stay together.",
                 "4. Click Stage. Vivre copies the files to each machine and reports the path per row (Command result): \"staged to C:\\Windows\\Temp\\VivrePackages\\…\".",
-                "5. Install it your way — e.g. right-click ▸ Run script… pointing at the staged path (C:\\Windows\\Temp\\VivrePackages\\<package>\\install.ps1), or your normal batch / Company Portal flow.",
+                "5. Install it your way — e.g. right-click ▸ Run script ▸ pointing at the staged path (C:\\Windows\\Temp\\VivrePackages\\<package>\\install.ps1), or your normal batch / Company Portal flow.",
             ],
             Tip = "Vivre only delivers the files — it doesn't run them — so security agents (SentinelOne/CrowdStrike) that disrupt WinRM during an install can't break the copy, and you keep full control of the install. It copies over the fast SMB admin share (\\\\machine\\C$), falling back to WinRM (chunked + SHA-256 verified) where SMB is blocked. Either way it needs admin rights on the target.",
         },
@@ -257,12 +257,12 @@ public static class HelpContent
             Keywords = "software installed check agent crowdstrike sentinelone version column present missing inventory product app",
             Lines =
             [
-                "1. Select the machines (or none = all), then right-click ▸ Check software….",
+                "1. Select the machines (or none = all), then right-click ▸ Software ▸ Check software….",
                 "2. Type a product name (or part of one) — e.g. CrowdStrike, SentinelOne, Chrome — or tap a quick-pick button, then Check (or press Enter).",
                 "3. Optional: tick \"Also check its service is running\" to confirm the agent is actually live. The service name pre-fills (it's remembered per product — CrowdStrike → CSFalconService) — change it if needed.",
                 "4. Vivre fills the Software column: green = installed (and running), amber = installed but its service isn't running, red = \"<name> — not found\".",
                 "Click the Software column header to sort — e.g. the machines missing it (or amber) to the top.",
-                "Need a report for your boss? After a check, right-click ▸ Export software report (CSV)… saves a per-machine CSV (machine, product, version, installed, service running). On-demand only — checking never writes a file by itself.",
+                "Need a report for your boss? After a check, right-click ▸ Export ▸ Software report (CSV)… saves a per-machine CSV (machine, product, version, installed, service running). On-demand only — checking never writes a file by itself.",
             ],
             Tip = "It searches the registry's installed-programs list (fast, and won't trigger an MSI repair the way Win32_Product can), plus the service list when asked. Handy to confirm an agent actually landed AND is running after a deploy. Read-only — it never changes the machine.",
         },

@@ -266,14 +266,22 @@ public partial class WorkspaceView : UserControl
     private void BuildContextMenu(WorkspaceViewModel vm)
     {
         _gridMenu.Items.Clear();
+        bool hasSelection = vm.SelectedComputers.Count > 0;
 
-        // Per-field Copy items act on the right-clicked row (_contextRow); the multi-row items
+        // ---- Inspect ----
+        var details = new MenuItem { Header = "Details…" };
+        details.Click += OnShowDetails;
+        _gridMenu.Items.Add(details);
+
+        var showMessages = new MenuItem { Header = "Show messages" };
+        showMessages.Click += OnShowMessages;
+        _gridMenu.Items.Add(showMessages);
+
+        // Copy ▸ — per-field items act on the right-clicked row (_contextRow); the multi-row items
         // (Name(s) / Selected rows / online / offline) act on the selection.
         Computer? ctx = _contextRow;
-
         var copy = new MenuItem { Header = "Copy" };
 
-        bool hasSelection = vm.SelectedComputers.Count > 0;
         var copyNames = new MenuItem { Header = "Name(s)", IsEnabled = hasSelection };
         copyNames.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.Name));
         copy.Items.Add(copyNames);
@@ -314,39 +322,81 @@ public partial class WorkspaceView : UserControl
 
         _gridMenu.Items.Add(new Separator());
 
-        // Inspect this machine: full detail window, or just its activity-log messages.
-        var details = new MenuItem { Header = "Details…" };
-        details.Click += OnShowDetails;
-        _gridMenu.Items.Add(details);
-
-        var showMessages = new MenuItem { Header = "Show messages" };
-        showMessages.Click += OnShowMessages;
-        _gridMenu.Items.Add(showMessages);
-
-        _gridMenu.Items.Add(new Separator());
-
-        // In Windows Update mode, lead with the patch shortcuts (selection ⇒ those rows, else all).
+        // ---- Windows Update mode: lead with the patch shortcuts (selection ⇒ those rows) ----
         if (vm.IsUpdateMode)
         {
-            var updates = new MenuItem { Header = "Updates" };
-
-            // Only meaningful when at least one selected row isn't already mid-install/uninstall
-            // (those rows are skipped anyway — disabling avoids a no-op click on an in-flight machine).
+            // Only meaningful when at least one selected row isn't already mid-install/uninstall.
             bool anyActionable = vm.SelectedComputers.Any(c => !c.IsPatching);
-
             int selCount = vm.SelectedComputers.Count;
+
             var scan = new MenuItem { Header = $"Scan selected ({selCount})", IsEnabled = anyActionable };
             scan.Click += (_, _) => _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
-            updates.Items.Add(scan);
+            _gridMenu.Items.Add(scan);
 
             var install = new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable };
             install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
-            updates.Items.Add(install);
+            _gridMenu.Items.Add(install);
 
-            _gridMenu.Items.Add(updates);
             _gridMenu.Items.Add(new Separator());
         }
 
+        // ---- Run ----
+        // Run a saved (or pasted) script against the selection or the whole tab; review before it runs.
+        var runScript = new MenuItem { Header = "Run script" };
+        var runSelected = new MenuItem { Header = "Selected machines…" };
+        runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
+        runScript.Items.Add(runSelected);
+        var runAll = new MenuItem { Header = "All machines…" };
+        runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
+        runScript.Items.Add(runAll);
+        _gridMenu.Items.Add(runScript);
+
+        // The SCCM client-action triggers grouped under one submenu.
+        var clientActions = new MenuItem { Header = "Client actions" };
+        foreach (ScheduleAction action in vm.ClientActions)
+        {
+            clientActions.Items.Add(new MenuItem
+            {
+                Header = action.Label,
+                Command = vm.TriggerScheduleCommand,
+                CommandParameter = action,
+            });
+        }
+        _gridMenu.Items.Add(clientActions);
+
+        var enableWinRm = new MenuItem { Header = "Enable WinRM (PSRemoting)…" };
+        enableWinRm.Click += OnEnableWinRm;
+        _gridMenu.Items.Add(enableWinRm);
+
+        _gridMenu.Items.Add(new Separator());
+
+        // ---- Software ▸ ----
+        var software = new MenuItem { Header = "Software" };
+        // Check whether a named product is installed across the selection (else all) → the Software column.
+        var checkSoftware = new MenuItem { Header = "Check software…" };
+        checkSoftware.Click += OnCheckSoftware;
+        software.Items.Add(checkSoftware);
+        // Copy a package (MSI/EXE or folder) to the selection (else all); Vivre stages the files, doesn't install.
+        var stage = new MenuItem { Header = "Stage software…" };
+        stage.Click += OnStageSoftware;
+        software.Items.Add(stage);
+        _gridMenu.Items.Add(software);
+
+        // ---- Export ▸ ----
+        var export = new MenuItem { Header = "Export" };
+        // The rows currently shown (respects the filter) + all visible/custom columns — same as File ▸ Export to CSV.
+        var exportShown = new MenuItem { Header = "Shown rows + columns (CSV)…", IsEnabled = vm.VisibleRowCount > 0 };
+        exportShown.Click += OnExportShownRows;
+        export.Items.Add(exportShown);
+        // The software-check results (on-demand; enabled once a check has run).
+        var exportSoftware = new MenuItem { Header = "Software report (CSV)…", IsEnabled = vm.HasSoftwareResults };
+        exportSoftware.Click += OnExportSoftwareReport;
+        export.Items.Add(exportSoftware);
+        _gridMenu.Items.Add(export);
+
+        _gridMenu.Items.Add(new Separator());
+
+        // ---- Power / maintenance ----
         // Force-reboot the selected machines now — the most common Windows-Update follow-up.
         var rebootForce = new MenuItem { Header = "Reboot (force now)…", IsEnabled = hasSelection };
         rebootForce.Click += OnRebootForce;
@@ -366,70 +416,20 @@ public partial class WorkspaceView : UserControl
         schedule.Items.Add(schedCancel);
         _gridMenu.Items.Add(schedule);
 
-        // WhatsUp Gold maintenance mode (enter before patching / exit after) for the selection, else
-        // the whole tab. Runs locally against the WUG server — prompts for the WUG login.
+        // WhatsUp Gold maintenance mode (enter before patching / exit after) for the selection, else the
+        // whole tab. Runs locally against the WUG server — prompts for the WUG login.
         var wugMaintenance = new MenuItem { Header = "WhatsUp Gold maintenance…" };
         wugMaintenance.Click += OnWugMaintenance;
         _gridMenu.Items.Add(wugMaintenance);
 
-        _gridMenu.Items.Add(new Separator());
-
-        // Run a saved (or pasted) script: opens the Run Script window, which lists the library
-        // grouped by category and is searchable — flatter than the old 3-level "Run script ▸
-        // Category ▸ Script" cascade, and lets you review before running on production.
-        var runSelected = new MenuItem { Header = "Run script… (selected)" };
-        runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
-        _gridMenu.Items.Add(runSelected);
-
-        var runAll = new MenuItem { Header = "Run script… (all machines)" };
-        runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
-        _gridMenu.Items.Add(runAll);
-
-        // Copy a package (MSI/EXE or a folder of files) to the selection (else all) — same scoping as
-        // Run script. Opens the review-before-run Stage window; Vivre copies the files, doesn't install.
-        var stage = new MenuItem { Header = "Stage software…" };
-        stage.Click += OnStageSoftware;
-        _gridMenu.Items.Add(stage);
-
-        // Check whether a named product is installed across the selection (else all) → the Software column.
-        var checkSoftware = new MenuItem { Header = "Check software…" };
-        checkSoftware.Click += OnCheckSoftware;
-        _gridMenu.Items.Add(checkSoftware);
-
-        // Save the software-check results as a CSV report (on-demand; enabled once a check has run).
-        var exportSoftware = new MenuItem { Header = "Export software report (CSV)…", IsEnabled = vm.HasSoftwareResults };
-        exportSoftware.Click += OnExportSoftwareReport;
-        _gridMenu.Items.Add(exportSoftware);
-
-        // Customize the machine grid: hide built-in columns, add predefined/custom script-backed columns.
+        // ---- Grid setup (machine mode only) ----
         if (vm.IsMachineMode)
         {
+            _gridMenu.Items.Add(new Separator());
             var columns = new MenuItem { Header = "Columns…" };
             columns.Click += OnManageColumns;
             _gridMenu.Items.Add(columns);
         }
-
-        _gridMenu.Items.Add(new Separator());
-
-        // The five SCCM client-action triggers grouped under one submenu (was five flat items).
-        var clientActions = new MenuItem { Header = "Client actions" };
-        foreach (ScheduleAction action in vm.ClientActions)
-        {
-            clientActions.Items.Add(new MenuItem
-            {
-                Header = action.Label,
-                Command = vm.TriggerScheduleCommand,
-                CommandParameter = action,
-            });
-        }
-
-        _gridMenu.Items.Add(clientActions);
-
-        _gridMenu.Items.Add(new Separator());
-
-        var enableWinRm = new MenuItem { Header = "Enable WinRM (PSRemoting)…" };
-        enableWinRm.Click += OnEnableWinRm;
-        _gridMenu.Items.Add(enableWinRm);
     }
 
     /// <summary>
@@ -671,6 +671,47 @@ public partial class WorkspaceView : UserControl
         catch (Exception ex)
         {
             vm.Activity.Error(null, $"Software report export failed: {ex.Message}");
+        }
+    }
+
+    /// <summary>Saves the rows currently shown in the grid (respecting the filter) with all visible + custom
+    /// columns to a CSV the user picks (right-click ▸ Export ▸ Shown rows). Identical export to File ▸ Export
+    /// to CSV — reuses <see cref="WorkspaceViewModel.BuildReportCsv"/>.</summary>
+    private void OnExportShownRows(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        if (vm.VisibleRowCount == 0)
+        {
+            vm.Activity.Warn(null, "Export: no rows are shown to export.");
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "Export shown rows to CSV",
+            Filter = "CSV file (*.csv)|*.csv|All files (*.*)|*.*",
+            FileName = $"{SanitizeFileName(vm.Title)}-report.csv",
+            DefaultExt = ".csv",
+            AddExtension = true,
+        };
+
+        if (dialog.ShowDialog(OwnerWindow) != true)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(dialog.FileName, vm.BuildReportCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+            vm.Activity.Info(null, $"Exported {vm.VisibleRowCount} row(s) to {dialog.FileName}");
+        }
+        catch (Exception ex)
+        {
+            vm.Activity.Error(null, $"Export failed: {ex.Message}");
         }
     }
 
