@@ -7,6 +7,10 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Grid right-click menu, regrouped** — per-machine actions are now clustered (Run script ▸ · Client
+  actions ▸ · Software ▸ · Export ▸ · Schedule ▸) for easier scanning, and **Export ▸ Shown rows + columns
+  (CSV)…** puts the full grid export — filter-aware and including any custom columns — on the right-click,
+  not just the software report. Same export as File ▸ Export to CSV.
 - **Cross-Domain RDP — embedded remote-desktop manager** — a tab (opened from View ▸ Cross-Domain RDP,
   beside your machine tabs) with a foldered tree of hosts and live, tabbed RDP sessions, full-screen, and
   saved per-host/per-folder credentials (Windows DPAPI, per user). Built on the Microsoft RDP ActiveX
