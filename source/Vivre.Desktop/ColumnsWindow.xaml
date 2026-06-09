@@ -28,13 +28,14 @@
                 <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
 
                 <!-- Show/hide the built-in columns -->
-                <ui:TextBlock Text="Show columns" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBlock Text="Show columns" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
                               Text="Untick a built-in column to hide it (Name always stays). Saved across launches and tabs." />
                 <StackPanel x:Name="BuiltinList" Margin="0,0,0,16" />
 
                 <!-- Existing custom columns -->
-                <ui:TextBlock Text="Custom columns" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="Custom columns" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,0,0,6"
                               Text="Each runs a PowerShell one-liner on every machine; its output fills the cell. Click Refresh values to re-run." />
                 <ItemsControl x:Name="CustomList" Margin="0,0,0,4">
@@ -55,7 +56,8 @@
                               Text="(none yet — add one below)" />
 
                 <!-- Add a predefined column -->
-                <ui:TextBlock Text="Add a predefined column" FontWeight="SemiBold" Margin="0,12,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="Add a predefined column" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <Grid Margin="0,0,0,4">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -66,7 +68,8 @@
                 </Grid>
 
                 <!-- Add your own -->
-                <ui:TextBlock Text="Add your own" FontWeight="SemiBold" Margin="0,16,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="Add your own" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBox x:Name="NameBox" Margin="0,0,0,6" PlaceholderText="Column name (e.g. Serial)" />
                 <ui:TextBox x:Name="ScriptBox" MinHeight="56" AcceptsReturn="True" TextWrapping="Wrap"
                             FontFamily="Cascadia Code, Consolas, monospace"

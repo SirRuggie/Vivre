@@ -26,7 +26,7 @@
         <StackPanel Grid.Row="1" Margin="24,8,24,0">
             <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
 
-            <ui:TextBlock Text="Product name" FontWeight="SemiBold" Margin="0,0,0,4" />
+            <ui:TextBlock Text="Product name" FontTypography="BodyStrong" Margin="0,0,0,4" />
             <ui:TextBox x:Name="QueryBox" PlaceholderText="e.g. CrowdStrike, SentinelOne, Chrome"
                         TextChanged="OnQueryChanged" KeyDown="OnQueryKeyDown" />
             <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
@@ -44,7 +44,7 @@
             <CheckBox x:Name="ServiceCheck" Content="Also check its service is running"
                       Margin="0,16,0,0" Checked="OnServiceToggled" Unchecked="OnServiceToggled" />
             <StackPanel x:Name="ServicePanel" Margin="0,8,0,0" Visibility="Collapsed">
-                <ui:TextBlock Text="Service name" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBlock Text="Service name" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBox x:Name="ServiceBox" PlaceholderText="e.g. CSFalconService" />
                 <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"
                               Text="Pre-filled with the product name. If the service is named differently (CrowdStrike → CSFalconService), change it — Vivre remembers it for next time. An installed product whose service isn't running shows amber." />

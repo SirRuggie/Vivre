@@ -298,36 +298,7 @@
             <!-- TabItem appearance: inactive tabs get a visible card background so they're readable in dark mode;
                  the selected tab uses the accent colour with white text. -->
             <TabControl.ItemContainerStyle>
-                <Style TargetType="TabItem">
-                    <Setter Property="Padding" Value="14,6" />
-                    <Setter Property="Margin" Value="0,0,3,0" />
-                    <Setter Property="Template">
-                        <Setter.Value>
-                            <ControlTemplate TargetType="TabItem">
-                                <Border x:Name="Bd" CornerRadius="6,6,0,0" Padding="{TemplateBinding Padding}"
-                                        Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
-                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                        BorderThickness="1,1,1,0">
-                                    <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
-                                </Border>
-                                <ControlTemplate.Triggers>
-                                    <Trigger Property="IsMouseOver" Value="True">
-                                        <Setter TargetName="Bd" Property="Background"
-                                                Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
-                                    </Trigger>
-                                    <Trigger Property="IsSelected" Value="True">
-                                        <Setter TargetName="Bd" Property="Background"
-                                                Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                        <Setter TargetName="Bd" Property="BorderBrush"
-                                                Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                        <Setter Property="Foreground"
-                                                Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
-                                    </Trigger>
-                                </ControlTemplate.Triggers>
-                            </ControlTemplate>
-                        </Setter.Value>
-                    </Setter>
-                </Style>
+                <StaticResource ResourceKey="FluentTabItemStyle" />
             </TabControl.ItemContainerStyle>
 
             <TabControl.ItemTemplate>
@@ -401,7 +372,7 @@
              tab, with a Close button to dismiss the whole dock. Hidden by default; opened via the
              View ▸ Activity log menu OR when a machine is focused in Windows Update mode. -->
         <Grid x:Name="ActivityPanel" Grid.Row="6" Margin="8,0,8,8" Visibility="Collapsed">
-            <TabControl x:Name="BottomDockTabs">
+            <TabControl x:Name="BottomDockTabs" ItemContainerStyle="{StaticResource FluentTabItemStyle}">
                 <!-- Close button floats over the tab strip, on the right. -->
                 <TabControl.Template>
                     <ControlTemplate TargetType="TabControl">
@@ -508,15 +479,15 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="{Binding FocusedComputer.Name}" FontWeight="SemiBold" FontSize="14"
-                                                   TextTrimming="CharacterEllipsis" />
+                                        <ui:TextBlock Text="{Binding FocusedComputer.Name}" FontTypography="Subtitle"
+                                                      TextTrimming="CharacterEllipsis" />
                                         <!-- Scope is chosen by the Applicable / Installed tabs below. -->
 
-                                        <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
+                                        <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
                                                    Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
                                             <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" /><Run Text="{Binding FocusedComputer.LastScannedApplicable, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
                                         </TextBlock>
-                                        <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12" Margin="0,4,0,0"
+                                        <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
                                                    Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
                                             <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" /><Run Text="{Binding FocusedComputer.LastScannedInstalled, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
                                         </TextBlock>
@@ -564,7 +535,7 @@
                                        Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
                                        ToolTip="Uninstall the ticked updates on this machine (Windows Update first, then DISM). Greyed rows can't be removed by either. May require a reboot. Disabled until at least one removable update is ticked." />
 
-                            <TabControl>
+                            <TabControl ItemContainerStyle="{StaticResource FluentSubTabItemStyle}">
                                 <TabItem Header="Applicable"
                                          IsSelected="{Binding IsInstalledMode, Converter={StaticResource InverseBool}, Mode=TwoWay}">
                                     <Grid>
@@ -723,30 +694,24 @@
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">
             <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding SelectedTab.OnlineSummary}" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}"
                            VerticalAlignment="Center" />
-                <TextBlock Text="·" Margin="10,0" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
                            VerticalAlignment="Center"
                            Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
                 <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
                            Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                            VerticalAlignment="Center"
                            Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="·" Margin="10,0" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
                            VerticalAlignment="Center"
                            Visibility="{Binding SelectedTab.HasFleetSummary, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding SelectedTab.FleetSummary}" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                <TextBlock Text="{Binding SelectedTab.FleetSummary}" Style="{StaticResource LabelText}"
                            VerticalAlignment="Center" />
-                <TextBlock Text="·" Margin="10,0" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
                            VerticalAlignment="Center"
                            Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}"
                            VerticalAlignment="Center"
                            Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
             </StackPanel>

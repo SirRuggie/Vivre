@@ -23,12 +23,12 @@
 
         <ui:TitleBar Grid.Row="0" x:Name="TitleBarControl" Title="Vivre" />
 
-        <StackPanel Grid.Row="1" Margin="20,8,20,0" VerticalAlignment="Center">
+        <StackPanel Grid.Row="1" Margin="24,8,24,0" VerticalAlignment="Center">
             <ui:TextBlock x:Name="PromptLabel" Margin="0,0,0,6" Text="Name:" />
             <ui:TextBox x:Name="InputBox" />
         </StackPanel>
 
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,12,20,16">
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
             <ui:Button Appearance="Primary" Content="OK" Click="OnOk" IsDefault="True" />
             <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>
