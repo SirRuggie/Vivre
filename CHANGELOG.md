@@ -16,6 +16,8 @@ it ships, then gets a dated heading.
   monitor/force-reboot recheck).
 
 ### Changed
+- **New-tab "+" sits next to the last tab** — browser-style, instead of pinned to the window's far-right
+  edge. With many tabs it scrolls with the strip (scroll right to reach it).
 - **Multi-tab sweeps stay responsive and never freeze** — Check Vitals, update scans, software and
   custom-column reads across *all* open tabs now share one app-wide concurrency budget (≈32 hosts at a
   time) instead of each tab flooding WinRM on its own, so tabs fill in together (in waves) rather than one
