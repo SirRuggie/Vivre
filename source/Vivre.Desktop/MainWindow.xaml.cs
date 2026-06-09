@@ -109,11 +109,11 @@ public partial class MainWindow : FluentWindow
         // be missed/ignored). Window unfocused → the tray balloon, as before.
         if (IsActive)
         {
-            Dispatcher.Invoke(() => ShowCompletionBar(summary));
+            Dispatcher.BeginInvoke(() => ShowCompletionBar(summary));
             return;
         }
 
-        Dispatcher.Invoke(() => TrayIcon.ShowBalloonTip("Vivre", summary, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
+        Dispatcher.BeginInvoke(() => TrayIcon.ShowBalloonTip("Vivre", summary, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
     }
 
     private void ShowCompletionBar(string summary)

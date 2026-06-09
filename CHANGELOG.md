@@ -6,6 +6,16 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **Multi-tab sweeps stay responsive and never freeze** — Check Vitals, update scans, software and
+  custom-column reads across *all* open tabs now share one app-wide concurrency budget (≈32 hosts at a
+  time) instead of each tab flooding WinRM on its own, so tabs fill in together (in waves) rather than one
+  tab finishing entirely before the next starts. Each row's combined health+vitals pass also holds a
+  single slot end-to-end — fixing a stall where a second tab would show "health unavailable" and then sit
+  idle until the first tab's vitals had *all* completed. Activity-log and completion-toast updates are
+  marshalled to the UI without blocking, so a heavy multi-tab sweep no longer stutters or freezes the
+  window.
+
 ### Added
 - **Grid right-click menu, regrouped** — per-machine actions are now clustered (Run script ▸ · Client
   actions ▸ · Software ▸ · Export ▸ · Schedule ▸) for easier scanning, and **Export ▸ Shown rows + columns

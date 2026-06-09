@@ -99,7 +99,10 @@ public sealed class ActivityLog : IActivityLog
         Application? app = Application.Current;
         if (app is not null && !app.Dispatcher.CheckAccess())
         {
-            app.Dispatcher.Invoke(action);
+            // BeginInvoke (not Invoke): a background sweep thread queues the panel update and keeps working
+            // instead of blocking on the UI thread for every log line. Under heavy multi-tab load this is the
+            // difference between a smooth UI and a stutter. The durable file write in Add() is unaffected.
+            app.Dispatcher.BeginInvoke(action);
         }
         else
         {
