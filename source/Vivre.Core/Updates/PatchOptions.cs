@@ -85,12 +85,13 @@ public sealed class PatchOptions
     /// Optimization peering, lower it over a slow WAN. Scan has its own (much higher) cap.</summary>
     public int MaxConcurrentHosts { get; set; } = 10;
 
-    /// <summary>Cap on how many hosts scan at once. Much higher than the install cap: a scan is a
-    /// read-only WUA search over WinRM (one shell per distinct host — no per-target shell-limit
-    /// concern) and is I/O-bound (the search runs on the target), so a whole 40+ machine fleet can
-    /// scan together. The cap only bounds thread-pool slots tied up by the connect (≤20s for a dead
-    /// host); raise it if lists routinely exceed this.</summary>
-    public int MaxConcurrentScans { get; set; } = 50;
+    /// <summary>App-wide shared budget for all remote READ operations: vitals probes, health checks,
+    /// update scans, software checks, and custom-column sweeps — across ALL open tabs. This is a
+    /// different concern from <see cref="MaxConcurrentHosts"/> (which throttles heavy install/uninstall
+    /// SYSTEM-task operations and is per-tab). Default 32 matches the historical hard-coded cap in
+    /// WorkspaceViewModel so tuning is unchanged until explicitly raised. Raise it on a fast LAN with
+    /// many machines; lower it over a slow WAN or when targets are under heavy load.</summary>
+    public int MaxConcurrentScans { get; set; } = 32;
 
     /// <summary>Give up on a single host after this long (a hung box must not block the grid).</summary>
     public TimeSpan PerHostTimeout { get; set; } = TimeSpan.FromHours(3);

@@ -234,6 +234,18 @@ public sealed class WuaUpdateLane
         }
         catch (OperationCanceledException)
         {
+            // ScheduleAt: the task was registered and confirmed (progressSeen) before the cancel
+            // arrived. SafetyCleanupAsync would run Unregister-ScheduledTask, silently destroying
+            // the schedule the user just set up. Skip cleanup and surface the task-left-in-place
+            // status so the user sees a clear outcome rather than a silent delete.
+            if (options.RunBehavior == RunBehavior.ScheduleAt && progressSeen)
+            {
+                var preserved = new HostPatchStatus(PatchPhase.Done,
+                    $"Scheduled task registered on {host} — cancelled after confirmation; the scheduled task was left in place.");
+                progress.Report(preserved);
+                return preserved;
+            }
+
             progress.Report(new HostPatchStatus(PatchPhase.Idle, "Cancelled"));
             // Server-side finally usually handles cleanup, but if the pipeline was torn down
             // before that block ran we still want to reap the task + temp files.
@@ -470,6 +482,7 @@ public sealed class WuaUpdateLane
         "searching" or "scanning" => PatchPhase.Scanning,
         "downloading" => PatchPhase.Downloading,
         "installing" => PatchPhase.Installing,
+        "uninstalling" => PatchPhase.Uninstalling,
         "pendingreboot" or "rebootrequired" => PatchPhase.PendingReboot,
         "rebooting" => PatchPhase.Rebooting,
         "done" or "noupdates" or "complete" => PatchPhase.Done,

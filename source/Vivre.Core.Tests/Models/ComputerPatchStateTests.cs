@@ -18,6 +18,7 @@ public class ComputerPatchStateTests
     [InlineData("Available", null, PatchState.Available)]
     [InlineData("Downloading", null, PatchState.Downloading)]
     [InlineData("Installing", null, PatchState.Installing)]
+    [InlineData("Uninstalling", null, PatchState.Uninstalling)]
     [InlineData("PendingReboot", true, PatchState.RebootPending)]
     [InlineData("Rebooting", true, PatchState.RebootPending)]
     [InlineData("Done", false, PatchState.Done)]

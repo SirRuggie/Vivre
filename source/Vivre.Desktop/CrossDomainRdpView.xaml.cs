@@ -31,13 +31,21 @@ public partial class CrossDomainRdpView : UserControl
         }
     }
 
+    private async void OnConnect(object sender, RoutedEventArgs e)
+    {
+        if (Vm is { SelectedNode: RdpHostNodeViewModel host })
+        {
+            await ConnectAndPromptIfNeededAsync(host);
+        }
+    }
+
     private void OnTreeDoubleClick(object sender, MouseButtonEventArgs e)
     {
         // Connect only when a host row was actually double-clicked — not blank space below the tree (which
         // would otherwise connect to whatever host was last selected).
         if (NodeAt(e.OriginalSource as DependencyObject) is RdpHostNodeViewModel host)
         {
-            Vm?.ConnectTo(host);
+            _ = ConnectAndPromptIfNeededAsync(host);
         }
     }
 
@@ -56,11 +64,34 @@ public partial class CrossDomainRdpView : UserControl
         }
     }
 
-    private void OnContextConnect(object sender, RoutedEventArgs e)
+    private async void OnContextConnect(object sender, RoutedEventArgs e)
     {
         if (Vm is { SelectedNode: RdpHostNodeViewModel host })
         {
-            Vm.ConnectTo(host);
+            await ConnectAndPromptIfNeededAsync(host);
+        }
+    }
+
+    /// <summary>
+    /// Calls <see cref="CrossDomainRdpViewModel.ConnectTo"/> and, when it returns false (no saved
+    /// credentials), shows a message box pointing the user to the Edit… menu item.
+    /// </summary>
+    private async Task ConnectAndPromptIfNeededAsync(RdpHostNodeViewModel host)
+    {
+        if (Vm is null)
+        {
+            return;
+        }
+
+        if (!Vm.ConnectTo(host))
+        {
+            var box = new MessageBox
+            {
+                Title = "No saved credentials",
+                Content = $"No saved credentials for '{host.Name}'.\n\nRight-click the host (or a parent folder) and choose Edit… to add a username and password.",
+                CloseButtonText = "OK",
+            };
+            await box.ShowDialogAsync();
         }
     }
 

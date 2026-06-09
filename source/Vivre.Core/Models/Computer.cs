@@ -239,6 +239,7 @@ public partial class Computer : ObservableObject
             PatchPhase.Scanning => PatchState.Scanning,
             PatchPhase.Downloading => PatchState.Downloading,
             PatchPhase.Installing => PatchState.Installing,
+            PatchPhase.Uninstalling => PatchState.Uninstalling,
             // Reboot finished (flag cleared) ⇒ green "back online"; otherwise amber.
             PatchPhase.PendingReboot or PatchPhase.Rebooting => pending ? PatchState.RebootPending : PatchState.Done,
             // A scanned/finished/idle row still shows amber if a reboot is outstanding.

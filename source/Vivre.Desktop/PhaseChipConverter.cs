@@ -26,7 +26,7 @@ public sealed class PhaseChipBrushConverter : IValueConverter
 
     internal static SolidColorBrush BrushFor(PatchState s) => s switch
     {
-        PatchState.Scanning or PatchState.Downloading or PatchState.Installing => Working,
+        PatchState.Scanning or PatchState.Downloading or PatchState.Installing or PatchState.Uninstalling => Working,
         PatchState.Available => Available,
         PatchState.RebootPending => Reboot,
         PatchState.Done => Done,
@@ -58,6 +58,7 @@ public sealed class PhaseChipLabelConverter : IValueConverter
         PatchState.Available => "Available",
         PatchState.Downloading => "Downloading",
         PatchState.Installing => "Installing",
+        PatchState.Uninstalling => "Uninstalling",
         PatchState.RebootPending => "Reboot pending",
         PatchState.Done => "Done",
         PatchState.Error => "Error",

@@ -92,7 +92,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // below) so opening more tabs never multiplies concurrent WinRM connections — every tab draws from this
     // shared budget and they interleave fairly, keeping this PC and the targets from being flooded. The
     // per-host timeout is started AFTER a slot is acquired, so time spent queued never counts as a timeout.
-    private static readonly SemaphoreSlim _remoteSweepThrottle = new(32);
+    // Sized from PatchOptions.MaxConcurrentScans on first construction (see ctor). No lock needed:
+    // WorkspaceViewModel is constructed only on the UI thread, so first-tab-wins is deterministic.
+    private static SemaphoreSlim? _remoteSweepThrottleBacking;
+    private static SemaphoreSlim _remoteSweepThrottle => _remoteSweepThrottleBacking!;
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int SoftwarePerHostTimeoutSeconds = 60;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
@@ -295,10 +298,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         return sb.ToString();
     }
 
-    private static string Csv(string value) =>
-        value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r')
+    private static string Csv(string value)
+    {
+        // Guard against CSV/formula injection: a value from a target machine (software DisplayName,
+        // error string, custom-column output) that starts with = + - @ is interpreted as a formula
+        // by Excel / LibreOffice when the file is opened.  Prefix with a tab to neutralise it,
+        // then fall through to the quoted branch so the tab is preserved in the output cell.
+        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@')
+        {
+            value = "\t" + value;
+        }
+
+        return value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r') || value.StartsWith('\t')
             ? "\"" + value.Replace("\"", "\"\"") + "\""
             : value;
+    }
 
     /// <summary>True while a sweep (Ping All / Check All) is running — drives the busy indicator and button enable-state.</summary>
     [ObservableProperty]
@@ -479,6 +493,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _patch = patch;
         _patchOptions = patchOptions;
         _patchThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentHosts));
+        // First tab wins: the shared read budget is set once from the singleton PatchOptions and then
+        // reused by every subsequent tab. Safe without a lock because all WorkspaceViewModel instances
+        // are constructed on the UI thread (ShellViewModel.NewTab dispatches to no background thread).
+        _remoteSweepThrottleBacking ??= new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
         _rebootProbe = rebootProbe;
         _vitals = vitals;
         _remediation = remediation;
@@ -585,7 +603,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 switch (c.PatchState)
                 {
                     case PatchState.Done: done++; break;
-                    case PatchState.Scanning or PatchState.Downloading or PatchState.Installing: working++; break;
+                    case PatchState.Scanning or PatchState.Downloading or PatchState.Installing or PatchState.Uninstalling: working++; break;
                     case PatchState.RebootPending: reboot++; break;
                     case PatchState.Error: failed++; break;
                     case PatchState.Available: available++; break;
@@ -639,7 +657,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>True while any row is actively scanning/downloading/installing — drives the band's visibility.</summary>
     public bool IsPatchOperationActive =>
-        Computers.Any(c => c.PatchState is PatchState.Scanning or PatchState.Downloading or PatchState.Installing);
+        Computers.Any(c => c.PatchState is PatchState.Scanning or PatchState.Downloading or PatchState.Installing or PatchState.Uninstalling);
 
     /// <summary>Overall progress (avg of the rows currently downloading/installing) for the band's bar; 0 when none.</summary>
     public int FleetProgress
@@ -647,7 +665,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         get
         {
             int[] vals = [.. Computers
-                .Where(c => c.PatchState is PatchState.Downloading or PatchState.Installing)
+                .Where(c => c.PatchState is PatchState.Downloading or PatchState.Installing or PatchState.Uninstalling)
                 .Select(c => c.UpdateProgress ?? 0)];
             return vals.Length == 0 ? 0 : (int)Math.Round(vals.Average());
         }

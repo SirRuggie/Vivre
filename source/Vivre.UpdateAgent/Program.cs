@@ -223,7 +223,7 @@ namespace Vivre.UpdateAgent
                     try { isUninstallable = wuaUpdate.IsUninstallable; } catch { }
                     if (isUninstallable)
                     {
-                        progress.Write("Installing", prefix + " — removing via Windows Update…", basePct, total, removed, failed, rebootPending);
+                        progress.Write("Uninstalling", prefix + " — removing via Windows Update…", basePct, total, removed, failed, rebootPending);
                         (ok, needReboot, reason) = TryWuaUninstall(session, wuaUpdate, progress, i, total, kb, removed, failed);
                     }
                 }
@@ -232,7 +232,7 @@ namespace Vivre.UpdateAgent
                 // WUA won't/can't remove. Resolves the KB to its CBS package name.
                 if (!ok)
                 {
-                    progress.Write("Installing", prefix + " — removing via DISM…", basePct, total, removed, failed, rebootPending);
+                    progress.Write("Uninstalling", prefix + " — removing via DISM…", basePct, total, removed, failed, rebootPending);
                     (ok, needReboot, reason) = DismHelper.RemoveByKb(kb);
                 }
 
@@ -250,7 +250,7 @@ namespace Vivre.UpdateAgent
                     string why = reason ?? "no supported uninstall path";
                     failures.Add("KB" + kb + ": " + why);
                     int donePct = (int)(((i + 1) * 100.0) / total);
-                    progress.Write("Installing", prefix + " — could not remove: " + why, donePct, total, removed, failed, rebootPending);
+                    progress.Write("Uninstalling", prefix + " — could not remove: " + why, donePct, total, removed, failed, rebootPending);
                 }
             }
 
@@ -304,7 +304,7 @@ namespace Vivre.UpdateAgent
                     {
                         int pct = job.GetProgress().PercentComplete;
                         int overall = Clamp((int)((idx * 100.0 + pct) / total));
-                        progress.Write("Installing",
+                        progress.Write("Uninstalling",
                             string.Format(CultureInfo.InvariantCulture, "Uninstalling {0} of {1} (KB{2}) — {3}%", idx + 1, total, kb, pct),
                             overall, total, removed, failed, false);
                     }
