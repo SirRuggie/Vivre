@@ -88,9 +88,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Built-in machine-grid column headers the user has hidden (Name is never hideable); the
     /// view applies these to the grid. Mutated via SetColumnHidden which persists.</summary>
     public ObservableCollection<string> HiddenColumns { get; } = [];
-    // Vitals is a read-only multi-CIM pull (heavier than ping, lighter than an install): bound it
-    // like the scan, and give each host a modest timeout so a hung WinRM session can't stall the sweep.
-    private readonly SemaphoreSlim _vitalsThrottle;
+    // Vitals + scans are read-only remote pulls; they share ONE app-wide throttle (like the reboot probe
+    // below) so opening more tabs never multiplies concurrent WinRM connections — every tab draws from this
+    // shared budget and they interleave fairly, keeping this PC and the targets from being flooded. The
+    // per-host timeout is started AFTER a slot is acquired, so time spent queued never counts as a timeout.
+    private static readonly SemaphoreSlim _remoteSweepThrottle = new(32);
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int SoftwarePerHostTimeoutSeconds = 60;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
@@ -119,11 +121,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // the UI context — this plain List needs no locking only because of that. If you ever add
     // ConfigureAwait(false) to a sweep's own awaits, switch this to a ConcurrentDictionary/lock.
     private readonly List<CancellationTokenSource> _activeCts = [];
-    // Install/uninstall throttle (heavy SYSTEM-task operations — kept low).
+    // Install/uninstall throttle (heavy SYSTEM-task operations — kept low; per-tab).
     private readonly SemaphoreSlim _patchThrottle;
-    // Scan throttle — much higher: a scan is a light, read-only WUA search, so a whole fleet can
-    // scan near-simultaneously (BatchPatch-style) instead of in small waves.
-    private readonly SemaphoreSlim _scanThrottle;
     private CancellationTokenSource? _monitorCts;
     // The grid's default view, with a live filter (name search + state). Both mode grids bind
     // Computers, so they share this view — filtering once affects whichever grid is showing.
@@ -480,8 +479,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _patch = patch;
         _patchOptions = patchOptions;
         _patchThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentHosts));
-        _scanThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
-        _vitalsThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
         _rebootProbe = rebootProbe;
         _vitals = vitals;
         _remediation = remediation;
@@ -828,8 +825,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>The single "Check Vitals" button: SCCM client health AND deep OS vitals (disk / memory /
     /// CPU / uptime / stopped services / recent errors, scored 0-100) for every row — one click does
-    /// both. Read-only, no confirm. Vitals are gated by <see cref="_vitalsThrottle"/> inside
-    /// <see cref="CheckVitalsRowAsync"/>.</summary>
+    /// both. Read-only, no confirm. Each row's health+vitals pass holds ONE shared <see
+    /// cref="_remoteSweepThrottle"/> slot (see <see cref="CheckHealthAndVitalsRowAsync"/>), so every open
+    /// tab draws from one app-wide budget and they interleave fairly.</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
     private Task CheckVitalsAsync() => RunSweepAsync([.. Computers], CheckHealthAndVitalsRowAsync);
 
@@ -837,11 +835,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public Task CheckVitalsSelectedAsync(IReadOnlyList<Computer> rows) =>
         RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], CheckVitalsRowAsync);
 
-    /// <summary>Per-row work for the combined "Check Vitals" sweep: SCCM client health, then OS vitals.</summary>
+    /// <summary>Per-row work for the combined "Check Vitals" sweep: SCCM client health, then OS vitals,
+    /// under ONE shared-throttle slot held across both halves. Holding a single slot (instead of acquiring
+    /// once for health and again for vitals) keeps each row's two reads contiguous, so a row goes from
+    /// "Checking…" straight through to a score and open tabs interleave fairly — rather than the whole fleet
+    /// finishing health first and only then starting vitals (which made a second tab show "health
+    /// unavailable" and then sit idle until the first tab's vitals had all completed).</summary>
     private async Task CheckHealthAndVitalsRowAsync(Computer computer, CancellationToken token)
     {
-        await CheckRowAsync(computer, token);
-        await CheckVitalsRowAsync(computer, token);
+        computer.LastStatus = "Checking…"; // immediate pending state before queueing, so a waiting row never looks idle
+        await _remoteSweepThrottle.WaitAsync(token);
+        try
+        {
+            await CheckRowCoreAsync(computer, token);
+            await CheckVitalsCoreAsync(computer, token);
+        }
+        finally
+        {
+            _remoteSweepThrottle.Release();
+        }
     }
 
     /// <summary>Builds the per-machine Details view-model, wired for triage: the remediation service,
@@ -863,7 +875,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // scan throttle with a per-host timeout so a hung box can't stall the sweep.
     private async Task CheckSoftwareRowAsync(Computer computer, string query, string? serviceName, CancellationToken token)
     {
-        await _scanThrottle.WaitAsync(token);
+        await _remoteSweepThrottle.WaitAsync(token);
         try
         {
             computer.SoftwareFound = null;
@@ -932,7 +944,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            _scanThrottle.Release();
+            _remoteSweepThrottle.Release();
         }
     }
 
@@ -1041,7 +1053,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // Per-row: one combined custom-column call, bounded by the scan throttle with a per-host timeout.
     private async Task RunCustomColumnRowAsync(Computer computer, IReadOnlyList<CustomColumnSpec> specs, CancellationToken token)
     {
-        await _scanThrottle.WaitAsync(token);
+        await _remoteSweepThrottle.WaitAsync(token);
         try
         {
             foreach (CustomColumnSpec spec in specs)
@@ -1086,7 +1098,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            _scanThrottle.Release();
+            _remoteSweepThrottle.Release();
         }
     }
 
@@ -1094,7 +1106,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Scans every row for applicable updates from the selected source.</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
-    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _scanThrottle);
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle);
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     [RelayCommand(CanExecute = nameof(CanStartSweep))]
@@ -1102,7 +1114,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _scanThrottle);
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle);
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -1273,7 +1285,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanScanFocused))]
     private Task ScanFocusedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _scanThrottle) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle) : Task.CompletedTask;
 
     private bool CanScanFocused() => !IsBusy && FocusedComputer is not null;
 
@@ -2238,7 +2250,28 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
+    /// <summary>Standalone "Check All" per-row work: pings + pulls SCCM client health under one shared-throttle
+    /// slot. The combined Check Vitals calls <see cref="CheckRowCoreAsync"/> directly so it can hold a single
+    /// slot across both health and vitals.</summary>
     private async Task CheckRowAsync(Computer computer, CancellationToken token)
+    {
+        computer.LastStatus = "Checking…"; // immediate pending state before queueing, so a waiting row never looks idle
+        await _remoteSweepThrottle.WaitAsync(token);
+        try
+        {
+            await CheckRowCoreAsync(computer, token);
+        }
+        finally
+        {
+            _remoteSweepThrottle.Release();
+        }
+    }
+
+    // Ping + SCCM client-health pull for one row — the un-throttled core: the CALLER owns the shared
+    // _remoteSweepThrottle slot (so Check Vitals holds one slot across health+vitals, and Check All holds one
+    // per row). Clears stale fields only once the work actually starts, so a queued row keeps its last-known
+    // values until it's refreshed.
+    private async Task CheckRowCoreAsync(Computer computer, CancellationToken token)
     {
         computer.LastError = null;
         computer.SiteCode = null;
@@ -2308,62 +2341,71 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    // Reads deep OS vitals for one row and scores it. Mirrors CheckRowAsync's clear→pull→catch-ladder
-    // shape; stays on the UI context (no ConfigureAwait(false)) so the row-property writes that drive
-    // the grid are marshalled correctly. Concurrency is bounded by _vitalsThrottle (acquired here so a
-    // plain RunSweepAsync still can't flood WinRM), and a per-host timeout stops a hung box stalling it.
+    /// <summary>Standalone vitals triage per-row work (right-click ▸ Triage): reads vitals under one
+    /// shared-throttle slot. The combined Check Vitals calls <see cref="CheckVitalsCoreAsync"/> directly
+    /// so it can hold a single slot across both health and vitals.</summary>
     private async Task CheckVitalsRowAsync(Computer computer, CancellationToken token)
     {
-        await _vitalsThrottle.WaitAsync(token);
+        computer.LastStatus = "Checking…"; // immediate pending state before queueing, so a waiting row never looks idle
+        await _remoteSweepThrottle.WaitAsync(token);
         try
         {
-            ResetVitals(computer);
-            computer.LastStatus = "Reading vitals…";
-
-            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
-            perHost.CancelAfter(TimeSpan.FromSeconds(VitalsPerHostTimeoutSeconds));
-            try
-            {
-                MachineVitals v = await _vitals.GetVitalsAsync(computer.Name, CurrentPsCredential(), perHost.Token);
-                ApplyVitals(computer, v);
-            }
-            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
-            {
-                // Per-host timeout (not a user Stop): mark it unknown and let the rest of the sweep run.
-                computer.LastError = $"Vitals read timed out after {VitalsPerHostTimeoutSeconds}s";
-                computer.LastStatus = "Vitals timed out";
-                computer.VitalityScore = null;
-                computer.VitalityBand = VitalityBand.Unknown;
-                _activity.Warn(computer.Name, computer.LastError);
-            }
-            catch (OperationCanceledException)
-            {
-                computer.LastStatus = "Cancelled";
-                throw;
-            }
-            catch (VitalsProbeException ex)
-            {
-                // Reached (or tried) the box but couldn't read it — score Offline if ping says down,
-                // else Unknown. Surface the reason; never an empty catch.
-                computer.VitalityScore = null;
-                computer.VitalityBand = computer.IsOnline == false ? VitalityBand.Offline : VitalityBand.Unknown;
-                computer.VitalityReasons = [ex.Message];
-                computer.LastError = ex.Message;
-                computer.LastStatus = "Vitals unavailable";
-                _activity.Warn(computer.Name, $"Vitals unavailable — {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                computer.VitalityScore = null;
-                computer.VitalityBand = VitalityBand.Unknown;
-                computer.LastError = ex.Message;
-                computer.LastStatus = "Vitals failed";
-                _activity.Warn(computer.Name, $"Vitals failed — {ex.Message}");
-            }
+            await CheckVitalsCoreAsync(computer, token);
         }
         finally
         {
-            _vitalsThrottle.Release();
+            _remoteSweepThrottle.Release();
+        }
+    }
+
+    // Reads deep OS vitals for one row and scores it — the un-throttled core: the CALLER owns the shared
+    // _remoteSweepThrottle slot. Mirrors CheckRowCoreAsync's clear→pull→catch-ladder shape; stays on the UI
+    // context (no ConfigureAwait(false)) so the row-property writes that drive the grid are marshalled
+    // correctly. A per-host timeout stops a hung box stalling it.
+    private async Task CheckVitalsCoreAsync(Computer computer, CancellationToken token)
+    {
+        ResetVitals(computer);
+        computer.LastStatus = "Reading vitals…";
+
+        using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+        perHost.CancelAfter(TimeSpan.FromSeconds(VitalsPerHostTimeoutSeconds));
+        try
+        {
+            MachineVitals v = await _vitals.GetVitalsAsync(computer.Name, CurrentPsCredential(), perHost.Token);
+            ApplyVitals(computer, v);
+        }
+        catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            // Per-host timeout (not a user Stop): mark it unknown and let the rest of the sweep run.
+            computer.LastError = $"Vitals read timed out after {VitalsPerHostTimeoutSeconds}s";
+            computer.LastStatus = "Vitals timed out";
+            computer.VitalityScore = null;
+            computer.VitalityBand = VitalityBand.Unknown;
+            _activity.Warn(computer.Name, computer.LastError);
+        }
+        catch (OperationCanceledException)
+        {
+            computer.LastStatus = "Cancelled";
+            throw;
+        }
+        catch (VitalsProbeException ex)
+        {
+            // Reached (or tried) the box but couldn't read it — score Offline if ping says down,
+            // else Unknown. Surface the reason; never an empty catch.
+            computer.VitalityScore = null;
+            computer.VitalityBand = computer.IsOnline == false ? VitalityBand.Offline : VitalityBand.Unknown;
+            computer.VitalityReasons = [ex.Message];
+            computer.LastError = ex.Message;
+            computer.LastStatus = "Vitals unavailable";
+            _activity.Warn(computer.Name, $"Vitals unavailable — {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            computer.VitalityScore = null;
+            computer.VitalityBand = VitalityBand.Unknown;
+            computer.LastError = ex.Message;
+            computer.LastStatus = "Vitals failed";
+            _activity.Warn(computer.Name, $"Vitals failed — {ex.Message}");
         }
     }
 
