@@ -268,21 +268,22 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
-                        <!-- "+" stays pinned at the right; the tab strip scrolls horizontally when
-                             there are more tabs than fit (no clipping / off-screen "+"). -->
-                        <DockPanel Grid.Row="0">
-                            <ui:Button DockPanel.Dock="Right" Content="+"
-                                       FontSize="16"
-                                       Margin="6,0,0,0"
-                                       Padding="10,2"
-                                       VerticalAlignment="Center"
-                                       Click="OnNewTab"
-                                       AutomationProperties.Name="New tab"
-                                       ToolTip="New tab (Ctrl+T)" />
-                            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                        <!-- Browser-style: the "+" sits immediately after the last tab and scrolls with
+                             the strip. When there are more tabs than fit, the horizontal scrollbar keeps
+                             the "+" reachable (scroll right to it) rather than pinning it far away. -->
+                        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                            <StackPanel Orientation="Horizontal">
                                 <StackPanel IsItemsHost="True" Orientation="Horizontal" />
-                            </ScrollViewer>
-                        </DockPanel>
+                                <ui:Button Content="+"
+                                           FontSize="16"
+                                           Margin="6,0,0,0"
+                                           Padding="10,2"
+                                           VerticalAlignment="Center"
+                                           Click="OnNewTab"
+                                           AutomationProperties.Name="New tab"
+                                           ToolTip="New tab (Ctrl+T)" />
+                            </StackPanel>
+                        </ScrollViewer>
                         <Border Grid.Row="1"
                                 Margin="0,4,0,0"
                                 BorderBrush="{DynamicResource ControlElevationBorderBrush}"
