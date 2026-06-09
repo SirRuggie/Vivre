@@ -9,9 +9,10 @@ namespace Vivre.Core.Remoting;
 public interface IHostRebootProbe
 {
     /// <summary>
-    /// Checks the well-known reboot-pending markers on the target — Component Based Servicing,
-    /// Windows Update Auto Update, PendingFileRenameOperations, a pending computer rename, and
-    /// the SCCM client (if installed). Returns <c>true</c>/<c>false</c> when the probe ran,
+    /// Checks the reliable reboot-pending markers on the target — Component Based Servicing,
+    /// Windows Update Auto Update, a pending computer rename, and the SCCM client (if installed).
+    /// PendingFileRenameOperations is deliberately excluded — it over-reports on long-uptime servers
+    /// (benign AV/installer file ops). Returns <c>true</c>/<c>false</c> when the probe ran,
     /// <c>null</c> when the call returned no usable data (e.g. unreachable).
     /// </summary>
     Task<bool?> IsRebootPendingAsync(

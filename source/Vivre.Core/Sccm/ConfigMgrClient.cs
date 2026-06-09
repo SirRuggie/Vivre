@@ -126,9 +126,12 @@ public sealed class ConfigMgrClient : IConfigMgrClient
         try { $lastBoot = (Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime } catch { }
 
         $componentReboot = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
-        $fileRename = @((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ErrorAction SilentlyContinue).PendingFileRenameOperations | Where-Object { $_ }).Count -ne 0
+        # PendingFileRenameOperations is intentionally excluded — it over-reports on long-uptime servers
+        # (benign AV/installer file ops), which made every row show a pending reboot. The Windows Update
+        # reboot key + CBS + SCCM's own DetermineIfRebootPending are the reliable signals.
+        $wuReboot = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
 
-        $rebootRequired = $ccmReboot -or $ccmHardReboot -or $patchReboot -or $componentReboot -or $fileRename
+        $rebootRequired = $ccmReboot -or $ccmHardReboot -or $patchReboot -or $componentReboot -or $wuReboot
         $userLoggedOn = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue).Count -gt 0
 
         [PSCustomObject]@{

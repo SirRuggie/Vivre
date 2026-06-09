@@ -4,9 +4,10 @@ using Vivre.Core.PowerShell;
 namespace Vivre.Core.Remoting;
 
 /// <summary>
-/// Aggregates the standard pending-reboot markers (CBS, Windows Update Auto Update,
-/// <c>PendingFileRenameOperations</c>, a pending computer rename, and the SCCM client when
-/// installed) into a single small PowerShell run over WinRM. Mirrors the dispatch pattern of
+/// Aggregates the reliable pending-reboot markers (CBS, Windows Update Auto Update, a pending
+/// computer rename, and the SCCM client when installed) into a single small PowerShell run over
+/// WinRM. <c>PendingFileRenameOperations</c> is deliberately excluded — it over-reports on
+/// long-uptime servers (benign AV/installer file ops). Mirrors the dispatch pattern of
 /// <c>ConfigMgrClient</c>: same <see cref="IPowerShellHost"/>, local-or-remote based on the host.
 /// </summary>
 public sealed class HostRebootProbe : IHostRebootProbe
@@ -47,11 +48,6 @@ public sealed class HostRebootProbe : IHostRebootProbe
 
         if (-not $pending -and (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired')) {
             $pending = $true
-        }
-
-        if (-not $pending) {
-            $pfro = Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -Name PendingFileRenameOperations -ErrorAction SilentlyContinue
-            if ($pfro -and $pfro.PendingFileRenameOperations) { $pending = $true }
         }
 
         if (-not $pending) {
