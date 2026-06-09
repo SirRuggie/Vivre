@@ -27,6 +27,11 @@ it ships, then gets a dated heading.
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
+- **Refreshed grid + dialog styling** — the machine and update grids now have structured, theme-aware
+  column headers (a fill band, a separator under the headers, and sort arrows) with taller 36px rows and
+  horizontal row dividers; the filter chips are taller with semantic icons; dialogs share consistent
+  section headers, padding, and a three-level type ramp; and all three tab strips use one Fluent style.
+  Works in both light and dark mode.
 - **New-tab "+" sits next to the last tab** — browser-style, instead of pinned to the window's far-right
   edge. With many tabs it scrolls with the strip (scroll right to reach it).
 - **Multi-tab sweeps stay responsive and never freeze** — Check Vitals, update scans, software and

@@ -36,12 +36,12 @@
         <ui:TitleBar Grid.Row="0" Title="Run Script" />
 
         <ui:TextBlock Grid.Row="1"
-                      Margin="12,4,12,8"
+                      Margin="24,4,24,8"
                       Appearance="Secondary"
                       Text="{Binding TargetSummary}" />
 
         <!-- Saved scripts (left) + editor (right) -->
-        <Grid Grid.Row="2" Margin="12,0,12,0">
+        <Grid Grid.Row="2" Margin="24,0,24,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="260" MinWidth="140" />
                 <ColumnDefinition Width="Auto" />
@@ -116,7 +116,7 @@
             </Border>
         </Grid>
 
-        <Grid Grid.Row="3" Margin="12,8">
+        <Grid Grid.Row="3" Margin="24,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -167,16 +167,32 @@
         </Grid>
 
         <!-- Output (auto-scrolls to newest line) -->
-        <TextBox Grid.Row="4"
-                 x:Name="OutputBox"
-                 Margin="12,0,12,0"
-                 IsReadOnly="True"
-                 FontFamily="Cascadia Code, Consolas, monospace"
-                 FontSize="12"
-                 VerticalScrollBarVisibility="Auto"
-                 HorizontalScrollBarVisibility="Auto"
-                 TextWrapping="NoWrap"
-                 TextChanged="OnOutputChanged"
-                 Text="{Binding Output, Mode=OneWay}" />
+        <Grid Grid.Row="4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <ui:TextBlock Grid.Row="0" FontTypography="Caption"
+                          Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                          Text="Output" Margin="24,8,24,4" />
+            <Border Grid.Row="1" Margin="24,0,24,0"
+                    CornerRadius="4"
+                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                    BorderThickness="1"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
+                <TextBox x:Name="OutputBox"
+                         IsReadOnly="True"
+                         Background="Transparent"
+                         BorderThickness="0"
+                         FontFamily="Cascadia Code, Consolas, monospace"
+                         FontSize="12"
+                         VerticalScrollBarVisibility="Auto"
+                         HorizontalScrollBarVisibility="Auto"
+                         TextWrapping="NoWrap"
+                         Padding="6"
+                         TextChanged="OnOutputChanged"
+                         Text="{Binding Output, Mode=OneWay}" />
+            </Border>
+        </Grid>
     </Grid>
 </ui:FluentWindow>

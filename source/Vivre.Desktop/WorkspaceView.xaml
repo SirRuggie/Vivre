@@ -23,6 +23,122 @@
         <local:StringToVisibilityConverter x:Key="StringToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+        <!-- GridRowStyle: BasedOn Wpf.Ui's KEYED DefaultDataGridRowStyle (not {x:Type DataGridRow}
+             which falls through to WPF Aero2 — theme-blind SystemColors near-black text invisible on
+             dark background). Adds 36px min-height only; all theme-aware colours come from the base.
+             GridColumnHeaderStyle: custom ControlTemplate so Background, bottom separator, sort arrow,
+             and hover states are fully owned here — no dependency on Wpf.Ui template internals.
+             ControlFillColorDefaultBrush gives a clearly elevated card-style header band in both themes
+             (same brush the filter chips use), and DividerStrokeColorDefaultBrush draws the separator
+             line between the header band and the first data row. -->
+        <Style x:Key="GridRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource DefaultDataGridRowStyle}">
+            <Setter Property="MinHeight" Value="36" />
+        </Style>
+        <Style x:Key="GridColumnHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="MinHeight" Value="32" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="DataGridColumnHeader">
+                        <Grid>
+                            <!-- Header fill band -->
+                            <Border x:Name="Bd"
+                                    Background="{DynamicResource ControlFillColorDefaultBrush}"
+                                    Padding="{TemplateBinding Padding}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter Grid.Column="0"
+                                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                                      RecognizesAccessKey="True"
+                                                      SnapsToDevicePixels="{TemplateBinding SnapsToDevicePixels}" />
+                                    <!-- Two separate glyphs — RotateTransform names inside Path.RenderTransform
+                                         are not reachable by template triggers, so use one path per direction. -->
+                                    <Grid Grid.Column="1">
+                                        <Path x:Name="SortArrowAsc"
+                                              Visibility="Collapsed"
+                                              Width="7" Height="5"
+                                              Margin="4,0,4,0"
+                                              VerticalAlignment="Center"
+                                              Fill="{DynamicResource TextFillColorSecondaryBrush}"
+                                              Stretch="Fill"
+                                              Data="M0,4 L3.5,0 L7,4 Z" />
+                                        <Path x:Name="SortArrowDesc"
+                                              Visibility="Collapsed"
+                                              Width="7" Height="5"
+                                              Margin="4,0,4,0"
+                                              VerticalAlignment="Center"
+                                              Fill="{DynamicResource TextFillColorSecondaryBrush}"
+                                              Stretch="Fill"
+                                              Data="M0,0 L3.5,4 L7,0 Z" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <!-- 1px separator line between header band and first data row -->
+                            <Border VerticalAlignment="Bottom"
+                                    Height="1"
+                                    Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                            <!-- Column resize grippers (named parts required by DataGrid) -->
+                            <Thumb x:Name="PART_LeftHeaderGripper"
+                                   HorizontalAlignment="Left"
+                                   Width="8" Cursor="SizeWE">
+                                <Thumb.Style>
+                                    <Style TargetType="Thumb">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Border Background="Transparent" />
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Thumb.Style>
+                            </Thumb>
+                            <Thumb x:Name="PART_RightHeaderGripper"
+                                   HorizontalAlignment="Right"
+                                   Width="8" Cursor="SizeWE">
+                                <Thumb.Style>
+                                    <Style TargetType="Thumb">
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="Thumb">
+                                                    <Border Background="Transparent" />
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </Thumb.Style>
+                            </Thumb>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource ControlFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bd" Property="Background"
+                                        Value="{DynamicResource ControlFillColorTertiaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="SortDirection" Value="Ascending">
+                                <Setter TargetName="SortArrowAsc" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                            <Trigger Property="SortDirection" Value="Descending">
+                                <Setter TargetName="SortArrowDesc" Property="Visibility" Value="Visible" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- A filter "chip": a pill-shaped ToggleButton themed with the app's Fluent brushes — subtle
              fill by default, accent fill + light text when active. Checked state binds to ActiveFilter
              via the enum⇄bool converter, so the chips behave as one radio group. -->
@@ -35,7 +151,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
-                        <Border x:Name="Chip" CornerRadius="14" Padding="12,5"
+                        <Border x:Name="Chip" CornerRadius="14" Padding="12,7"
                                 Background="{DynamicResource ControlFillColorDefaultBrush}"
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                                 BorderThickness="1">
@@ -87,17 +203,41 @@
                 <ToggleButton Style="{StaticResource FilterChip}" Content="Updates"
                               ToolTip="Machines with updates available to install"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.UpdatesAvailable}, Mode=TwoWay}" />
-                <ToggleButton Style="{StaticResource FilterChip}" Content="Reboot pending"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}" />
-                <ToggleButton Style="{StaticResource FilterChip}" Content="Errors"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}" />
-                <ToggleButton Style="{StaticResource FilterChip}" Content="Offline"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Reboot pending" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Errors" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="PlugDisconnected24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Offline" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}" Content="Done"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}" />
-                <ToggleButton Style="{StaticResource FilterChip}" Content="Unhealthy"
+                <ToggleButton Style="{StaticResource FilterChip}"
                               ToolTip="Machines whose vitality is Warning, Critical, or Offline (run Check Vitals first)"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}" />
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="HeartPulse24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Unhealthy" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
 
                 <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
@@ -120,10 +260,11 @@
                      IsReadOnly="True"
                      CanUserAddRows="False"
                      CanUserDeleteRows="False"
-                     GridLinesVisibility="All"
+                     GridLinesVisibility="Horizontal"
                      HorizontalGridLinesBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
-                     VerticalGridLinesBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                      HeadersVisibility="Column"
+                     RowStyle="{StaticResource GridRowStyle}"
+                     ColumnHeaderStyle="{StaticResource GridColumnHeaderStyle}"
                      SelectionMode="Extended"
                      SelectionUnit="FullRow"
                      ClipboardCopyMode="IncludeHeader"
@@ -296,6 +437,9 @@
                      CanUserAddRows="False"
                      CanUserDeleteRows="False"
                      GridLinesVisibility="Horizontal"
+                     HorizontalGridLinesBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
+                     RowStyle="{StaticResource GridRowStyle}"
+                     ColumnHeaderStyle="{StaticResource GridColumnHeaderStyle}"
                      HeadersVisibility="Column"
                      SelectionMode="Extended"
                      SelectionUnit="FullRow"

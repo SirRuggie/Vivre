@@ -23,20 +23,20 @@
         <ui:TitleBar Grid.Row="0" Title="Load computers" />
 
         <ui:TextBlock Grid.Row="1"
-                      Margin="16,4,16,8"
+                      Margin="24,4,24,8"
                       Appearance="Secondary"
                       Text="Paste machine names, one per line." />
 
         <TextBox Grid.Row="2"
                  x:Name="NamesBox"
-                 Margin="16,0,16,0"
+                 Margin="24,0,24,0"
                  AcceptsReturn="True"
                  AcceptsTab="False"
                  FontFamily="Cascadia Code, Consolas, monospace"
                  VerticalScrollBarVisibility="Auto"
                  TextWrapping="NoWrap" />
 
-        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="16,12,16,16">
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
             <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" Content="Load" Click="OnLoad" />
             <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>

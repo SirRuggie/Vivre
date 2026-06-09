@@ -29,23 +29,27 @@
             <StackPanel>
                 <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
 
-                <ui:TextBlock Text="Maintenance" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <ui:TextBlock Text="Maintenance" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
                     <RadioButton x:Name="EnterRadio" GroupName="Mode" Content="Enter — suppress alerts"
                                  IsChecked="True" Margin="0,0,20,0" Checked="OnModeChanged" />
                     <RadioButton GroupName="Mode" Content="Exit — resume monitoring" Checked="OnModeChanged" />
                 </StackPanel>
 
-                <ui:TextBlock Text="WhatsUp Gold server" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="WhatsUp Gold server" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBox x:Name="ServerBox" Margin="0,0,0,12" />
 
-                <ui:TextBlock Text="WhatsUp Gold username" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="WhatsUp Gold username" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBox x:Name="UserBox" PlaceholderText="domain\user or user" Margin="0,0,0,12" />
 
-                <ui:TextBlock Text="WhatsUp Gold password" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="WhatsUp Gold password" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <PasswordBox x:Name="PasswordBox" Height="32" VerticalContentAlignment="Center" Margin="0,0,0,12" />
 
-                <ui:TextBlock Text="Reason" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                <ui:TextBlock Text="Reason" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <ui:TextBox x:Name="ReasonBox" Margin="0,0,0,4" />
             </StackPanel>
         </ScrollViewer>
