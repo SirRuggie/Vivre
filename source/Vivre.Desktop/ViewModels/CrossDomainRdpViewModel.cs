@@ -69,7 +69,7 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
 
     partial void OnSelectedNodeChanged(RdpNodeViewModel? value)
     {
-        ConnectCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanConnect));
         OnPropertyChanged(nameof(CanEditSelected));
         OnPropertyChanged(nameof(CanRemoveSelected));
     }
@@ -95,25 +95,23 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
 
     // ---- connect / sessions ----
 
-    private bool CanConnect => SelectedNode is RdpHostNodeViewModel;
+    // Public so the toolbar Connect button can bind IsEnabled to it directly (the button uses a
+    // Click handler so the view can show the no-credentials dialog on the UI thread).
+    public bool CanConnect => SelectedNode is RdpHostNodeViewModel;
 
-    [RelayCommand(CanExecute = nameof(CanConnect))]
-    private void Connect()
-    {
-        if (SelectedNode is RdpHostNodeViewModel hostNode)
-        {
-            ConnectTo(hostNode);
-        }
-    }
-
-    /// <summary>Resolves the host's credentials (inheriting from ancestor folders) and opens a session tab.</summary>
-    public void ConnectTo(RdpHostNodeViewModel hostNode)
+    /// <summary>
+    /// Resolves the host's credentials (inheriting from ancestor folders) and opens a session tab.
+    /// Returns <see langword="false"/> when no saved credentials were found so the caller (the view)
+    /// can surface a visible message — everything else (bad server, cred read error) is already
+    /// written to the activity log and returns <see langword="true"/> to suppress a duplicate dialog.
+    /// </summary>
+    public bool ConnectTo(RdpHostNodeViewModel hostNode)
     {
         RdpHost host = hostNode.Host;
         if (string.IsNullOrWhiteSpace(host.Server))
         {
             _activity.Warn(null, $"{hostNode.Name} has no server address — edit it first.");
-            return;
+            return true;
         }
 
         RdpConnectionSettings? settings;
@@ -124,13 +122,13 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         catch (Exception ex)
         {
             _activity.Error(host.Server, $"Couldn't read saved credentials for {hostNode.Name}: {ex.Message}");
-            return;
+            return true;
         }
 
         if (settings is null)
         {
-            _activity.Warn(host.Server, $"No saved credentials for {hostNode.Name} (or an ancestor folder). Edit it and set a username + password.");
-            return;
+            _activity.Warn(host.Server, $"No saved credentials for '{hostNode.Name}' — right-click the host and choose Edit… to add a login.");
+            return false;
         }
 
         var session = new RdpSessionViewModel(hostNode.Name, settings);
@@ -139,6 +137,7 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         OnPropertyChanged(nameof(HasSessions));
         SelectedSession = session;
         _activity.Info(host.Server, $"Opening remote desktop to {hostNode.Name} ({host.Server}).");
+        return true;
     }
 
     private bool HasSelectedSession => SelectedSession is not null;

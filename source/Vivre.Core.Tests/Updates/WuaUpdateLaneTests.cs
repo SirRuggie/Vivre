@@ -96,6 +96,21 @@ public class WuaUpdateLaneTests
     }
 
     [Fact]
+    public void TryParseProgress_parses_an_uninstalling_snapshot()
+    {
+        // The agent emits "Uninstalling" during RunUninstall — verify it maps to PatchPhase.Uninstalling
+        // so the grid chip shows "Uninstalling" rather than the old "Installing" label.
+        const string json = """
+            {"phase":"Uninstalling","message":"Uninstalling 1 of 2 (KB5037782) — 50%","percent":25,"available":2,"installed":0,"failed":0,"rebootPending":false}
+            """;
+
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.Equal(PatchPhase.Uninstalling, status.Phase);
+        Assert.Equal(25, status.Percent);
+        Assert.Equal("Uninstalling 1 of 2 (KB5037782) — 50%", status.Message);
+    }
+
+    [Fact]
     public void TryParseProgress_maps_pendingreboot_and_reboot_flag()
     {
         const string json = """{"phase":"PendingReboot","message":"Installed 5, reboot required","installed":5,"rebootPending":true}""";

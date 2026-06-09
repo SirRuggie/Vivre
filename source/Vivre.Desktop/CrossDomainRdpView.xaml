@@ -31,7 +31,8 @@
 
             <ui:Button Grid.Row="0" Content="Connect" Icon="{ui:SymbolIcon PlugConnected24}"
                        Appearance="Primary" HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
-                       Command="{Binding ConnectCommand}" />
+                       IsEnabled="{Binding CanConnect}"
+                       Click="OnConnect" />
 
             <!-- 2x2 grid so all four buttons always fit the column (no clipping at any window size). -->
             <UniformGrid Grid.Row="1" Columns="2" Margin="0,8,0,0">

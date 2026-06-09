@@ -18,6 +18,9 @@ public enum PatchPhase
     /// <summary>The SYSTEM task is installing.</summary>
     Installing,
 
+    /// <summary>The SYSTEM task is uninstalling.</summary>
+    Uninstalling,
+
     /// <summary>Install finished and the box needs a reboot.</summary>
     PendingReboot,
 
@@ -52,6 +55,9 @@ public enum PatchState
 
     /// <summary>Installing (blue).</summary>
     Installing,
+
+    /// <summary>Uninstalling (blue — same working colour as <see cref="Installing"/>).</summary>
+    Uninstalling,
 
     /// <summary>A reboot is required / in progress (amber).</summary>
     RebootPending,

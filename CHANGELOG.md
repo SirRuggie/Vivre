@@ -14,6 +14,17 @@ it ships, then gets a dated heading.
   Windows Update reboot keys plus SCCM's own `DetermineIfRebootPending` — so the column agrees with the
   ConfigMgr console. Fixed across all three probes (Check Vitals, SCCM health, and the
   monitor/force-reboot recheck).
+- **Update-scan concurrency knob now actually works** — `MaxConcurrentScans` was defined but never
+  wired to anything; the shared remote-read budget is now sized from it (default 32, unchanged in
+  practice).
+- **Scheduling an install no longer self-cancels on Stop** — hitting Stop right after a scheduled task
+  was registered on a target used to silently unregister it; the schedule is now left in place and the
+  outcome is reported.
+- **Uninstalls show "Uninstalling"** in the status chip instead of the misleading "Installing".
+- **CSV export is formula-injection safe** — values that start with `=` `+` `-` `@` (e.g. a software
+  name read back from a target) are neutralised so a spreadsheet can't execute them on open.
+- **Cross-Domain RDP tells you when a host has no saved credentials** — connecting now shows a dialog
+  pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
 - **New-tab "+" sits next to the last tab** — browser-style, instead of pinned to the window's far-right
