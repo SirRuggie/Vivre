@@ -6,6 +6,15 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **Reboot Pending column over-reported on every machine** — healthy boxes showed a pending reboot when
+  none was due. The detection OR'd in `PendingFileRenameOperations`, which is populated by benign file
+  operations (AV definition swaps, installer temp cleanup) and accumulates on long-uptime servers, so it
+  fired almost everywhere. Reboot-pending detection now uses the reliable signals only — the CBS and
+  Windows Update reboot keys plus SCCM's own `DetermineIfRebootPending` — so the column agrees with the
+  ConfigMgr console. Fixed across all three probes (Check Vitals, SCCM health, and the
+  monitor/force-reboot recheck).
+
 ### Changed
 - **Multi-tab sweeps stay responsive and never freeze** — Check Vitals, update scans, software and
   custom-column reads across *all* open tabs now share one app-wide concurrency budget (≈32 hosts at a

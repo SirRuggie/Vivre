@@ -315,17 +315,21 @@ public sealed class VitalsProbe : IVitalsProbe
             if ($_.Exception.Message -match 'No events were found') { $eventCount = 0 }
         }
 
-        # --- Pending reboot (CBS key / file-rename / CCM) ---
+        # --- Pending reboot (CBS key / Windows Update / SCCM client) ---
+        # PendingFileRenameOperations is deliberately NOT used: benign file ops (AV definition swaps,
+        # installer temp cleanup) populate it and it accumulates on long-uptime servers, so it massively
+        # over-reports "reboot pending". Match SCCM's own DetermineIfRebootPending plus the CBS and Windows
+        # Update reboot keys instead, so the column agrees with the ConfigMgr console.
         $rebootPending = $null
         try {
             $cbs = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending'
-            $fileRename = @((Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager' -ErrorAction SilentlyContinue).PendingFileRenameOperations | Where-Object { $_ }).Count -ne 0
+            $wu  = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
             $ccm = $false
             try {
                 $r = Invoke-CimMethod -Namespace 'ROOT\ccm\ClientSDK' -ClassName CCM_ClientUtilities -MethodName DetermineIfRebootPending -ErrorAction Stop
                 $ccm = [bool]$r.RebootPending -or [bool]$r.IsHardRebootPending
             } catch { }
-            $rebootPending = [bool]($cbs -or $fileRename -or $ccm)
+            $rebootPending = [bool]($cbs -or $wu -or $ccm)
         } catch { }
 
         # --- Logged-on interactive users ---
