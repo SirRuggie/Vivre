@@ -60,7 +60,7 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
 
 ## Phases
 
-### Phase 1 — NavigationView shell + Settings page  *(status: in progress)*
+### Phase 1 — NavigationView shell + Settings page  ✅ *(done — 1.8.0)*
 - Restructure `MainWindow` to host a `ui:NavigationView` (pane: **Computers**; footer: **Settings**).
   LeftCompact, collapsed at startup, expand/collapse persisted (new `AppSettings` flag, e.g. `NavPaneOpen`).
 - **Computers** content = the existing workspace **moved intact** (command bar + keep-alive `TabControlEx` +

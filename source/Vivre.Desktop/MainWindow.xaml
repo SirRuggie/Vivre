@@ -27,8 +27,7 @@
         <local:StringToVisibilityConverter x:Key="StringToVis" />
     </ui:FluentWindow.Resources>
 
-    <!-- Keyboard accelerators → routed to code-behind, which forwards to the active tab's commands.
-         (RoutedUICommands, not data-bound KeyBindings: InputBindings have no DataContext in WPF.) -->
+    <!-- Keyboard accelerators → routed to code-behind. -->
     <ui:FluentWindow.CommandBindings>
         <CommandBinding Command="{x:Static local:MainWindow.NewTabKey}" Executed="OnNewTabKey" />
         <CommandBinding Command="{x:Static local:MainWindow.CloseTabKey}" Executed="OnCloseTabKey" />
@@ -54,14 +53,7 @@
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
-            <!-- Fleet status band: appears only during an active update operation. -->
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
-            <!-- Activity log splitter + panel: hidden by default, toggled from the View menu. -->
-            <RowDefinition x:Name="SplitterRow" Height="0" />
-            <RowDefinition x:Name="ActivityRow" Height="0" MinHeight="0" />
-            <!-- Bottom status bar (always visible). -->
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -71,13 +63,12 @@
             </ui:TitleBar.Icon>
         </ui:TitleBar>
 
-        <!-- System tray icon (no visual footprint in the grid). -->
+        <!-- System tray icon (no visual footprint). -->
         <tb:TaskbarIcon x:Name="TrayIcon" Grid.Row="0"
                         IconSource="pack://application:,,,/Assets/AppIcon.png"
                         ToolTipText="Vivre — the heartbeat of your fleet"
                         TrayMouseDoubleClick="OnTrayOpen">
             <tb:TaskbarIcon.ContextMenu>
-                <!-- M24: tray context menu with icons and a separator between Open and Exit. -->
                 <ContextMenu>
                     <MenuItem Header="Open" Click="OnTrayOpen">
                         <MenuItem.Icon><ui:SymbolIcon Symbol="WindowNew24" /></MenuItem.Icon>
@@ -90,16 +81,13 @@
             </tb:TaskbarIcon.ContextMenu>
         </tb:TaskbarIcon>
 
-        <!-- Menu bar. File is rebuilt on open (acts on the active tab); Settings is static. -->
+        <!-- Menu bar. Settings and Help menus removed — their items now live in the Settings nav page. -->
         <Menu Grid.Row="1" Margin="8,0,0,0" Background="Transparent">
             <MenuItem x:Name="FileMenu" Header="_File" SubmenuOpened="OnFileMenuOpened" />
             <MenuItem Header="_View">
                 <MenuItem x:Name="ActivityLogMenuItem" Header="_Activity log"
                           IsCheckable="True" IsChecked="False" Click="OnToggleActivityLog" />
                 <Separator />
-                <!-- Mutually-exclusive mode → radio dots (inline, no submenu). The RadioButton sits in the
-                     icon slot purely as the indicator; the click sets the mode (IsHitTestVisible=False so
-                     the menu item handles the click). -->
                 <MenuItem Header="_Machines" InputGestureText="Ctrl+M" Click="OnSelectMachinesMode">
                     <MenuItem.Icon>
                         <RadioButton IsChecked="{Binding IsMachinesView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
@@ -110,18 +98,14 @@
                         <RadioButton IsChecked="{Binding IsWindowsUpdateView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <!-- Its own tab (not a mode of a machine tab), but presented as a peer view: clicking jumps to it,
-                     the dot shows when it's active, and Machines / Windows Update jump back. -->
                 <MenuItem Header="Cross-_Domain RDP" Click="OnOpenCrossDomainRdp"
                           Visibility="{Binding IsCrossDomainRdpAvailable, Converter={StaticResource BoolToVis}}"
-                          ToolTip="Open the Cross-Domain RDP manager (folder tree of hosts + tabbed RDP sessions).">
+                          ToolTip="Open the Cross-Domain RDP manager.">
                     <MenuItem.Icon>
                         <RadioButton IsChecked="{Binding IsCrossDomainRdpView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
                     </MenuItem.Icon>
                 </MenuItem>
             </MenuItem>
-            <!-- Update config is only relevant while patching, so this whole menu shows only in Windows
-                 Update mode — it stays off the Machines view (no toolbar real-estate cost). -->
             <MenuItem Header="_Updates"
                       Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
                 <MenuItem Header="_Source">
@@ -146,745 +130,706 @@
                 </MenuItem>
                 <Separator />
                 <MenuItem Header="Include _drivers" IsCheckable="True"
-                          IsChecked="{Binding SelectedTab.IncludeDrivers, Mode=TwoWay}"
-                          ToolTip="Off (default) hides driver updates — matches the Windows Update UI and BatchPatch." />
+                          IsChecked="{Binding SelectedTab.IncludeDrivers, Mode=TwoWay}" />
                 <Separator />
                 <MenuItem Header="_Exclude updates…" Click="OnOpenExcludeDialog" />
             </MenuItem>
-            <MenuItem Header="_Settings">
-                <MenuItem Header="_Credentials…" Click="OnOpenSettings" />
-                <Separator />
-                <MenuItem Header="_Theme">
-                    <MenuItem Header="_Light" Click="OnThemeLight">
-                        <MenuItem.Icon><RadioButton x:Name="LightThemeRadio" IsHitTestVisible="False" Focusable="False" /></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="_Dark" Click="OnThemeDark">
-                        <MenuItem.Icon><RadioButton x:Name="DarkThemeRadio" IsHitTestVisible="False" Focusable="False" /></MenuItem.Icon>
-                    </MenuItem>
-                    <MenuItem Header="_System" Click="OnThemeSystem">
-                        <MenuItem.Icon><RadioButton x:Name="SystemThemeRadio" IsHitTestVisible="False" Focusable="False" /></MenuItem.Icon>
-                    </MenuItem>
-                </MenuItem>
-                <Separator />
-                <MenuItem x:Name="AutoCheckItem" Header="_Auto-check on load" IsCheckable="True" Click="OnToggleAutoCheck"
-                          ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals. Always just your loaded list." />
-            </MenuItem>
-            <MenuItem Header="_Help">
-                <MenuItem Header="_How to use Vivre…" Click="OnOpenHelp" InputGestureText="F1" />
-                <Separator />
-                <MenuItem Header="_About Vivre" Click="OnOpenAbout" />
-            </MenuItem>
         </Menu>
 
-        <!-- Shared command bar — actions on the left, quick-add on the right. Acts on the active tab.
-             Hidden on the Cross-Domain RDP tab (machine-only chrome). -->
-        <Grid Grid.Row="2" Margin="12,4,12,10"
-              Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- Shell row 2: NavigationView pane overlaid with keep-alive content host.
+             NavView spans the full row and owns the left pane (hamburger toggle, icon strip).
+             ContentHost sits over the NavView with a left Margin that matches the pane width so
+             it never overlaps the pane — code-behind adjusts that margin on PaneOpened/PaneClosed.
+             Navigate() is never called on NavView, so its built-in Frame stays empty; SelectionChanged
+             only toggles the Visibility of ComputersSection / SettingsSection in ContentHost. -->
+        <Grid Grid.Row="2">
 
-            <!-- M1: command bar grouped into three labeled clusters (Fleet / Operations / Updates). -->
-            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+            <!-- NavigationView — pane-only (no Navigate() calls; built-in Frame is empty).
+                 LeftCompact: icons shown when compact (pane closed), icons+labels when open. -->
+            <ui:NavigationView x:Name="NavView"
+                               PaneDisplayMode="Left"
+                               IsPaneOpen="False"
+                               IsPaneToggleVisible="True"
+                               IsBackButtonVisible="Collapsed"
+                               AlwaysShowHeader="False"
+                               HeaderVisibility="Collapsed"
+                               FrameMargin="0"
+                               CompactPaneLength="48"
+                               OpenPaneLength="200"
+                               PaneOpened="OnNavPaneOpened"
+                               PaneClosed="OnNavPaneClosed"
+                               ItemInvoked="OnNavItemInvoked">
 
-                <!-- Cluster: Fleet -->
-                <StackPanel Orientation="Vertical">
-                    <TextBlock Text="FLEET" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    <StackPanel Orientation="Horizontal">
-                        <!-- Mode (Machines / Windows Update) is chosen from the View menu, not the toolbar.
-                             Machine actions sit in a fixed position; the update-only Scan/Install append on
-                             the RIGHT (below) so these buttons don't shift when you switch modes. -->
-                        <!-- M31: tooltip includes (F5) accelerator. -->
-                        <ui:SplitButton Appearance="Primary"
-                                        Icon="{ui:SymbolIcon ArrowSync24}"
-                                        Content="Ping All"
-                                        Command="{Binding SelectedTab.PingAllCommand}"
-                                        ToolTip="Ping every machine in this tab and update the Online status (F5)">
-                            <ui:SplitButton.Flyout>
-                                <ContextMenu>
-                                    <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
-                                </ContextMenu>
-                            </ui:SplitButton.Flyout>
-                        </ui:SplitButton>
-                        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Pulse24}" Content="Check Vitals" Command="{Binding SelectedTab.CheckVitalsCommand}"
-                                   ToolTip="Pull SCCM client health AND deep OS vitals for every machine. Read-only." />
-                        <ToggleButton Margin="8,0,0,0" Padding="11,6"
-                                      VerticalAlignment="Center"
-                                      IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
-                                      ToolTip="Continuously re-check online/offline for all machines. Stop halts it.">
-                            <StackPanel Orientation="Horizontal">
-                                <ui:SymbolIcon Symbol="Eye24" Margin="0,0,8,0" />
-                                <TextBlock Text="Monitor" VerticalAlignment="Center" />
+                <ui:NavigationView.MenuItems>
+                    <ui:NavigationViewItem x:Name="ComputersNavItem"
+                                           Content="Computers"
+                                           Icon="{ui:SymbolIcon Desktop24}"
+                                           ToolTip="Computers workspace — ping, health-check, patch your fleet"
+                                           Click="OnComputersNavClick" />
+                </ui:NavigationView.MenuItems>
+
+                <ui:NavigationView.FooterMenuItems>
+                    <ui:NavigationViewItem x:Name="SettingsNavItem"
+                                           Content="Settings"
+                                           Icon="{ui:SymbolIcon Settings24}"
+                                           ToolTip="Theme, credentials, auto-check, columns, help"
+                                           Click="OnSettingsNavClick" />
+                </ui:NavigationView.FooterMenuItems>
+
+            </ui:NavigationView>
+
+            <!-- Keep-alive content host — placed over the NavView with a left margin equal to the
+                 pane's compact/open width. Both sections live here permanently; SelectionChanged
+                 toggles their Visibility only — the workspace (TabControlEx + loaded state) is NEVER
+                 rebuilt when switching Computers ↔ Settings. -->
+            <Grid x:Name="ContentHost" Margin="48,0,0,0">
+
+                <!-- ═════════════════ COMPUTERS SECTION ══════════════════════ -->
+                <Grid x:Name="ComputersSection" Visibility="Visible">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition x:Name="SplitterRow" Height="0" />
+                        <RowDefinition x:Name="ActivityRow" Height="0" MinHeight="0" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Command bar -->
+                    <Grid Grid.Row="0" Margin="12,4,12,10"
+                          Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+
+                            <StackPanel Orientation="Vertical">
+                                <TextBlock Text="FLEET" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SplitButton Appearance="Primary"
+                                                    Icon="{ui:SymbolIcon ArrowSync24}"
+                                                    Content="Ping All"
+                                                    Command="{Binding SelectedTab.PingAllCommand}"
+                                                    ToolTip="Ping every machine in this tab (F5)">
+                                        <ui:SplitButton.Flyout>
+                                            <ContextMenu>
+                                                <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
+                                            </ContextMenu>
+                                        </ui:SplitButton.Flyout>
+                                    </ui:SplitButton>
+                                    <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Pulse24}" Content="Check Vitals"
+                                               Command="{Binding SelectedTab.CheckVitalsCommand}"
+                                               ToolTip="Pull SCCM client health AND deep OS vitals. Read-only." />
+                                    <ToggleButton Margin="8,0,0,0" Padding="11,6"
+                                                  VerticalAlignment="Center"
+                                                  IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
+                                                  ToolTip="Continuously re-check online/offline. Stop halts it.">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ui:SymbolIcon Symbol="Eye24" Margin="0,0,8,0" />
+                                            <TextBlock Text="Monitor" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </ToggleButton>
+                                </StackPanel>
                             </StackPanel>
-                        </ToggleButton>
-                    </StackPanel>
-                </StackPanel>
 
-                <!-- Divider between Fleet and Operations clusters -->
-                <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                            <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
 
-                <!-- Cluster: Operations -->
-                <StackPanel Orientation="Vertical">
-                    <TextBlock Text="OPERATIONS" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    <StackPanel Orientation="Horizontal">
-                        <ui:Button Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline" Command="{Binding SelectedTab.RemoveOfflineCommand}"
-                                   ToolTip="Remove every offline (red) machine from this tab's grid. Re-paste names to bring them back." />
-                        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop" Command="{Binding SelectedTab.StopCommand}"
-                                   ToolTip="Cancel all running operations in this tab (ping/check/scan/install)." />
-                        <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Eraser24}" Content="Clear Results" Command="{Binding SelectedTab.ClearResultsCommand}"
-                                   ToolTip="Clear the Command result column on every row." />
-                    </StackPanel>
-                </StackPanel>
-
-                <!-- Divider + Updates cluster (shown only in Windows Update mode) -->
-                <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
-                        Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
-                <StackPanel Orientation="Vertical"
-                            Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}">
-                    <TextBlock Text="UPDATES" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                    <StackPanel Orientation="Horizontal">
-                        <ui:Button Icon="{ui:SymbolIcon Search24}" Content="{Binding SelectedTab.ScanButtonLabel}"
-                                   Command="{Binding SelectedTab.ScanTargetCommand}"
-                                   ToolTip="Scan the selected machines (or all when none are selected). To scan just one, open its side panel." />
-                        <!-- M31: tooltip includes (Ctrl+Enter) accelerator. -->
-                        <ui:Button x:Name="InstallButton" Margin="8,0,0,0" Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="{Binding SelectedTab.InstallButtonLabel}"
-                                   Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
-                                   IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
-                                   Click="OnInstallClick"
-                                   ToolTip="Download + install applicable updates on selected machines (or all when none selected). One-time SYSTEM task per host; reboot reported, not forced (Ctrl+Enter)." />
-                    </StackPanel>
-                </StackPanel>
-
-                <ui:ProgressRing Margin="12,0,0,0" Width="22" Height="22" IsIndeterminate="True"
-                                 VerticalAlignment="Center"
-                                 Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
-                <!-- M8: sweep narration beside the ring (hidden when idle, shown when busy and a label is set). -->
-                <TextBlock Margin="6,0,0,0" VerticalAlignment="Center" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="{Binding SelectedTab.SweepStatus}"
-                           Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
-            </StackPanel>
-
-            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                <!-- M31: quick-add box focuses on Ctrl+L; no shortcut for Add button itself. -->
-                <ui:TextBox x:Name="QuickAddBox" Width="190" PlaceholderText="Add computer…"
-                            ToolTip="Type a computer name and press Enter, or use Ctrl+L to jump here"
-                            KeyDown="OnQuickAddKeyDown" />
-                <ui:Button x:Name="AddButton" Margin="6,0,0,0" Icon="{ui:SymbolIcon Add24}" Content="Add" Click="OnQuickAdd" ToolTip="Add this computer (or press Enter in the box)" />
-                <ui:Button Margin="6,0,0,0" Appearance="Secondary" Icon="{ui:SymbolIcon ClipboardPaste24}" Click="OnPasteList"
-                           Height="{Binding ActualHeight, ElementName=AddButton}"
-                           VerticalContentAlignment="Center"
-                           AutomationProperties.Name="Paste a list of machines"
-                           ToolTip="Paste a list of machines from the clipboard" />
-            </StackPanel>
-        </Grid>
-
-        <!-- Fleet status band — visible while an update operation is running OR during the 3s hold-open
-             after completion (M11: prevents racing the completion bar). -->
-        <Border Grid.Row="3" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
-                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
-                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
-                Visibility="{Binding SelectedTab.IsPatchOperationOrFleetHeld, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <!-- Fleet state tally (e.g. "12 done · 3 installing") -->
-                <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
-                           Text="{Binding SelectedTab.FleetSummary}" />
-                <!-- M11: N/M machines counter (reuses M8's completed counter) -->
-                <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="{Binding SelectedTab.FleetNofM}"
-                           Visibility="{Binding SelectedTab.FleetNofM, Converter={StaticResource StringToVis}}" />
-                <!-- M11: elapsed time -->
-                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="{Binding SelectedTab.FleetElapsed}"
-                           Visibility="{Binding SelectedTab.FleetElapsed, Converter={StaticResource StringToVis}}" />
-                <!-- M23: animated fleet progress bar — the Value binding is set at runtime via
-                     code-behind (OnFleetProgressChanged) so the bar eases to each new value. -->
-                <ProgressBar x:Name="FleetProgressBar" Grid.Column="3" Height="8" VerticalAlignment="Center"
-                             Minimum="0" Maximum="100" />
-            </Grid>
-        </Border>
-
-        <!-- One tab per independent workspace. Header = title + close; double-click or right-click to rename.
-             A browser-style "+" sits right after the last tab (TabControl template below). -->
-        <local:TabControlEx x:Name="WorkspaceTabs" Grid.Row="4"
-                    Margin="8,4,8,8"
-                    ItemsSource="{Binding Tabs}"
-                    SelectedItem="{Binding SelectedTab, Mode=TwoWay}">
-            <TabControl.Template>
-                <ControlTemplate TargetType="TabControl">
-                    <Grid>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-                        <!-- Browser-style: the "+" sits immediately after the last tab and scrolls with
-                             the strip. When there are more tabs than fit, the horizontal scrollbar keeps
-                             the "+" reachable (scroll right to it) rather than pinning it far away. -->
-                        <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                            <StackPanel Orientation="Horizontal">
-                                <StackPanel IsItemsHost="True" Orientation="Horizontal" />
-                                <!-- M31: tooltip already includes shortcut — confirmed. -->
-                                <ui:Button Content="+"
-                                           FontSize="16"
-                                           Margin="6,0,0,0"
-                                           Padding="10,2"
-                                           VerticalAlignment="Center"
-                                           Click="OnNewTab"
-                                           AutomationProperties.Name="New tab"
-                                           ToolTip="New tab (Ctrl+T)" />
+                            <StackPanel Orientation="Vertical">
+                                <TextBlock Text="OPERATIONS" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline"
+                                               Command="{Binding SelectedTab.RemoveOfflineCommand}"
+                                               ToolTip="Remove every offline machine from this tab." />
+                                    <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop"
+                                               Command="{Binding SelectedTab.StopCommand}"
+                                               ToolTip="Cancel all running operations in this tab." />
+                                    <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Eraser24}" Content="Clear Results"
+                                               Command="{Binding SelectedTab.ClearResultsCommand}"
+                                               ToolTip="Clear the Command result column on every row." />
+                                </StackPanel>
                             </StackPanel>
-                        </ScrollViewer>
-                        <Border Grid.Row="1"
-                                Margin="0,4,0,0"
-                                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
-                                BorderThickness="0,1,0,0">
-                            <!-- TabControlEx fills this with one kept-alive presenter per tab (so the
-                                 Cross-Domain RDP tab's live RDP sessions survive switching tabs). -->
-                            <Grid x:Name="PART_ItemsHolder" />
-                        </Border>
-                    </Grid>
-                </ControlTemplate>
-            </TabControl.Template>
-            <!-- TabItem appearance: inactive tabs get a visible card background so they're readable in dark mode;
-                 the selected tab uses the accent colour with white text. -->
-            <TabControl.ItemContainerStyle>
-                <StaticResource ResourceKey="FluentTabItemStyle" />
-            </TabControl.ItemContainerStyle>
 
-            <TabControl.ItemTemplate>
-                <DataTemplate>
-                    <!-- M26: MouseDown handles middle-click close; MouseLeftButtonDown handles double-click rename. -->
-                    <StackPanel Orientation="Horizontal"
-                                MouseLeftButtonDown="OnTabHeaderClick"
-                                MouseDown="OnTabHeaderMouseDown"
-                                ToolTip="Double-click to rename · right-click for options">
-                        <StackPanel.ContextMenu>
-                            <!-- M24: tab context menu with SymbolIcon icons. -->
-                            <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
-                                <MenuItem Header="Rename…" Click="OnRenameTab" InputGestureText="F2">
-                                    <MenuItem.Icon><ui:SymbolIcon Symbol="Edit24" /></MenuItem.Icon>
-                                </MenuItem>
-                                <Separator />
-                                <MenuItem Header="Close tab" Click="OnCloseTab" InputGestureText="Ctrl+W">
-                                    <MenuItem.Icon><ui:SymbolIcon Symbol="Dismiss24" /></MenuItem.Icon>
-                                </MenuItem>
-                                <MenuItem Header="Close other tabs" Click="OnCloseOtherTabs">
-                                    <MenuItem.Icon><ui:SymbolIcon Symbol="DismissCircle24" /></MenuItem.Icon>
-                                </MenuItem>
-                                <MenuItem Header="Close tabs to the right" Click="OnCloseTabsToRight">
-                                    <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowRight24" /></MenuItem.Icon>
-                                </MenuItem>
-                            </ContextMenu>
-                        </StackPanel.ContextMenu>
-                        <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
-                        <!-- M22: close button with circular hover fill (terminal-style). -->
-                        <Button Content="✕"
-                                Margin="10,0,0,0"
-                                Padding="4,0"
-                                BorderThickness="0"
-                                Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"
-                                Click="OnCloseTab"
-                                Visibility="{Binding CanClose, Converter={StaticResource BoolToVis}}"
-                                AutomationProperties.Name="Close tab"
-                                ToolTip="Close tab (Ctrl+W)">
-                            <Button.Style>
-                                <Style TargetType="Button">
-                                    <Setter Property="Background" Value="Transparent" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border x:Name="Bd" CornerRadius="12" Padding="{TemplateBinding Padding}"
-                                                        Background="{TemplateBinding Background}">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background"
-                                                                Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background"
-                                                                Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </Button.Style>
-                        </Button>
-                    </StackPanel>
-                </DataTemplate>
-            </TabControl.ItemTemplate>
-            <TabControl.Resources>
-                <!-- Type-keyed implicit templates: a machine workspace renders WorkspaceView; the Cross-Domain
-                     RDP tab renders CrossDomainRdpView. The ContentPresenter picks by the tab's runtime type. -->
-                <DataTemplate DataType="{x:Type vm:WorkspaceViewModel}">
-                    <local:WorkspaceView />
-                </DataTemplate>
-                <DataTemplate DataType="{x:Type vm:CrossDomainRdpViewModel}">
-                    <local:CrossDomainRdpView />
-                </DataTemplate>
-            </TabControl.Resources>
-        </local:TabControlEx>
+                            <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
+                                    Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
+                            <StackPanel Orientation="Vertical"
+                                        Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="UPDATES" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
+                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:Button Icon="{ui:SymbolIcon Search24}" Content="{Binding SelectedTab.ScanButtonLabel}"
+                                               Command="{Binding SelectedTab.ScanTargetCommand}"
+                                               ToolTip="Scan selected machines (or all when none selected)." />
+                                    <ui:Button x:Name="InstallButton" Margin="8,0,0,0" Appearance="Primary"
+                                               Icon="{ui:SymbolIcon ArrowDownload24}" Content="{Binding SelectedTab.InstallButtonLabel}"
+                                               Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
+                                               IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                               Click="OnInstallClick"
+                                               ToolTip="Download + install applicable updates on selected machines (Ctrl+Enter)." />
+                                </StackPanel>
+                            </StackPanel>
 
-        <!-- Transient "operation finished" banner — shown in-window when a Scan/Install/Uninstall
-             completes while the window is focused (the tray balloon covers the unfocused case).
-             Auto-closes after a few seconds; floats over the bottom of the active tab.
-             M23: 150ms fade-in when IsOpen becomes True. -->
-        <ui:InfoBar x:Name="CompletionBar" Grid.Row="4"
-                    Margin="16,0,16,16"
-                    VerticalAlignment="Bottom"
-                    Panel.ZIndex="10"
-                    IsOpen="False" IsClosable="True"
-                    Severity="Informational"
-                    Title="Operation complete"
-                    Opacity="0">
-            <ui:InfoBar.Style>
-                <Style TargetType="ui:InfoBar">
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsOpen, RelativeSource={RelativeSource Self}}" Value="True">
-                            <DataTrigger.EnterActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                         From="0" To="1" Duration="0:0:0.15" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </DataTrigger.EnterActions>
-                            <DataTrigger.ExitActions>
-                                <BeginStoryboard>
-                                    <Storyboard>
-                                        <DoubleAnimation Storyboard.TargetProperty="Opacity"
-                                                         To="0" Duration="0:0:0.1" />
-                                    </Storyboard>
-                                </BeginStoryboard>
-                            </DataTrigger.ExitActions>
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </ui:InfoBar.Style>
-        </ui:InfoBar>
-
-        <!-- Resize grip for the bottom dock. A 10px strip (easy to grab) with a visible centre handle
-             and the N–S resize cursor, so it's findable instead of a hunt for an invisible 6px line. -->
-        <GridSplitter x:Name="ActivitySplitter" Grid.Row="5" Height="10" HorizontalAlignment="Stretch" VerticalAlignment="Center"
-                      Background="Transparent" Cursor="SizeNS" ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
-                      ToolTip="Drag to resize the panel" Visibility="Collapsed">
-            <GridSplitter.Template>
-                <ControlTemplate TargetType="GridSplitter">
-                    <Border Background="{TemplateBinding Background}">
-                        <Rectangle Width="40" Height="4" RadiusX="2" RadiusY="2"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Fill="{DynamicResource ControlElevationBorderBrush}" />
-                    </Border>
-                </ControlTemplate>
-            </GridSplitter.Template>
-        </GridSplitter>
-
-        <!-- Unified bottom dock (shared across all tabs): an Activity tab + a per-machine Updates
-             tab, with a Close button to dismiss the whole dock. Hidden by default; opened via the
-             View ▸ Activity log menu OR when a machine is focused in Windows Update mode.
-             M23: opacity fade-in when shown (controlled in ShowDock code-behind). -->
-        <Grid x:Name="ActivityPanel" Grid.Row="6" Margin="8,0,8,8" Visibility="Collapsed" Opacity="0">
-            <TabControl x:Name="BottomDockTabs" ItemContainerStyle="{StaticResource FluentTabItemStyle}">
-                <!-- Close button floats over the tab strip, on the right. -->
-                <TabControl.Template>
-                    <ControlTemplate TargetType="TabControl">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                                <RowDefinition Height="*" />
-                            </Grid.RowDefinitions>
-                            <DockPanel Grid.Row="0">
-                                <ui:Button DockPanel.Dock="Right"
-                                           Margin="6,0,0,0"
-                                           VerticalAlignment="Center"
-                                           Appearance="Secondary"
-                                           Icon="{ui:SymbolIcon Dismiss24}"
-                                           Content="Close"
-                                           Click="OnCloseBottomDock"
-                                           AutomationProperties.Name="Close panel"
-                                           ToolTip="Close this panel (gives the grid the full window height back)" />
-                                <StackPanel IsItemsHost="True" Orientation="Horizontal" />
-                            </DockPanel>
-                            <Border Grid.Row="1"
-                                    Margin="0,4,0,0"
-                                    BorderBrush="{DynamicResource ControlElevationBorderBrush}"
-                                    BorderThickness="0,1,0,0">
-                                <ContentPresenter ContentSource="SelectedContent" />
-                            </Border>
-                        </Grid>
-                    </ControlTemplate>
-                </TabControl.Template>
-
-                <!-- Activity tab (always present). Its content root keeps the ActivityLog DataContext. -->
-                <TabItem x:Name="ActivityTab" Header="Activity">
-                    <Grid Margin="0,8,0,0" DataContext="{Binding ActivityLog}">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="*" />
-                        </Grid.RowDefinitions>
-
-                        <Grid Grid.Row="0" Margin="0,0,0,4">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <ui:TextBlock Grid.Column="0" Text="Activity" FontTypography="BodyStrong" VerticalAlignment="Center" />
-                            <ui:TextBox Grid.Column="1" Margin="12,0"
-                                        PlaceholderText="Search activity (machine or text)…"
-                                        Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
-                            <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
-                        </Grid>
-
-                        <!-- M15: activity-log empty state — shown when there are no entries yet. -->
-                        <Grid Grid.Row="1">
-                        <ui:DataGrid x:Name="ActivityGrid"
-                                  ItemsSource="{Binding Entries}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  CanUserAddRows="False"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="None"
-                                  PreviewMouseRightButtonDown="OnActivityGridRightClick">
-                            <!-- Right-click selects the line under the cursor (handled at grid level so we don't
-                                 override the themed row style), then the context menu copies it. -->
-                            <!-- M24: activity log context menu with icons. -->
-                            <ui:DataGrid.ContextMenu>
-                                <ContextMenu>
-                                    <MenuItem Header="Copy" Click="OnActivityCopy">
-                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Copy24" /></MenuItem.Icon>
-                                    </MenuItem>
-                                    <MenuItem Header="Copy all" Click="OnActivityCopyAll">
-                                        <MenuItem.Icon><ui:SymbolIcon Symbol="DocumentCopy24" /></MenuItem.Icon>
-                                    </MenuItem>
-                                </ContextMenu>
-                            </ui:DataGrid.ContextMenu>
-                            <ui:DataGrid.Columns>
-                                <DataGridTemplateColumn Header="" Width="Auto">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <ui:SymbolIcon Margin="6,0" FontSize="14"
-                                                           Symbol="{Binding Severity, Converter={StaticResource SeveritySymbol}}"
-                                                           Foreground="{Binding Severity, Converter={StaticResource SeverityBrush}}"
-                                                           ToolTip="{Binding Severity}" />
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
-                                <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="Auto" />
-                                <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
-                                    <DataGridTextColumn.ElementStyle>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="{Binding Severity, Converter={StaticResource SeverityBrush}}" />
-                                        </Style>
-                                    </DataGridTextColumn.ElementStyle>
-                                </DataGridTextColumn>
-                            </ui:DataGrid.Columns>
-                        </ui:DataGrid>
-
-                        <!-- M15: empty-state overlay when the activity log has no entries yet.
-                             Reuses M13 styles. IsHitTestVisible=False so the grid (and its right-click
-                             context menu) remains accessible once entries appear. -->
-                        <StackPanel>
-                            <StackPanel.Style>
-                                <Style TargetType="StackPanel" BasedOn="{StaticResource EmptyStatePanel}">
-                                    <Setter Property="Visibility" Value="Collapsed" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasEntries}" Value="False">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </StackPanel.Style>
-                            <ui:SymbolIcon Symbol="History24" FontSize="36" HorizontalAlignment="Center"
-                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                            <TextBlock Style="{StaticResource EmptyStateTitle}"
-                                       Text="No activity yet" />
-                            <TextBlock Style="{StaticResource EmptyStateSubtitle}"
-                                       Text="Operations like Ping All log here as they run." />
+                            <ui:ProgressRing Margin="12,0,0,0" Width="22" Height="22" IsIndeterminate="True"
+                                             VerticalAlignment="Center"
+                                             Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Margin="6,0,0,0" VerticalAlignment="Center" FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="{Binding SelectedTab.SweepStatus}"
+                                       Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
                         </StackPanel>
 
-                        </Grid><!-- end M15 activity-log wrapper -->
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                            <ui:TextBox x:Name="QuickAddBox" Width="190" PlaceholderText="Add computer…"
+                                        ToolTip="Type a computer name and press Enter, or use Ctrl+L to jump here"
+                                        KeyDown="OnQuickAddKeyDown" />
+                            <ui:Button x:Name="AddButton" Margin="6,0,0,0" Icon="{ui:SymbolIcon Add24}" Content="Add"
+                                       Click="OnQuickAdd" ToolTip="Add this computer (or press Enter in the box)" />
+                            <ui:Button Margin="6,0,0,0" Appearance="Secondary" Icon="{ui:SymbolIcon ClipboardPaste24}"
+                                       Click="OnPasteList"
+                                       Height="{Binding ActualHeight, ElementName=AddButton}"
+                                       VerticalContentAlignment="Center"
+                                       AutomationProperties.Name="Paste a list of machines"
+                                       ToolTip="Paste a list of machines from the clipboard" />
+                        </StackPanel>
                     </Grid>
-                </TabItem>
 
-                <!-- Updates tab (relocated per-machine update detail). Only visible/selectable when a
-                     machine is focused in Windows Update mode; otherwise the TabItem is collapsed.
-                     Its content root sets the active tab's WorkspaceViewModel as DataContext so all the
-                     panel's existing bindings resolve unchanged. -->
-                <TabItem x:Name="UpdatesTab" Header="Updates" DataContext="{Binding SelectedTab}">
-                    <Grid Margin="0,8,0,0">
-                        <DockPanel>
-                            <StackPanel DockPanel.Dock="Top" Margin="0,4,0,8">
+                    <!-- Fleet status band -->
+                    <Border Grid.Row="1" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
+                            Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
+                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
+                            Visibility="{Binding SelectedTab.IsPatchOperationOrFleetHeld, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
+                                       Text="{Binding SelectedTab.FleetSummary}" />
+                            <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="{Binding SelectedTab.FleetNofM}"
+                                       Visibility="{Binding SelectedTab.FleetNofM, Converter={StaticResource StringToVis}}" />
+                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="{Binding SelectedTab.FleetElapsed}"
+                                       Visibility="{Binding SelectedTab.FleetElapsed, Converter={StaticResource StringToVis}}" />
+                            <ProgressBar x:Name="FleetProgressBar" Grid.Column="3" Height="8" VerticalAlignment="Center"
+                                         Minimum="0" Maximum="100" />
+                        </Grid>
+                    </Border>
+
+                    <!-- Workspace TabControlEx — keep-alive for RDP tab. -->
+                    <local:TabControlEx x:Name="WorkspaceTabs" Grid.Row="2"
+                                Margin="8,4,8,8"
+                                ItemsSource="{Binding Tabs}"
+                                SelectedItem="{Binding SelectedTab, Mode=TwoWay}">
+                        <TabControl.Template>
+                            <ControlTemplate TargetType="TabControl">
                                 <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0">
-                                        <ui:TextBlock Text="{Binding FocusedComputer.Name}" FontTypography="Subtitle"
-                                                      TextTrimming="CharacterEllipsis" />
-                                        <!-- Scope is chosen by the Applicable / Installed tabs below. -->
-
-                                        <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
-                                                   Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
-                                            <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" /><Run Text="{Binding FocusedComputer.LastScannedApplicable, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
-                                        </TextBlock>
-                                        <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
-                                                   Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
-                                            <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" /><Run Text="{Binding FocusedComputer.LastScannedInstalled, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
-                                        </TextBlock>
-                                    </StackPanel>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                                        <StackPanel Orientation="Horizontal">
+                                            <StackPanel IsItemsHost="True" Orientation="Horizontal" />
+                                            <ui:Button Content="+"
+                                                       FontSize="16" Margin="6,0,0,0" Padding="10,2"
+                                                       VerticalAlignment="Center"
+                                                       Click="OnNewTab"
+                                                       AutomationProperties.Name="New tab"
+                                                       ToolTip="New tab (Ctrl+T)" />
+                                        </StackPanel>
+                                    </ScrollViewer>
+                                    <Border Grid.Row="1" Margin="0,4,0,0"
+                                            BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                            BorderThickness="0,1,0,0">
+                                        <Grid x:Name="PART_ItemsHolder" />
+                                    </Border>
                                 </Grid>
-                                <Grid Margin="0,6,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel Grid.Column="0" Orientation="Horizontal"
-                                                IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}">
-                                        <ui:Button Content="All" Appearance="Secondary" Padding="10,2" Command="{Binding SelectAllUpdatesCommand}" />
-                                        <ui:Button Content="None" Appearance="Secondary" Padding="10,2" Margin="6,0,0,0" Command="{Binding SelectNoUpdatesCommand}" />
-                                    </StackPanel>
-                                    <ui:TextBox Grid.Column="1" x:Name="UpdateFilterBox" Width="220" HorizontalAlignment="Right"
-                                                Icon="{ui:SymbolIcon Search24}" ClearButtonEnabled="True"
-                                                PlaceholderText="Filter by KB or title…"
-                                                TextChanged="OnUpdateFilterChanged" />
-                                </Grid>
-                            </StackPanel>
+                            </ControlTemplate>
+                        </TabControl.Template>
+                        <TabControl.ItemContainerStyle>
+                            <StaticResource ResourceKey="FluentTabItemStyle" />
+                        </TabControl.ItemContainerStyle>
 
-                            <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
-                                       Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
-                                       Command="{Binding InstallCheckedCommand}"
-                                       Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
-                                       ToolTip="Install only the ticked updates on this machine (one-time SYSTEM task). Reboot is reported, not forced. Disabled while a reboot is pending — restart first." />
-
-                            <!-- Reboot-pending warning: after an install WUA still reports the just-installed
-                                 update as applicable until the reboot finalizes it. Restart before installing
-                                 more (and the agent would defer an install on a reboot-pending box anyway). -->
-                            <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
-                                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
-                                    BorderBrush="{DynamicResource SystemFillColorCautionBrush}" BorderThickness="1"
-                                    Visibility="{Binding IsFocusedRebootPending, Converter={StaticResource BoolToVis}}">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Warning24" Margin="0,0,8,0" VerticalAlignment="Center" />
-                                    <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12"
-                                               Text="Reboot pending. Just-installed updates may still show as applicable until you restart — reboot this machine before installing more." />
+                        <TabControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal"
+                                            MouseLeftButtonDown="OnTabHeaderClick"
+                                            MouseDown="OnTabHeaderMouseDown"
+                                            ToolTip="Double-click to rename · right-click for options">
+                                    <StackPanel.ContextMenu>
+                                        <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                            <MenuItem Header="Rename…" Click="OnRenameTab" InputGestureText="F2">
+                                                <MenuItem.Icon><ui:SymbolIcon Symbol="Edit24" /></MenuItem.Icon>
+                                            </MenuItem>
+                                            <Separator />
+                                            <MenuItem Header="Close tab" Click="OnCloseTab" InputGestureText="Ctrl+W">
+                                                <MenuItem.Icon><ui:SymbolIcon Symbol="Dismiss24" /></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Close other tabs" Click="OnCloseOtherTabs">
+                                                <MenuItem.Icon><ui:SymbolIcon Symbol="DismissCircle24" /></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Close tabs to the right" Click="OnCloseTabsToRight">
+                                                <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowRight24" /></MenuItem.Icon>
+                                            </MenuItem>
+                                        </ContextMenu>
+                                    </StackPanel.ContextMenu>
+                                    <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                    <Button Content="✕"
+                                            Margin="10,0,0,0" Padding="4,0" BorderThickness="0"
+                                            Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"
+                                            Click="OnCloseTab"
+                                            Visibility="{Binding CanClose, Converter={StaticResource BoolToVis}}"
+                                            AutomationProperties.Name="Close tab"
+                                            ToolTip="Close tab (Ctrl+W)">
+                                        <Button.Style>
+                                            <Style TargetType="Button">
+                                                <Setter Property="Background" Value="Transparent" />
+                                                <Setter Property="Template">
+                                                    <Setter.Value>
+                                                        <ControlTemplate TargetType="Button">
+                                                            <Border x:Name="Bd" CornerRadius="12" Padding="{TemplateBinding Padding}"
+                                                                    Background="{TemplateBinding Background}">
+                                                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                            <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsMouseOver" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background"
+                                                                            Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                                                </Trigger>
+                                                                <Trigger Property="IsPressed" Value="True">
+                                                                    <Setter TargetName="Bd" Property="Background"
+                                                                            Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                                                </Trigger>
+                                                            </ControlTemplate.Triggers>
+                                                        </ControlTemplate>
+                                                    </Setter.Value>
+                                                </Setter>
+                                            </Style>
+                                        </Button.Style>
+                                    </Button>
                                 </StackPanel>
-                            </Border>
-                            <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
-                                       Appearance="Primary" Icon="{ui:SymbolIcon Delete24}" Content="Uninstall checked"
-                                       Click="OnUninstallChecked"
-                                       IsEnabled="{Binding CanUninstallChecked}"
-                                       Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
-                                       ToolTip="Uninstall the ticked updates on this machine (Windows Update first, then DISM). Greyed rows can't be removed by either. May require a reboot. Disabled until at least one removable update is ticked." />
+                            </DataTemplate>
+                        </TabControl.ItemTemplate>
+                        <TabControl.Resources>
+                            <DataTemplate DataType="{x:Type vm:WorkspaceViewModel}">
+                                <local:WorkspaceView />
+                            </DataTemplate>
+                            <DataTemplate DataType="{x:Type vm:CrossDomainRdpViewModel}">
+                                <local:CrossDomainRdpView />
+                            </DataTemplate>
+                        </TabControl.Resources>
+                    </local:TabControlEx>
 
-                            <TabControl ItemContainerStyle="{StaticResource FluentSubTabItemStyle}">
-                                <TabItem Header="Applicable"
-                                         IsSelected="{Binding IsInstalledMode, Converter={StaticResource InverseBool}, Mode=TwoWay}">
+                    <!-- Transient completion banner (floats over the active tab). -->
+                    <ui:InfoBar x:Name="CompletionBar" Grid.Row="2"
+                                Margin="16,0,16,16"
+                                VerticalAlignment="Bottom"
+                                Panel.ZIndex="10"
+                                IsOpen="False" IsClosable="True"
+                                Severity="Informational"
+                                Title="Operation complete"
+                                Opacity="0">
+                        <ui:InfoBar.Style>
+                            <Style TargetType="ui:InfoBar">
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsOpen, RelativeSource={RelativeSource Self}}" Value="True">
+                                        <DataTrigger.EnterActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity" From="0" To="1" Duration="0:0:0.15" />
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </DataTrigger.EnterActions>
+                                        <DataTrigger.ExitActions>
+                                            <BeginStoryboard>
+                                                <Storyboard>
+                                                    <DoubleAnimation Storyboard.TargetProperty="Opacity" To="0" Duration="0:0:0.1" />
+                                                </Storyboard>
+                                            </BeginStoryboard>
+                                        </DataTrigger.ExitActions>
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ui:InfoBar.Style>
+                    </ui:InfoBar>
+
+                    <!-- Activity log resize grip -->
+                    <GridSplitter x:Name="ActivitySplitter" Grid.Row="3" Height="10"
+                                  HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                  Background="Transparent" Cursor="SizeNS"
+                                  ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
+                                  ToolTip="Drag to resize the panel" Visibility="Collapsed">
+                        <GridSplitter.Template>
+                            <ControlTemplate TargetType="GridSplitter">
+                                <Border Background="{TemplateBinding Background}">
+                                    <Rectangle Width="40" Height="4" RadiusX="2" RadiusY="2"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                                               Fill="{DynamicResource ControlElevationBorderBrush}" />
+                                </Border>
+                            </ControlTemplate>
+                        </GridSplitter.Template>
+                    </GridSplitter>
+
+                    <!-- Unified bottom dock (Activity + per-machine Updates). -->
+                    <Grid x:Name="ActivityPanel" Grid.Row="4" Margin="8,0,8,8" Visibility="Collapsed" Opacity="0">
+                        <TabControl x:Name="BottomDockTabs" ItemContainerStyle="{StaticResource FluentTabItemStyle}">
+                            <TabControl.Template>
+                                <ControlTemplate TargetType="TabControl">
                                     <Grid>
-                                        <ui:DataGrid ItemsSource="{Binding FocusedComputer.ApplicableUpdates}"
-                                                     IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
-                                                     AutoGenerateColumns="False" IsReadOnly="True"
-                                                     CanUserAddRows="False" CanUserDeleteRows="False"
-                                                     HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                                     SelectionMode="Single" SelectionUnit="FullRow">
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
+                                        <DockPanel Grid.Row="0">
+                                            <ui:Button DockPanel.Dock="Right" Margin="6,0,0,0"
+                                                       VerticalAlignment="Center" Appearance="Secondary"
+                                                       Icon="{ui:SymbolIcon Dismiss24}" Content="Close"
+                                                       Click="OnCloseBottomDock"
+                                                       AutomationProperties.Name="Close panel"
+                                                       ToolTip="Close this panel" />
+                                            <StackPanel IsItemsHost="True" Orientation="Horizontal" />
+                                        </DockPanel>
+                                        <Border Grid.Row="1" Margin="0,4,0,0"
+                                                BorderBrush="{DynamicResource ControlElevationBorderBrush}"
+                                                BorderThickness="0,1,0,0">
+                                            <ContentPresenter ContentSource="SelectedContent" />
+                                        </Border>
+                                    </Grid>
+                                </ControlTemplate>
+                            </TabControl.Template>
+
+                            <TabItem x:Name="ActivityTab" Header="Activity">
+                                <Grid Margin="0,8,0,0" DataContext="{Binding ActivityLog}">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBlock Grid.Column="0" Text="Activity" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                        <ui:TextBox Grid.Column="1" Margin="12,0"
+                                                    PlaceholderText="Search activity (machine or text)…"
+                                                    Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
+                                        <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
+                                    </Grid>
+                                    <Grid Grid.Row="1">
+                                        <ui:DataGrid x:Name="ActivityGrid"
+                                                  ItemsSource="{Binding Entries}"
+                                                  AutoGenerateColumns="False" IsReadOnly="True"
+                                                  CanUserAddRows="False" HeadersVisibility="Column"
+                                                  GridLinesVisibility="None"
+                                                  PreviewMouseRightButtonDown="OnActivityGridRightClick">
+                                            <ui:DataGrid.ContextMenu>
+                                                <ContextMenu>
+                                                    <MenuItem Header="Copy" Click="OnActivityCopy">
+                                                        <MenuItem.Icon><ui:SymbolIcon Symbol="Copy24" /></MenuItem.Icon>
+                                                    </MenuItem>
+                                                    <MenuItem Header="Copy all" Click="OnActivityCopyAll">
+                                                        <MenuItem.Icon><ui:SymbolIcon Symbol="DocumentCopy24" /></MenuItem.Icon>
+                                                    </MenuItem>
+                                                </ContextMenu>
+                                            </ui:DataGrid.ContextMenu>
                                             <ui:DataGrid.Columns>
-                                                <DataGridTemplateColumn Width="Auto">
+                                                <DataGridTemplateColumn Header="" Width="Auto">
                                                     <DataGridTemplateColumn.CellTemplate>
                                                         <DataTemplate>
-                                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            <ui:SymbolIcon Margin="6,0" FontSize="14"
+                                                                           Symbol="{Binding Severity, Converter={StaticResource SeveritySymbol}}"
+                                                                           Foreground="{Binding Severity, Converter={StaticResource SeverityBrush}}"
+                                                                           ToolTip="{Binding Severity}" />
                                                         </DataTemplate>
                                                     </DataGridTemplateColumn.CellTemplate>
                                                 </DataGridTemplateColumn>
-                                                <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
-                                                <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
+                                                <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
+                                                <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="Auto" />
+                                                <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
                                                     <DataGridTextColumn.ElementStyle>
                                                         <Style TargetType="TextBlock">
-                                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                                            <Setter Property="ToolTip" Value="{Binding Title}" />
+                                                            <Setter Property="Foreground" Value="{Binding Severity, Converter={StaticResource SeverityBrush}}" />
                                                         </Style>
                                                     </DataGridTextColumn.ElementStyle>
                                                 </DataGridTextColumn>
-                                                <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
                                             </ui:DataGrid.Columns>
                                         </ui:DataGrid>
-                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                                        <StackPanel>
                                             <StackPanel.Style>
-                                                <Style TargetType="StackPanel">
+                                                <Style TargetType="StackPanel" BasedOn="{StaticResource EmptyStatePanel}">
                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                     <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding FocusedComputer.ApplicableUpdates.Count}" Value="0">
+                                                        <DataTrigger Binding="{Binding HasEntries}" Value="False">
                                                             <Setter Property="Visibility" Value="Visible" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>
                                             </StackPanel.Style>
-                                            <TextBlock Text="{Binding FocusedComputer.ApplicableMessage, TargetNullValue='Nothing here yet — scan this machine.'}"
-                                                       TextWrapping="Wrap" TextAlignment="Center" FontSize="13"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                       HorizontalAlignment="Center" IsHitTestVisible="False" />
-                                            <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
-                                                       Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
-                                                       Command="{Binding ScanFocusedCommand}"
-                                                       ToolTip="Scan only this machine. The toolbar Scan (top bar) scans every machine in the tab.">
-                                                <ui:Button.Style>
-                                                    <Style TargetType="{x:Type ui:Button}">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding FocusedComputer.LastScannedApplicable}" Value="{x:Null}">
-                                                                <Setter Property="Visibility" Value="Visible" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </ui:Button.Style>
-                                            </ui:Button>
+                                            <ui:SymbolIcon Symbol="History24" FontSize="36" HorizontalAlignment="Center"
+                                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                            <TextBlock Style="{StaticResource EmptyStateTitle}" Text="No activity yet" />
+                                            <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                                                       Text="Operations like Ping All log here as they run." />
                                         </StackPanel>
                                     </Grid>
-                                </TabItem>
-                                <TabItem Header="Installed"
-                                         IsSelected="{Binding IsInstalledMode, Mode=TwoWay}">
-                                    <Grid>
-                                        <ui:DataGrid ItemsSource="{Binding FocusedComputer.InstalledUpdates}"
-                                                     IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
-                                                     AutoGenerateColumns="False" IsReadOnly="True"
-                                                     CanUserAddRows="False" CanUserDeleteRows="False"
-                                                     HeadersVisibility="Column" GridLinesVisibility="Horizontal"
-                                                     SelectionMode="Single" SelectionUnit="FullRow">
-                                            <ui:DataGrid.Columns>
-                                                <DataGridTemplateColumn Width="Auto">
-                                                    <DataGridTemplateColumn.CellTemplate>
-                                                        <DataTemplate>
-                                                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                      IsEnabled="{Binding IsUninstallable}"
-                                                                      HorizontalAlignment="Center" VerticalAlignment="Center">
-                                                                <CheckBox.Style>
-                                                                    <Style TargetType="CheckBox">
-                                                                        <Style.Triggers>
-                                                                            <Trigger Property="IsEnabled" Value="False">
-                                                                                <Setter Property="ToolTip" Value="Neither Windows Update nor DISM can remove this update." />
-                                                                            </Trigger>
-                                                                        </Style.Triggers>
+                                </Grid>
+                            </TabItem>
+
+                            <TabItem x:Name="UpdatesTab" Header="Updates" DataContext="{Binding SelectedTab}">
+                                <Grid Margin="0,8,0,0">
+                                    <DockPanel>
+                                        <StackPanel DockPanel.Dock="Top" Margin="0,4,0,8">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <ui:TextBlock Text="{Binding FocusedComputer.Name}" FontTypography="Subtitle"
+                                                                  TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
+                                                               Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
+                                                        <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" /><Run Text="{Binding FocusedComputer.LastScannedApplicable, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
+                                                    </TextBlock>
+                                                    <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
+                                                               Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
+                                                        <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" /><Run Text="{Binding FocusedComputer.LastScannedInstalled, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </Grid>
+                                            <Grid Margin="0,6,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                                            IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}">
+                                                    <ui:Button Content="All" Appearance="Secondary" Padding="10,2" Command="{Binding SelectAllUpdatesCommand}" />
+                                                    <ui:Button Content="None" Appearance="Secondary" Padding="10,2" Margin="6,0,0,0" Command="{Binding SelectNoUpdatesCommand}" />
+                                                </StackPanel>
+                                                <ui:TextBox Grid.Column="1" x:Name="UpdateFilterBox" Width="220" HorizontalAlignment="Right"
+                                                            Icon="{ui:SymbolIcon Search24}" ClearButtonEnabled="True"
+                                                            PlaceholderText="Filter by KB or title…"
+                                                            TextChanged="OnUpdateFilterChanged" />
+                                            </Grid>
+                                        </StackPanel>
+
+                                        <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                                   Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
+                                                   Command="{Binding InstallCheckedCommand}"
+                                                   Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
+                                                   ToolTip="Install only the ticked updates on this machine." />
+
+                                        <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
+                                                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                                                BorderBrush="{DynamicResource SystemFillColorCautionBrush}" BorderThickness="1"
+                                                Visibility="{Binding IsFocusedRebootPending, Converter={StaticResource BoolToVis}}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Warning24" Margin="0,0,8,0" VerticalAlignment="Center" />
+                                                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12"
+                                                           Text="Reboot pending. Restart before installing more." />
+                                            </StackPanel>
+                                        </Border>
+                                        <ui:Button DockPanel.Dock="Bottom" Margin="0,8,0,0" HorizontalAlignment="Stretch"
+                                                   Appearance="Primary" Icon="{ui:SymbolIcon Delete24}" Content="Uninstall checked"
+                                                   Click="OnUninstallChecked"
+                                                   IsEnabled="{Binding CanUninstallChecked}"
+                                                   Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
+                                                   ToolTip="Uninstall the ticked updates on this machine." />
+
+                                        <TabControl ItemContainerStyle="{StaticResource FluentSubTabItemStyle}">
+                                            <TabItem Header="Applicable"
+                                                     IsSelected="{Binding IsInstalledMode, Converter={StaticResource InverseBool}, Mode=TwoWay}">
+                                                <Grid>
+                                                    <ui:DataGrid ItemsSource="{Binding FocusedComputer.ApplicableUpdates}"
+                                                                 IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
+                                                                 AutoGenerateColumns="False" IsReadOnly="True"
+                                                                 CanUserAddRows="False" CanUserDeleteRows="False"
+                                                                 HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                                                 SelectionMode="Single" SelectionUnit="FullRow">
+                                                        <ui:DataGrid.Columns>
+                                                            <DataGridTemplateColumn Width="Auto">
+                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                    <DataTemplate>
+                                                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                    </DataTemplate>
+                                                                </DataGridTemplateColumn.CellTemplate>
+                                                            </DataGridTemplateColumn>
+                                                            <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
+                                                            <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
+                                                                <DataGridTextColumn.ElementStyle>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                                                        <Setter Property="ToolTip" Value="{Binding Title}" />
                                                                     </Style>
-                                                                </CheckBox.Style>
-                                                            </CheckBox>
-                                                        </DataTemplate>
-                                                    </DataGridTemplateColumn.CellTemplate>
-                                                </DataGridTemplateColumn>
-                                                <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
-                                                <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
-                                                    <DataGridTextColumn.ElementStyle>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                                            <Setter Property="ToolTip" Value="{Binding Title}" />
-                                                        </Style>
-                                                    </DataGridTextColumn.ElementStyle>
-                                                </DataGridTextColumn>
-                                                <DataGridTextColumn Header="Installed" Binding="{Binding InstalledAt, StringFormat=yyyy-MM-dd}" Width="Auto" MinWidth="90" SortMemberPath="InstalledAt">
-                                                    <DataGridTextColumn.ElementStyle>
-                                                        <Style TargetType="TextBlock">
-                                                            <Setter Property="ToolTip" Value="{Binding InstalledAt, StringFormat=F}" />
-                                                        </Style>
-                                                    </DataGridTextColumn.ElementStyle>
-                                                </DataGridTextColumn>
-                                            </ui:DataGrid.Columns>
-                                        </ui:DataGrid>
-                                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
-                                            <StackPanel.Style>
-                                                <Style TargetType="StackPanel">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding FocusedComputer.InstalledUpdates.Count}" Value="0">
-                                                            <Setter Property="Visibility" Value="Visible" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </StackPanel.Style>
-                                            <TextBlock Text="{Binding FocusedComputer.InstalledMessage, TargetNullValue='Nothing here yet — scan this machine on the Installed tab.'}"
-                                                       TextWrapping="Wrap" TextAlignment="Center" FontSize="13"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                                       HorizontalAlignment="Center" IsHitTestVisible="False" />
-                                            <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
-                                                       Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
-                                                       Command="{Binding ScanFocusedCommand}"
-                                                       ToolTip="Scan only this machine. The toolbar Scan (top bar) scans every machine in the tab.">
-                                                <ui:Button.Style>
-                                                    <Style TargetType="{x:Type ui:Button}">
-                                                        <Setter Property="Visibility" Value="Collapsed" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding FocusedComputer.LastScannedInstalled}" Value="{x:Null}">
-                                                                <Setter Property="Visibility" Value="Visible" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </ui:Button.Style>
-                                            </ui:Button>
-                                        </StackPanel>
-                                    </Grid>
-                                </TabItem>
-                            </TabControl>
-                        </DockPanel>
+                                                                </DataGridTextColumn.ElementStyle>
+                                                            </DataGridTextColumn>
+                                                            <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                                                        </ui:DataGrid.Columns>
+                                                    </ui:DataGrid>
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                                                        <StackPanel.Style>
+                                                            <Style TargetType="StackPanel">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding FocusedComputer.ApplicableUpdates.Count}" Value="0">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </StackPanel.Style>
+                                                        <TextBlock Text="{Binding FocusedComputer.ApplicableMessage, TargetNullValue='Nothing here yet — scan this machine.'}"
+                                                                   TextWrapping="Wrap" TextAlignment="Center" FontSize="13"
+                                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                   HorizontalAlignment="Center" IsHitTestVisible="False" />
+                                                        <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
+                                                                   Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
+                                                                   Command="{Binding ScanFocusedCommand}"
+                                                                   ToolTip="Scan only this machine.">
+                                                            <ui:Button.Style>
+                                                                <Style TargetType="{x:Type ui:Button}">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding FocusedComputer.LastScannedApplicable}" Value="{x:Null}">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ui:Button.Style>
+                                                        </ui:Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </TabItem>
+                                            <TabItem Header="Installed"
+                                                     IsSelected="{Binding IsInstalledMode, Mode=TwoWay}">
+                                                <Grid>
+                                                    <ui:DataGrid ItemsSource="{Binding FocusedComputer.InstalledUpdates}"
+                                                                 IsEnabled="{Binding IsFocusedPatching, Converter={StaticResource InverseBool}}"
+                                                                 AutoGenerateColumns="False" IsReadOnly="True"
+                                                                 CanUserAddRows="False" CanUserDeleteRows="False"
+                                                                 HeadersVisibility="Column" GridLinesVisibility="Horizontal"
+                                                                 SelectionMode="Single" SelectionUnit="FullRow">
+                                                        <ui:DataGrid.Columns>
+                                                            <DataGridTemplateColumn Width="Auto">
+                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                    <DataTemplate>
+                                                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                                                  IsEnabled="{Binding IsUninstallable}"
+                                                                                  HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                            <CheckBox.Style>
+                                                                                <Style TargetType="CheckBox">
+                                                                                    <Style.Triggers>
+                                                                                        <Trigger Property="IsEnabled" Value="False">
+                                                                                            <Setter Property="ToolTip" Value="Neither Windows Update nor DISM can remove this update." />
+                                                                                        </Trigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </CheckBox.Style>
+                                                                        </CheckBox>
+                                                                    </DataTemplate>
+                                                                </DataGridTemplateColumn.CellTemplate>
+                                                            </DataGridTemplateColumn>
+                                                            <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
+                                                            <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
+                                                                <DataGridTextColumn.ElementStyle>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                                                        <Setter Property="ToolTip" Value="{Binding Title}" />
+                                                                    </Style>
+                                                                </DataGridTextColumn.ElementStyle>
+                                                            </DataGridTextColumn>
+                                                            <DataGridTextColumn Header="Installed" Binding="{Binding InstalledAt, StringFormat=yyyy-MM-dd}" Width="Auto" MinWidth="90" SortMemberPath="InstalledAt">
+                                                                <DataGridTextColumn.ElementStyle>
+                                                                    <Style TargetType="TextBlock">
+                                                                        <Setter Property="ToolTip" Value="{Binding InstalledAt, StringFormat=F}" />
+                                                                    </Style>
+                                                                </DataGridTextColumn.ElementStyle>
+                                                            </DataGridTextColumn>
+                                                        </ui:DataGrid.Columns>
+                                                    </ui:DataGrid>
+                                                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
+                                                        <StackPanel.Style>
+                                                            <Style TargetType="StackPanel">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding FocusedComputer.InstalledUpdates.Count}" Value="0">
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </StackPanel.Style>
+                                                        <TextBlock Text="{Binding FocusedComputer.InstalledMessage, TargetNullValue='Nothing here yet — scan this machine on the Installed tab.'}"
+                                                                   TextWrapping="Wrap" TextAlignment="Center" FontSize="13"
+                                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                   HorizontalAlignment="Center" IsHitTestVisible="False" />
+                                                        <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
+                                                                   Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
+                                                                   Command="{Binding ScanFocusedCommand}"
+                                                                   ToolTip="Scan only this machine.">
+                                                            <ui:Button.Style>
+                                                                <Style TargetType="{x:Type ui:Button}">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding FocusedComputer.LastScannedInstalled}" Value="{x:Null}">
+                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </ui:Button.Style>
+                                                        </ui:Button>
+                                                    </StackPanel>
+                                                </Grid>
+                                            </TabItem>
+                                        </TabControl>
+                                    </DockPanel>
+                                </Grid>
+                            </TabItem>
+                        </TabControl>
                     </Grid>
-                </TabItem>
-            </TabControl>
+
+                </Grid>
+                <!-- ═══════════════════ end COMPUTERS SECTION ═══════════════════ -->
+
+                <!-- ════════════════════ SETTINGS SECTION ════════════════════════ -->
+                <local:SettingsPage x:Name="SettingsSection" Visibility="Collapsed" />
+                <!-- ════════════════════ end SETTINGS SECTION ════════════════════ -->
+
+            </Grid>
         </Grid>
 
-        <!-- M2: VS Code-style status bar — three zones: left context, center active operation, right info.
-             LabelText style (FontSize=12, secondary brush) is already applied from Batch 1. -->
-        <Border Grid.Row="7"
-                Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}"
+        <!-- Full-width status bar — lives at root row 3, below the nav+content row, so it never
+             overlaps the nav pane. Visibility is code-controlled (UpdateStatusBarVisibility). -->
+        <Border x:Name="StatusBar" Grid.Row="3"
+                Visibility="Collapsed"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <!-- Left: context (online summary + selection) -->
                     <ColumnDefinition Width="Auto" />
-                    <!-- Center: active operation or fleet/vitals summary (fills remaining, centers text) -->
                     <ColumnDefinition Width="*" />
-                    <!-- Right: secondary info -->
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-
-                <!-- Left zone: online count + optional selection summary -->
                 <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}"
-                               VerticalAlignment="Center" />
-                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
-                               VerticalAlignment="Center"
+                    <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}" VerticalAlignment="Center" />
+                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}" VerticalAlignment="Center"
                                Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
                     <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
-                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                               VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center"
                                Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
                 </StackPanel>
-
-                <!-- Center zone: M12 sweep narration (during sweep) or fleet/vitals summary (idle).
-                     One TextBlock with a DataTrigger that swaps text + emphasis based on IsBusy.
-                     Emphasized with Medium weight + primary brush during an active sweep; secondary
-                     color + normal weight when idle (matching LabelText). -->
-                <TextBlock Grid.Column="1"
-                           HorizontalAlignment="Center" VerticalAlignment="Center"
-                           FontSize="12"
-                           Text="{Binding SelectedTab.FleetSummary}"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           FontWeight="Normal">
+                <TextBlock Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="12" Text="{Binding SelectedTab.FleetSummary}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontWeight="Normal">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
                             <Style.Triggers>
@@ -897,14 +842,10 @@
                         </Style>
                     </TextBlock.Style>
                 </TextBlock>
-
-                <!-- Right zone: vitals fleet tally -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
-                               VerticalAlignment="Center"
+                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}" VerticalAlignment="Center"
                                Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
-                    <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}"
-                               VerticalAlignment="Center"
+                    <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}" VerticalAlignment="Center"
                                Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
                 </StackPanel>
             </Grid>

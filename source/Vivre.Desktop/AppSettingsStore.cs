@@ -43,6 +43,10 @@ public sealed class AppSettings
     /// those machines so the grid's data is "just there". Off = manual (a frozen snapshot until you
     /// click Ping All / Check Vitals). Always scoped to the loaded list; never the wider fleet.</summary>
     public bool AutoCheckOnLoad { get; set; } = true;
+
+    /// <summary>Whether the left NavigationView pane is expanded (true) or collapsed/compact (false).
+    /// Default false — starts collapsed so the icon-only pane takes minimal horizontal space.</summary>
+    public bool NavPaneOpen { get; set; } = false;
 }
 
 /// <summary>

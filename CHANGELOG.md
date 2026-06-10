@@ -27,6 +27,12 @@ it ships, then gets a dated heading.
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
+- **New left navigation** — the app now has a WPF-UI `NavigationView` pane (**Computers** · **Settings**),
+  collapsed to icons by default with a hamburger toggle (remembered across launches). Theme
+  (Light / Dark / System, a Windows-11-style "App theme" dropdown), session credentials, auto-check-on-load,
+  WUG server / packages folder, and Help / About moved into a dedicated **Settings page**; the Settings and
+  Help menus were retired from the menu bar (File and View stay). Switching sections keeps the workspace —
+  and any live Cross-Domain RDP session — alive. The bottom status bar is now a full-width strip.
 - **Micro-interaction polish** — the command bar is grouped into labelled **Fleet / Operations / Updates**
   clusters; tab ✕ buttons gain a hover circle and tabs a keyboard focus ring (and middle-click closes a
   tab); right-click menus throughout pick up Fluent icons; scrollbars everywhere become thin Fluent overlay
