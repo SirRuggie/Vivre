@@ -421,8 +421,8 @@ public partial class MainWindow : FluentWindow
             _observedTab.PropertyChanged += OnSelectedTabPropertyChanged;
         }
 
-        FleetProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, null);
-        FleetProgressBar.Value = _observedTab?.FleetProgress ?? 0;
+        StatusProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, null);
+        StatusProgressBar.Value = _observedTab?.FleetProgress ?? 0;
     }
 
     private void OnSelectedTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -446,7 +446,7 @@ public partial class MainWindow : FluentWindow
             {
                 EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
             };
-            FleetProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, anim);
+            StatusProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, anim);
         }
     }
 
@@ -636,11 +636,19 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // --- View mode + update source ---
+    // --- overflow button (…) — opens ContextMenu on click, no chevron ---
 
-    private void OnSelectMachinesMode(object sender, RoutedEventArgs e) => Shell?.ShowMachineView(updateMode: false);
+    private void OnOverflowButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (OverflowButton.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = OverflowButton;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
 
-    private void OnSelectUpdateMode(object sender, RoutedEventArgs e) => Shell?.ShowMachineView(updateMode: true);
+    // --- update source ---
 
     private void OnSourceWindowsUpdate(object sender, RoutedEventArgs e) => SetSource(UpdateSource.WindowsUpdate);
 
@@ -689,12 +697,32 @@ public partial class MainWindow : FluentWindow
 
     // --- toolbar Install ---
 
-    private async void OnInstallClick(object sender, RoutedEventArgs e)
+    private async void OnInstallClick(object sender, RoutedEventArgs e) =>
+        await RunInstallFlowAsync(Shell?.SelectedTab as WorkspaceViewModel, selectionOnly: false);
+
+    /// <summary>Called from the selection command bar in <see cref="WorkspaceView"/> — installs on
+    /// the currently-selected machines with the same confirm dialog as the toolbar Install button.</summary>
+    public void TriggerInstallForSelection()
     {
-        if (Shell?.SelectedTab is not WorkspaceViewModel vm) return;
+        if (Shell?.SelectedTab is WorkspaceViewModel { HasSelection: true } vm)
+        {
+            _ = RunInstallFlowAsync(vm, selectionOnly: true);
+        }
+    }
+
+    /// <summary>
+    /// The shared install-with-confirm flow. When <paramref name="selectionOnly"/> is true the
+    /// scope is always the current selection (used by the selection bar); when false the scope
+    /// is the selection when rows are selected, otherwise every machine in the tab (toolbar).
+    /// </summary>
+    private async Task RunInstallFlowAsync(WorkspaceViewModel? vm, bool selectionOnly)
+    {
+        if (vm is null) return;
 
         bool hasSelection = vm.SelectedComputers.Count > 0;
-        IReadOnlyList<Computer> targets = hasSelection ? [.. vm.SelectedComputers] : [.. vm.Computers];
+        IReadOnlyList<Computer> targets = (selectionOnly || hasSelection)
+            ? [.. vm.SelectedComputers]
+            : [.. vm.Computers];
         int count = targets.Count;
         if (count == 0 || !vm.InstallTargetCommand.CanExecute(null)) return;
 
@@ -729,7 +757,9 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        string scope = hasSelection ? $"the {count} selected machine(s)" : $"all {count} machine(s) in this tab";
+        string scope = (selectionOnly || hasSelection)
+            ? $"the {count} selected machine(s)"
+            : $"all {count} machine(s) in this tab";
         var confirm = new MessageBox
         {
             Title = "Install updates",
@@ -829,6 +859,14 @@ public partial class MainWindow : FluentWindow
         {
             int index = shell.Tabs.IndexOf(anchor);
             if (index >= 0) CloseTabs([.. shell.Tabs.Skip(index + 1)]);
+        }
+    }
+
+    private void OnCloseAllTabs(object sender, RoutedEventArgs e)
+    {
+        if (Shell is { } shell)
+        {
+            CloseTabs([.. shell.Tabs]);
         }
     }
 

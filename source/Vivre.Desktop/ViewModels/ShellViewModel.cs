@@ -21,8 +21,9 @@ public partial class ShellViewModel : ObservableObject
     // Cross-Domain RDP is a per-workstation feature — it only opens when Vivre runs on this machine.
     private const string CrossDomainRdpMachine = "APVHOP";
 
-    // TODO: set true before release — gates Cross-Domain RDP to the designated host (CrossDomainRdpMachine).
-    private const bool RequireRdpHost = false;
+    // Gates Cross-Domain RDP to the designated host (CrossDomainRdpMachine). Set false only for
+    // temporary visual testing of the RDP nav item on a non-APVHOP machine.
+    private const bool RequireRdpHost = true;
 
     public ShellViewModel(Func<WorkspaceViewModel> workspaceFactory, CrossDomainRdpViewModel rdpViewModel, CredentialStore credentials, IActivityLog activityLog)
     {

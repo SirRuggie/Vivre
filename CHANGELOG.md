@@ -39,8 +39,14 @@ it ships, then gets a dated heading.
   standalone library manager: browse the categorised PowerShell library, edit in a syntax-highlighted editor,
   and add / save / delete scripts. (Running scripts against machines is unchanged — still the grid's
   right-click ▸ Run Script.)
-- **Micro-interaction polish** — the command bar is grouped into labelled **Fleet / Operations / Updates**
-  clusters; tab ✕ buttons gain a hover circle and tabs a keyboard focus ring (and middle-click closes a
+- **Computers workspace polish** — the command bar is now a single clean row with rarely-used actions behind
+  a "…" overflow; selecting machines raises a **contextual command bar** (Scan / Install scoped to the
+  selection) rather than mutating toolbar labels; the workspace tabs gain modern browser-style headers with a
+  right-click **Close other / Close all** menu; operation progress is reported in **one** place (the bottom
+  status bar — a slim strip plus the live narration and counts) instead of three; and the **Settings** page
+  groups set-once options into collapsible sections. The redundant View-menu Machines / Windows Update items
+  were retired (the on-canvas chips and Ctrl+M remain).
+- **Micro-interaction polish** — tab ✕ buttons gain a hover circle and tabs a keyboard focus ring (and middle-click closes a
   tab); right-click menus throughout pick up Fluent icons; scrollbars everywhere become thin Fluent overlay
   bars; the completion banner fades in, the fleet progress bar eases smoothly to each value, and the
   activity panel fades open; the Run Script category headers animate their chevron; and tooltips now name

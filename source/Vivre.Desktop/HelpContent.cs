@@ -98,7 +98,7 @@ public static class HelpContent
             Keywords = "credentials login password settings admin remote",
             Lines =
             [
-                "1. Settings ▸ Credentials….",
+                "1. Open Settings (left navigation) ▸ Remote credentials.",
                 "2. Keep \"Use my Windows login\", or pick \"Use these credentials\" and enter Domain / Username / Password.",
                 "These are used for all remote actions (health checks, Run Script, reboots, patching, Enable WinRM).",
             ],
@@ -110,7 +110,7 @@ public static class HelpContent
             Keywords = "mode view toggle switch update",
             Lines =
             [
-                "Use the View menu ▸ Machines or Windows Update (or press Ctrl+M to toggle).",
+                "Use the Machines / Windows Update chips above the grid (or press Ctrl+M to toggle).",
                 "The setting is per-tab, so different tabs can be in different views.",
             ],
         },
@@ -120,7 +120,7 @@ public static class HelpContent
             Keywords = "dark light system appearance color",
             Lines =
             [
-                "Settings ▸ Theme ▸ Light / Dark / System. Your choice is remembered across launches.",
+                "Settings (left navigation) ▸ Appearance ▸ App theme ▸ Light / Dark / System. Your choice is remembered across launches.",
             ],
         },
         new HelpTopic
@@ -181,7 +181,7 @@ public static class HelpContent
             [
                 "Click Check Vitals. For each machine it pulls SCCM client health — site code, agent version, last reboot, the health dots — and its Vitals score in the same pass (see the Vitals topic).",
                 "Health dots (green = good, red = needs attention): Reboot pending · Updates missing · Install running · Users online.",
-                "By default this happens automatically when you load a list — Vivre pings + checks vitals on those machines so the grid fills itself, and Monitor keeps online/reboot live. Turn it off in Settings ▸ Auto-check on load for a frozen snapshot; the buttons (Ping All / Check Vitals) re-check on demand either way. It only ever touches the machines you loaded, never the wider network.",
+                "By default this happens automatically when you load a list — Vivre pings + checks vitals on those machines so the grid fills itself, and Monitor keeps online/reboot live. Turn it off in Settings (left navigation) ▸ Auto-check on load for a frozen snapshot; the buttons (Ping All / Check Vitals) re-check on demand either way. It only ever touches the machines you loaded, never the wider network.",
             ],
             Tip = "Triggering health/actions usually needs admin rights on the target — set credentials in Settings if you see \"access denied\".",
         },
@@ -376,7 +376,7 @@ public static class HelpContent
             Keywords = "switch update mode view patching",
             Lines =
             [
-                "View ▸ Windows Update (or Ctrl+M). The grid swaps to the patch columns and the patch actions appear.",
+                "Click the Windows Update chip above the grid (or press Ctrl+M). The grid swaps to the patch columns and the patch actions appear.",
             ],
         },
         new HelpTopic
@@ -519,7 +519,7 @@ public static class HelpContent
             Lines =
             [
                 "• Try right-click ▸ Enable WinRM (over DCOM) to turn on remoting.",
-                "• Set an admin account in Settings ▸ Credentials if your login can't reach the target.",
+                "• Set an admin account in Settings (left navigation) ▸ Remote credentials if your login can't reach the target.",
                 "• Confirm the box is online (Ping All) and not blocked by firewall.",
             ],
         },
@@ -563,9 +563,9 @@ public static class HelpContent
             Lines =
             [
                 "Cross-Domain RDP is an embedded remote-desktop manager built into Vivre.",
-                "• Open it from View ▸ Cross-Domain RDP; it's a tab beside your machine tabs.",
+                "• Open it from Cross-Domain RDP in the left navigation.",
                 "• A folder tree of hosts on the left; live, tabbed RDP sessions on the right.",
-                "• Sessions stay connected when you switch to a machine tab and back.",
+                "• Sessions stay connected when you switch to another section and back.",
             ],
             Tip = "It's for hosts on other domains — Vivre hands the saved credentials straight to the session.",
         },

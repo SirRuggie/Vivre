@@ -37,7 +37,7 @@ public partial class SettingsPage : UserControl
 
         // Seed the behaviour fields from persisted settings.
         AppSettings s = settingsStore.Load();
-        AutoCheckBox.IsChecked = s.AutoCheckOnLoad;
+        AutoToggle.IsChecked = s.AutoCheckOnLoad;
         WugServerBox.Text = s.WugServer;
         PackagesFolderBox.Text = s.PackagesFolder;
 
@@ -107,7 +107,7 @@ public partial class SettingsPage : UserControl
 
     private void OnAutoCheckChanged(object sender, RoutedEventArgs e)
     {
-        bool value = AutoCheckBox.IsChecked == true;
+        bool value = AutoToggle.IsChecked == true;
         PersistSettings(s => s.AutoCheckOnLoad = value);
     }
 
