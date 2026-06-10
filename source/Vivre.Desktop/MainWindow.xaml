@@ -24,6 +24,7 @@
         <local:EnumEqualsConverter x:Key="EnumEquals" />
         <local:LogSeverityBrushConverter x:Key="SeverityBrush" />
         <local:LogSeveritySymbolConverter x:Key="SeveritySymbol" />
+        <local:StringToVisibilityConverter x:Key="StringToVis" />
     </ui:FluentWindow.Resources>
 
     <!-- Keyboard accelerators → routed to code-behind, which forwards to the active tab's commands.
@@ -225,6 +226,11 @@
                 <ui:ProgressRing Margin="12,0,0,0" Width="22" Height="22" IsIndeterminate="True"
                                  VerticalAlignment="Center"
                                  Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
+                <!-- M8: sweep narration beside the ring (hidden when idle, shown when busy and a label is set). -->
+                <TextBlock Margin="6,0,0,0" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding SelectedTab.SweepStatus}"
+                           Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
             </StackPanel>
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -238,19 +244,33 @@
             </StackPanel>
         </Grid>
 
-        <!-- Fleet status band — visible only while an update operation is running on the active tab. -->
+        <!-- Fleet status band — visible while an update operation is running OR during the 3s hold-open
+             after completion (M11: prevents racing the completion bar). -->
         <Border Grid.Row="3" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
                 Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
-                Visibility="{Binding SelectedTab.IsPatchOperationActive, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
+                Visibility="{Binding SelectedTab.IsPatchOperationOrFleetHeld, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
+                <!-- Fleet state tally (e.g. "12 done · 3 installing") -->
                 <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
                            Text="{Binding SelectedTab.FleetSummary}" />
-                <ProgressBar Grid.Column="1" Height="8" VerticalAlignment="Center"
+                <!-- M11: N/M machines counter (reuses M8's completed counter) -->
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding SelectedTab.FleetNofM}"
+                           Visibility="{Binding SelectedTab.FleetNofM, Converter={StaticResource StringToVis}}" />
+                <!-- M11: elapsed time -->
+                <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding SelectedTab.FleetElapsed}"
+                           Visibility="{Binding SelectedTab.FleetElapsed, Converter={StaticResource StringToVis}}" />
+                <ProgressBar Grid.Column="3" Height="8" VerticalAlignment="Center"
                              Minimum="0" Maximum="100" Value="{Binding SelectedTab.FleetProgress, Mode=OneWay}" />
             </Grid>
         </Border>
@@ -687,35 +707,69 @@
             </TabControl>
         </Grid>
 
-        <!-- Bottom status bar: live online/total + update tally for the active tab. (Copy actions
-             live in the grid's right-click Copy ▸ menu.) -->
+        <!-- M2: VS Code-style status bar — three zones: left context, center active operation, right info.
+             LabelText style (FontSize=12, secondary brush) is already applied from Batch 1. -->
         <Border Grid.Row="7"
                 Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}"
-                           VerticalAlignment="Center" />
-                <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
-                           VerticalAlignment="Center"
-                           Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
-                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
-                           VerticalAlignment="Center"
-                           Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
-                           VerticalAlignment="Center"
-                           Visibility="{Binding SelectedTab.HasFleetSummary, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding SelectedTab.FleetSummary}" Style="{StaticResource LabelText}"
-                           VerticalAlignment="Center" />
-                <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
-                           VerticalAlignment="Center"
-                           Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
-                <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}"
-                           VerticalAlignment="Center"
-                           Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
-            </StackPanel>
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <!-- Left: context (online summary + selection) -->
+                    <ColumnDefinition Width="Auto" />
+                    <!-- Center: active operation or fleet/vitals summary (fills remaining, centers text) -->
+                    <ColumnDefinition Width="*" />
+                    <!-- Right: secondary info -->
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left zone: online count + optional selection summary -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
+
+                <!-- Center zone: M12 sweep narration (during sweep) or fleet/vitals summary (idle).
+                     One TextBlock with a DataTrigger that swaps text + emphasis based on IsBusy.
+                     Emphasized with Medium weight + primary brush during an active sweep; secondary
+                     color + normal weight when idle (matching LabelText). -->
+                <TextBlock Grid.Column="1"
+                           HorizontalAlignment="Center" VerticalAlignment="Center"
+                           FontSize="12"
+                           Text="{Binding SelectedTab.FleetSummary}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           FontWeight="Normal">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding SelectedTab.IsBusy}" Value="True">
+                                    <Setter Property="Text" Value="{Binding SelectedTab.SweepStatus}" />
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                    <Setter Property="FontWeight" Value="Medium" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- Right zone: vitals fleet tally -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}"
+                               VerticalAlignment="Center"
+                               Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
+                </StackPanel>
+            </Grid>
         </Border>
     </Grid>
 </ui:FluentWindow>

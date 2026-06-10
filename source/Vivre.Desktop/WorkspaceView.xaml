@@ -440,8 +440,26 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
+                <!-- M10: per-row error glyph — shown only when LastError is set; moved left of "Last status"
+                     so it's visible at 1360px wide. DismissCircle in SystemFillColorCriticalBrush (red)
+                     keeps color+shape consistent with the other status-symbol columns. -->
+                <DataGridTemplateColumn Header="Last error" Width="Auto" MinWidth="180" MaxWidth="480" SortMemberPath="LastError">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal"
+                                        Visibility="{Binding LastError, Converter={StaticResource StringToVis}}">
+                                <ui:SymbolIcon Symbol="DismissCircle24" FontSize="14" Margin="6,0,4,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                                <TextBlock Text="{Binding LastError}" FontSize="12"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                           MaxWidth="400"
+                                           ToolTip="{Binding LastError}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="Auto" MinWidth="160" MaxWidth="400" />
-                <DataGridTextColumn Header="Last error" Binding="{Binding LastError}" Width="Auto" MinWidth="160" MaxWidth="500" />
             </ui:DataGrid.Columns>
         </ui:DataGrid>
 

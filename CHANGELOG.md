@@ -37,6 +37,13 @@ it ships, then gets a dated heading.
   light mode); they now use theme-aware Fluent colours that stay legible in light and dark, and the
   actionable "Updates available" state stands out in the app accent. The activity log and the per-machine
   detail grids also pick up the Fluent control styling.
+- **Sweeps narrate their progress** — instead of a silent spinner, a running sweep now shows the operation,
+  count, and elapsed ("Checking vitals — 12/48 · 00:32") beside the progress ring and in the status bar.
+  During an update run the fleet band adds elapsed + an N/M counter and holds open briefly after finishing
+  so it no longer races the completion banner. The completion banner's colour now reflects the real outcome
+  (green all-succeeded, amber partial, red all-failed) rather than guessing from the message text, and
+  failing rows get a red error icon moved into view. The bottom status bar is reorganised into
+  left / centre / right zones (context · active operation · summary).
 - **New-tab "+" sits next to the last tab** — browser-style, instead of pinned to the window's far-right
   edge. With many tabs it scrolls with the strip (scroll right to reach it).
 - **Multi-tab sweeps stay responsive and never freeze** — Check Vitals, update scans, software and
