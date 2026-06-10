@@ -95,7 +95,7 @@ public partial class MainWindow : FluentWindow
                 foreach (WorkspaceViewModel tab in e.NewItems.OfType<WorkspaceViewModel>())
                 {
                     tab.OperationCompleted -= OnOperationCompleted;
-                    tab.OperationCompleted += OnOperationCompleted;
+                    tab.OperationCompleted += OnOperationCompleted;  // typed: Action<string, OperationSeverity>
                 }
             }
         };
@@ -103,25 +103,29 @@ public partial class MainWindow : FluentWindow
 
     private DispatcherTimer? _completionBarTimer;
 
-    private void OnOperationCompleted(string summary)
+    private void OnOperationCompleted(string summary, ViewModels.OperationSeverity severity)
     {
         // Window focused → a brief in-window banner (the operator is watching, a tray balloon would
         // be missed/ignored). Window unfocused → the tray balloon, as before.
         if (IsActive)
         {
-            Dispatcher.BeginInvoke(() => ShowCompletionBar(summary));
+            Dispatcher.BeginInvoke(() => ShowCompletionBar(summary, severity));
             return;
         }
 
         Dispatcher.BeginInvoke(() => TrayIcon.ShowBalloonTip("Vivre", summary, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
     }
 
-    private void ShowCompletionBar(string summary)
+    private void ShowCompletionBar(string summary, ViewModels.OperationSeverity severity)
     {
         CompletionBar.Message = summary;
-        CompletionBar.Severity = summary.Contains("failed", StringComparison.OrdinalIgnoreCase)
-            ? InfoBarSeverity.Warning
-            : InfoBarSeverity.Success;
+        // M9: severity from real counts — not string-sniffed.
+        CompletionBar.Severity = severity switch
+        {
+            ViewModels.OperationSeverity.Error => InfoBarSeverity.Error,
+            ViewModels.OperationSeverity.Warning => InfoBarSeverity.Warning,
+            _ => InfoBarSeverity.Success,
+        };
         CompletionBar.IsOpen = true;
 
         // Auto-dismiss after a few seconds (the activity log + status bar keep the durable record).
