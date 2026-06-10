@@ -27,6 +27,12 @@ it ships, then gets a dated heading.
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
+- **Micro-interaction polish** — the command bar is grouped into labelled **Fleet / Operations / Updates**
+  clusters; tab ✕ buttons gain a hover circle and tabs a keyboard focus ring (and middle-click closes a
+  tab); right-click menus throughout pick up Fluent icons; scrollbars everywhere become thin Fluent overlay
+  bars; the completion banner fades in, the fleet progress bar eases smoothly to each value, and the
+  activity panel fades open; the Run Script category headers animate their chevron; and tooltips now name
+  their keyboard shortcuts. Verified in light and dark.
 - **Refreshed grid + dialog styling** — the machine and update grids now have structured, theme-aware
   column headers (a fill band, a separator under the headers, and sort arrows) with taller 36px rows and
   horizontal row dividers; the filter chips are taller with semantic icons; dialogs share consistent
