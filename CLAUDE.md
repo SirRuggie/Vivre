@@ -15,12 +15,14 @@ maintainability over enterprise hardening. It's a dense power tool, not a consum
 
 ## Start here
 
-This file is the architecture + conventions reference. Two companions:
+This file is the architecture + conventions reference. Three companions:
 - **[UPDATE_PLAN.md](UPDATE_PLAN.md)** — the Windows Update (WUA) lane deep-dive and its
   **load-bearing reliability constraints — read it before touching the update or remoting code.**
+- **[NAVIGATION_PLAN.md](NAVIGATION_PLAN.md)** — the phased shell → `ui:NavigationView` refactor, its locked
+  decisions, and the **`TabControlEx` keep-alive constraint — read it before touching the shell/tab hosting.**
 - **[README.md](README.md)** — the human-facing overview + roadmap.
 
-Keep this file and UPDATE_PLAN current when a decision changes or a feature lands.
+Keep this file, UPDATE_PLAN, and NAVIGATION_PLAN current when a decision changes or a feature lands.
 
 ## Layout
 
