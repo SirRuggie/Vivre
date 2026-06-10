@@ -48,6 +48,13 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). A full multi-agent code
   review (2026-06) addressed everything else it found.
+- **Shell → `NavigationView` refactor (planned):** restructure the shell layout onto WPF-UI's
+  `NavigationView`. **Fold in this known issue when it happens:** the **"Get started" empty-state card**
+  anchors **top-left instead of centring**. At cold start the machines grid is collapsed (the empty-state
+  design), and it's the grid's own `ScrollViewer` that normally constrains the tab to the viewport width —
+  with no grid present nothing does, so a centred card drifts off to the right. Centring needs a
+  viewport-width anchor for the empty-state overlay while the grid is collapsed; the shell restructure is
+  the right time to give it one. (Grid horizontal scrolling itself works correctly — verified.)
 
 ## Build & run
 

@@ -956,6 +956,51 @@ public partial class WorkspaceView : UserControl
         vm.RemoveSelected();
     }
 
+    // --- M30: mode chip handlers (RadioButton.Checked) ---
+
+    /// <summary>M30: Machines chip selected — switch to machine mode (same state as View ▸ Machines / Ctrl+M).
+    /// Checked also fires when the OneWay binding re-checks the chip on an external mode change; the guard
+    /// makes that a harmless no-op.</summary>
+    private void OnMachinesModeChipChecked(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { IsUpdateMode: true } vm)
+        {
+            vm.IsUpdateMode = false;
+        }
+    }
+
+    /// <summary>M30: Windows Update chip selected — switch to update mode (same state as View ▸ Windows Update / Ctrl+M).</summary>
+    private void OnUpdateModeChipChecked(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { IsUpdateMode: false } vm)
+        {
+            vm.IsUpdateMode = true;
+        }
+    }
+
+    // --- M29: "Get started" card handler ---
+
+    /// <summary>M29: Open help button on the cold-start card — wires to the same command as F1 / Help ▸ How to use Vivre.</summary>
+    private void OnGetStartedHelp(object sender, RoutedEventArgs e)
+    {
+        if (OwnerWindow is MainWindow main)
+        {
+            MainWindow.HelpKey.Execute(null, main);
+        }
+    }
+
+    // --- M13: clear-filter button handler ---
+
+    /// <summary>M13: Clear filter button on the filter-empty overlay — resets to All + clears the name box.</summary>
+    private void OnClearFilter(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+        {
+            vm.ActiveFilter = ViewModels.RowFilter.All;
+            vm.FilterText = string.Empty;
+        }
+    }
+
     private static T? FindParent<T>(DependencyObject? element) where T : DependencyObject
     {
         while (element is not null and not T)

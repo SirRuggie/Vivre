@@ -20,10 +20,16 @@ public partial class ActivityLogViewModel : ObservableObject
         _log = log;
         Entries = CollectionViewSource.GetDefaultView(log.Entries);
         Entries.Filter = Matches;
+        // M15: notify HasEntries when the underlying collection changes so the empty-state overlay
+        // hides as soon as the first log line arrives.
+        Entries.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasEntries));
     }
 
     /// <summary>Filtered, newest-first view bound to the panel's grid.</summary>
     public ICollectionView Entries { get; }
+
+    /// <summary>M15: true when there is at least one entry — drives the empty-state overlay.</summary>
+    public bool HasEntries => !Entries.IsEmpty;
 
     [ObservableProperty]
     public partial string SearchText { get; set; } = string.Empty;

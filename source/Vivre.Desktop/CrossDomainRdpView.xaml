@@ -175,19 +175,53 @@
             </DockPanel>
 
             <Grid>
-                <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Opacity="0.6" TextAlignment="Center"
-                           Text="Select a host on the left and click Connect (or double-click it).">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
+                <!-- M16 state A: no sessions — select a host and connect.
+                     Shown when there are hosts in the tree but none is connected. -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Vertical"
+                            IsHitTestVisible="False">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
                             <Setter Property="Visibility" Value="Collapsed" />
                             <Style.Triggers>
-                                <DataTrigger Binding="{Binding HasSessions}" Value="False">
+                                <!-- visible when nodes exist (hosts to connect to) but no active session -->
+                                <MultiDataTrigger>
+                                    <MultiDataTrigger.Conditions>
+                                        <Condition Binding="{Binding HasSessions}" Value="False" />
+                                        <Condition Binding="{Binding HasNodes}" Value="True" />
+                                    </MultiDataTrigger.Conditions>
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </MultiDataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </StackPanel.Style>
+                    <ui:SymbolIcon Symbol="PlugConnected24" FontSize="36" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Style="{StaticResource EmptyStateTitle}"
+                               Text="Select a host and click Connect" />
+                    <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                               Text="Or double-click a host in the tree on the left." />
+                </StackPanel>
+
+                <!-- M16 state B: no hosts at all — prompt to add one. -->
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Vertical"
+                            IsHitTestVisible="False">
+                    <StackPanel.Style>
+                        <Style TargetType="StackPanel">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasNodes}" Value="False">
                                     <Setter Property="Visibility" Value="Visible" />
                                 </DataTrigger>
                             </Style.Triggers>
                         </Style>
-                    </TextBlock.Style>
-                </TextBlock>
+                    </StackPanel.Style>
+                    <ui:SymbolIcon Symbol="Desktop24" FontSize="36" HorizontalAlignment="Center"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <TextBlock Style="{StaticResource EmptyStateTitle}"
+                               Text="No hosts yet" />
+                    <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                               Text="Click Add Host in the toolbar on the left to get started." />
+                </StackPanel>
 
                 <!-- All sessions realized + kept alive; only the active one is visible (an ItemsControl, NOT a
                      TabControl, so switching sessions doesn't tear down / reconnect the others). -->
