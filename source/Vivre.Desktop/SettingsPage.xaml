@@ -17,8 +17,8 @@
             <!-- Page heading -->
             <ui:TextBlock FontTypography="Title" Text="Settings" Margin="0,0,0,20" />
 
-            <!-- ── Theme ───────────────────────────────────────────────────── -->
-            <Border Padding="16" CornerRadius="6" Margin="0,0,0,16"
+            <!-- ── Appearance (flat row) ──────────────────────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel>
@@ -47,8 +47,33 @@
                 </StackPanel>
             </Border>
 
-            <!-- ── Remote credentials ────────────────────────────────────── -->
-            <Border x:Name="CredentialCard" Padding="16" CornerRadius="6" Margin="0,0,0,16"
+            <!-- ── Auto-check on load (flat row) ────────────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0" Symbol="Pulse24" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:TextBlock Text="Auto-check on load" />
+                        <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                                      Text="When on, loading a list auto-pings and checks vitals. When off, the grid is a frozen snapshot until you click Ping All or Check Vitals." />
+                    </StackPanel>
+                    <ui:ToggleSwitch Grid.Column="2" x:Name="AutoToggle"
+                                     VerticalAlignment="Center" Margin="16,0,0,0"
+                                     Checked="OnAutoCheckChanged"
+                                     Unchecked="OnAutoCheckChanged"
+                                     ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals." />
+                </Grid>
+            </Border>
+
+            <!-- ── Remote credentials (visible card — primary per-session task) ── -->
+            <Border x:Name="CredentialCard" Padding="16" CornerRadius="6" Margin="0,0,0,8"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <StackPanel>
@@ -97,20 +122,12 @@
                 </StackPanel>
             </Border>
 
-            <!-- ── Behaviour ─────────────────────────────────────────────── -->
-            <Border Padding="16" CornerRadius="6" Margin="0,0,0,16"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <StackPanel>
-                    <ui:TextBlock FontTypography="BodyStrong" Text="Behaviour" Margin="0,0,0,12" />
-
-                    <CheckBox x:Name="AutoCheckBox"
-                              Content="Auto-check on load"
-                              Margin="0,0,0,6"
-                              Click="OnAutoCheckChanged"
-                              ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals." />
-
-                    <Grid Margin="0,12,0,0">
+            <!-- ── Integrations & paths (collapsed expander) ─────────────── -->
+            <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
+                             Icon="{ui:SymbolIcon Link24}"
+                             Header="Integrations &amp; paths">
+                <StackPanel Margin="0,8,0,0">
+                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="130" />
                             <ColumnDefinition Width="*" />
@@ -133,29 +150,26 @@
                                       LostFocus="OnPackagesFolderChanged" />
                     </Grid>
                 </StackPanel>
-            </Border>
+            </ui:CardExpander>
 
-            <!-- ── Tools & windows ────────────────────────────────────────── -->
-            <Border Padding="16" CornerRadius="6" Margin="0,0,0,16"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <StackPanel>
-                    <ui:TextBlock FontTypography="BodyStrong" Text="Tools" Margin="0,0,0,12" />
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
-                        <ui:Button Content="Columns…" Icon="{ui:SymbolIcon Table24}"
-                                   Click="OnOpenColumns"
-                                   ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
-                        <ui:Button Content="How to use Vivre…" Icon="{ui:SymbolIcon QuestionCircle24}"
-                                   Margin="8,0,0,0"
-                                   Click="OnOpenHelp"
-                                   ToolTip="Open the in-app how-to guide (F1)." />
-                        <ui:Button Content="About Vivre…" Icon="{ui:SymbolIcon Info24}"
-                                   Margin="8,0,0,0"
-                                   Click="OnOpenAbout"
-                                   ToolTip="Version, licence, and credits." />
-                    </StackPanel>
+            <!-- ── Tools &amp; about (collapsed expander) ───────────────── -->
+            <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
+                             Icon="{ui:SymbolIcon Wrench24}"
+                             Header="Tools &amp; about">
+                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <ui:Button Content="Columns…" Icon="{ui:SymbolIcon Table24}"
+                               Click="OnOpenColumns"
+                               ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
+                    <ui:Button Content="How to use Vivre…" Icon="{ui:SymbolIcon QuestionCircle24}"
+                               Margin="8,0,0,0"
+                               Click="OnOpenHelp"
+                               ToolTip="Open the in-app how-to guide (F1)." />
+                    <ui:Button Content="About Vivre…" Icon="{ui:SymbolIcon Info24}"
+                               Margin="8,0,0,0"
+                               Click="OnOpenAbout"
+                               ToolTip="Version, licence, and credits." />
                 </StackPanel>
-            </Border>
+            </ui:CardExpander>
 
         </StackPanel>
     </ScrollViewer>

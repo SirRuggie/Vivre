@@ -82,7 +82,7 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
 - A standalone library manager: category list + AvalonEdit editor + add / save / delete over `ScriptLibrary`.
   No run / targets / output. The right-click ▸ Run-script path stays as-is.
 
-### Phase 4 — Cleanup + toolbar (Option A)
+### Phase 4 — Cleanup + toolbar + UI polish  ✅ *(done — 1.8.2)*
 - Refine the Fleet/Operations/Updates clusters per Option A; retire menu items superseded by the nav/Settings;
   final polish.
 

@@ -87,17 +87,6 @@
             <MenuItem Header="_View">
                 <MenuItem x:Name="ActivityLogMenuItem" Header="_Activity log"
                           IsCheckable="True" IsChecked="False" Click="OnToggleActivityLog" />
-                <Separator />
-                <MenuItem Header="_Machines" InputGestureText="Ctrl+M" Click="OnSelectMachinesMode">
-                    <MenuItem.Icon>
-                        <RadioButton IsChecked="{Binding IsMachinesView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
-                    </MenuItem.Icon>
-                </MenuItem>
-                <MenuItem Header="_Windows Update" InputGestureText="Ctrl+M" Click="OnSelectUpdateMode">
-                    <MenuItem.Icon>
-                        <RadioButton IsChecked="{Binding IsWindowsUpdateView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
-                    </MenuItem.Icon>
-                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Updates"
                       Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
@@ -208,80 +197,111 @@
 
                         <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
 
-                            <StackPanel Orientation="Vertical">
-                                <TextBlock Text="FLEET" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
-                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
+                            <!-- Hot path: Ping All (split), Check Vitals, Monitor -->
+                            <ui:SplitButton Appearance="Primary"
+                                            Icon="{ui:SymbolIcon ArrowSync24}"
+                                            Content="Ping All"
+                                            Command="{Binding SelectedTab.PingAllCommand}"
+                                            ToolTip="Ping every machine in this tab (F5)">
+                                <ui:SplitButton.Flyout>
+                                    <ContextMenu>
+                                        <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
+                                    </ContextMenu>
+                                </ui:SplitButton.Flyout>
+                            </ui:SplitButton>
+                            <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Pulse24}" Content="Check Vitals"
+                                       Command="{Binding SelectedTab.CheckVitalsCommand}"
+                                       ToolTip="Pull SCCM client health AND deep OS vitals. Read-only." />
+                            <ToggleButton Margin="8,0,0,0" Padding="11,6"
+                                          VerticalAlignment="Center"
+                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
+                                          ToolTip="Continuously re-check online/offline. Stop halts it.">
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:SplitButton Appearance="Primary"
-                                                    Icon="{ui:SymbolIcon ArrowSync24}"
-                                                    Content="Ping All"
-                                                    Command="{Binding SelectedTab.PingAllCommand}"
-                                                    ToolTip="Ping every machine in this tab (F5)">
-                                        <ui:SplitButton.Flyout>
-                                            <ContextMenu>
-                                                <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
-                                            </ContextMenu>
-                                        </ui:SplitButton.Flyout>
-                                    </ui:SplitButton>
-                                    <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Pulse24}" Content="Check Vitals"
-                                               Command="{Binding SelectedTab.CheckVitalsCommand}"
-                                               ToolTip="Pull SCCM client health AND deep OS vitals. Read-only." />
-                                    <ToggleButton Margin="8,0,0,0" Padding="11,6"
-                                                  VerticalAlignment="Center"
-                                                  IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
-                                                  ToolTip="Continuously re-check online/offline. Stop halts it.">
-                                        <StackPanel Orientation="Horizontal">
-                                            <ui:SymbolIcon Symbol="Eye24" Margin="0,0,8,0" />
-                                            <TextBlock Text="Monitor" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                    </ToggleButton>
+                                    <ui:SymbolIcon Symbol="Eye24" Margin="0,0,8,0" />
+                                    <TextBlock Text="Monitor" VerticalAlignment="Center" />
                                 </StackPanel>
-                            </StackPanel>
+                            </ToggleButton>
 
                             <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
 
-                            <StackPanel Orientation="Vertical">
-                                <TextBlock Text="OPERATIONS" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
-                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:Button Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline"
-                                               Command="{Binding SelectedTab.RemoveOfflineCommand}"
-                                               ToolTip="Remove every offline machine from this tab." />
-                                    <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Stop24}" Content="Stop"
-                                               Command="{Binding SelectedTab.StopCommand}"
-                                               ToolTip="Cancel all running operations in this tab." />
-                                    <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Eraser24}" Content="Clear Results"
-                                               Command="{Binding SelectedTab.ClearResultsCommand}"
-                                               ToolTip="Clear the Command result column on every row." />
-                                </StackPanel>
-                            </StackPanel>
+                            <!-- Operations: de-emphasised; Clear Results moved to overflow -->
+                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline"
+                                       Command="{Binding SelectedTab.RemoveOfflineCommand}"
+                                       ToolTip="Remove every offline machine from this tab." />
+                            <ui:Button Margin="8,0,0,0" Appearance="Secondary" Icon="{ui:SymbolIcon Stop24}" Content="Stop"
+                                       Command="{Binding SelectedTab.StopCommand}"
+                                       IsEnabled="{Binding SelectedTab.IsBusy}"
+                                       ToolTip="Cancel all running operations in this tab." />
+                            <ui:Button x:Name="OverflowButton" Margin="8,0,0,0" Appearance="Secondary"
+                                       Icon="{ui:SymbolIcon MoreHorizontal24}"
+                                       AutomationProperties.Name="More actions"
+                                       ToolTip="More actions"
+                                       Click="OnOverflowButtonClick">
+                                <ui:Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Clear Results" Command="{Binding SelectedTab.ClearResultsCommand}"
+                                                  ToolTip="Clear the Command result column on every row." />
+                                    </ContextMenu>
+                                </ui:Button.ContextMenu>
+                            </ui:Button>
 
-                            <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
-                                    Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}" />
-                            <StackPanel Orientation="Vertical"
-                                        Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="UPDATES" FontSize="9" FontWeight="SemiBold" Margin="2,0,0,2"
-                                           Foreground="{DynamicResource TextFillColorTertiaryBrush}" />
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:Button Icon="{ui:SymbolIcon Search24}" Content="{Binding SelectedTab.ScanButtonLabel}"
-                                               Command="{Binding SelectedTab.ScanTargetCommand}"
-                                               ToolTip="Scan selected machines (or all when none selected)." />
-                                    <ui:Button x:Name="InstallButton" Margin="8,0,0,0" Appearance="Primary"
-                                               Icon="{ui:SymbolIcon ArrowDownload24}" Content="{Binding SelectedTab.InstallButtonLabel}"
-                                               Visibility="{Binding SelectedTab.CanShowInstallToolbar, Converter={StaticResource BoolToVis}}"
-                                               IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
-                                               Click="OnInstallClick"
-                                               ToolTip="Download + install applicable updates on selected machines (Ctrl+Enter)." />
-                                </StackPanel>
-                            </StackPanel>
+                            <!-- Divider: shown in update mode only, AND only when no rows are selected
+                                 (selection bar owns Scan/Install when rows are selected). -->
+                            <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
 
-                            <ui:ProgressRing Margin="12,0,0,0" Width="22" Height="22" IsIndeterminate="True"
-                                             VerticalAlignment="Center"
-                                             Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
-                            <TextBlock Margin="6,0,0,0" VerticalAlignment="Center" FontSize="12"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Text="{Binding SelectedTab.SweepStatus}"
-                                       Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}}" />
+                            <!-- Updates (update-mode only, and only when no rows selected — selection bar
+                                 owns Scan/Install for the selection so both don't show simultaneously). -->
+                            <ui:Button Icon="{ui:SymbolIcon Search24}" Content="Scan all"
+                                       Command="{Binding SelectedTab.ScanTargetCommand}"
+                                       ToolTip="Scan all machines in this tab for applicable updates.">
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                            </ui:Button>
+                            <ui:Button x:Name="InstallButton" Margin="8,0,0,0" Appearance="Primary"
+                                       Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install all"
+                                       IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                       Click="OnInstallClick"
+                                       ToolTip="Download and install applicable updates on all machines in this tab (Ctrl+Enter).">
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.CanShowInstallToolbar}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
+                                                <Setter Property="Visibility" Value="Collapsed" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                            </ui:Button>
+
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
@@ -299,32 +319,6 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- Fleet status band -->
-                    <Border Grid.Row="1" Margin="12,0,12,8" Padding="12,6" CornerRadius="4"
-                            Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
-                            BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
-                            Visibility="{Binding SelectedTab.IsPatchOperationOrFleetHeld, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
-                                       Text="{Binding SelectedTab.FleetSummary}" />
-                            <TextBlock Grid.Column="1" VerticalAlignment="Center" Margin="0,0,8,0" FontSize="12"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Text="{Binding SelectedTab.FleetNofM}"
-                                       Visibility="{Binding SelectedTab.FleetNofM, Converter={StaticResource StringToVis}}" />
-                            <TextBlock Grid.Column="2" VerticalAlignment="Center" Margin="0,0,12,0" FontSize="12"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Text="{Binding SelectedTab.FleetElapsed}"
-                                       Visibility="{Binding SelectedTab.FleetElapsed, Converter={StaticResource StringToVis}}" />
-                            <ProgressBar x:Name="FleetProgressBar" Grid.Column="3" Height="8" VerticalAlignment="Center"
-                                         Minimum="0" Maximum="100" />
-                        </Grid>
-                    </Border>
 
                     <!-- Workspace TabControlEx — keep-alive for RDP tab. -->
                     <local:TabControlEx x:Name="WorkspaceTabs" Grid.Row="2"
@@ -338,20 +332,32 @@
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="*" />
                                     </Grid.RowDefinitions>
-                                    <ScrollViewer Grid.Row="0" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
-                                        <StackPanel Orientation="Horizontal">
-                                            <StackPanel IsItemsHost="True" Orientation="Horizontal" />
-                                            <ui:Button Content="+"
-                                                       FontSize="16" Margin="6,0,0,0" Padding="10,2"
-                                                       VerticalAlignment="Center"
-                                                       Click="OnNewTab"
-                                                       AutomationProperties.Name="New tab"
-                                                       ToolTip="New tab (Ctrl+T)" />
-                                        </StackPanel>
-                                    </ScrollViewer>
-                                    <Border Grid.Row="1" Margin="0,4,0,0"
-                                            BorderBrush="{DynamicResource ControlElevationBorderBrush}"
-                                            BorderThickness="0,1,0,0">
+                                    <!-- Tab strip row: thin bottom border creates the shelf the tabs sit on.
+                                         The active tab has no bottom border so it visually merges with the
+                                         content area below (connected-tab look). -->
+                                    <Border Grid.Row="0"
+                                            Background="{DynamicResource ApplicationBackgroundBrush}"
+                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="0,0,0,1">
+                                        <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                                      Padding="0,4,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <StackPanel IsItemsHost="True" Orientation="Horizontal" />
+                                                <ui:Button Content="+"
+                                                           FontSize="16" Margin="6,0,0,0" Padding="10,2"
+                                                           VerticalAlignment="Center"
+                                                           Click="OnNewTab"
+                                                           AutomationProperties.Name="New tab"
+                                                           ToolTip="New tab (Ctrl+T)" />
+                                            </StackPanel>
+                                        </ScrollViewer>
+                                    </Border>
+                                    <!-- Content area: card background matching the active tab's background.
+                                         No top border — the tab strip border above handles the separation. -->
+                                    <Border Grid.Row="1"
+                                            Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                                            BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                            BorderThickness="0">
                                         <Grid x:Name="PART_ItemsHolder" />
                                     </Border>
                                 </Grid>
@@ -381,6 +387,9 @@
                                             </MenuItem>
                                             <MenuItem Header="Close tabs to the right" Click="OnCloseTabsToRight">
                                                 <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowRight24" /></MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Close all tabs" Click="OnCloseAllTabs">
+                                                <MenuItem.Icon><ui:SymbolIcon Symbol="DismissSquare24" /></MenuItem.Icon>
                                             </MenuItem>
                                         </ContextMenu>
                                     </StackPanel.ContextMenu>
@@ -821,47 +830,106 @@
         </Grid>
 
         <!-- Full-width status bar — lives at root row 3, below the nav+content row, so it never
-             overlaps the nav pane. Visibility is code-controlled (UpdateStatusBarVisibility). -->
+             overlaps the nav pane. Visibility is code-controlled (UpdateStatusBarVisibility).
+             During an operation (IsBusy) the center shows live narration + counts + elapsed + a slim
+             progress bar along the top edge. At idle the center shows the summary text. This is the
+             single progress/status surface — the toolbar ring and fleet band have been removed. -->
         <Border x:Name="StatusBar" Grid.Row="3"
                 Visibility="Collapsed"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0"
                 Padding="12,3">
             <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0" Orientation="Horizontal">
-                    <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}" VerticalAlignment="Center" />
-                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}" VerticalAlignment="Center"
-                               Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
-                    <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
-                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center"
-                               Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
-                </StackPanel>
-                <TextBlock Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           FontSize="12" Text="{Binding SelectedTab.FleetSummary}"
-                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontWeight="Normal">
-                    <TextBlock.Style>
-                        <Style TargetType="TextBlock">
-                            <Style.Triggers>
-                                <DataTrigger Binding="{Binding SelectedTab.IsBusy}" Value="True">
-                                    <Setter Property="Text" Value="{Binding SelectedTab.SweepStatus}" />
-                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
-                                    <Setter Property="FontWeight" Value="Medium" />
-                                </DataTrigger>
-                            </Style.Triggers>
-                        </Style>
-                    </TextBlock.Style>
-                </TextBlock>
-                <StackPanel Grid.Column="2" Orientation="Horizontal">
-                    <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}" VerticalAlignment="Center"
-                               Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
-                    <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}" VerticalAlignment="Center"
-                               Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
-                </StackPanel>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="2" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- Slim progress bar along the top edge of the status bar — visible only during an operation. -->
+                <ProgressBar x:Name="StatusProgressBar"
+                             Grid.Row="0"
+                             Minimum="0" Maximum="100"
+                             Margin="0"
+                             BorderThickness="0"
+                             Visibility="{Binding SelectedTab.IsBusy, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}" />
+
+                <!-- Status content row -->
+                <Grid Grid.Row="1">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Left: online summary + selection summary -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal">
+                        <TextBlock Text="{Binding SelectedTab.OnlineSummary}" Style="{StaticResource LabelText}" VerticalAlignment="Center" />
+                        <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}" VerticalAlignment="Center"
+                                   Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{Binding SelectedTab.SelectionSummary}" FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}" VerticalAlignment="Center"
+                                   Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+
+                    <!-- Center: idle → FleetSummary; busy → SweepStatus narration + FleetNofM + FleetElapsed -->
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+
+                        <!-- Idle summary (collapsed when busy) -->
+                        <TextBlock FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding SelectedTab.FleetSummary}"
+                                   VerticalAlignment="Center">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab.IsBusy}" Value="True">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <!-- Busy narration (collapsed when idle) -->
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SelectedTab.IsBusy}" Value="True">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock FontSize="12" FontWeight="Medium"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                       Text="{Binding SelectedTab.SweepStatus}"
+                                       VerticalAlignment="Center" />
+                            <TextBlock FontSize="12" Margin="10,0,0,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="{Binding SelectedTab.FleetNofM}"
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding SelectedTab.FleetNofM, Converter={StaticResource StringToVis}}" />
+                            <TextBlock FontSize="12" Margin="8,0,0,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                       Text="{Binding SelectedTab.FleetElapsed}"
+                                       VerticalAlignment="Center"
+                                       Visibility="{Binding SelectedTab.FleetElapsed, Converter={StaticResource StringToVis}}" />
+                        </StackPanel>
+
+                    </StackPanel>
+
+                    <!-- Right: vitals fleet summary -->
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <TextBlock Text="·" Margin="10,0" Style="{StaticResource LabelText}" VerticalAlignment="Center"
+                                   Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{Binding SelectedTab.VitalsFleetSummary}" Style="{StaticResource LabelText}" VerticalAlignment="Center"
+                                   Visibility="{Binding SelectedTab.HasVitalsFleetSummary, Converter={StaticResource BoolToVis}}" />
+                    </StackPanel>
+
+                </Grid>
             </Grid>
         </Border>
     </Grid>

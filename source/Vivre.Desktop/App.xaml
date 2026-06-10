@@ -28,41 +28,74 @@
                 <Setter Property="FontSize" Value="13" />
             </Style>
 
-            <!-- M5: shared Fluent tab style — accent background + white text when selected,
-                 card background when inactive. M26: focus ring on keyboard focus. -->
+            <!-- M5: shared Fluent tab style — browser/Windows-Terminal-style document tabs.
+                 Active tab: content-surface background + visible 3px accent top bar. No bottom border so
+                 the active tab merges visually with the content area. Inactive tabs: subtle muted fill,
+                 secondary text. Hover: gentle highlight. M26: focus ring on keyboard focus.
+
+                 The accent bar is a separate Border (x:Name="AccentBar") positioned at the very top of a
+                 root Grid. It is NOT inside a CornerRadius Border — that caused WPF's curved border
+                 renderer to draw it only at the corners. Being an independent child of the root Grid it
+                 renders its full width correctly. It is Transparent on inactive tabs and accent-colored
+                 when IsSelected=True. The tab fill/stroke shape uses ClipToBounds=False so the AccentBar
+                 can overlap the top edge. -->
             <Style x:Key="FluentTabItemStyle" TargetType="TabItem">
                 <Setter Property="Padding" Value="14,6" />
-                <Setter Property="Margin" Value="0,0,3,0" />
+                <Setter Property="Margin" Value="0,0,2,0" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="TabItem">
-                            <Border x:Name="Bd" CornerRadius="6,6,0,0" Padding="{TemplateBinding Padding}"
-                                    Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
-                                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1,1,1,0">
-                                <!-- M26: accent focus ring drawn inside the tab border. -->
-                                <Border x:Name="FocusRing" CornerRadius="4" BorderThickness="2"
-                                        BorderBrush="Transparent" IsHitTestVisible="False">
-                                    <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                            <Grid>
+                                <!-- Tab fill + stroke shape. The content sits here with its padding. -->
+                                <Border x:Name="Bd" CornerRadius="6,6,0,0"
+                                        Padding="{TemplateBinding Padding}"
+                                        Background="{DynamicResource SubtleFillColorSecondaryBrush}"
+                                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                                        BorderThickness="1,1,1,0">
+                                    <!-- M26: accent focus ring drawn around the header content. -->
+                                    <Border x:Name="FocusRing" CornerRadius="3" BorderThickness="2"
+                                            BorderBrush="Transparent" IsHitTestVisible="False">
+                                        <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                                    </Border>
                                 </Border>
-                            </Border>
+                                <!-- Accent bar: an independent element in the same Grid, painted OVER the
+                                     tab body. VerticalAlignment=Top + Height=3 pins it to the top edge.
+                                     Margin=1,1,1,0 insets it just inside the side borders so it doesn't
+                                     overdraw the corner curves. Transparent when inactive; accent when
+                                     IsSelected. CornerRadius on a Border gives it softly-rounded ends. -->
+                                <Border x:Name="AccentBar"
+                                        Height="3" VerticalAlignment="Top"
+                                        CornerRadius="5,5,0,0"
+                                        Margin="1,1,1,0"
+                                        Background="Transparent"
+                                        IsHitTestVisible="False" />
+                            </Grid>
                             <ControlTemplate.Triggers>
-                                <Trigger Property="IsMouseOver" Value="True">
+                                <!-- Hover (inactive only): slightly brighter fill + primary text. -->
+                                <MultiTrigger>
+                                    <MultiTrigger.Conditions>
+                                        <Condition Property="IsMouseOver" Value="True" />
+                                        <Condition Property="IsSelected" Value="False" />
+                                    </MultiTrigger.Conditions>
                                     <Setter TargetName="Bd" Property="Background"
-                                            Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
-                                </Trigger>
+                                            Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                    <Setter Property="Foreground"
+                                            Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </MultiTrigger>
+                                <!-- Active: content-area background + accent top bar. -->
                                 <Trigger Property="IsSelected" Value="True">
                                     <Setter TargetName="Bd" Property="Background"
-                                            Value="{DynamicResource AccentFillColorDefaultBrush}" />
-                                    <Setter TargetName="Bd" Property="BorderBrush"
+                                            Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+                                    <Setter TargetName="AccentBar" Property="Background"
                                             Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                     <Setter Property="Foreground"
-                                            Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                            Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                 </Trigger>
-                                <!-- M26: show accent ring when tab has keyboard focus (not mouse focus). -->
+                                <!-- M26: show accent focus ring on keyboard focus. -->
                                 <Trigger Property="IsFocused" Value="True">
                                     <Setter TargetName="FocusRing" Property="BorderBrush"
-                                            Value="{DynamicResource SystemAccentColorBrush}" />
+                                            Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

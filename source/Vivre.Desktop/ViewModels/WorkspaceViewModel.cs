@@ -183,6 +183,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>True when at least one row is selected (drives the status-bar selection indicator).</summary>
     public bool HasSelection => SelectedComputers.Count > 0;
 
+    /// <summary>Live selected-row count for the contextual command bar label (e.g. "3 machines selected").</summary>
+    public int SelectedComputerCount => SelectedComputers.Count;
+
     /// <summary>Live "Online: (online/total)" summary for this tab, shown in the bottom status bar.
     /// Recomputed whenever a row's online state changes or the list grows/shrinks.</summary>
     public string OnlineSummary => $"Online: ({Computers.Count(c => c.IsOnline == true)}/{Computers.Count})";
@@ -2779,6 +2782,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         OnPropertyChanged(nameof(SelectionSummary));
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(SelectedComputerCount));
         OnPropertyChanged(nameof(ScanButtonLabel));
         OnPropertyChanged(nameof(InstallButtonLabel));
     }
@@ -2806,6 +2810,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(InstallButtonLabel));
         OnPropertyChanged(nameof(SelectionSummary));
         OnPropertyChanged(nameof(HasSelection));
+        OnPropertyChanged(nameof(SelectedComputerCount));
     }
 
     // --- selection-aware toolbar (Scan/Install act on the selection, or all rows when none) ------

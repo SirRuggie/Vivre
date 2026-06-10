@@ -36,6 +36,10 @@ public partial class WorkspaceView : UserControl
     /// <see cref="OnGridRightClick"/> immediately before the menu is built.</summary>
     private Computer? _contextRow;
 
+    // Measured natural height of the selection bar (captured on first animation-in so the
+    // slide uses the real height rather than a hard-coded constant).
+    private double _selectionBarHeight;
+
     public WorkspaceView()
     {
         InitializeComponent();
@@ -53,7 +57,8 @@ public partial class WorkspaceView : UserControl
     private bool _customSortAscending = true;
 
     /// <summary>Once the tab's view-model is attached, apply the saved column layout and keep the grid in
-    /// step with it (built-in show/hide + the user's custom script columns), and wire custom-column sorting.</summary>
+    /// step with it (built-in show/hide + the user's custom script columns), wire custom-column sorting,
+    /// and subscribe to selection changes to drive the contextual command bar animation.</summary>
     private void OnViewLoaded(object sender, RoutedEventArgs e)
     {
         if (_columnsWired || ViewModel is not { } vm)
@@ -65,8 +70,12 @@ public partial class WorkspaceView : UserControl
         _wiredVm = vm;
         vm.CustomColumns.CollectionChanged += OnLayoutChanged;
         vm.HiddenColumns.CollectionChanged += OnLayoutChanged;
+        vm.SelectedComputers.CollectionChanged += OnSelectionChanged;
+        vm.PropertyChanged += OnVmPropertyChanged;
         ComputerGrid.Sorting += OnComputerGridSorting;
         SyncColumns();
+        // Seed bar state — if the view is loaded while a selection exists (tab switch), show bar immediately.
+        SetSelectionBarState(vm.HasSelection, animate: false);
     }
 
     /// <summary>The TabControl recreates this view when you switch tabs, so drop the layout subscriptions
@@ -84,6 +93,8 @@ public partial class WorkspaceView : UserControl
         {
             vm.CustomColumns.CollectionChanged -= OnLayoutChanged;
             vm.HiddenColumns.CollectionChanged -= OnLayoutChanged;
+            vm.SelectedComputers.CollectionChanged -= OnSelectionChanged;
+            vm.PropertyChanged -= OnVmPropertyChanged;
         }
 
         _wiredVm = null;
@@ -1021,5 +1032,101 @@ public partial class WorkspaceView : UserControl
         }
 
         return element as T;
+    }
+
+    // --- contextual selection command bar ---
+
+    /// <summary>Fires whenever the selection count changes — animates the bar in or out.</summary>
+    private void OnSelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    {
+        if (ViewModel is { } vm)
+        {
+            SetSelectionBarState(vm.HasSelection, animate: true);
+        }
+    }
+
+    /// <summary>Re-measures the selection bar height when the mode switches so the bar stays
+    /// the correct height in Update mode (where Scan/Install buttons add vertical space).</summary>
+    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WorkspaceViewModel.IsUpdateMode) && ViewModel is { HasSelection: true })
+        {
+            // Force re-measure next show: reset the cached height and re-show after layout completes.
+            _selectionBarHeight = 0;
+            // Use Loaded priority so layout has run and the Scan/Install buttons have been shown/hidden.
+            Dispatcher.InvokeAsync(() => SetSelectionBarState(show: true, animate: false),
+                System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+    }
+
+    /// <summary>
+    /// Shows or hides the contextual selection bar. When <paramref name="animate"/> is true,
+    /// a ~150 ms fade + height slide is used; when false the state is set immediately (used on
+    /// load to avoid a spurious animation when a tab is first shown with a pre-existing selection).
+    /// The bar's natural height is captured on the first animate-in so the slide stays crisp
+    /// even if the content reflows.
+    /// </summary>
+    private void SetSelectionBarState(bool show, bool animate)
+    {
+        // Capture the natural height the first time we show (measure at Auto height so we get the real value).
+        if (show && _selectionBarHeight <= 0)
+        {
+            SelectionBar.Height = double.NaN;  // Auto — let it measure
+            SelectionBar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            _selectionBarHeight = SelectionBar.DesiredSize.Height;
+            // Fallback: Machines-mode bar = ~38px (label + padding). Update mode adds Scan/Install
+            // buttons (~32px WPF-UI button + padding) so needs at least 46px.
+            if (_selectionBarHeight < 20)
+            {
+                _selectionBarHeight = (ViewModel?.IsUpdateMode == true) ? 46 : 38;
+            }
+            SelectionBar.Height = 0;  // restore before animating
+        }
+
+        if (!animate)
+        {
+            SelectionBar.Height = show ? _selectionBarHeight : 0;
+            SelectionBar.Opacity = show ? 1 : 0;
+            return;
+        }
+
+        double targetHeight = show ? _selectionBarHeight : 0;
+        double targetOpacity = show ? 1 : 0;
+        var duration = new Duration(TimeSpan.FromMilliseconds(150));
+
+        SelectionBar.BeginAnimation(HeightProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(targetHeight, duration)
+            {
+                EasingFunction = new System.Windows.Media.Animation.CubicEase
+                    { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
+            });
+        SelectionBar.BeginAnimation(OpacityProperty,
+            new System.Windows.Media.Animation.DoubleAnimation(targetOpacity, duration));
+    }
+
+    /// <summary>Selection bar Scan button: scans only the selected machines.</summary>
+    private void OnSelectionScanClick(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is { } vm && vm.SelectedComputers.Count > 0)
+        {
+            _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
+        }
+    }
+
+    /// <summary>Selection bar Install button: runs the same confirm-then-install flow as the toolbar,
+    /// scoped to the current selection. Delegates to the shell window to reuse the confirm dialog.</summary>
+    private void OnSelectionInstallClick(object sender, RoutedEventArgs e)
+    {
+        if (OwnerWindow is MainWindow main)
+        {
+            main.TriggerInstallForSelection();
+        }
+    }
+
+    /// <summary>Selection bar Clear button: deselects all rows in the active grid.</summary>
+    private void OnSelectionClearClick(object sender, RoutedEventArgs e)
+    {
+        DataGrid grid = ViewModel?.IsUpdateMode == true ? UpdateGrid : ComputerGrid;
+        grid.UnselectAll();
     }
 }
