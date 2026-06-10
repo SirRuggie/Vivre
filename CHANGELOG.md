@@ -32,6 +32,11 @@ it ships, then gets a dated heading.
   horizontal row dividers; the filter chips are taller with semantic icons; dialogs share consistent
   section headers, padding, and a three-level type ramp; and all three tab strips use one Fluent style.
   Works in both light and dark mode.
+- **Status chips now adapt to the theme** — the machine status pills, the Vitals chips, the status dots,
+  and the activity-log severity colours were fixed RGB (identical in both themes, with weak contrast in
+  light mode); they now use theme-aware Fluent colours that stay legible in light and dark, and the
+  actionable "Updates available" state stands out in the app accent. The activity log and the per-machine
+  detail grids also pick up the Fluent control styling.
 - **New-tab "+" sits next to the last tab** — browser-style, instead of pinned to the window's far-right
   edge. With many tabs it scrolls with the strip (scroll right to reach it).
 - **Multi-tab sweeps stay responsive and never freeze** — Check Vitals, update scans, software and

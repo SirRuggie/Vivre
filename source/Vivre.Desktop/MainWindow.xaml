@@ -424,7 +424,7 @@
                             <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
                         </Grid>
 
-                        <DataGrid Grid.Row="1" x:Name="ActivityGrid"
+                        <ui:DataGrid Grid.Row="1" x:Name="ActivityGrid"
                                   ItemsSource="{Binding Entries}"
                                   AutoGenerateColumns="False"
                                   IsReadOnly="True"
@@ -434,13 +434,13 @@
                                   PreviewMouseRightButtonDown="OnActivityGridRightClick">
                             <!-- Right-click selects the line under the cursor (handled at grid level so we don't
                                  override the themed row style), then the context menu copies it. -->
-                            <DataGrid.ContextMenu>
+                            <ui:DataGrid.ContextMenu>
                                 <ContextMenu>
                                     <MenuItem Header="Copy" Click="OnActivityCopy" />
                                     <MenuItem Header="Copy all" Click="OnActivityCopyAll" />
                                 </ContextMenu>
-                            </DataGrid.ContextMenu>
-                            <DataGrid.Columns>
+                            </ui:DataGrid.ContextMenu>
+                            <ui:DataGrid.Columns>
                                 <DataGridTemplateColumn Header="" Width="Auto">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
@@ -460,8 +460,8 @@
                                         </Style>
                                     </DataGridTextColumn.ElementStyle>
                                 </DataGridTextColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
+                            </ui:DataGrid.Columns>
+                        </ui:DataGrid>
                     </Grid>
                 </TabItem>
 
@@ -520,7 +520,8 @@
                                  update as applicable until the reboot finalizes it. Restart before installing
                                  more (and the agent would defer an install on a reboot-pending box anyway). -->
                             <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
-                                    Background="#33D9A300" BorderBrush="#D9A300" BorderThickness="1"
+                                    Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                                    BorderBrush="{DynamicResource SystemFillColorCautionBrush}" BorderThickness="1"
                                     Visibility="{Binding IsFocusedRebootPending, Converter={StaticResource BoolToVis}}">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Warning24" Margin="0,0,8,0" VerticalAlignment="Center" />
