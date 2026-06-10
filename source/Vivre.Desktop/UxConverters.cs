@@ -1,9 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
-using System.Windows.Media;
 using Vivre.Core.Logging;
-using Vivre.Core.Updates;
 
 namespace Vivre.Desktop;
 
@@ -59,31 +57,4 @@ public sealed class LogSeveritySymbolConverter : IValueConverter
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
-}
-
-/// <summary>
-/// <see cref="PatchState"/> → readable text colour for the Status pill. The pill fill comes from
-/// <see cref="PhaseChipBrushConverter"/>; white text fails contrast on the lighter fills (amber
-/// RebootPending, green Done, steel Available, grey Idle), so those get near-black text while the
-/// darker fills (blue working, red Error) keep white. Keeps the pill ≥ ~4.5:1 in both themes.
-/// </summary>
-public sealed class PhaseChipForegroundConverter : IValueConverter
-{
-    private static readonly SolidColorBrush Dark = Frozen(0x17, 0x17, 0x17);
-    private static readonly SolidColorBrush Light = Frozen(0xFF, 0xFF, 0xFF);
-
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        value is PatchState s && s is PatchState.Idle or PatchState.Available or PatchState.RebootPending or PatchState.Done
-            ? Dark
-            : Light;
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
-        throw new NotSupportedException();
-
-    private static SolidColorBrush Frozen(byte r, byte g, byte b)
-    {
-        var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-        brush.Freeze();
-        return brush;
-    }
 }

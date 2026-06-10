@@ -13,11 +13,7 @@
         <local:StatusSymbolConverter x:Key="StatusSymbol" />
         <local:BoolStateTextConverter x:Key="YesNo" />
         <local:InverseBooleanConverter x:Key="InverseBool" />
-        <local:PhaseChipBrushConverter x:Key="PhaseBrush" />
         <local:PhaseChipLabelConverter x:Key="PhaseLabel" />
-        <local:PhaseChipForegroundConverter x:Key="PhaseForeground" />
-        <local:VitalityChipBrushConverter x:Key="VitalityBrush" />
-        <local:VitalityChipForegroundConverter x:Key="VitalityForeground" />
         <local:NotNullToVisibilityConverter x:Key="NotNullToVis" />
         <local:EnumEqualsConverter x:Key="EnumEquals" />
         <local:StringToVisibilityConverter x:Key="StringToVis" />
@@ -287,11 +283,29 @@
                 <DataGridTemplateColumn Header="Vitals" Width="Auto" MinWidth="64" SortMemberPath="VitalityScore">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <!-- 0-100 vitality score, coloured by band (green/amber/red/grey). Hidden
-                                 until the row is scored; tooltip carries the one-line vitals digest. -->
+                            <!-- 0-100 vitality score, coloured by band. DataTriggers + DynamicResource
+                                 so colors re-resolve on theme switch. Hidden until scored. -->
                             <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left" MinWidth="26"
-                                    Background="{Binding VitalityBand, Converter={StaticResource VitalityBrush}}"
                                     Visibility="{Binding VitalityBand, Converter={StaticResource NotNullToVis}}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Healthy">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Warning">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Critical">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Offline">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <!-- Tooltip is the "why": the scored reasons (worst first) over the raw digest.
                                      Right-click ▸ Details… ▸ Vitals shows the full breakdown. -->
                                 <Border.ToolTip>
@@ -313,8 +327,24 @@
                                     </ToolTip>
                                 </Border.ToolTip>
                                 <TextBlock Text="{Binding VitalityScore, TargetNullValue=—}"
-                                           Foreground="{Binding VitalityBand, Converter={StaticResource VitalityForeground}}"
-                                           HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold" />
+                                           HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding VitalityBand}" Value="Healthy">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding VitalityBand}" Value="Warning">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding VitalityBand}" Value="Critical">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </Border>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
@@ -463,12 +493,76 @@
                 <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="110" SortMemberPath="PatchState">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
-                            <!-- Colored pill: glanceable per-machine state (grey/blue/steel/amber/green/red). -->
-                            <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left"
-                                    Background="{Binding PatchState, Converter={StaticResource PhaseBrush}}">
+                            <!-- Colored pill: glanceable per-machine state.
+                                 DataTriggers + DynamicResource so colors re-resolve on theme switch. -->
+                            <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Downloading">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Installing">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Uninstalling">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorAttentionBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <!-- Available = call-to-action (updates ready to install): accent fill so it
+                                                 pops past the quiet working/idle tints. -->
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Available">
+                                                <Setter Property="Background" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="RebootPending">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Done">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Error">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
                                 <TextBlock Text="{Binding PatchState, Converter={StaticResource PhaseLabel}}"
-                                           Foreground="{Binding PatchState, Converter={StaticResource PhaseForeground}}"
-                                           FontSize="11" FontWeight="SemiBold" />
+                                           FontSize="11" FontWeight="SemiBold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Downloading">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Installing">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Uninstalling">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Available">
+                                                    <Setter Property="Foreground" Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="RebootPending">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Done">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Error">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </Border>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
@@ -489,8 +583,35 @@
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                             <Setter Property="Padding" Value="0,0,16,0" />
                             <Setter Property="ToolTip" Value="{Binding UpdateMessage}" />
-                            <!-- Colour the message by state (red error / green done / amber reboot / blue working). -->
-                            <Setter Property="Foreground" Value="{Binding PatchState, Converter={StaticResource PhaseBrush}}" />
+                            <!-- Colour the message by state (red error / green done / amber reboot / blue working).
+                                 DataTriggers + DynamicResource so colors re-resolve on theme switch. -->
+                            <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Downloading">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Installing">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Uninstalling">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Available">
+                                    <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="RebootPending">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Done">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding PatchState}" Value="Error">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
@@ -507,12 +628,13 @@
                                 </Grid>
                                 <!-- Indeterminate marquee while scanning (no % yet). -->
                                 <ProgressBar x:Name="Marquee" Height="14" IsIndeterminate="True" Visibility="Collapsed" />
-                                <!-- Terminal glyphs. -->
+                                <!-- Terminal glyphs: DoneGlyph uses success color, ErrGlyph uses critical.
+                                     DynamicResource re-resolves on theme switch. -->
                                 <TextBlock x:Name="DoneGlyph" Text="&#x2713;" FontWeight="Bold" Visibility="Collapsed"
-                                           Foreground="{Binding PatchState, Converter={StaticResource PhaseBrush}}"
+                                           Foreground="{DynamicResource SystemFillColorSuccessBrush}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 <TextBlock x:Name="ErrGlyph" Text="&#x2716;" FontWeight="Bold" Visibility="Collapsed"
-                                           Foreground="{Binding PatchState, Converter={StaticResource PhaseBrush}}"
+                                           Foreground="{DynamicResource SystemFillColorCriticalBrush}"
                                            HorizontalAlignment="Center" VerticalAlignment="Center" />
                             </Grid>
                             <DataTemplate.Triggers>
