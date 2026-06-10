@@ -94,11 +94,19 @@ public partial class App : Application
         // Factory for a fresh tab/workspace, capturing the shared services.
         WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns);
 
-        // Factory for the (singleton) Cross-Domain RDP remote-desktop tab.
-        CrossDomainRdpViewModel NewCrossDomainRdp() => new(rdpHosts, rdpCreds, activity);
+        // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.
+        // The nav section's DataContext binds to ShellViewModel.RdpViewModel.
+        var rdpViewModel = new CrossDomainRdpViewModel(rdpHosts, rdpCreds, activity);
 
-        var shell = new ShellViewModel(NewWorkspace, NewCrossDomainRdp, credentials, activity);
-        var window = new MainWindow { DataContext = shell, Settings = settingsStore, Log = activity, SavedTheme = settings.Theme };
+        var shell = new ShellViewModel(NewWorkspace, rdpViewModel, credentials, activity);
+        var window = new MainWindow
+        {
+            DataContext = shell,
+            Settings = settingsStore,
+            Log = activity,
+            SavedTheme = settings.Theme,
+            ScriptLibrary = scripts,
+        };
         window.Show();
     }
 

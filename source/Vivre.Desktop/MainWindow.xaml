@@ -98,13 +98,6 @@
                         <RadioButton IsChecked="{Binding IsWindowsUpdateView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
                     </MenuItem.Icon>
                 </MenuItem>
-                <MenuItem Header="Cross-_Domain RDP" Click="OnOpenCrossDomainRdp"
-                          Visibility="{Binding IsCrossDomainRdpAvailable, Converter={StaticResource BoolToVis}}"
-                          ToolTip="Open the Cross-Domain RDP manager.">
-                    <MenuItem.Icon>
-                        <RadioButton IsChecked="{Binding IsCrossDomainRdpView, Mode=OneWay}" IsHitTestVisible="False" Focusable="False" />
-                    </MenuItem.Icon>
-                </MenuItem>
             </MenuItem>
             <MenuItem Header="_Updates"
                       Visibility="{Binding SelectedTab.IsUpdateMode, Converter={StaticResource BoolToVis}, FallbackValue=Collapsed}">
@@ -166,6 +159,17 @@
                                            Icon="{ui:SymbolIcon Desktop24}"
                                            ToolTip="Computers workspace — ping, health-check, patch your fleet"
                                            Click="OnComputersNavClick" />
+                    <ui:NavigationViewItem x:Name="ScriptsNavItem"
+                                           Content="Scripts"
+                                           Icon="{ui:SymbolIcon Code24}"
+                                           ToolTip="Script library — browse, edit, add and delete PowerShell scripts"
+                                           Click="OnScriptsNavClick" />
+                    <ui:NavigationViewItem x:Name="RdpNavItem"
+                                           Content="Cross-Domain RDP"
+                                           Icon="{ui:SymbolIcon PlugConnected24}"
+                                           ToolTip="Cross-Domain RDP — connect to hosts on other domains"
+                                           Visibility="{Binding IsCrossDomainRdpAvailable, Converter={StaticResource BoolToVis}}"
+                                           Click="OnRdpNavClick" />
                 </ui:NavigationView.MenuItems>
 
                 <ui:NavigationView.FooterMenuItems>
@@ -420,9 +424,6 @@
                         <TabControl.Resources>
                             <DataTemplate DataType="{x:Type vm:WorkspaceViewModel}">
                                 <local:WorkspaceView />
-                            </DataTemplate>
-                            <DataTemplate DataType="{x:Type vm:CrossDomainRdpViewModel}">
-                                <local:CrossDomainRdpView />
                             </DataTemplate>
                         </TabControl.Resources>
                     </local:TabControlEx>
@@ -802,6 +803,19 @@
                 <!-- ════════════════════ SETTINGS SECTION ════════════════════════ -->
                 <local:SettingsPage x:Name="SettingsSection" Visibility="Collapsed" />
                 <!-- ════════════════════ end SETTINGS SECTION ════════════════════ -->
+
+                <!-- ══════════════════════ SCRIPTS SECTION ═════════════════════════ -->
+                <!-- Singleton keep-alive: created once here, Visibility-toggled only. -->
+                <local:ScriptsPage x:Name="ScriptsSection" Visibility="Collapsed" />
+                <!-- ══════════════════════ end SCRIPTS SECTION ═════════════════════ -->
+
+                <!-- ════════════════ CROSS-DOMAIN RDP SECTION ═══════════════════ -->
+                <!-- Singleton keep-alive: created once here, Visibility-toggled only — the
+                     WindowsFormsHost + MSTSC ActiveX control are NEVER removed from the visual tree. -->
+                <local:CrossDomainRdpView x:Name="RdpSection"
+                                          DataContext="{Binding RdpViewModel}"
+                                          Visibility="Collapsed" />
+                <!-- ════════════════ end CROSS-DOMAIN RDP SECTION ═══════════════ -->
 
             </Grid>
         </Grid>
