@@ -726,7 +726,10 @@ public partial class WorkspaceView : UserControl
 
     /// <summary>Opens the Columns manager for the machine grid (hide built-ins, add predefined/custom
     /// script columns). Passes the current built-in headers so the dialog can list them.</summary>
-    private void OnManageColumns(object sender, RoutedEventArgs e)
+    private void OnManageColumns(object sender, RoutedEventArgs e) => OpenColumnsWindowFromShell();
+
+    /// <summary>Public entry point so the shell's Settings page can trigger the Columns dialog.</summary>
+    public void OpenColumnsWindowFromShell()
     {
         if (ViewModel is not { } vm)
         {

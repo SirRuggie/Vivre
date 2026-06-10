@@ -1,0 +1,165 @@
+using System.Windows;
+using System.Windows.Controls;
+using Vivre.Core.Credentials;
+using Vivre.Desktop.ViewModels;
+using Wpf.Ui.Controls;
+using MessageBox = Wpf.Ui.Controls.MessageBox;
+using MessageBoxResult = Wpf.Ui.Controls.MessageBoxResult;
+
+namespace Vivre.Desktop;
+
+/// <summary>
+/// The Settings section shown inside the NavigationView content area. Consolidates:
+/// theme toggle, session credential, auto-check, WUG server, packages folder, and links
+/// to Columns / Help / About. Lives in the keep-alive content grid — never rebuilt.
+/// </summary>
+public partial class SettingsPage : UserControl
+{
+    private AppSettingsStore? _settingsStore;
+    private Core.Logging.IActivityLog? _log;
+    private SettingsViewModel? _credVm;
+    private Window? _ownerWindow;
+
+    public SettingsPage()
+    {
+        InitializeComponent();
+    }
+
+    /// <summary>Called once by MainWindow after the page is placed in the visual tree.</summary>
+    public void Initialize(AppSettingsStore settingsStore, Core.Logging.IActivityLog log, CredentialStore credentials, Window owner)
+    {
+        _settingsStore = settingsStore;
+        _log = log;
+        _ownerWindow = owner;
+
+        _credVm = new SettingsViewModel(credentials);
+        CredentialCard.DataContext = _credVm;
+
+        // Seed the behaviour fields from persisted settings.
+        AppSettings s = settingsStore.Load();
+        AutoCheckBox.IsChecked = s.AutoCheckOnLoad;
+        WugServerBox.Text = s.WugServer;
+        PackagesFolderBox.Text = s.PackagesFolder;
+
+        // Tick the right theme radio.
+        UpdateThemeChecks(s.Theme);
+    }
+
+    // ── Theme ──────────────────────────────────────────────────────────────
+
+    // Guard flag: prevents OnThemeComboChanged from re-applying/re-saving on programmatic index sets.
+    private bool _themeComboLoaded;
+
+    private void OnThemeComboChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (!_themeComboLoaded) return;
+
+        string theme = ThemeCombo.SelectedIndex switch
+        {
+            1 => "Light",
+            2 => "Dark",
+            _ => "System",
+        };
+
+        App.ApplyTheme(theme);
+        PersistSettings(s => s.Theme = theme);
+    }
+
+    public void UpdateThemeChecks(string theme)
+    {
+        // May be called before InitializeComponent when Initialize() is triggered early.
+        if (ThemeCombo is null) return;
+
+        // Suppress the SelectionChanged handler while setting the index programmatically.
+        _themeComboLoaded = false;
+        ThemeCombo.SelectedIndex = theme switch
+        {
+            "Light"  => 1,
+            "Dark"   => 2,
+            _        => 0,  // "System" or any unrecognised value
+        };
+        _themeComboLoaded = true;
+    }
+
+    // ── Credentials ────────────────────────────────────────────────────────
+
+    private async void OnApplyCredentials(object sender, RoutedEventArgs e)
+    {
+        if (_credVm is null) return;
+
+        if (_credVm.UseExplicitCredentials && string.IsNullOrWhiteSpace(_credVm.UserName))
+        {
+            var warn = new MessageBox
+            {
+                Title = "Username required",
+                Content = "Enter a username for the explicit credential, or choose \"Use my Windows login\".",
+                CloseButtonText = "OK",
+            };
+            await warn.ShowDialogAsync();
+            UserNameBox.Focus();
+            return;
+        }
+
+        _credVm.Apply(PasswordBox.SecurePassword);
+    }
+
+    // ── Behaviour ──────────────────────────────────────────────────────────
+
+    private void OnAutoCheckChanged(object sender, RoutedEventArgs e)
+    {
+        bool value = AutoCheckBox.IsChecked == true;
+        PersistSettings(s => s.AutoCheckOnLoad = value);
+    }
+
+    private void OnWugServerChanged(object sender, RoutedEventArgs e)
+    {
+        string value = WugServerBox.Text.Trim();
+        PersistSettings(s => s.WugServer = value);
+    }
+
+    private void OnPackagesFolderChanged(object sender, RoutedEventArgs e)
+    {
+        string value = PackagesFolderBox.Text.Trim();
+        PersistSettings(s => s.PackagesFolder = value);
+    }
+
+    // ── Tools ──────────────────────────────────────────────────────────────
+
+    private void OnOpenColumns(object sender, RoutedEventArgs e)
+    {
+        if (_ownerWindow is MainWindow main)
+        {
+            main.OpenColumnsWindow();
+        }
+    }
+
+    private void OnOpenHelp(object sender, RoutedEventArgs e)
+    {
+        if (_ownerWindow is MainWindow main)
+        {
+            main.ShowHelpPublic();
+        }
+    }
+
+    private void OnOpenAbout(object sender, RoutedEventArgs e)
+    {
+        new AboutWindow { Owner = _ownerWindow }.ShowDialog();
+    }
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+
+    private void PersistSettings(Action<AppSettings> mutate)
+    {
+        if (_settingsStore is null) return;
+        try
+        {
+            AppSettings s = _settingsStore.Load();
+            mutate(s);
+            _settingsStore.Save(s);
+        }
+        catch (Exception ex)
+        {
+            _log?.Warn(null, $"Couldn't save settings. {ex.Message}");
+        }
+    }
+}

@@ -1,0 +1,162 @@
+<UserControl x:Class="Vivre.Desktop.SettingsPage"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:local="clr-namespace:Vivre.Desktop"
+             mc:Ignorable="d">
+
+    <UserControl.Resources>
+        <local:InverseBooleanConverter x:Key="InverseBool" />
+    </UserControl.Resources>
+
+    <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Margin="24,16,24,24" MaxWidth="600" HorizontalAlignment="Left">
+
+            <!-- Page heading -->
+            <ui:TextBlock FontTypography="Title" Text="Settings" Margin="0,0,0,20" />
+
+            <!-- ── Theme ───────────────────────────────────────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,16"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel>
+                    <ui:TextBlock FontTypography="BodyStrong" Text="Appearance" Margin="0,0,0,12" />
+                    <!-- Task-Manager-style settings row: icon | title+subtitle | combo -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Grid.Column="0" Symbol="Color24" FontSize="20"
+                                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <ui:TextBlock Text="App theme" />
+                            <ui:TextBlock Appearance="Secondary" Text="Select which app theme to display" />
+                        </StackPanel>
+                        <ComboBox Grid.Column="2" x:Name="ThemeCombo" MinWidth="160"
+                                  VerticalAlignment="Center"
+                                  SelectionChanged="OnThemeComboChanged">
+                            <ComboBoxItem Content="Use system setting" />
+                            <ComboBoxItem Content="Light" />
+                            <ComboBoxItem Content="Dark" />
+                        </ComboBox>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Remote credentials ────────────────────────────────────── -->
+            <Border x:Name="CredentialCard" Padding="16" CornerRadius="6" Margin="0,0,0,16"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel>
+                    <ui:TextBlock FontTypography="BodyStrong" Text="Remote credentials" Margin="0,0,0,4" />
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                                  Text="Used for SCCM actions, Run Script, and Enable WinRM. Held for this session only — never saved to disk." />
+
+                    <RadioButton x:Name="UseLoginRadio"
+                                 Content="Use my Windows login"
+                                 IsChecked="{Binding UseExplicitCredentials, Converter={StaticResource InverseBool}}"
+                                 Margin="0,0,0,6" />
+                    <RadioButton x:Name="UseExplicitRadio"
+                                 Content="Use these credentials"
+                                 IsChecked="{Binding UseExplicitCredentials}" />
+
+                    <Grid Margin="24,10,0,0" IsEnabled="{Binding UseExplicitCredentials}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="110" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Domain" />
+                        <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8"
+                                      PlaceholderText="e.g. EMPLOYEES"
+                                      Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Username" />
+                        <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserNameBox"
+                                      PlaceholderText="e.g. admin_sbridges"
+                                      Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <ui:TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Password" />
+                        <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox"
+                                      Height="32" VerticalContentAlignment="Center" Margin="0,0,0,8" />
+
+                        <ui:Button Grid.Row="3" Grid.Column="1" HorizontalAlignment="Left"
+                                   Appearance="Primary" Content="Apply"
+                                   Click="OnApplyCredentials" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Behaviour ─────────────────────────────────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,16"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel>
+                    <ui:TextBlock FontTypography="BodyStrong" Text="Behaviour" Margin="0,0,0,12" />
+
+                    <CheckBox x:Name="AutoCheckBox"
+                              Content="Auto-check on load"
+                              Margin="0,0,0,6"
+                              Click="OnAutoCheckChanged"
+                              ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals." />
+
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="130" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8"
+                                      Text="WUG server" />
+                        <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="WugServerBox"
+                                      PlaceholderText="e.g. 10.70.25.111"
+                                      LostFocus="OnWugServerChanged" />
+
+                        <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
+                                      Text="Packages folder" />
+                        <ui:TextBox   Grid.Row="1" Grid.Column="1" x:Name="PackagesFolderBox"
+                                      PlaceholderText="e.g. \\server\packages"
+                                      LostFocus="OnPackagesFolderChanged" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- ── Tools & windows ────────────────────────────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,16"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <StackPanel>
+                    <ui:TextBlock FontTypography="BodyStrong" Text="Tools" Margin="0,0,0,12" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
+                        <ui:Button Content="Columns…" Icon="{ui:SymbolIcon Table24}"
+                                   Click="OnOpenColumns"
+                                   ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
+                        <ui:Button Content="How to use Vivre…" Icon="{ui:SymbolIcon QuestionCircle24}"
+                                   Margin="8,0,0,0"
+                                   Click="OnOpenHelp"
+                                   ToolTip="Open the in-app how-to guide (F1)." />
+                        <ui:Button Content="About Vivre…" Icon="{ui:SymbolIcon Info24}"
+                                   Margin="8,0,0,0"
+                                   Click="OnOpenAbout"
+                                   ToolTip="Version, licence, and credits." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

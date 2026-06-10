@@ -644,8 +644,23 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             live.IsLiveFiltering = true;
         }
 
+        // Subscribe to the CollectionView's own CollectionChanged — this fires AFTER the view
+        // incorporates the new/removed row (unlike Computers.CollectionChanged which fires before),
+        // so GridOverlayState and VisibleRowCount read the correct post-update count.
+        ((INotifyCollectionChanged)_computersView).CollectionChanged += OnVisibleRowsChanged;
+
         // No seeding — the grid starts empty; the user opens a saved list or pastes one.
         IsMonitoring = true; // start watching online/offline straight away
+    }
+
+    /// <summary>Re-notify overlay and filter-status properties after the CollectionView updates its count.</summary>
+    private void OnVisibleRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        OnPropertyChanged(nameof(VisibleRowCount));
+        OnPropertyChanged(nameof(GridOverlayState));
+        OnPropertyChanged(nameof(ShowMachineGrid));
+        OnPropertyChanged(nameof(ShowUpdateGrid));
+        OnPropertyChanged(nameof(FilterStatus));
     }
 
     /// <summary>Subscribe/unsubscribe row state changes and refresh the online/total summary.</summary>
@@ -1680,6 +1695,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         Stop();                 // cancels every active operation and flips IsMonitoring off (disposing _monitorCts)
         _monitorCts?.Dispose(); // belt-and-suspenders: covers the case where monitoring was already off
         _monitorCts = null;
+        ((INotifyCollectionChanged)_computersView).CollectionChanged -= OnVisibleRowsChanged;
 
         if (_sweepNarrationTimer is { } st)
         {
