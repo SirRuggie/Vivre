@@ -56,6 +56,12 @@ it ships, then gets a dated heading.
   window.
 
 ### Added
+- **Empty-state guidance + mode chips** — a fresh tab now shows a "Get started" onboarding card (paste
+  names → ping / check vitals → switch modes, with an Open-help link) instead of a blank grid; the
+  activity log shows "No activity yet" until operations run; the Cross-Domain RDP pane prompts you to add
+  or connect to a host; and filtering to no matches shows "No machines match this filter" with a Clear
+  button. New **Machines / Windows Update mode chips** in the filter bar give the current view an on-canvas
+  switch (the View menu and Ctrl+M still work). Verified in light and dark.
 - **Grid right-click menu, regrouped** — per-machine actions are now clustered (Run script ▸ · Client
   actions ▸ · Software ▸ · Export ▸ · Schedule ▸) for easier scanning, and **Export ▸ Shown rows + columns
   (CSV)…** puts the full grid export — filter-aware and including any custom columns — on the right-click,

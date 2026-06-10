@@ -43,6 +43,8 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         _root = new RdpFolderNodeViewModel(_tree.Root, null);
         // The root folder is an invisible container — its children are shown as the top level, so the user can
         // create multiple top-level folders rather than nesting everything under one node.
+        // M16: keep HasNodes live so the empty-state overlay responds to add/remove.
+        Nodes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNodes));
     }
 
     public string Title => "Cross-Domain RDP";
@@ -61,6 +63,10 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
     public partial RdpSessionViewModel? SelectedSession { get; set; }
 
     public bool HasSessions => Sessions.Count > 0;
+
+    /// <summary>M16: true when the host tree has at least one node (folder or host) at the top level.
+    /// Drives the "Add a host to get started" empty state in the RDP pane.</summary>
+    public bool HasNodes => Nodes.Count > 0;
 
     /// <summary>Edit applies to any selected node (including the root folder's name).</summary>
     public bool CanEditSelected => SelectedNode is not null;

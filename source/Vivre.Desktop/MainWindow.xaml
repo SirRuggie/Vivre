@@ -444,7 +444,9 @@
                             <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
                         </Grid>
 
-                        <ui:DataGrid Grid.Row="1" x:Name="ActivityGrid"
+                        <!-- M15: activity-log empty state — shown when there are no entries yet. -->
+                        <Grid Grid.Row="1">
+                        <ui:DataGrid x:Name="ActivityGrid"
                                   ItemsSource="{Binding Entries}"
                                   AutoGenerateColumns="False"
                                   IsReadOnly="True"
@@ -482,6 +484,30 @@
                                 </DataGridTextColumn>
                             </ui:DataGrid.Columns>
                         </ui:DataGrid>
+
+                        <!-- M15: empty-state overlay when the activity log has no entries yet.
+                             Reuses M13 styles. IsHitTestVisible=False so the grid (and its right-click
+                             context menu) remains accessible once entries appear. -->
+                        <StackPanel>
+                            <StackPanel.Style>
+                                <Style TargetType="StackPanel" BasedOn="{StaticResource EmptyStatePanel}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HasEntries}" Value="False">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <ui:SymbolIcon Symbol="History24" FontSize="36" HorizontalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                            <TextBlock Style="{StaticResource EmptyStateTitle}"
+                                       Text="No activity yet" />
+                            <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                                       Text="Operations like Ping All log here as they run." />
+                        </StackPanel>
+
+                        </Grid><!-- end M15 activity-log wrapper -->
                     </Grid>
                 </TabItem>
 

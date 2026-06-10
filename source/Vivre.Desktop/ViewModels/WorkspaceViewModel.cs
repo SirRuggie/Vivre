@@ -218,6 +218,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _computersView.Refresh();
         OnPropertyChanged(nameof(IsFilterActive));
         OnPropertyChanged(nameof(FilterStatus));
+        OnPropertyChanged(nameof(VisibleRowCount));
+        OnPropertyChanged(nameof(GridOverlayState));
+        OnPropertyChanged(nameof(ShowMachineGrid));
+        OnPropertyChanged(nameof(ShowUpdateGrid));
     }
 
     /// <summary>True when a name filter or a non-All state filter is in effect.</summary>
@@ -229,6 +233,32 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Number of rows currently shown (the filtered set) — also what an export/CSV includes.</summary>
     public int VisibleRowCount => _computersView.Cast<Computer>().Count();
+
+    // --- M13/M29: overlay state machine ---
+
+    /// <summary>Mutually-exclusive grid-area overlay, by precedence:
+    /// 0 = data present (no overlay), 2 = cold start (no machines ever loaded),
+    /// 3 = filter-empty (machines exist but the filter hides all).
+    /// (No "bulk loading" state: rows are added synchronously and appear at once, so there is never a
+    /// blank loading gap — the toolbar ring + sweep narration cover the subsequent check.)</summary>
+    public int GridOverlayState
+    {
+        get
+        {
+            if (!HasComputers) return 2;
+            if (VisibleRowCount == 0) return 3;
+            return 0;
+        }
+    }
+
+    /// <summary>Show the machines DataGrid only when in machine mode AND there is data to show. When an
+    /// empty state is up the grid is collapsed so the (column-wide) DataGrid can't push the layout past
+    /// the viewport — which would shove the centred empty-state card off to the side.</summary>
+    public bool ShowMachineGrid => IsMachineMode && GridOverlayState == 0;
+
+    /// <summary>Show the Windows Update view only when in update mode AND there is data (see
+    /// <see cref="ShowMachineGrid"/>).</summary>
+    public bool ShowUpdateGrid => IsUpdateMode && GridOverlayState == 0;
 
     /// <summary>The grid filter predicate: name-substring AND the active state chip.</summary>
     private bool RowMatchesFilter(object obj)
@@ -420,6 +450,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsMachineMode))]
     [NotifyPropertyChangedFor(nameof(CanShowInstallToolbar))]
+    [NotifyPropertyChangedFor(nameof(ShowMachineGrid))]
+    [NotifyPropertyChangedFor(nameof(ShowUpdateGrid))]
     public partial bool IsUpdateMode { get; set; }
 
     /// <summary>Inverse of <see cref="IsUpdateMode"/> — each grid binds its own bool through one converter.</summary>
@@ -637,6 +669,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         OnPropertyChanged(nameof(OnlineSummary));
         OnPropertyChanged(nameof(HasComputers));
+        OnPropertyChanged(nameof(GridOverlayState));
+        OnPropertyChanged(nameof(ShowMachineGrid));
+        OnPropertyChanged(nameof(ShowUpdateGrid));
         RaiseFleetChanged();
     }
 

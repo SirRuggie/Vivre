@@ -65,6 +65,38 @@
             <Style x:Key="FluentSubTabItemStyle" TargetType="TabItem" BasedOn="{StaticResource FluentTabItemStyle}">
                 <Setter Property="Padding" Value="10,4" />
             </Style>
+
+            <!-- M13: reusable empty-state panel — centered icon + title + optional subtitle.
+                 Consumers embed an EmptyStatePanel with Tag="Icon|Title|Subtitle" or build
+                 inline; the shared container style keeps padding/alignment consistent.
+                 Non-interactive: IsHitTestVisible=False so overlaid grids still receive input. -->
+            <Style x:Key="EmptyStatePanel" TargetType="StackPanel">
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Orientation" Value="Vertical" />
+                <Setter Property="IsHitTestVisible" Value="False" />
+            </Style>
+
+            <!-- M13: title line for the empty-state panel. -->
+            <Style x:Key="EmptyStateTitle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="14" />
+                <Setter Property="FontWeight" Value="Medium" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="TextAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,8,0,0" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <!-- M13: subtitle / hint line for the empty-state panel. -->
+            <Style x:Key="EmptyStateSubtitle" TargetType="TextBlock">
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="Foreground" Value="{DynamicResource TextFillColorTertiaryBrush}" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+                <Setter Property="TextAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,4,0,0" />
+                <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

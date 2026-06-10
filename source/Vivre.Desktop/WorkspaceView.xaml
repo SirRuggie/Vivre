@@ -176,22 +176,50 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Filter bar: name search + quick state chips + "select shown" + the showing/total count.
-             Applies to whichever grid is visible (both share the Computers view). Hidden until the
-             tab has machines. -->
-        <Grid Grid.Row="0" Margin="12,4,12,8"
-              Visibility="{Binding HasComputers, Converter={StaticResource BoolToVis}}">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="Auto" />
-            </Grid.ColumnDefinitions>
+        <!-- Filter bar: mode chips (M30) + name search + quick state chips + "select shown" + count.
+             Applies to whichever grid is visible (both share the Computers view). The mode chips
+             (Machines / Windows Update) are always visible so the current view has on-canvas identity.
+             The filter sub-row is hidden until the tab has machines. -->
+        <Grid Grid.Row="0" Margin="12,4,12,4">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-            <ui:TextBox Grid.Column="0" Width="220" VerticalAlignment="Center"
-                        Icon="{ui:SymbolIcon Search24}"
-                        ClearButtonEnabled="True"
-                        PlaceholderText="Filter by name…"
-                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+            <!-- M30: mode chips — always visible, behave as a radio pair. Reuses the FilterChip style.
+                 Bound directly to IsUpdateMode/IsMachineMode (same underlying state as the View menu).
+                 The View-menu items remain fully functional; the chips are additive. -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
+                <!-- RadioButtons (not ToggleButtons) so the pair is mutually exclusive and the active one
+                     can't be clicked off — they reuse the FilterChip look (RadioButton derives from
+                     ToggleButton). IsChecked is OneWay (mode lives in the VM / View menu / Ctrl+M); the
+                     Checked handler pushes the change back. -->
+                <RadioButton Style="{StaticResource FilterChip}" Content="Machines" Margin="0"
+                             GroupName="ViewMode"
+                             IsChecked="{Binding IsMachineMode, Mode=OneWay}"
+                             Checked="OnMachinesModeChipChecked"
+                             ToolTip="Switch to Machines view (Ctrl+M)" />
+                <RadioButton Style="{StaticResource FilterChip}" Content="Windows Update"
+                             GroupName="ViewMode"
+                             IsChecked="{Binding IsUpdateMode, Mode=OneWay}"
+                             Checked="OnUpdateModeChipChecked"
+                             ToolTip="Switch to Windows Update view (Ctrl+M)" />
+            </StackPanel>
+
+            <!-- Filter sub-row: hidden until the tab has machines. -->
+            <Grid Grid.Row="1" Margin="0,0,0,4"
+                  Visibility="{Binding HasComputers, Converter={StaticResource BoolToVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ui:TextBox Grid.Column="0" Width="220" VerticalAlignment="Center"
+                            Icon="{ui:SymbolIcon Search24}"
+                            ClearButtonEnabled="True"
+                            PlaceholderText="Filter by name…"
+                            Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                 <ToggleButton Style="{StaticResource FilterChip}" Content="All" Margin="0"
@@ -245,12 +273,18 @@
                        Icon="{ui:SymbolIcon CheckboxChecked24}" Content="Select shown"
                        Click="OnSelectShown"
                        ToolTip="Select every row currently shown by the filter, so you can act on just that subset (e.g. filter to Errors, Select shown, then Install)." />
-        </Grid>
+            </Grid><!-- end filter sub-row Grid -->
+        </Grid><!-- end outer filter bar Grid -->
 
-        <!-- Machines grid (default mode). -->
+        <!-- Machines grid + update grid + the M13/M29 empty-state overlay are all siblings in root
+             row 1 (deliberately NOT wrapped in an intermediate Grid: wrapping made the DataGrid report
+             its full multi-column width up the tree, so the whole area grew past the viewport and the
+             centred empty-state card landed far off to the right). The DataGrid keeps its own horizontal
+             scroll; the overlay is the last sibling (ZIndex 5) so it paints on top, and its panels are
+             IsHitTestVisible=False where they have no buttons. -->
         <ui:DataGrid x:Name="ComputerGrid"
                      Grid.Row="1"
-                     Visibility="{Binding IsMachineMode, Converter={StaticResource BoolToVis}}"
+                     Visibility="{Binding ShowMachineGrid, Converter={StaticResource BoolToVis}}"
                      ItemsSource="{Binding Computers}"
                      AutoGenerateColumns="False"
                      IsReadOnly="True"
@@ -465,7 +499,7 @@
 
         <!-- Windows Update view (update mode): the machine grid. The per-machine update detail now
              lives in the shell-level bottom dock (MainWindow), opened when a row is focused. -->
-        <Grid Grid.Row="1" Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="1" Visibility="{Binding ShowUpdateGrid, Converter={StaticResource BoolToVis}}">
             <DockPanel>
             <!-- First-run hint: shown until any machine has been scanned in this tab. -->
             <Border DockPanel.Dock="Top" Margin="0,0,0,6" Padding="10,6" CornerRadius="4"
@@ -705,5 +739,114 @@
             </ui:DataGrid>
             </DockPanel>
         </Grid>
+
+        <!-- M13/M29: mutually-exclusive overlays over the grid area.
+             Precedence (GridOverlayState):
+               2 = cold start   → M29 "Get started" card
+               3 = filter-empty → M13 simple "No matches" state
+               0 = data present → no overlay (panels collapsed) -->
+        <!-- Empty-state overlay, anchored TOP-LEFT with an inset. When the machines grid is collapsed
+             (these empty states) there's no grid ScrollViewer constraining the tab width, so a centred
+             child can drift off-screen; top-left is overflow-proof and consistent at any window size.
+             Not hit-test-blocking: the visible state's buttons handle their own input; collapsed siblings
+             don't steal it. -->
+        <Grid Grid.Row="1" Panel.ZIndex="5">
+
+            <!-- State 2 — M29: cold-start "Get started" card (GitHub Desktop style). -->
+            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="40,56,0,0"
+                    MaxWidth="460"
+                    CornerRadius="8" Padding="32,24"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding GridOverlayState}" Value="2">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <TextBlock Text="Get started" FontSize="16" FontWeight="SemiBold"
+                               HorizontalAlignment="Center" Margin="0,0,0,20"
+                               Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                    <!-- Row 1: Paste machine names -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <Border Width="36" Height="36" CornerRadius="8" Margin="0,0,12,0"
+                                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
+                            <ui:SymbolIcon Symbol="ClipboardPaste24" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Paste machine names" FontSize="13" FontWeight="Medium"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Text="Click the Paste button above or use the text box" FontSize="11"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- Row 2: Ping / Check Vitals -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
+                        <Border Width="36" Height="36" CornerRadius="8" Margin="0,0,12,0"
+                                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
+                            <ui:SymbolIcon Symbol="Pulse24" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Ping / Check Vitals" FontSize="13" FontWeight="Medium"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Text="Use the toolbar to ping machines and pull health scores" FontSize="11"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- Row 3: Switch modes -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                        <Border Width="36" Height="36" CornerRadius="8" Margin="0,0,12,0"
+                                Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
+                            <ui:SymbolIcon Symbol="ArrowSwap24" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                        <StackPanel VerticalAlignment="Center">
+                            <TextBlock Text="Switch modes" FontSize="13" FontWeight="Medium"
+                                       Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                            <TextBlock Text="Use the chips above or Ctrl+M to switch to Windows Update" FontSize="11"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </StackPanel>
+                    <!-- "Open help" link — wired to the same F1 / Help ▸ How to use Vivre command. -->
+                    <ui:Button HorizontalAlignment="Center" Appearance="Secondary"
+                               Icon="{ui:SymbolIcon QuestionCircle24}" Content="Open help (F1)"
+                               Click="OnGetStartedHelp"
+                               ToolTip="Open the How to use Vivre guide" />
+                </StackPanel>
+            </Border>
+
+            <!-- State 3 — M13: filter-empty state (has a clickable button so IsHitTestVisible stays True). -->
+            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="40,56,0,0" Orientation="Vertical">
+                <StackPanel.Style>
+                    <Style TargetType="StackPanel">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding GridOverlayState}" Value="3">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </StackPanel.Style>
+                <ui:SymbolIcon Symbol="Filter24" FontSize="36" HorizontalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock Style="{StaticResource EmptyStateTitle}"
+                           Text="No machines match this filter" />
+                <TextBlock Style="{StaticResource EmptyStateSubtitle}"
+                           Text="Try clearing the filter or switching to All" />
+                <!-- Clear-filter affordance. -->
+                <ui:Button Margin="0,12,0,0" HorizontalAlignment="Center" Appearance="Secondary"
+                           Icon="{ui:SymbolIcon Dismiss24}" Content="Clear filter"
+                           Click="OnClearFilter"
+                           ToolTip="Reset to All and clear the name filter" />
+            </StackPanel>
+
+        </Grid><!-- end overlay Grid -->
     </Grid>
 </UserControl>
