@@ -321,3 +321,6 @@ ASALocalRun/
 # MSBuild Binary and Structured Log
 *.binlog
 
+# Stray dual-theme verification screenshots written to the repo root during UI checks
+screenshot_*.png
+
