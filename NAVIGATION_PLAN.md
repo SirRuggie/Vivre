@@ -74,11 +74,11 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
   saved Light/System briefly flashes dark) if it can be done cleanly.
 - Highest-risk phase — the keep-alive under NavigationView is the load-bearing bit.
 
-### Phase 2 — Cross-Domain RDP → nav item
+### Phase 2 — Cross-Domain RDP → nav item  ✅ *(done — 1.8.1; `RequireRdpHost=false` for testing, flip before release)*
 - Promote RDP from the View-menu tab to a machine-gated nav destination (singleton preserved, MSTSC sessions
   kept alive via the same content-host pattern).
 
-### Phase 3 — Scripts section (manager only)
+### Phase 3 — Scripts section (manager only)  ✅ *(done — 1.8.1)*
 - A standalone library manager: category list + AvalonEdit editor + add / save / delete over `ScriptLibrary`.
   No run / targets / output. The right-click ▸ Run-script path stays as-is.
 

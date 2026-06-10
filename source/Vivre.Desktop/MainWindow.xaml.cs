@@ -40,6 +40,9 @@ public partial class MainWindow : FluentWindow
     /// <summary>Activity log for surfacing settings-save failures — injected by the composition root.</summary>
     internal Core.Logging.IActivityLog? Log { get; set; }
 
+    /// <summary>Script library singleton — injected by the composition root; passed to ScriptsSection.</summary>
+    internal Core.Scripts.IScriptLibrary? ScriptLibrary { get; set; }
+
     /// <summary>The theme applied at startup — used to tick the right Theme radio on the Settings page.</summary>
     internal string SavedTheme { get; set; } = "Dark";
 
@@ -67,8 +70,14 @@ public partial class MainWindow : FluentWindow
             SettingsSection.UpdateThemeChecks(SavedTheme);
         }
 
+        // Initialize the Scripts page (injected IScriptLibrary singleton).
+        if (ScriptLibrary is { } library)
+        {
+            ScriptsSection.Initialize(library);
+        }
+
         // Show the Computers section and set the nav highlight on startup.
-        ShowNavSection(computers: true);
+        ShowNavSection(NavSection.Computers);
 
         // Restore persisted pane open/close state.
         try
@@ -84,11 +93,20 @@ public partial class MainWindow : FluentWindow
 
     // --- NavigationView pane ---
 
+    /// <summary>The four nav destinations.</summary>
+    private enum NavSection { Computers, Scripts, Rdp, Settings }
+
     /// <summary>Click handler on the Computers nav item — drives the section toggle.</summary>
-    private void OnComputersNavClick(object sender, RoutedEventArgs e) => ShowNavSection(computers: true);
+    private void OnComputersNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Computers);
+
+    /// <summary>Click handler on the Scripts nav item — drives the section toggle.</summary>
+    private void OnScriptsNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Scripts);
+
+    /// <summary>Click handler on the Cross-Domain RDP nav item — drives the section toggle.</summary>
+    private void OnRdpNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Rdp);
 
     /// <summary>Click handler on the Settings footer item — drives the section toggle.</summary>
-    private void OnSettingsNavClick(object sender, RoutedEventArgs e) => ShowNavSection(computers: false);
+    private void OnSettingsNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Settings);
 
     /// <summary>NavigationView.ItemInvoked fires on a click/tap in BOTH compact (icons-only, pane closed)
     /// and expanded states — unlike NavigationViewItem.Click, which only routes when the pane is open. This
@@ -104,28 +122,39 @@ public partial class MainWindow : FluentWindow
 
         if (d is NavigationViewItem item)
         {
-            ShowNavSection(computers: ReferenceEquals(item, ComputersNavItem));
+            NavSection section = ReferenceEquals(item, ComputersNavItem) ? NavSection.Computers
+                               : ReferenceEquals(item, ScriptsNavItem)   ? NavSection.Scripts
+                               : ReferenceEquals(item, RdpNavItem)       ? NavSection.Rdp
+                               :                                            NavSection.Settings;
+            ShowNavSection(section);
         }
     }
 
     /// <summary>
-    /// Toggles which section is visible. Neither Navigate() nor ReplaceContent() is ever called,
-    /// so both sections stay in the visual tree. This is the keep-alive mechanism:
-    /// ComputersSection (TabControlEx + all workspace chrome) is never rebuilt on a nav switch.
+    /// Shows exactly one nav section and collapses the others. Neither Navigate() nor ReplaceContent()
+    /// is ever called — all four sections stay in the visual tree permanently. This is the keep-alive
+    /// mechanism: ComputersSection, ScriptsSection, RdpSection, and SettingsSection are
+    /// Visibility-toggled only and are never rebuilt on a nav switch. The RDP section's
+    /// WindowsFormsHost + MSTSC ActiveX control survive all nav switches because the element is never
+    /// removed from the tree.
     /// </summary>
-    private void ShowNavSection(bool computers)
+    private void ShowNavSection(NavSection section)
     {
-        if (ComputersSection is null || SettingsSection is null) return;
-        ComputersSection.Visibility = computers ? Visibility.Visible : Visibility.Collapsed;
-        SettingsSection.Visibility  = computers ? Visibility.Collapsed : Visibility.Visible;
-        ComputersNavItem.IsActive = computers;
-        SettingsNavItem.IsActive  = !computers;
+        if (ComputersSection is null || ScriptsSection is null || RdpSection is null || SettingsSection is null) return;
+        ComputersSection.Visibility = section == NavSection.Computers ? Visibility.Visible : Visibility.Collapsed;
+        ScriptsSection.Visibility   = section == NavSection.Scripts   ? Visibility.Visible : Visibility.Collapsed;
+        RdpSection.Visibility       = section == NavSection.Rdp       ? Visibility.Visible : Visibility.Collapsed;
+        SettingsSection.Visibility  = section == NavSection.Settings  ? Visibility.Visible : Visibility.Collapsed;
+        ComputersNavItem.IsActive = section == NavSection.Computers;
+        ScriptsNavItem.IsActive   = section == NavSection.Scripts;
+        RdpNavItem.IsActive       = section == NavSection.Rdp;
+        SettingsNavItem.IsActive  = section == NavSection.Settings;
         UpdateStatusBarVisibility();
     }
 
     /// <summary>
     /// Keeps the full-width status bar visible only when the Computers section is shown AND
-    /// the active tab is a workspace tab. Hides it on the Settings page and on the RDP tab.
+    /// the active tab is a workspace tab. Hides it on the Settings page and on the RDP section.
     /// </summary>
     private void UpdateStatusBarVisibility()
     {
@@ -324,6 +353,9 @@ public partial class MainWindow : FluentWindow
         {
             tab.Dispose();
         }
+
+        // Dispose the RDP singleton — it's no longer in Tabs (it's a nav section, not a tab).
+        (Shell?.RdpViewModel as IDisposable)?.Dispose();
 
         TrayIcon?.Dispose();
     }
@@ -623,8 +655,6 @@ public partial class MainWindow : FluentWindow
             vm.SelectedSource = source;
         }
     }
-
-    private void OnOpenCrossDomainRdp(object sender, RoutedEventArgs e) => Shell?.OpenCrossDomainRdpCommand.Execute(null);
 
     private void OnHelpKey(object sender, ExecutedRoutedEventArgs e) => ShowHelp();
 
