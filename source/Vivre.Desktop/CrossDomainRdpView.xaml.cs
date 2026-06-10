@@ -294,4 +294,16 @@ public partial class CrossDomainRdpView : UserControl
             Vm.CloseSession(session);
         }
     }
+
+    /// <summary>M26: middle-click on a session tab closes it.</summary>
+    private void OnSessionTabMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Middle
+            && Vm is not null
+            && sender is FrameworkElement { DataContext: RdpSessionViewModel session })
+        {
+            Vm.CloseSession(session);
+            e.Handled = true;
+        }
+    }
 }

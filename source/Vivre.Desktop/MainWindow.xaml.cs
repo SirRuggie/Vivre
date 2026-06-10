@@ -4,6 +4,7 @@ using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
 using Vivre.Core.Models;
@@ -266,6 +267,13 @@ public partial class MainWindow : FluentWindow
         {
             _observedTab.PropertyChanged += OnSelectedTabPropertyChanged;
         }
+
+        // M23: the fleet progress bar has no Value binding (it's animated in code), so seed it to the
+        // newly-selected tab's current progress on a tab switch — otherwise it shows the previous tab's
+        // value until that tab's next FleetProgress change. Release the animation hold first so the
+        // direct Value set takes effect.
+        FleetProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, null);
+        FleetProgressBar.Value = _observedTab?.FleetProgress ?? 0;
     }
 
     private void OnSelectedTabPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -280,6 +288,19 @@ public partial class MainWindow : FluentWindow
             {
                 BottomDockTabs.SelectedItem = UpdatesTab;
             }
+        }
+
+        // M23: animate fleet progress bar to its new value (smooth ease rather than instant jump).
+        if (e.PropertyName == nameof(WorkspaceViewModel.FleetProgress)
+            && sender is WorkspaceViewModel vm2)
+        {
+            var anim = new DoubleAnimation(
+                vm2.FleetProgress,
+                new Duration(TimeSpan.FromMilliseconds(300)))
+            {
+                EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut }
+            };
+            FleetProgressBar.BeginAnimation(System.Windows.Controls.Primitives.RangeBase.ValueProperty, anim);
         }
     }
 
@@ -324,6 +345,9 @@ public partial class MainWindow : FluentWindow
         SplitterRow.Height = GridLength.Auto;
         ActivitySplitter.Visibility = Visibility.Visible;
         ActivityPanel.Visibility = Visibility.Visible;
+        // M23: animate the activity panel into view (fade-in ~300ms).
+        ActivityPanel.BeginAnimation(OpacityProperty,
+            new DoubleAnimation(0, 1, new Duration(TimeSpan.FromMilliseconds(300))));
     }
 
     private void HideDock()
@@ -336,6 +360,7 @@ public partial class MainWindow : FluentWindow
 
         ActivitySplitter.Visibility = Visibility.Collapsed;
         ActivityPanel.Visibility = Visibility.Collapsed;
+        ActivityPanel.Opacity = 0;
         SplitterRow.Height = new GridLength(0);
         ActivityRow.Height = new GridLength(0);
     }
@@ -856,6 +881,17 @@ public partial class MainWindow : FluentWindow
         if (e.ClickCount == 2 && sender is FrameworkElement { DataContext: WorkspaceViewModel workspace })
         {
             RenameTab(workspace);
+        }
+    }
+
+    /// <summary>M26: middle-click on a tab header closes it (same guard as the ✕ button).</summary>
+    private void OnTabHeaderMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton == MouseButton.Middle
+            && sender is FrameworkElement { DataContext: ITabViewModel tab })
+        {
+            CloseTabWithGuard(tab);
+            e.Handled = true;
         }
     }
 

@@ -18,6 +18,8 @@ using Vivre.Desktop.ViewModels;
 using MenuItem = System.Windows.Controls.MenuItem;
 using MessageBox = Wpf.Ui.Controls.MessageBox;
 using MessageBoxResult = Wpf.Ui.Controls.MessageBoxResult;
+using SymbolIcon = Wpf.Ui.Controls.SymbolIcon;
+using SymbolRegular = Wpf.Ui.Controls.SymbolRegular;
 
 namespace Vivre.Desktop;
 
@@ -263,24 +265,31 @@ public partial class WorkspaceView : UserControl
 
     // --- right-click action menu (built lazily; DataContext isn't set in the ctor) ---
 
+    // M24: helper to attach a SymbolIcon to a MenuItem's Icon slot.
+    private static MenuItem WithIcon(MenuItem item, SymbolRegular symbol)
+    {
+        item.Icon = new SymbolIcon { Symbol = symbol, FontSize = 16 };
+        return item;
+    }
+
     private void BuildContextMenu(WorkspaceViewModel vm)
     {
         _gridMenu.Items.Clear();
         bool hasSelection = vm.SelectedComputers.Count > 0;
 
         // ---- Inspect ----
-        var details = new MenuItem { Header = "Details…" };
+        var details = WithIcon(new MenuItem { Header = "Details…" }, SymbolRegular.Info24);
         details.Click += OnShowDetails;
         _gridMenu.Items.Add(details);
 
-        var showMessages = new MenuItem { Header = "Show messages" };
+        var showMessages = WithIcon(new MenuItem { Header = "Show messages" }, SymbolRegular.History24);
         showMessages.Click += OnShowMessages;
         _gridMenu.Items.Add(showMessages);
 
         // Copy ▸ — per-field items act on the right-clicked row (_contextRow); the multi-row items
         // (Name(s) / Selected rows / online / offline) act on the selection.
         Computer? ctx = _contextRow;
-        var copy = new MenuItem { Header = "Copy" };
+        var copy = WithIcon(new MenuItem { Header = "Copy" }, SymbolRegular.Copy24);
 
         var copyNames = new MenuItem { Header = "Name(s)", IsEnabled = hasSelection };
         copyNames.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.Name));
@@ -329,11 +338,11 @@ public partial class WorkspaceView : UserControl
             bool anyActionable = vm.SelectedComputers.Any(c => !c.IsPatching);
             int selCount = vm.SelectedComputers.Count;
 
-            var scan = new MenuItem { Header = $"Scan selected ({selCount})", IsEnabled = anyActionable };
+            var scan = WithIcon(new MenuItem { Header = $"Scan selected ({selCount})", IsEnabled = anyActionable }, SymbolRegular.Search24);
             scan.Click += (_, _) => _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
             _gridMenu.Items.Add(scan);
 
-            var install = new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable };
+            var install = WithIcon(new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable }, SymbolRegular.ArrowDownload24);
             install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
             _gridMenu.Items.Add(install);
 
@@ -342,7 +351,7 @@ public partial class WorkspaceView : UserControl
 
         // ---- Run ----
         // Run a saved (or pasted) script against the selection or the whole tab; review before it runs.
-        var runScript = new MenuItem { Header = "Run script" };
+        var runScript = WithIcon(new MenuItem { Header = "Run script" }, SymbolRegular.Play24);
         var runSelected = new MenuItem { Header = "Selected machines…" };
         runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
         runScript.Items.Add(runSelected);
@@ -352,7 +361,7 @@ public partial class WorkspaceView : UserControl
         _gridMenu.Items.Add(runScript);
 
         // The SCCM client-action triggers grouped under one submenu.
-        var clientActions = new MenuItem { Header = "Client actions" };
+        var clientActions = WithIcon(new MenuItem { Header = "Client actions" }, SymbolRegular.Rocket24);
         foreach (ScheduleAction action in vm.ClientActions)
         {
             clientActions.Items.Add(new MenuItem
@@ -364,14 +373,14 @@ public partial class WorkspaceView : UserControl
         }
         _gridMenu.Items.Add(clientActions);
 
-        var enableWinRm = new MenuItem { Header = "Enable WinRM (PSRemoting)…" };
+        var enableWinRm = WithIcon(new MenuItem { Header = "Enable WinRM (PSRemoting)…" }, SymbolRegular.PlugConnected24);
         enableWinRm.Click += OnEnableWinRm;
         _gridMenu.Items.Add(enableWinRm);
 
         _gridMenu.Items.Add(new Separator());
 
         // ---- Software ▸ ----
-        var software = new MenuItem { Header = "Software" };
+        var software = WithIcon(new MenuItem { Header = "Software" }, SymbolRegular.Apps24);
         // Check whether a named product is installed across the selection (else all) → the Software column.
         var checkSoftware = new MenuItem { Header = "Check software…" };
         checkSoftware.Click += OnCheckSoftware;
@@ -383,7 +392,7 @@ public partial class WorkspaceView : UserControl
         _gridMenu.Items.Add(software);
 
         // ---- Export ▸ ----
-        var export = new MenuItem { Header = "Export" };
+        var export = WithIcon(new MenuItem { Header = "Export" }, SymbolRegular.ArrowExportUp24);
         // The rows currently shown (respects the filter) + all visible/custom columns — same as File ▸ Export to CSV.
         var exportShown = new MenuItem { Header = "Shown rows + columns (CSV)…", IsEnabled = vm.VisibleRowCount > 0 };
         exportShown.Click += OnExportShownRows;
@@ -398,12 +407,12 @@ public partial class WorkspaceView : UserControl
 
         // ---- Power / maintenance ----
         // Force-reboot the selected machines now — the most common Windows-Update follow-up.
-        var rebootForce = new MenuItem { Header = "Reboot (force now)…", IsEnabled = hasSelection };
+        var rebootForce = WithIcon(new MenuItem { Header = "Reboot (force now)…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwise24);
         rebootForce.Click += OnRebootForce;
         _gridMenu.Items.Add(rebootForce);
 
         // Timed actions: a one-time SYSTEM task that runs at a chosen time (works in either mode).
-        var schedule = new MenuItem { Header = "Schedule", IsEnabled = hasSelection };
+        var schedule = WithIcon(new MenuItem { Header = "Schedule", IsEnabled = hasSelection }, SymbolRegular.CalendarClock24);
         var schedInstall = new MenuItem { Header = "Install updates…" };
         schedInstall.Click += OnScheduleInstall;
         schedule.Items.Add(schedInstall);
@@ -418,7 +427,7 @@ public partial class WorkspaceView : UserControl
 
         // WhatsUp Gold maintenance mode (enter before patching / exit after) for the selection, else the
         // whole tab. Runs locally against the WUG server — prompts for the WUG login.
-        var wugMaintenance = new MenuItem { Header = "WhatsUp Gold maintenance…" };
+        var wugMaintenance = WithIcon(new MenuItem { Header = "WhatsUp Gold maintenance…" }, SymbolRegular.Toolbox24);
         wugMaintenance.Click += OnWugMaintenance;
         _gridMenu.Items.Add(wugMaintenance);
 
@@ -426,7 +435,7 @@ public partial class WorkspaceView : UserControl
         if (vm.IsMachineMode)
         {
             _gridMenu.Items.Add(new Separator());
-            var columns = new MenuItem { Header = "Columns…" };
+            var columns = WithIcon(new MenuItem { Header = "Columns…" }, SymbolRegular.ColumnTriple24);
             columns.Click += OnManageColumns;
             _gridMenu.Items.Add(columns);
         }

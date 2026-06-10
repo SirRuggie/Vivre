@@ -29,7 +29,7 @@
             </Style>
 
             <!-- M5: shared Fluent tab style — accent background + white text when selected,
-                 card background when inactive. -->
+                 card background when inactive. M26: focus ring on keyboard focus. -->
             <Style x:Key="FluentTabItemStyle" TargetType="TabItem">
                 <Setter Property="Padding" Value="14,6" />
                 <Setter Property="Margin" Value="0,0,3,0" />
@@ -40,7 +40,11 @@
                                     Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
                                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
                                     BorderThickness="1,1,1,0">
-                                <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                                <!-- M26: accent focus ring drawn inside the tab border. -->
+                                <Border x:Name="FocusRing" CornerRadius="4" BorderThickness="2"
+                                        BorderBrush="Transparent" IsHitTestVisible="False">
+                                    <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
+                                </Border>
                             </Border>
                             <ControlTemplate.Triggers>
                                 <Trigger Property="IsMouseOver" Value="True">
@@ -54,6 +58,11 @@
                                             Value="{DynamicResource AccentFillColorDefaultBrush}" />
                                     <Setter Property="Foreground"
                                             Value="{DynamicResource TextOnAccentFillColorPrimaryBrush}" />
+                                </Trigger>
+                                <!-- M26: show accent ring when tab has keyboard focus (not mouse focus). -->
+                                <Trigger Property="IsFocused" Value="True">
+                                    <Setter TargetName="FocusRing" Property="BorderBrush"
+                                            Value="{DynamicResource SystemAccentColorBrush}" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>
@@ -96,6 +105,75 @@
                 <Setter Property="TextAlignment" Value="Center" />
                 <Setter Property="Margin" Value="0,4,0,0" />
                 <Setter Property="TextWrapping" Value="Wrap" />
+            </Style>
+
+            <!-- M27: thin overlay scrollbar — 6px track at rest, thumb brightens on hover/drag.
+                 Applies to ALL native ScrollBar controls (DataGrid, ScrollViewer, TextBox).
+                 Separate vertical and horizontal templates avoid layout-direction conflicts. -->
+
+            <!-- Shared thumb sub-style used by both orientations. -->
+            <Style x:Key="OverlayScrollThumbStyle" TargetType="Thumb">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Thumb">
+                            <Border x:Name="ThumbBd" CornerRadius="3" Margin="1"
+                                    Background="{DynamicResource TextFillColorTertiaryBrush}" />
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="ThumbBd" Property="Background"
+                                            Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                </Trigger>
+                                <Trigger Property="IsDragging" Value="True">
+                                    <Setter TargetName="ThumbBd" Property="Background"
+                                            Value="{DynamicResource TextFillColorPrimaryBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style TargetType="ScrollBar">
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <!-- Vertical scrollbar (default) -->
+                        <ControlTemplate TargetType="ScrollBar">
+                            <Grid x:Name="Root" Width="8">
+                                <Border x:Name="TrackBg" Background="Transparent" CornerRadius="4" />
+                                <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="0">
+                                    <Track.DecreaseRepeatButton>
+                                        <RepeatButton Opacity="0" IsEnabled="False">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType="RepeatButton">
+                                                    <Rectangle Fill="Transparent" />
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.DecreaseRepeatButton>
+                                    <Track.IncreaseRepeatButton>
+                                        <RepeatButton Opacity="0" IsEnabled="False">
+                                            <RepeatButton.Template>
+                                                <ControlTemplate TargetType="RepeatButton">
+                                                    <Rectangle Fill="Transparent" />
+                                                </ControlTemplate>
+                                            </RepeatButton.Template>
+                                        </RepeatButton>
+                                    </Track.IncreaseRepeatButton>
+                                    <Track.Thumb>
+                                        <Thumb Style="{StaticResource OverlayScrollThumbStyle}" />
+                                    </Track.Thumb>
+                                </Track>
+                            </Grid>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="Orientation" Value="Horizontal">
+                                    <Setter TargetName="Root" Property="Width" Value="Auto" />
+                                    <Setter TargetName="Root" Property="Height" Value="8" />
+                                    <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
             </Style>
         </ResourceDictionary>
     </Application.Resources>

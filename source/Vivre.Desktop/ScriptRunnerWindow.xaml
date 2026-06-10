@@ -63,7 +63,85 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type GroupItem}">
+                                            <!-- M28: animated chevron — RotateTransform eases to 0° on expand (150ms). -->
                                             <Expander IsExpanded="False">
+                                                <Expander.Template>
+                                                    <ControlTemplate TargetType="Expander">
+                                                        <StackPanel>
+                                                            <!-- Toggle button: CheckBox-less ToggleButton hosts the arrow + header.
+                                                                 IsChecked mirrors IsExpanded so the ControlTemplate trigger fires. -->
+                                                            <ToggleButton x:Name="Toggler"
+                                                                          IsChecked="{Binding IsExpanded, Mode=TwoWay,
+                                                                                      RelativeSource={RelativeSource AncestorType=Expander}}"
+                                                                          Background="Transparent" BorderThickness="0"
+                                                                          Padding="2,4" Cursor="Hand"
+                                                                          HorizontalContentAlignment="Left">
+                                                                <ToggleButton.Template>
+                                                                    <ControlTemplate TargetType="ToggleButton">
+                                                                        <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                                            <StackPanel Orientation="Horizontal">
+                                                                                <Path x:Name="Arrow"
+                                                                                      Data="M0,0 L4,4 L8,0"
+                                                                                      Width="8" Height="5"
+                                                                                      Stroke="{DynamicResource TextFillColorSecondaryBrush}"
+                                                                                      StrokeThickness="1.5"
+                                                                                      VerticalAlignment="Center"
+                                                                                      Margin="0,0,6,0"
+                                                                                      RenderTransformOrigin="0.5,0.5">
+                                                                                    <Path.RenderTransform>
+                                                                                        <RotateTransform x:Name="ArrowRotation" Angle="-90" />
+                                                                                    </Path.RenderTransform>
+                                                                                </Path>
+                                                                                <ContentPresenter VerticalAlignment="Center" />
+                                                                            </StackPanel>
+                                                                        </Border>
+                                                                        <ControlTemplate.Triggers>
+                                                                            <Trigger Property="IsChecked" Value="True">
+                                                                                <Trigger.EnterActions>
+                                                                                    <BeginStoryboard>
+                                                                                        <Storyboard>
+                                                                                            <DoubleAnimation
+                                                                                                Storyboard.TargetName="ArrowRotation"
+                                                                                                Storyboard.TargetProperty="Angle"
+                                                                                                To="0" Duration="0:0:0.15">
+                                                                                                <DoubleAnimation.EasingFunction>
+                                                                                                    <CubicEase EasingMode="EaseOut" />
+                                                                                                </DoubleAnimation.EasingFunction>
+                                                                                            </DoubleAnimation>
+                                                                                        </Storyboard>
+                                                                                    </BeginStoryboard>
+                                                                                </Trigger.EnterActions>
+                                                                                <Trigger.ExitActions>
+                                                                                    <BeginStoryboard>
+                                                                                        <Storyboard>
+                                                                                            <DoubleAnimation
+                                                                                                Storyboard.TargetName="ArrowRotation"
+                                                                                                Storyboard.TargetProperty="Angle"
+                                                                                                To="-90" Duration="0:0:0.15">
+                                                                                                <DoubleAnimation.EasingFunction>
+                                                                                                    <CubicEase EasingMode="EaseOut" />
+                                                                                                </DoubleAnimation.EasingFunction>
+                                                                                            </DoubleAnimation>
+                                                                                        </Storyboard>
+                                                                                    </BeginStoryboard>
+                                                                                </Trigger.ExitActions>
+                                                                            </Trigger>
+                                                                        </ControlTemplate.Triggers>
+                                                                    </ControlTemplate>
+                                                                </ToggleButton.Template>
+                                                                <ContentPresenter ContentSource="Header" />
+                                                            </ToggleButton>
+                                                            <ContentPresenter x:Name="ExpanderContent"
+                                                                              ContentSource="Content"
+                                                                              Visibility="Collapsed" />
+                                                        </StackPanel>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsExpanded" Value="True">
+                                                                <Setter TargetName="ExpanderContent" Property="Visibility" Value="Visible" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Expander.Template>
                                                 <Expander.Header>
                                                     <StackPanel Orientation="Horizontal">
                                                         <TextBlock FontWeight="SemiBold">
