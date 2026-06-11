@@ -177,9 +177,9 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Filter bar: mode chips (M30) + name search + quick state chips + "select shown" + count.
-             Applies to whichever grid is visible (both share the Computers view). The mode chips
-             (Machines / Windows Update) are always visible so the current view has on-canvas identity.
+        <!-- Filter bar: name search + quick state chips + "select shown" + count.
+             Applies to whichever grid is visible (both share the Computers view). Mode is fixed
+             by the active Fleet section (Health = machine view, Patching = Windows Update view).
              The filter sub-row is hidden until the tab has machines. -->
         <Grid Grid.Row="0" Margin="12,4,12,4">
             <Grid.RowDefinitions>
@@ -187,25 +187,9 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- M30: mode chips — always visible, behave as a radio pair. Reuses the FilterChip style.
-                 Bound directly to IsUpdateMode/IsMachineMode (same underlying state as the View menu).
-                 The View-menu items remain fully functional; the chips are additive. -->
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,6">
-                <!-- RadioButtons (not ToggleButtons) so the pair is mutually exclusive and the active one
-                     can't be clicked off — they reuse the FilterChip look (RadioButton derives from
-                     ToggleButton). IsChecked is OneWay (mode lives in the VM / View menu / Ctrl+M); the
-                     Checked handler pushes the change back. -->
-                <RadioButton Style="{StaticResource FilterChip}" Content="Machines" Margin="0"
-                             GroupName="ViewMode"
-                             IsChecked="{Binding IsMachineMode, Mode=OneWay}"
-                             Checked="OnMachinesModeChipChecked"
-                             ToolTip="Switch to Machines view (Ctrl+M)" />
-                <RadioButton Style="{StaticResource FilterChip}" Content="Windows Update"
-                             GroupName="ViewMode"
-                             IsChecked="{Binding IsUpdateMode, Mode=OneWay}"
-                             Checked="OnUpdateModeChipChecked"
-                             ToolTip="Switch to Windows Update view (Ctrl+M)" />
-            </StackPanel>
+            <!-- Mode chips removed: tab mode is now fixed by the Fleet section (Health = Machines view,
+                 Patching = Windows Update view). Navigate to Fleet ▸ Health or Fleet ▸ Patching
+                 in the left nav, or use Ctrl+M to toggle between them. -->
 
             <!-- Filter sub-row: hidden until the tab has machines. -->
             <Grid Grid.Row="1" Margin="0,0,0,4"
@@ -223,11 +207,23 @@
                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
-                <ToggleButton Style="{StaticResource FilterChip}" Content="All" Margin="0"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}" />
-                <ToggleButton Style="{StaticResource FilterChip}" Content="Updates"
+                <ToggleButton Style="{StaticResource FilterChip}" Margin="0"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="SelectAllOn24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="All" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
                               ToolTip="Machines with updates available to install"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.UpdatesAvailable}, Mode=TwoWay}" />
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.UpdatesAvailable}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowDownload24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Updates" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -252,8 +248,14 @@
                         <TextBlock Text="Offline" VerticalAlignment="Center" />
                     </StackPanel>
                 </ToggleButton>
-                <ToggleButton Style="{StaticResource FilterChip}" Content="Done"
-                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}" />
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Done" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
                               ToolTip="Machines whose vitality is Warning, Critical, or Offline (run Check Vitals first)"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}">
@@ -826,7 +828,7 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <!-- Command result (e.g. output of a Run Script / "Restart - force now") — shown here too,
-                     since scripts are commonly run from Windows Update mode. -->
+                     since scripts are commonly run from the Patching (Windows Update) section. -->
                 <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -845,11 +847,12 @@
                2 = cold start   → M29 "Get started" card
                3 = filter-empty → M13 simple "No matches" state
                0 = data present → no overlay (panels collapsed) -->
-        <!-- Empty-state overlay, anchored TOP-LEFT with an inset. When the machines grid is collapsed
-             (these empty states) there's no grid ScrollViewer constraining the tab width, so a centred
-             child can drift off-screen; top-left is overflow-proof and consistent at any window size.
-             Not hit-test-blocking: the visible state's buttons handle their own input; collapsed siblings
-             don't steal it. -->
+        <!-- Empty-state overlay, anchored TOP-LEFT with an inset. Centering was re-attempted (Round 2) but
+             the card drifts right at wider widths: with the grid collapsed there's no ScrollViewer bounding
+             the row, and the DataGrid's column width still leaks into the shared Row-2 cell, so a centred
+             child centres within a too-wide area and slides off to the right. Top-left is overflow-proof and
+             consistent at any window size. Not hit-test-blocking: the visible state's buttons handle their
+             own input; collapsed siblings don't steal it. -->
         <Grid Grid.Row="2" Panel.ZIndex="5">
 
             <!-- State 2 — M29: cold-start "Get started" card (GitHub Desktop style). -->
@@ -900,7 +903,7 @@
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </StackPanel>
-                    <!-- Row 3: Switch modes -->
+                    <!-- Row 3: Health / Patching nav -->
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
                         <Border Width="36" Height="36" CornerRadius="8" Margin="0,0,12,0"
                                 Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}">
@@ -908,9 +911,9 @@
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </Border>
                         <StackPanel VerticalAlignment="Center">
-                            <TextBlock Text="Switch modes" FontSize="13" FontWeight="Medium"
+                            <TextBlock Text="Switch section" FontSize="13" FontWeight="Medium"
                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                            <TextBlock Text="Use the chips above or Ctrl+M to switch to Windows Update" FontSize="11"
+                            <TextBlock Text="Use Fleet ▸ Health / Patching in the nav, or Ctrl+M" FontSize="11"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </StackPanel>

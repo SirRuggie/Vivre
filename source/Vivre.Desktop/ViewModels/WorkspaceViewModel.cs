@@ -460,10 +460,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Inverse of <see cref="IsUpdateMode"/> — each grid binds its own bool through one converter.</summary>
     public bool IsMachineMode => !IsUpdateMode;
 
-    /// <summary>Flips Machines ↔ Windows Update (bound to Ctrl+M; the segmented switcher uses the property directly).</summary>
-    [RelayCommand]
-    private void ToggleUpdateMode() => IsUpdateMode = !IsUpdateMode;
-
     /// <summary>True when the tab holds work worth a confirm before closing — loaded machines, or a
     /// live monitor / sweep. Empty, idle tabs close instantly (so the guard never habituates).</summary>
     public bool HasWork => Computers.Count > 0 || IsBusy || IsMonitoring;
@@ -487,8 +483,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public bool IsApplicableMode => !IsInstalledMode;
 
     /// <summary>
-    /// The main toolbar's "Install" button is shown only when the tab is in Windows Update mode
-    /// <em>and</em> the scope is Applicable (uninstalling all installed updates from the toolbar
+    /// The main toolbar's "Install" button is shown only when the tab is in Windows Update (Patching)
+    /// mode <em>and</em> the scope is Applicable (uninstalling all installed updates from the toolbar
     /// would be too destructive a default — uninstall is per-machine from the side panel only).
     /// </summary>
     public bool CanShowInstallToolbar => IsUpdateMode && !IsInstalledMode;
@@ -847,7 +843,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>
-    /// When the tab flips into Windows Update mode, kick an immediate monitor pass so the
+    /// When the tab flips into Windows Update (Patching) mode, kick an immediate monitor pass so the
     /// Pending Reboot column populates straight away instead of waiting for the next 20 s tick.
     /// </summary>
     partial void OnIsUpdateModeChanged(bool value)
@@ -948,7 +944,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    // --- Named machine lists (File menu) ---
+    // --- Named machine lists (Lists ▾ button) ---
 
     /// <summary>Names of the saved machine lists.</summary>
     public IReadOnlyList<string> SavedLists() => _lists.List();

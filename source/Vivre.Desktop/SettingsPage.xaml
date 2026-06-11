@@ -72,12 +72,11 @@
                 </Grid>
             </Border>
 
-            <!-- ── Remote credentials (visible card — primary per-session task) ── -->
-            <Border x:Name="CredentialCard" Padding="16" CornerRadius="6" Margin="0,0,0,8"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <StackPanel>
-                    <ui:TextBlock FontTypography="BodyStrong" Text="Remote credentials" Margin="0,0,0,4" />
+            <!-- ── Remote credentials (collapsed expander) ──────────────────── -->
+            <ui:CardExpander x:Name="CredentialCard" Margin="0,0,0,8" IsExpanded="False"
+                             Icon="{ui:SymbolIcon Key24}"
+                             Header="Remote credentials">
+                <StackPanel Margin="0,8,0,0">
                     <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="Used for SCCM actions, Run Script, and Enable WinRM. Held for this session only — never saved to disk." />
 
@@ -120,7 +119,7 @@
                                    Click="OnApplyCredentials" />
                     </Grid>
                 </StackPanel>
-            </Border>
+            </ui:CardExpander>
 
             <!-- ── Integrations & paths (collapsed expander) ─────────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"

@@ -6,17 +6,20 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace Vivre.Desktop.ViewModels;
 
+/// <summary>Which Fleet sub-section is active.</summary>
+public enum FleetSection { Health, Patching }
+
 /// <summary>
-/// The window-level view model: owns the open tabs. Each tab is an independent
-/// <see cref="WorkspaceViewModel"/> created via the injected factory (so they all
-/// share the same singleton services from the composition root). Always keeps at
-/// least one tab open.
+/// The window-level view model: owns the open tabs in two independent collections — one per Fleet
+/// section (Health and Patching). Each tab is an independent <see cref="WorkspaceViewModel"/>
+/// created via the injected factory. Always keeps at least one tab open per section.
 /// </summary>
 public partial class ShellViewModel : ObservableObject
 {
     private readonly Func<WorkspaceViewModel> _newWorkspace;
-    // Monotonic so default tab titles never collide after a middle tab is closed.
-    private int _nextTabNumber = 1;
+    // Monotonic counters so default tab titles never collide after a middle tab is closed.
+    private int _nextHealthTabNumber = 1;
+    private int _nextPatchingTabNumber = 1;
 
     // Cross-Domain RDP is a per-workstation feature — it only opens when Vivre runs on this machine.
     private const string CrossDomainRdpMachine = "APVHOP";
@@ -31,7 +34,14 @@ public partial class ShellViewModel : ObservableObject
         RdpViewModel = rdpViewModel;
         Credentials = credentials;
         ActivityLog = new ActivityLogViewModel(activityLog);
-        NewTab();
+
+        // Seed each section with one tab.
+        AddHealthTab();
+        AddPatchingTab();
+
+        // Default to Health section.
+        ActiveFleetSection = FleetSection.Health;
+        SyncSelectedTab();
     }
 
     /// <summary>App-wide credential store (shared across tabs; edited from Settings).</summary>
@@ -46,107 +56,151 @@ public partial class ShellViewModel : ObservableObject
     /// </summary>
     public CrossDomainRdpViewModel RdpViewModel { get; }
 
-    /// <summary>Open tabs — workspace tabs only (<see cref="WorkspaceViewModel"/>). Cross-Domain RDP is
-    /// now a nav section, not a tab; it lives in its own keep-alive slot in ContentHost.</summary>
-    public ObservableCollection<ITabViewModel> Tabs { get; } = [];
+    /// <summary>Health section workspace tabs — <c>IsUpdateMode=false</c>, never changed.</summary>
+    public ObservableCollection<WorkspaceViewModel> HealthTabs { get; } = [];
+
+    /// <summary>Patching section workspace tabs — <c>IsUpdateMode=true</c>, never changed.</summary>
+    public ObservableCollection<WorkspaceViewModel> PatchingTabs { get; } = [];
 
     [ObservableProperty]
-    public partial ITabViewModel? SelectedTab { get; set; }
+    public partial WorkspaceViewModel? SelectedHealthTab { get; set; }
 
-    /// <summary>True when the active tab is a machine workspace — gates the machine-only chrome (command
-    /// bar, fleet band, status bar).</summary>
-    public bool IsWorkspaceTab => SelectedTab is WorkspaceViewModel;
+    [ObservableProperty]
+    public partial WorkspaceViewModel? SelectedPatchingTab { get; set; }
 
-    // The View menu's two radio dots for Machines / Windows Update mode.
-    public bool IsMachinesView => SelectedTab is WorkspaceViewModel { IsUpdateMode: false };
+    /// <summary>Which Fleet sub-section is currently shown (Health or Patching). Default Health.</summary>
+    [ObservableProperty]
+    public partial FleetSection ActiveFleetSection { get; set; }
 
-    public bool IsWindowsUpdateView => SelectedTab is WorkspaceViewModel { IsUpdateMode: true };
+    /// <summary>
+    /// Routes to the active section's selected tab. The shared toolbar and status bar bind here —
+    /// they work unchanged because this always points at the correct <see cref="WorkspaceViewModel"/>.
+    /// </summary>
+    public WorkspaceViewModel? SelectedTab =>
+        ActiveFleetSection == FleetSection.Health ? SelectedHealthTab : SelectedPatchingTab;
+
+    /// <summary>True when the active tab is a machine workspace — gates the machine-only chrome.</summary>
+    public bool IsWorkspaceTab => SelectedTab is not null;
 
     /// <summary>Cross-Domain RDP nav item visibility: always true when RequireRdpHost is false (for
     /// testing); when true, gates to the designated host (CrossDomainRdpMachine).</summary>
     public bool IsCrossDomainRdpAvailable =>
         !RequireRdpHost || string.Equals(Environment.MachineName, CrossDomainRdpMachine, StringComparison.OrdinalIgnoreCase);
 
-    private WorkspaceViewModel? _modeWatched;
-
-    partial void OnSelectedTabChanged(ITabViewModel? value)
+    partial void OnActiveFleetSectionChanged(FleetSection value)
     {
-        // Watch the active workspace's mode so the Machines / Windows Update dots stay in sync when it flips.
-        if (_modeWatched is not null)
-        {
-            _modeWatched.PropertyChanged -= OnWatchedWorkspacePropertyChanged;
-            _modeWatched = null;
-        }
+        SyncSelectedTab();
+    }
 
-        if (value is WorkspaceViewModel workspace)
+    partial void OnSelectedHealthTabChanged(WorkspaceViewModel? value)
+    {
+        if (ActiveFleetSection == FleetSection.Health)
         {
-            workspace.PropertyChanged += OnWatchedWorkspacePropertyChanged;
-            _modeWatched = workspace;
+            OnPropertyChanged(nameof(SelectedTab));
+            OnPropertyChanged(nameof(IsWorkspaceTab));
         }
+    }
 
+    partial void OnSelectedPatchingTabChanged(WorkspaceViewModel? value)
+    {
+        if (ActiveFleetSection == FleetSection.Patching)
+        {
+            OnPropertyChanged(nameof(SelectedTab));
+            OnPropertyChanged(nameof(IsWorkspaceTab));
+        }
+    }
+
+    private void SyncSelectedTab()
+    {
+        OnPropertyChanged(nameof(SelectedTab));
         OnPropertyChanged(nameof(IsWorkspaceTab));
-        RaiseViewFlags();
     }
 
-    private void OnWatchedWorkspacePropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    // --- tab management ---
+
+    private WorkspaceViewModel CreateWorkspace(bool isUpdateMode, string title)
     {
-        if (e.PropertyName is nameof(WorkspaceViewModel.IsUpdateMode))
-        {
-            RaiseViewFlags();
-        }
+        WorkspaceViewModel workspace = _newWorkspace();
+        workspace.Title = title;
+        workspace.IsUpdateMode = isUpdateMode;
+        return workspace;
     }
 
-    private void RaiseViewFlags()
+    private void AddHealthTab()
     {
-        OnPropertyChanged(nameof(IsMachinesView));
-        OnPropertyChanged(nameof(IsWindowsUpdateView));
+        WorkspaceViewModel workspace = CreateWorkspace(false, $"Tab {_nextHealthTabNumber++}");
+        HealthTabs.Add(workspace);
+        SelectedHealthTab = workspace;
     }
 
-    /// <summary>Switches to a machine workspace (the active one, or the first open) and sets its mode — so the
-    /// View-menu Machines / Windows Update items act as view-switchers, even from the Cross-Domain RDP tab.</summary>
-    public void ShowMachineView(bool updateMode)
+    private void AddPatchingTab()
     {
-        WorkspaceViewModel? workspace = SelectedTab as WorkspaceViewModel ?? Tabs.OfType<WorkspaceViewModel>().FirstOrDefault();
-        if (workspace is null)
-        {
-            return;
-        }
-
-        SelectedTab = workspace;
-        workspace.IsUpdateMode = updateMode;
+        WorkspaceViewModel workspace = CreateWorkspace(true, $"Tab {_nextPatchingTabNumber++}");
+        PatchingTabs.Add(workspace);
+        SelectedPatchingTab = workspace;
     }
 
     [RelayCommand]
     private void NewTab()
     {
-        WorkspaceViewModel workspace = _newWorkspace();
-        workspace.Title = $"Tab {_nextTabNumber++}";
-        Tabs.Add(workspace);
-        SelectedTab = workspace;
+        if (ActiveFleetSection == FleetSection.Health)
+        {
+            AddHealthTab();
+        }
+        else
+        {
+            AddPatchingTab();
+        }
     }
 
     [RelayCommand]
-    private void CloseTab(ITabViewModel? tab)
+    private void CloseTab(WorkspaceViewModel? tab)
     {
-        if (tab is null)
-        {
-            return;
-        }
+        if (tab is null) return;
 
-        int index = Tabs.IndexOf(tab);
-        Tabs.Remove(tab);
+        ObservableCollection<WorkspaceViewModel> tabs =
+            ActiveFleetSection == FleetSection.Health ? HealthTabs : PatchingTabs;
 
-        // Always keep at least one machine workspace open.
-        if (!Tabs.OfType<WorkspaceViewModel>().Any())
+        int index = tabs.IndexOf(tab);
+        if (index < 0) return;
+
+        tabs.Remove(tab);
+
+        // Always keep at least one tab open per section.
+        if (tabs.Count == 0)
         {
-            NewTab();
+            if (ActiveFleetSection == FleetSection.Health)
+                AddHealthTab();
+            else
+                AddPatchingTab();
         }
-        else if (ReferenceEquals(SelectedTab, tab))
+        else
         {
-            SelectedTab = Tabs[Math.Clamp(index, 0, Tabs.Count - 1)];
+            WorkspaceViewModel next = tabs[Math.Clamp(index, 0, tabs.Count - 1)];
+            if (ActiveFleetSection == FleetSection.Health)
+                SelectedHealthTab = next;
+            else
+                SelectedPatchingTab = next;
         }
 
         // Tear the closed tab down (stop background work and release resources).
         (tab as IDisposable)?.Dispose();
     }
+
+    /// <summary>Flips ActiveFleetSection Health↔Patching (Ctrl+M). Ensures the new section has ≥1 tab.</summary>
+    public void ToggleFleetSection()
+    {
+        ActiveFleetSection = ActiveFleetSection == FleetSection.Health
+            ? FleetSection.Patching
+            : FleetSection.Health;
+
+        // Ensure the newly-shown section has at least one tab.
+        if (ActiveFleetSection == FleetSection.Health && HealthTabs.Count == 0)
+            AddHealthTab();
+        else if (ActiveFleetSection == FleetSection.Patching && PatchingTabs.Count == 0)
+            AddPatchingTab();
+    }
+
+    /// <summary>All open workspace tabs across both sections — used for resource iteration (timers, dispose).</summary>
+    public IEnumerable<WorkspaceViewModel> AllTabs => HealthTabs.Concat(PatchingTabs);
 }

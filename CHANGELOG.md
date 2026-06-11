@@ -27,8 +27,25 @@ it ships, then gets a dated heading.
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
-- **New left navigation** — the app now has a WPF-UI `NavigationView` pane (**Computers** · **Scripts** ·
-  **Cross-Domain RDP** · **Settings**), collapsed to icons by default with a hamburger toggle (remembered
+- **Fleet ▸ Health and Fleet ▸ Patching replace the single Computers workspace** — the left nav now has
+  a collapsible **Fleet** parent with two independent keep-alive destinations: **Health** (ping, vitals,
+  SCCM actions — the former "Machines" mode) and **Patching** (Windows Update scanning and install — the
+  former "Windows Update" mode). Each section has its own tab strip; switching between them Visibility-toggles
+  the inactive strip without destroying it (the `TabControlEx` keep-alive is preserved). Ctrl+M now toggles
+  between Health and Patching; the nav highlight follows. Health is the default on launch.
+- **Mode chips removed** — the per-tab "Machines / Windows Update" radio chips are gone; mode is fixed by
+  the Fleet section a tab belongs to (Health tabs are always in health mode, Patching tabs always in
+  patching mode). The Get-Started card's "Switch modes" row now points at the Health / Patching nav items.
+- **Menu bar removed** — File / View / Updates are gone; their items moved to where they're used: the tab
+  right-click menu (New tab, Clear this tab, Rename, Close…), a **Lists ▾** toolbar button (open / save /
+  delete named machine lists), the **…** overflow (Export to CSV), an **Update options ▾** button shown in
+  Patching (update source / drivers / exclusions), and an **Activity-log** toggle on the status bar. The
+  title bar is now just the app title and the window controls.
+- **Filter chips all carry icons** — the All / Updates / Done chips gained icons to match Reboot pending /
+  Errors / Offline / Unhealthy, and **Remote credentials** on the Settings page is now a collapsible card
+  like the other settings groups.
+- **New left navigation** — the app now has a WPF-UI `NavigationView` pane (**Fleet** ▸ **Health** / **Patching** ·
+  **Scripts** · **Cross-Domain RDP** · **Settings**), collapsed to icons by default with a hamburger toggle (remembered
   across launches). Theme
   (Light / Dark / System, a Windows-11-style "App theme" dropdown), session credentials, auto-check-on-load,
   WUG server / packages folder, and Help / About moved into a dedicated **Settings page**; the Settings and
