@@ -70,12 +70,13 @@ public static class HelpContent
         new HelpTopic
         {
             Category = GettingStarted, Icon = SymbolRegular.Save24, Title = "How do I save and reuse a machine list?",
-            Keywords = "named lists save open delete",
+            Keywords = "named lists save open delete rename tab title",
             Lines =
             [
                 "1. Load the machines you want in the tab.",
-                "2. Click Lists ▾ (top-right command bar) ▸ Save tab as list… and give it a name.",
-                "3. Later, Lists ▾ ▸ Open list to load it into a tab; Lists ▾ ▸ Delete list to remove a saved one.",
+                "2. Click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box prefills with the tab's current title (rename the tab first if you want a tidy name; you can also overtype it in the prompt).",
+                "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
+                "Lists ▾ ▸ Delete list to remove a saved one.",
             ],
             Tip = "Lists are plain .txt files under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
         },
@@ -199,7 +200,28 @@ public static class HelpContent
                 "Hover the chip to see why (the top reasons), or right-click ▸ Details… ▸ Vitals for the full breakdown — drives, services by name, and recent events. The bottom bar tallies the fleet, e.g. \"Vitals: Healthy 40 · Warning 6 · Critical 2\".",
                 "Use the Unhealthy filter chip to show just the Warning/Critical/Offline machines, then sort by the Vitals column to put the sickest first.",
             ],
-            Tip = "Read-only — one click, no confirm. Reading services / the event log over WinRM needs admin rights on the target; anything it can't read is skipped rather than counted against the score.",
+            Tip = "Read-only — one click, no confirm. Reading services / the event log over WinRM needs admin rights on the target; anything it can't read is skipped rather than counted against the score. See \"What does the Vitality score mean?\" for the full scoring breakdown.",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.HeartPulse24, Title = "What does the Vitality score mean?",
+            Keywords = "vitality score band healthy warning critical offline unknown penalty points rubric calculation formula disk memory cpu uptime reboot how scored why number",
+            Lines =
+            [
+                "Every machine starts at 100. Check Vitals subtracts points for each problem found; the total clamps to 0–100 and maps to a colour band.",
+                "Bands: 80–100 Healthy (green) · 50–79 Warning (amber) · below 50 Critical (red) · Offline (dark grey — no score) · Unknown (grey — vitals never read).",
+                "Disk (system drive free): below 15% → −8 · below 10% → −20 · below 5% → −40.",
+                "Memory used: above 90% → −10 · above 95% → −20.",
+                "CPU load: above 85% → −6 · above 95% → −15.",
+                "Reboot pending (CBS / Windows Update / SCCM signals) → −10.",
+                "Uptime over 60 days → −5.",
+                "A signal that can't be read is \"unknown\" and is never penalised — a box that only answers some probes still scores fairly.",
+                "The Vitals chip shows the top 3 worst reasons (the highest-penalty problems) as the \"why\" behind the number. Hover the chip to read them; open right-click ▸ Details… ▸ Vitals for the full breakdown and inline triage actions.",
+                "CPU and memory are point-in-time samples taken at check time — a momentary spike during the check can temporarily lower a score. Re-run Check Vitals when the box is idle to clear it.",
+                "The Unhealthy filter chip includes Offline machines — not just Warning/Critical. An offline box counts as unhealthy even though its internals are unknown (you can't read the vitals of a machine that doesn't answer).",
+                "Two signals are gathered but deliberately NOT scored: stopped auto-start services and recent error/critical event counts. They're dominated by benign noise on healthy boxes (trigger/delayed-start services, ubiquitous harmless events like DCOM 10016), so they appear in Details ▸ Vitals as context but never move the number.",
+            ],
+            Tip = "\"Vitality 100 (Healthy)\" means no penalty fired. The only way to score below 80 is for one of the scored signals (disk, memory, CPU, reboot pending, uptime) to exceed its threshold.",
         },
         new HelpTopic
         {
@@ -228,13 +250,14 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.Play24, Title = "How do I run a PowerShell script?",
-            Keywords = "run script powershell saved library command",
+            Keywords = "run script powershell saved library command right-click",
             Lines =
             [
                 "1. Select the machines.",
                 "2. Right-click ▸ Run script ▸ Selected machines… (or All machines…) — opens the Run Script window.",
                 "3. Pick a saved script (grouped by category) or paste your own, review it, then click Run.",
                 "Output lands per-machine in the Command result column and in the window's log.",
+                "Note: double-clicking a row opens that machine's Details, not the script runner.",
             ],
             Tip = "The window opens for review — it never auto-runs — so a stray click can't fire a script across your fleet.",
         },
@@ -274,7 +297,7 @@ public static class HelpContent
             Keywords = "columns custom hide show add column grid layout serial bitlocker script one-liner customize remove tailor probe",
             Lines =
             [
-                "Right-click the grid ▸ Columns… (machine mode) — works even before you've added any machines.",
+                "Open it from Settings (left navigation) ▸ Grid columns ▸ Manage columns…, or right-click the grid ▸ Columns… — works even before you've added any machines.",
                 "• Hide columns you don't use — untick them under \"Show columns\" (Name always stays). Saved across launches.",
                 "• Add a predefined column from the gallery (Serial, Model, Days since reboot, Free C: GB, BitLocker, …) — one click.",
                 "• Add your own — a column name + a PowerShell one-liner. It runs on every machine and whatever it prints fills the cell, e.g. (Get-CimInstance Win32_BIOS).SerialNumber.",
@@ -328,10 +351,10 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.Eye24, Title = "How do I see one machine's full details?",
-            Keywords = "details window os operating system per machine",
+            Keywords = "details window os operating system per machine double click",
             Lines =
             [
-                "Right-click the machine ▸ Details….",
+                "Double-click a row to open its Details window. Or right-click the machine ▸ Details….",
                 "Shows its OS (caption + build), update state, reboot status, scheduled task, and that machine's messages.",
             ],
         },

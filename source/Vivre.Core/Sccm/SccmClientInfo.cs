@@ -9,7 +9,7 @@ namespace Vivre.Core.Sccm;
 /// </summary>
 /// <param name="ClientVersion">SMS_Client.ClientVersion (e.g. "5.00.9132.1000"); null if unknown.</param>
 /// <param name="SiteCode">Assigned site code (e.g. "PS1"); null if unknown.</param>
-/// <param name="RebootRequired">A reboot is pending (CCM, patch, component-servicing, or file-rename).</param>
+/// <param name="RebootRequired">A reboot is pending (CCM, patch, or component-servicing).</param>
 /// <param name="MissingUpdates">One or more required updates are non-compliant.</param>
 /// <param name="RunningUpdates">An app/program/update install is in progress.</param>
 /// <param name="UserLoggedOn">An interactive user session (explorer.exe) is present.</param>

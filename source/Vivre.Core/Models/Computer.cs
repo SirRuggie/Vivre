@@ -307,6 +307,15 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial DateTime? LastScannedApplicable { get; set; }
 
+    /// <summary>
+    /// Short honest note about the most recent install attempt — shown as a banner in the Updates
+    /// panel on partial failure (e.g. "Install completed with 2 failure(s) — rescan after reboot for
+    /// exact state"). Null when there is nothing to report. Runtime-only — never persisted.
+    /// Cleared when a new Applicable-scope scan repopulates the checklist.
+    /// </summary>
+    [ObservableProperty]
+    public partial string? LastInstallNote { get; set; }
+
     /// <summary>When the Installed-scope scan last completed (null = never).</summary>
     [ObservableProperty]
     public partial DateTime? LastScannedInstalled { get; set; }

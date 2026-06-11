@@ -27,6 +27,7 @@
         <local:StringToVisibilityConverter x:Key="StringToVis" />
         <local:FleetSectionToVisibilityConverter x:Key="FleetSectionToVis" />
         <local:CompactThicknessConverter x:Key="CompactThickness" />
+        <local:NonZeroToBoolConverter x:Key="NonZeroToBool" />
 
         <!-- Toolbar button label: collapsed in compact mode, visible in expanded mode.
              Bind to ToolbarCompact on the MainWindow ancestor via a DataTrigger. -->
@@ -77,6 +78,33 @@
             <Setter Property="MouseOverBorderBrush" Value="Transparent" />
             <Setter Property="PressedBackground"    Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
             <Setter Property="PressedBorderBrush"   Value="Transparent" />
+        </Style>
+
+        <!-- Bug 2: busy-aware tooltip: when a sweep is running the four Scan/Install buttons are
+             correctly disabled but look dead.  This template + style make the blocked state legible:
+             the tooltip is replaced with the live sweep narration so the user knows WHY.
+             ContentTemplate is swapped by the BusyAwareTooltipStyle DataTrigger when IsBusy=True;
+             Content (the normal text) is set per-button.  DataContext inside the DataTemplate is
+             the ShellViewModel (inherited through PlacementTarget), so SelectedTab.SweepStatus binds
+             directly.  ToolTipService.ShowOnDisabled is set per-button (must be on the element, not
+             a style setter, to apply to disabled controls). -->
+        <DataTemplate x:Key="BusyTooltipContentTemplate">
+            <StackPanel MaxWidth="320">
+                <TextBlock Text="Waiting for the current operation to finish:"
+                           FontWeight="SemiBold" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                <TextBlock Margin="0,4,0,0" TextWrapping="Wrap"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding SelectedTab.SweepStatus}" />
+            </StackPanel>
+        </DataTemplate>
+        <Style x:Key="BusyAwareTooltipStyle" TargetType="ToolTip"
+               BasedOn="{StaticResource DefaultToolTipStyle}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding PlacementTarget.DataContext.SelectedTab.IsBusy, RelativeSource={RelativeSource Self}}" Value="True">
+                    <Setter Property="ContentTemplate" Value="{StaticResource BusyTooltipContentTemplate}" />
+                </DataTrigger>
+            </Style.Triggers>
         </Style>
 
         <!-- Monitor ToggleButton — frameless rest; subtle fill on hover/press;
@@ -321,11 +349,14 @@
             <Grid x:Name="ContentHost" Grid.Column="1">
 
                 <!-- ═════════════════ COMPUTERS SECTION ══════════════════════ -->
-                <Grid x:Name="ComputersSection" Visibility="Visible">
+                <!-- Background matches the tab-strip band (ApplicationBackgroundBrush) so the command
+                     bar row blends into one continuous surface instead of showing as a lighter Mica band. -->
+                <Grid x:Name="ComputersSection" Visibility="Visible"
+                      Background="{DynamicResource ApplicationBackgroundBrush}">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
+                        <RowDefinition x:Name="WorkspaceGridRow" Height="*" />
                         <RowDefinition x:Name="SplitterRow" Height="0" />
                         <RowDefinition x:Name="ActivityRow" Height="0" MinHeight="0" />
                     </Grid.RowDefinitions>
@@ -466,7 +497,7 @@
                             </ui:Button>
 
                             <!-- Divider: shown in update mode only, AND only when no rows are selected
-                                 (selection bar owns Scan/Install when rows are selected). -->
+                                 (the selection cluster below owns Scan/Install when rows are selected). -->
                             <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
                                 <Border.Style>
                                     <Style TargetType="Border">
@@ -483,10 +514,14 @@
                                 </Border.Style>
                             </Border>
 
-                            <!-- Updates (update-mode only, and only when no rows selected — selection bar
-                                 owns Scan/Install for the selection so both don't show simultaneously). -->
+                            <!-- Updates (update-mode only, and only when no rows selected — the selection
+                                 cluster owns Scan/Install for the selection so both don't show simultaneously). -->
                             <ui:Button Command="{Binding SelectedTab.ScanTargetCommand}"
-                                       ToolTip="Scan all — scan all machines in this tab for applicable updates.">
+                                       ToolTipService.ShowOnDisabled="True">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Content="Scan all — scan all machines in this tab for applicable updates."
+                                             Style="{StaticResource BusyAwareTooltipStyle}" />
+                                </ui:Button.ToolTip>
                                 <ui:Button.Style>
                                     <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -506,9 +541,13 @@
                                 </StackPanel>
                             </ui:Button>
                             <ui:Button x:Name="InstallButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                       IsEnabled="{Binding SelectedTab.CanInstallAll}"
                                        Click="OnInstallClick"
-                                       ToolTip="Install all — download and install applicable updates on all machines in this tab (Ctrl+Enter).">
+                                       ToolTipService.ShowOnDisabled="True">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Content="Install all — download and install applicable updates on all machines in this tab (Ctrl+Enter)."
+                                             Style="{StaticResource BusyAwareTooltipStyle}" />
+                                </ui:Button.ToolTip>
                                 <ui:Button.Style>
                                     <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -525,6 +564,141 @@
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="ArrowDownload24" Margin="0,0,6,0" />
                                     <TextBlock Text="Install all" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- ═══ SELECTION CLUSTER — swaps IN PLACE when ≥1 row is selected ═══
+                                 Visibility logic:
+                                   Count chip + Clear:  HasSelection (both modes)
+                                   Scan (N):            HasSelection AND IsUpdateMode
+                                   Install (N):         HasSelection AND IsUpdateMode AND CanShowInstallToolbar
+                                 The count chip is NOT a ToolbarButtonStyle button — it's a pill that
+                                 stays readable in compact mode (the number always shows; only the word
+                                 "selected" collapses via ToolbarLabelStyle).
+                                 Scan all / Install all already collapse on HasSelection via their own triggers above. -->
+
+                            <!-- Divider: shown only when HasSelection (separates the "all" group from the "selected" group) -->
+                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+
+                            <!-- Count chip: accent-tinted pill showing "N selected" -->
+                            <Border Padding="8,4" CornerRadius="6" VerticalAlignment="Center"
+                                    Background="{DynamicResource SystemFillColorAttentionBackgroundBrush}"
+                                    BorderBrush="{DynamicResource SystemFillColorAttentionBrush}"
+                                    BorderThickness="1">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Checkmark24" FontSize="13" Margin="0,0,5,0"
+                                                   Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                                   VerticalAlignment="Center" />
+                                    <TextBlock FontSize="12" FontWeight="SemiBold" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                               Text="{Binding SelectedTab.SelectedComputerCount, Mode=OneWay}" />
+                                    <TextBlock Text=" selected" FontSize="12" VerticalAlignment="Center"
+                                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
+                                               Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Scan (N): HasSelection AND IsUpdateMode -->
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                       Click="OnSelectionScanClick"
+                                       ToolTipService.ShowOnDisabled="True">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Content="Scan selected — scan only the selected machines for applicable updates."
+                                             Style="{StaticResource BusyAwareTooltipStyle}" />
+                                </ui:Button.ToolTip>
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding SelectedTab.HasSelection}" Value="True" />
+                                                    <Condition Binding="{Binding SelectedTab.IsUpdateMode}" Value="True" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Search24" Margin="0,0,6,0" />
+                                    <TextBlock Style="{StaticResource ToolbarLabelStyle}">
+                                        <Run Text="Scan (" /><Run Text="{Binding SelectedTab.SelectedComputerCount, Mode=OneWay}" /><Run Text=")" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Install (N): HasSelection AND IsUpdateMode AND CanShowInstallToolbar -->
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                       Click="OnSelectionInstallClick"
+                                       ToolTipService.ShowOnDisabled="True">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Content="Install selected — download and install applicable updates on the selected machines."
+                                             Style="{StaticResource BusyAwareTooltipStyle}" />
+                                </ui:Button.ToolTip>
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding SelectedTab.HasSelection}" Value="True" />
+                                                    <Condition Binding="{Binding SelectedTab.IsUpdateMode}" Value="True" />
+                                                    <Condition Binding="{Binding SelectedTab.CanShowInstallToolbar}" Value="True" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="ArrowDownload24" Margin="0,0,6,0" />
+                                    <TextBlock Style="{StaticResource ToolbarLabelStyle}">
+                                        <Run Text="Install (" /><Run Text="{Binding SelectedTab.SelectedComputerCount, Mode=OneWay}" /><Run Text=")" />
+                                    </TextBlock>
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Clear selection: HasSelection (both modes) -->
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       Click="OnSelectionClearClick"
+                                       ToolTip="Clear selection — deselect all rows.">
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Dismiss24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Clear selection" Style="{StaticResource ToolbarLabelStyle}" />
                                 </StackPanel>
                             </ui:Button>
 
@@ -857,7 +1031,8 @@
                                   HorizontalAlignment="Stretch" VerticalAlignment="Center"
                                   Background="Transparent" Cursor="SizeNS"
                                   ResizeBehavior="PreviousAndNext" ResizeDirection="Rows"
-                                  ToolTip="Drag to resize the panel" Visibility="Collapsed">
+                                  ToolTip="Drag to resize the panel" Visibility="Collapsed"
+                                  DragCompleted="OnActivitySplitterDragCompleted">
                         <GridSplitter.Template>
                             <ControlTemplate TargetType="GridSplitter">
                                 <Border Background="{TemplateBinding Background}">
@@ -991,6 +1166,35 @@
                                                                Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}">
                                                         <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" applicable update(s) — tick to install" /><Run Text="{Binding FocusedComputer.LastScannedApplicable, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
                                                     </TextBlock>
+                                                    <!-- Session-install summary: visible only when ≥1 update was installed this session. -->
+                                                    <TextBlock Margin="0,2,0,0">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock" BasedOn="{StaticResource LabelText}">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                                <Style.Triggers>
+                                                                    <MultiDataTrigger>
+                                                                        <MultiDataTrigger.Conditions>
+                                                                            <Condition Binding="{Binding IsApplicableMode}" Value="True" />
+                                                                            <Condition Binding="{Binding FocusedSessionInstalledCount, Converter={StaticResource NonZeroToBool}}" Value="True" />
+                                                                        </MultiDataTrigger.Conditions>
+                                                                        <Setter Property="Visibility" Value="Visible" />
+                                                                    </MultiDataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                        <Run Text="{Binding FocusedSessionInstalledCount, Mode=OneWay}" /><Run Text=" installed this session" /><Run>
+                                                            <Run.Style>
+                                                                <Style TargetType="Run">
+                                                                    <Setter Property="Text" Value="" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding FocusedSessionRebootPending}" Value="True">
+                                                                            <Setter Property="Text" Value=" — reboot pending" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Run.Style>
+                                                        </Run>
+                                                    </TextBlock>
                                                     <TextBlock Style="{StaticResource LabelText}" Margin="0,4,0,0"
                                                                Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}">
                                                         <Run Text="{Binding FocusedActiveUpdates.Count, Mode=OneWay}" /><Run Text=" installed update(s) — tick to uninstall" /><Run Text="{Binding FocusedComputer.LastScannedInstalled, Mode=OneWay, StringFormat=' · scanned {0:t}', TargetNullValue=''}" />
@@ -1020,6 +1224,19 @@
                                                    Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
                                                    ToolTip="Install only the ticked updates on this machine." />
 
+                                        <!-- Partial-failure banner: shown when the last install had failures.
+                                             Cleared by the next Applicable-scope scan. -->
+                                        <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
+                                                Background="{DynamicResource SystemFillColorCriticalBackgroundBrush}"
+                                                BorderBrush="{DynamicResource SystemFillColorCriticalBrush}" BorderThickness="1"
+                                                Visibility="{Binding FocusedComputer.LastInstallNote, Converter={StaticResource StringToVis}}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="ErrorCircle24" Margin="0,0,8,0" VerticalAlignment="Top" />
+                                                <TextBlock TextWrapping="Wrap" VerticalAlignment="Center" FontSize="12"
+                                                           Text="{Binding FocusedComputer.LastInstallNote}" />
+                                            </StackPanel>
+                                        </Border>
+
                                         <Border DockPanel.Dock="Bottom" Margin="0,8,0,0" Padding="8,6" CornerRadius="4"
                                                 Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
                                                 BorderBrush="{DynamicResource SystemFillColorCautionBrush}" BorderThickness="1"
@@ -1048,24 +1265,80 @@
                                                                  HeadersVisibility="Column" GridLinesVisibility="Horizontal"
                                                                  SelectionMode="Single" SelectionUnit="FullRow">
                                                         <ui:DataGrid.Columns>
+                                                            <!-- Checkbox: disabled and unticked when installed this session. -->
                                                             <DataGridTemplateColumn Width="Auto">
                                                                 <DataGridTemplateColumn.CellTemplate>
                                                                     <DataTemplate>
                                                                         <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                                  HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                                            <CheckBox.Style>
+                                                                                <Style TargetType="CheckBox">
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding InstalledThisSession}" Value="True">
+                                                                                            <Setter Property="IsEnabled" Value="False" />
+                                                                                            <Setter Property="ToolTip" Value="Installed this session — rescan to update list." />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </CheckBox.Style>
+                                                                        </CheckBox>
                                                                     </DataTemplate>
                                                                 </DataGridTemplateColumn.CellTemplate>
                                                             </DataGridTemplateColumn>
                                                             <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" />
+                                                            <!-- Title: struck-through and dimmed when installed this session. -->
                                                             <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="Auto" MinWidth="120">
                                                                 <DataGridTextColumn.ElementStyle>
                                                                     <Style TargetType="TextBlock">
                                                                         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
                                                                         <Setter Property="ToolTip" Value="{Binding Title}" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding InstalledThisSession}" Value="True">
+                                                                                <Setter Property="TextDecorations" Value="Strikethrough" />
+                                                                                <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
                                                                     </Style>
                                                                 </DataGridTextColumn.ElementStyle>
                                                             </DataGridTextColumn>
                                                             <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                                                            <!-- "Installed" / "Installed — reboot pending" chip: visible only when installed this session. -->
+                                                            <DataGridTemplateColumn Width="Auto">
+                                                                <DataGridTemplateColumn.CellTemplate>
+                                                                    <DataTemplate>
+                                                                        <Border CornerRadius="8" Padding="6,1" VerticalAlignment="Center">
+                                                                            <Border.Style>
+                                                                                <Style TargetType="Border">
+                                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                                    <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                                                                                    <Style.Triggers>
+                                                                                        <DataTrigger Binding="{Binding InstalledThisSession}" Value="True">
+                                                                                            <Setter Property="Visibility" Value="Visible" />
+                                                                                        </DataTrigger>
+                                                                                        <DataTrigger Binding="{Binding InstalledThisSessionRebootPending}" Value="True">
+                                                                                            <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                                                                                        </DataTrigger>
+                                                                                    </Style.Triggers>
+                                                                                </Style>
+                                                                            </Border.Style>
+                                                                            <TextBlock FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center">
+                                                                                <TextBlock.Style>
+                                                                                    <Style TargetType="TextBlock">
+                                                                                        <Setter Property="Text" Value="Installed" />
+                                                                                        <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding InstalledThisSessionRebootPending}" Value="True">
+                                                                                                <Setter Property="Text" Value="Installed — reboot pending" />
+                                                                                                <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </TextBlock.Style>
+                                                                            </TextBlock>
+                                                                        </Border>
+                                                                    </DataTemplate>
+                                                                </DataGridTemplateColumn.CellTemplate>
+                                                            </DataGridTemplateColumn>
                                                         </ui:DataGrid.Columns>
                                                     </ui:DataGrid>
                                                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Margin="20">
@@ -1088,7 +1361,7 @@
                                                                    Command="{Binding ScanFocusedCommand}"
                                                                    ToolTip="Scan only this machine.">
                                                             <ui:Button.Style>
-                                                                <Style TargetType="{x:Type ui:Button}">
+                                                                <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
                                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                                     <Style.Triggers>
                                                                         <DataTrigger Binding="{Binding FocusedComputer.LastScannedApplicable}" Value="{x:Null}">
@@ -1168,7 +1441,7 @@
                                                                    Command="{Binding ScanFocusedCommand}"
                                                                    ToolTip="Scan only this machine.">
                                                             <ui:Button.Style>
-                                                                <Style TargetType="{x:Type ui:Button}">
+                                                                <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
                                                                     <Setter Property="Visibility" Value="Collapsed" />
                                                                     <Style.Triggers>
                                                                         <DataTrigger Binding="{Binding FocusedComputer.LastScannedInstalled}" Value="{x:Null}">

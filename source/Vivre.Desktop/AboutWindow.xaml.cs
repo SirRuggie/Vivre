@@ -21,7 +21,7 @@ public partial class AboutWindow : FluentWindow
 
     /// <summary>Formats the assembly's informational version (e.g. "1.5.0+build.202606031540") into
     /// "v1.5.0 · build 2026-06-03 15:40", so any build is identifiable. Falls back to the numeric version.</summary>
-    private static string RunningVersion()
+    internal static string RunningVersion()
     {
         Assembly app = Assembly.GetExecutingAssembly();
         string informational = app.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion

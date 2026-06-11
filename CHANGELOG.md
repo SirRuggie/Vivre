@@ -6,7 +6,47 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- **Installed updates are marked in the panel** — after a zero-failure install, that install's updates show
+  greyed with an **"Installed — reboot pending"** chip (or just "Installed" when no reboot is needed), their
+  checkboxes untick so Install checked can't re-target them, and the summary line adds "· N installed this
+  session". A partial failure shows an honest banner ("Install completed with N failure(s) — rescan after
+  reboot for exact state") instead of guessing per-row. The panel's "All" button skips marked updates too.
+  Display-only; a fresh scan clears it.
+- **Vitals on the Patching grid** — the same 0-100 vitality pill the Health grid has, so a sick box stands
+  out while patching. Display-only (Patching already runs the vitals sweep); one shared template drives both
+  grids so they can't drift apart.
+- **"What does the Vitality score mean?"** — a new in-app help topic: the scoring rubric (start at 100; the
+  disk / memory / CPU / reboot-pending / uptime penalties; the 80/50 band cut-offs), that the Unhealthy
+  filter includes Offline boxes, that CPU/memory are point-in-time samples a re-check clears, and which
+  signals are gathered but deliberately not scored.
+
 ### Fixed
+- **Install no longer defers on phantom "file-rename" reboots** — the update agent's pre-install servicing
+  guard was the one remaining place counting `PendingFileRenameOperations`, so clicking Install flipped
+  whole fleets to "Reboot pending (file-rename operations queued)" and quietly never started those installs.
+  The guard now uses the five real servicing signals only (CBS in-progress / staged pending.xml / packages
+  pending / CBS reboot / Windows Update reboot).
+- **Download progress counts again** — the MB counter tracked a WUA byte counter that often sits at 0 for
+  the whole download; it now derives from the per-update percent when that happens, and totals display as
+  estimates ("3/~12 MB") since WUA revises them mid-download.
+- **Deselecting a filter chip falls back to All** — unchecking the lit chip used to leave the old filter
+  silently applied with no chip lit (an empty-looking grid when nothing matched).
+- **Right cluster no longer clips at maximized** — the command-bar width was pinned from mistimed
+  measurements (a window's resize event fires before its content re-arranges, and a one-shot startup
+  correction never re-fired). The pin now follows the content area's own size change, which is always
+  post-layout — correct on launch, maximize/restore, resize, and pane animations.
+- **The bottom dock opens at a sane height** — it reopened at whatever height it last had that session with
+  no cap, and a splitter drag pinned the machine grid to a fixed height so the dock could visually swallow
+  it. It now opens clamped to 40% of the section, remembers your dragged height across sessions, and the
+  grid row is re-asserted as flexible on every open/close.
+- **The narrow toolbar stays icon-only when you select rows** — the selection swap's re-measure ignored the
+  re-expand hysteresis and visibly expanded the collapsed bar; it now applies the same rules as a resize.
+- **Scan all / Install all disable on an empty tab** — nothing to act on, so they no longer look clickable.
+- **"Scan this machine" regained its Fluent styling** — its inline style lacked a `BasedOn` and wiped the
+  button template.
+- **The command bar no longer reads as a lighter band** — the workspace section now paints the same surface
+  as the tab strip instead of letting the Mica backdrop show through.
 - **Tab headers were dead to the mouse** — the ✕ close button, the right-click menu (close / close others /
   close all / rename), double-click rename, and middle-click close all did nothing in both Fleet strips: the
   tab header's keyboard-focus ring disabled hit-testing for everything inside it. Removed the offending
@@ -31,6 +71,30 @@ it ships, then gets a dated heading.
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
+- **Selection actions live in the command bar** — selecting rows transforms the bar in place (the
+  Gmail / Explorer pattern): an accent **"N selected"** chip plus **Scan (N)** / **Install (N)** /
+  **Clear selection** appear exactly where Scan all / Install all sat (those yield while a selection
+  exists); Health mode shows the chip + Clear. The old floating selection bar — and the layout jump it
+  caused — is gone entirely, so nothing moves or covers the grid when you select, and a double-click always
+  lands on the row you clicked. The compact icon-only mode keeps the count visible; the status bar's
+  "N selected" stays as ambient feedback.
+- **Double-click opens Details** — double-clicking a machine row (Health and Patching) opens that machine's
+  Details window; running scripts is deliberate and stays in the right-click menu only.
+- **Saved lists carry the tab name** — Save tab as list… prefills the tab's current title, and opening a
+  list names the tab after it. List files on disk are unchanged.
+- **Settings reorganised for clarity** — "Integrations" (WhatsUp Gold server + Package library folder, each
+  with plain-language helper text and a Browse… picker for the folder), "Help & about" (Info icon, inline
+  version line), and a flat **Grid columns ▸ Manage columns…** row alongside the other top-level settings;
+  the in-app guide follows the new paths.
+- **Exclude updates is a proper dialog** — wrapped helper text, a live "currently excluded" list as you
+  type, and leave-blank-to-clear (stated in the dialog).
+- **Clicking empty grid space clears the selection** — Explorer-style; clicks on rows, headers, scrollbars,
+  or buttons are unaffected.
+- **A running vitals check announces itself** — an amber banner above the grid shows the live progress
+  ("Checking vitals — 12/48 · 00:32 — Scan & Install resume when finished") for both the auto-check on
+  load and manual Check Vitals, auto-dismissing when done; the grid stays fully usable underneath. The
+  disabled Scan/Install buttons carry the same live narration as a themed tooltip on hover, so the held
+  state is legible at a glance and in detail.
 - **The shell now adapts to window width** — below ~1200 px the nav pane auto-collapses to the compact icon
   rail (Health / Patching stay one click away); widen again and it restores your last open/closed choice.
   The toolbar measures whether its labelled buttons genuinely fit and only then drops them to centred

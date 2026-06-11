@@ -43,7 +43,16 @@ namespace Vivre.UpdateAgent
                     long tot = (long)p.CurrentUpdateBytesToDownload;
                     if (tot > 0)
                     {
-                        mb = string.Format(CultureInfo.InvariantCulture, " ({0:N0}/{1:N0} MB)", dl / 1048576.0, tot / 1048576.0);
+                        // WUA frequently reports CurrentUpdateBytesDownloaded = 0 for the entire
+                        // download even while the percent climbs. Derive a displayed-bytes estimate
+                        // from the per-update percent so the counter moves with the bar.
+                        if (dl <= 0)
+                        {
+                            dl = (long)(tot * p.CurrentUpdatePercentComplete / 100.0);
+                            if (dl < 0) dl = 0;
+                            if (dl > tot) dl = tot;
+                        }
+                        mb = string.Format(CultureInfo.InvariantCulture, " ({0:N0}/~{1:N0} MB)", dl / 1048576.0, tot / 1048576.0);
                     }
                 }
                 catch

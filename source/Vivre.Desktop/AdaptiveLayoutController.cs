@@ -32,6 +32,12 @@ namespace Vivre.Desktop;
 /// bar grid). The labelled desired width is cached whenever the bar is expanded and re-evaluated
 /// on every SizeChanged and on mode changes. A small hysteresis margin (50 px) prevents flicker
 /// at the collapse/expand boundary.
+///
+/// Command-bar pinning uses a single trigger: <c>_contentHost.SizeChanged</c>.  This event fires
+/// after ContentHost completes its own arrange pass, so <c>_contentHost.ActualWidth</c> is always
+/// the authoritative post-layout value.  This covers startup, maximize/restore, manual resize,
+/// and the end of every pane open/close animation.  <c>window.SizeChanged</c> is kept only for
+/// the nav state machine, which legitimately needs the window width.
 /// </summary>
 internal sealed class AdaptiveLayoutController
 {
@@ -97,17 +103,15 @@ internal sealed class AdaptiveLayoutController
     private readonly Grid _commandBarGrid;
 
     /// <summary>
-    /// Stored window reference — used in <see cref="ConstrainCommandBar"/> to read the real
-    /// window width and compute an explicit <see cref="Grid.Width"/> for the command-bar grid,
-    /// which overrides the inflated available-width that WPF-UI's FluentWindow template supplies
-    /// during the WPF measure pass.
+    /// Stored window reference — used by <see cref="Initialise"/> to wire event handlers.
     /// </summary>
     private Window? _window;
 
     /// <summary>
-    /// The nav-pane width that was used in the most recent <see cref="UpdateContentHostMargin"/>
-    /// call.  Cached so <see cref="ConstrainCommandBar"/> can reuse it when the window is
-    /// resized without the pane width changing.
+    /// The nav-pane width set in the most recent <see cref="UpdateContentHostMargin"/> call.
+    /// Preserved for potential future use and diagnostic clarity; not read by
+    /// <see cref="ConstrainCommandBar"/> (which derives its value from
+    /// <c>_contentHost.ActualWidth</c> directly).
     /// </summary>
     private double _currentPaneWidth;
 
@@ -184,7 +188,7 @@ internal sealed class AdaptiveLayoutController
     /// <summary>
     /// Reads the persisted preference, applies the correct initial state for the
     /// current window width, and wires the <see cref="Window.SizeChanged"/> and
-    /// command-bar <see cref="FrameworkElement.SizeChanged"/> handlers.
+    /// <see cref="FrameworkElement.SizeChanged"/> handlers.
     /// Call once from <c>Window.Loaded</c>.
     /// </summary>
     public void Initialise(Window window)
@@ -201,27 +205,24 @@ internal sealed class AdaptiveLayoutController
         _state = (LayoutState)(-1);
         Evaluate(window.ActualWidth);
 
-        window.SizeChanged += (_, e) =>
+        // The nav state machine depends on window width, so keep this handler.
+        // ConstrainCommandBar is NOT called here: window.SizeChanged fires before
+        // the window's descendants have re-arranged, so _contentHost.ActualWidth is
+        // still the pre-resize value at that point.
+        window.SizeChanged += (_, e) => Evaluate(e.NewSize.Width);
+
+        // Single re-pin trigger: ContentHost.SizeChanged fires AFTER ContentHost
+        // completes its own arrange pass, so ActualWidth is always the settled
+        // post-layout value.  This covers maximize/restore, manual resize, the end
+        // of every pane open/close animation, and the initial startup layout.
+        // No cycle risk: setting _commandBarGrid.Width (a child of ContentHost) does
+        // not change ContentHost's arranged column size, which is determined entirely
+        // by ShellGrid's star-column layout — the parent Grid's size is unaffected by
+        // an explicit Width on one of its children.
+        _contentHost.SizeChanged += (_, _) =>
         {
             ConstrainCommandBar();
-            Evaluate(e.NewSize.Width);
-        };
-
-        // Re-evaluate the toolbar on the command-bar grid's first layout pass.  We also call
-        // ConstrainCommandBar here to ensure the explicit Width is applied AFTER the first
-        // measure pass (when _commandBarGrid.ActualWidth is first populated) — the initial
-        // Evaluate() call above happens too early for the constraint to take effect.
-        // We hook LayoutUpdated on the Window rather than SizeChanged on the grid to avoid
-        // re-entering the Grid's own layout pass, which can corrupt the star/auto column sizing.
-        bool firstLayoutDone = false;
-        window.LayoutUpdated += (_, _) =>
-        {
-            if (!firstLayoutDone && _commandBarGrid.ActualWidth > 100)
-            {
-                firstLayoutDone = true;
-                ConstrainCommandBar();
-                EvaluateToolbarByMeasure();
-            }
+            EvaluateToolbarByMeasure();
         };
     }
 
@@ -348,21 +349,22 @@ internal sealed class AdaptiveLayoutController
         if (_commandBarGrid.ActualWidth < 100) return;
 
         // The available space for the left action cluster is the star column's actual width.
-        // We prefer to compute this directly from the window width (which ConstrainCommandBar
-        // already uses) rather than reading ColumnDefinitions[0].ActualWidth, which is stale
-        // during the SizeChanged handler because the grid has not yet re-laid-out with the new
-        // explicit Width that ConstrainCommandBar just set.
+        // We derive the command-bar width from _contentHost.ActualWidth (the same source that
+        // ConstrainCommandBar uses) rather than from window.ActualWidth, because a maximized
+        // FluentWindow reports ActualWidth inclusive of the invisible resize borders (~7–8 px
+        // per side) and that would make us undercount the available space.
         //
-        // Formula: commandBarWidth = windowWidth - paneWidth - commandBarHMargin
+        // Formula: commandBarWidth = contentHostWidth - commandBarHMargin
         //          starColumnWidth  = commandBarWidth - autoColumnWidth (RightCluster)
         //
         // The RightCluster (Auto column) width is stable — we read it from ColumnDefinitions[1].
         // If the grid hasn't laid out yet we fall back to ColumnDefinitions[0].ActualWidth.
         double available;
-        if (_window is not null && _window.ActualWidth > 1)
+        double contentWidth = _contentHost.ActualWidth;
+        if (contentWidth > 1)
         {
             const double commandBarHMargin = 24;
-            double commandBarWidth = Math.Max(0, _window.ActualWidth - _currentPaneWidth - commandBarHMargin);
+            double commandBarWidth = Math.Max(0, contentWidth - commandBarHMargin);
             double rightColWidth = _commandBarGrid.ColumnDefinitions.Count > 1
                 ? _commandBarGrid.ColumnDefinitions[1].ActualWidth
                 : 0;
@@ -412,32 +414,94 @@ internal sealed class AdaptiveLayoutController
 
     /// <summary>
     /// Re-evaluates the toolbar compact state without a resize — call when the active section's mode
-    /// changes (Health ↔ Patching), since Patching's wider button set changes the width needed.
+    /// changes (Health ↔ Patching) or when the selection changes (which swaps buttons in/out), since
+    /// either event changes the labelled desired width of the action cluster.
+    ///
     /// <para>
-    /// The mode switch changes the set of Visible buttons, which changes the labelled desired width.
-    /// We invalidate the cached width and re-evaluate so the new mode's actual needs are measured.
-    /// If currently compact, we temporarily expand to allow WPF to measure the labelled layout,
-    /// then collapse again if the new mode's buttons don't fit the available width.
+    /// Bug-6 fix: the temporary expand (to measure the labelled layout) must remain
+    /// measurement-only — the final state is decided with the SAME hysteresis rules used by a normal
+    /// resize, not always "collapse if it doesn't fit".  Specifically:
+    /// <list type="bullet">
+    ///   <item>If the bar WAS compact before the call → stay compact UNLESS
+    ///         <c>available &gt;= labelledWidth + ToolbarHysteresis</c> (re-expand threshold).
+    ///         This prevents a narrow-window selection swap from visibly re-expanding the bar.</item>
+    ///   <item>If the bar WAS expanded before the call → collapse only if
+    ///         <c>labelledWidth &gt; available</c> (no hysteresis needed on the collapse side).</item>
+    /// </list>
+    /// All three steps (flip → UpdateLayout → decide) happen synchronously in one dispatcher frame,
+    /// so the intermediate expanded state is never painted.
     /// </para>
     /// </summary>
     public void RefreshToolbar()
     {
-        // Invalidate the cached labelled width so the next layout pass re-caches it.
+        // Remember the pre-refresh compact state so the hysteresis decision below is correct.
+        bool wasCompact = _toolbarCompact;
+
+        // Invalidate the cached labelled width so we get a fresh measurement below.
         _labelledWidth = -1;
 
         if (_toolbarCompact)
         {
-            // Temporarily set compact=false so the cluster shows its labelled layout.
+            // Temporarily set compact=false so the cluster renders its labelled layout.
+            // This expand is measurement-only; we decide the final state a few lines down.
             _toolbarCompact = false;
             _setToolbarCompact(false);
-
-            // Force a synchronous layout pass so DesiredSize reflects the newly-labelled state
-            // before we read it in EvaluateToolbarByMeasure.
-            _commandBarGrid.UpdateLayout();
         }
 
-        // Re-evaluate: if labels don't fit the available width, this will collapse again.
-        EvaluateToolbarByMeasure();
+        // Force a synchronous layout pass so DesiredSize reflects the CURRENT button set —
+        // RefreshToolbar runs right after a mode/selection swap changed button visibilities, so
+        // without this the already-expanded path would measure the pre-swap cluster.
+        _commandBarGrid.UpdateLayout();
+
+        // Read the fresh labelled desired width now that the cluster is in expanded mode.
+        // (EvaluateToolbarByMeasure also reads this, but we need it here for the hysteresis decision.)
+        double desiredWidth = _actionCluster.DesiredSize.Width;
+        if (desiredWidth > 0)
+        {
+            _labelledWidth = desiredWidth;
+        }
+
+        // Derive the available star-column width (same formula as EvaluateToolbarByMeasure).
+        double available = 0;
+        double contentWidth = _contentHost.ActualWidth;
+        if (contentWidth > 1)
+        {
+            const double commandBarHMargin = 24;
+            double commandBarWidth = Math.Max(0, contentWidth - commandBarHMargin);
+            double rightColWidth = _commandBarGrid.ColumnDefinitions.Count > 1
+                ? _commandBarGrid.ColumnDefinitions[1].ActualWidth
+                : 0;
+            available = Math.Max(0, commandBarWidth - rightColWidth);
+        }
+        else
+        {
+            available = _commandBarGrid.ColumnDefinitions.Count > 0
+                ? _commandBarGrid.ColumnDefinitions[0].ActualWidth
+                : _commandBarGrid.ActualWidth;
+        }
+
+        // Apply the standard hysteresis rules to decide the FINAL compact state.
+        // Using the same thresholds as EvaluateToolbarByMeasure so behaviour is consistent.
+        bool finalCompact;
+        if (wasCompact)
+        {
+            // Was compact → stay compact UNLESS there is enough room to re-expand (hysteresis).
+            // This is what prevents a narrow-window selection swap from leaking the expand.
+            finalCompact = !(_labelledWidth > 0 && available >= _labelledWidth + ToolbarHysteresis);
+        }
+        else
+        {
+            // Was expanded → collapse only if the labels genuinely don't fit.
+            finalCompact = _labelledWidth > 0 && _labelledWidth > available;
+        }
+
+        // Apply the final state once. After the measurement flip above, _toolbarCompact is false
+        // (expanded); if finalCompact is true we need to re-collapse, otherwise we leave it expanded.
+        if (_toolbarCompact != finalCompact)
+        {
+            _toolbarCompact = finalCompact;
+            _setToolbarCompact(finalCompact);
+        }
     }
 
     private void Apply(LayoutState state)
@@ -517,34 +581,51 @@ internal sealed class AdaptiveLayoutController
     }
 
     /// <summary>
-    /// Sets the nav-pane column width to <paramref name="paneWidth"/> pixels, which shifts the
-    /// content column (column 1) left edge to that position, then explicitly constrains the
-    /// command-bar grid's width to prevent WPF-UI's FluentWindow from inflating it during the
-    /// WPF layout measure pass.
+    /// Sets the nav-pane column width to <paramref name="paneWidth"/> pixels, which shifts
+    /// the content column (column 1) left edge to that position.  The command-bar pin is NOT
+    /// applied here — the resulting ContentHost resize will fire
+    /// <c>_contentHost.SizeChanged</c>, which calls <see cref="ConstrainCommandBar"/> at the
+    /// correct post-arrange moment.
     /// </summary>
     private void UpdateContentHostMargin(double paneWidth)
     {
         _currentPaneWidth = paneWidth;
         _navPaneColumn.Width = new GridLength(paneWidth);
-        ConstrainCommandBar();
     }
 
     /// <summary>
     /// Pins <see cref="_commandBarGrid"/> to an explicit <see cref="FrameworkElement.Width"/> equal
-    /// to the window's content width minus the nav-pane width and the command-bar's left+right
-    /// margins.  This prevents WPF-UI's <c>FluentWindow</c> template from inflating the measure
-    /// context beyond the physical window width, which would push the Auto-column right cluster
+    /// to the content-host width minus the command-bar's left+right margins.
+    ///
+    /// <para>
+    /// Called exclusively from the <c>_contentHost.SizeChanged</c> handler (wired in
+    /// <see cref="Initialise"/>), so <c>_contentHost.ActualWidth</c> is always the authoritative,
+    /// post-arrange value — whether the trigger was startup layout, maximize/restore, manual
+    /// resize, or the completion of a pane open/close animation.
+    /// </para>
+    ///
+    /// <para>
+    /// Width is derived from <see cref="_contentHost.ActualWidth"/> rather than from
+    /// <c>window.ActualWidth − paneWidth</c>.  WPF-UI's <c>FluentWindow</c> uses a
+    /// <c>ClientAreaBorder</c> in its template that automatically applies
+    /// <c>Padding = WindowChromeNonClientFrameThickness</c> when the window is maximized, which
+    /// insets the client area by exactly the off-screen resize-border overhang (~7–8 px/side).
+    /// Because <c>ContentHost</c> lives inside that client area, its <c>ActualWidth</c> already
+    /// reflects the visible inset area — no separate maximized clamp is required here.
+    /// </para>
+    ///
+    /// This prevents WPF-UI's <c>FluentWindow</c> template from inflating the measure context
+    /// beyond the physical window width, which would push the Auto-column right cluster
     /// (RightCluster) off-screen.
     /// </summary>
     private void ConstrainCommandBar()
     {
-        if (_window is null) return;
-        double windowWidth = _window.ActualWidth;
-        if (windowWidth < 1) return;
+        double contentWidth = _contentHost.ActualWidth;
+        if (contentWidth < 1) return;
 
         // CommandBarGrid.Margin = "12,2,12,6" → 12 left + 12 right = 24 total horizontal margin.
         const double commandBarHMargin = 24;
-        double width = Math.Max(0, windowWidth - _currentPaneWidth - commandBarHMargin);
+        double width = Math.Max(0, contentWidth - commandBarHMargin);
         _commandBarGrid.Width = width;
         _commandBarGrid.HorizontalAlignment = HorizontalAlignment.Left;
     }

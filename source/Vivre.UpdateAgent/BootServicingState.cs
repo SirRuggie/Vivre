@@ -10,6 +10,10 @@ namespace Vivre.UpdateAgent
     /// in-progress servicing transaction or a pending offline-servicing pass can collide with the
     /// OS's boot-time CSI ResolvePendingTransactions and contribute to a STATUS_SHARING_VIOLATION
     /// rollback. If any signal is set we defer rather than touch the servicing stack.</para>
+    ///
+    /// <para>PendingFileRenameOperations is deliberately excluded — it over-reports on long-uptime
+    /// servers from benign file operations and does not indicate a servicing collision risk. The
+    /// display probes (VitalsProbe, ConfigMgrClient, HostRebootProbe) apply the same exclusion.</para>
     /// </summary>
     internal static class BootServicingState
     {
@@ -19,10 +23,9 @@ namespace Vivre.UpdateAgent
         /// </summary>
         public static (bool Busy, string Reason) Evaluate(
             bool cbsRebootInProgress,
-            bool cbsRebootPending,
-            bool cbsPackagesPending,
             bool pendingXmlExists,
-            bool pendingFileRename,
+            bool cbsPackagesPending,
+            bool cbsRebootPending,
             bool wuauRebootRequired)
         {
             if (cbsRebootInProgress)
@@ -48,11 +51,6 @@ namespace Vivre.UpdateAgent
             if (wuauRebootRequired)
             {
                 return (true, "a reboot is required by Windows Update");
-            }
-
-            if (pendingFileRename)
-            {
-                return (true, "a reboot is pending (file-rename operations queued)");
             }
 
             return (false, string.Empty);

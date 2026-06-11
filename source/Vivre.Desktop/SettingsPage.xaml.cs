@@ -1,5 +1,7 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using Microsoft.Win32;
 using Vivre.Core.Credentials;
 using Vivre.Desktop.ViewModels;
 using Wpf.Ui.Controls;
@@ -10,8 +12,9 @@ namespace Vivre.Desktop;
 
 /// <summary>
 /// The Settings section shown inside the NavigationView content area. Consolidates:
-/// theme toggle, session credential, auto-check, WUG server, packages folder, and links
-/// to Columns / Help / About. Lives in the keep-alive content grid — never rebuilt.
+/// theme toggle, session credential, auto-check, grid columns shortcut, WhatsUp Gold server,
+/// package library folder, and links to Help / About. Lives in the keep-alive content grid —
+/// never rebuilt.
 /// </summary>
 public partial class SettingsPage : UserControl
 {
@@ -40,6 +43,9 @@ public partial class SettingsPage : UserControl
         AutoToggle.IsChecked = s.AutoCheckOnLoad;
         WugServerBox.Text = s.WugServer;
         PackagesFolderBox.Text = s.PackagesFolder;
+
+        // Inline version in the Help & about expander.
+        VersionText.Text = $"Vivre {AboutWindow.RunningVersion()}";
 
         // Tick the right theme radio.
         UpdateThemeChecks(s.Theme);
@@ -121,6 +127,24 @@ public partial class SettingsPage : UserControl
     {
         string value = PackagesFolderBox.Text.Trim();
         PersistSettings(s => s.PackagesFolder = value);
+    }
+
+    private void OnBrowsePackagesFolder(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Pick your package library folder" };
+        string? current = PackagesFolderBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+        {
+            dialog.InitialDirectory = current;
+        }
+
+        if (dialog.ShowDialog(_ownerWindow) != true)
+        {
+            return;
+        }
+
+        PackagesFolderBox.Text = dialog.FolderName;
+        PersistSettings(s => s.PackagesFolder = dialog.FolderName);
     }
 
     // ── Tools ──────────────────────────────────────────────────────────────

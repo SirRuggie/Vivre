@@ -135,6 +135,78 @@
             </Setter>
         </Style>
 
+        <!-- Item 3: shared vitals pill cell template — used by BOTH the Health grid (ComputerGrid)
+             and the Patching grid (UpdateGrid).  Both grids bind the same Computer rows; the vitals
+             sweep already fills VitalityScore/Band/Reasons, so no new probing is needed.
+             Extracting into one shared resource prevents the template drifting out of sync between
+             the two grids (it already drifted once when the Health grid was updated and the Patching
+             grid was missed). -->
+        <DataTemplate x:Key="VitalsPillCellTemplate">
+            <!-- 0-100 vitality score, coloured by band. DataTriggers + DynamicResource
+                 so colors re-resolve on theme switch. Hidden until scored. -->
+            <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left" MinWidth="26"
+                    Visibility="{Binding VitalityBand, Converter={StaticResource NotNullToVis}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding VitalityBand}" Value="Healthy">
+                                <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding VitalityBand}" Value="Warning">
+                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding VitalityBand}" Value="Critical">
+                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding VitalityBand}" Value="Offline">
+                                <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <!-- Tooltip is the "why": the scored reasons (worst first) over the raw digest.
+                     Right-click ▸ Details… ▸ Vitals shows the full breakdown. -->
+                <Border.ToolTip>
+                    <ToolTip>
+                        <StackPanel MaxWidth="340">
+                            <TextBlock Text="{Binding VitalsSummary}" FontWeight="SemiBold" TextWrapping="Wrap"
+                                       Visibility="{Binding VitalsSummary, Converter={StaticResource StringToVis}}" />
+                            <ItemsControl ItemsSource="{Binding VitalityReasons}" Margin="0,4,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat='• {0}'}" TextWrapping="Wrap" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="Right-click ▸ Details… ▸ Vitals for the full breakdown."
+                                       FontSize="11" Margin="0,6,0,0"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        </StackPanel>
+                    </ToolTip>
+                </Border.ToolTip>
+                <TextBlock Text="{Binding VitalityScore, TargetNullValue=—}"
+                           HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding VitalityBand}" Value="Healthy">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding VitalityBand}" Value="Warning">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding VitalityBand}" Value="Critical">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Border>
+        </DataTemplate>
+
         <!-- A filter "chip": a pill-shaped ToggleButton themed with the app's Fluent brushes — subtle
              fill by default, accent fill + light text when active. Checked state binds to ActiveFilter
              via the enum⇄bool converter, so the chips behave as one radio group. -->
@@ -208,6 +280,8 @@
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
                 <ToggleButton Style="{StaticResource FilterChip}" Margin="0"
+                              Tag="{x:Static vm:RowFilter.All}"
+                              Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="SelectAllOn24" FontSize="14" Margin="0,0,5,0"
@@ -216,6 +290,8 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.UpdatesAvailable}"
+                              Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines with updates available to install"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.UpdatesAvailable}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -225,6 +301,8 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.RebootPending}"
+                              Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="14" Margin="0,0,5,0"
@@ -233,6 +311,8 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Errors}"
+                              Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="14" Margin="0,0,5,0"
@@ -241,6 +321,8 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Offline}"
+                              Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="PlugDisconnected24" FontSize="14" Margin="0,0,5,0"
@@ -249,6 +331,8 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Done}"
+                              Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
                         <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="14" Margin="0,0,5,0"
@@ -257,6 +341,8 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Unhealthy}"
+                              Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines whose vitality is Warning, Critical, or Offline (run Check Vitals first)"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -279,103 +365,27 @@
             </Grid><!-- end filter sub-row Grid -->
         </Grid><!-- end outer filter bar Grid -->
 
-        <!-- Contextual selection command bar (Phase 4 / Chunk 2).
-             Slides + fades in above the grid when ≥1 machine is selected; animates out when the
-             selection clears. Height and Opacity are controlled by code-behind DoubleAnimations —
-             the element stays Collapsed (Height=0 / Opacity=0) when nothing is selected so it
-             leaves no gap. Buttons: Scan (N) + Install (N) in update mode, Clear selection always.
-             Named SelectionBar so the code-behind can find it via x:Name. -->
-        <Border x:Name="SelectionBar"
-                Grid.Row="1"
-                Height="0"
-                Opacity="0"
+        <!-- P: amber "Checking vitals" banner — Row 1 (the now-empty layout band between filter and grids).
+             WinUI InfoBar style: takes its own slim height while visible, collapses when done.
+             Bound to IsVitalsSweepRunning; grid stays fully interactive while it shows. -->
+        <Border Grid.Row="1"
                 Margin="12,0,12,4"
-                Padding="10,7"
+                Padding="10,6"
                 CornerRadius="4"
-                Background="{DynamicResource SystemFillColorAttentionBackgroundBrush}"
-                BorderBrush="{DynamicResource SystemFillColorAttentionBrush}"
+                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                BorderBrush="{DynamicResource SystemFillColorCautionBrush}"
                 BorderThickness="1"
-                ClipToBounds="True">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
-
-                <!-- Count label -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <ui:SymbolIcon Symbol="Checkmark24" FontSize="14" Margin="0,0,6,0"
-                                   Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}"
-                                   VerticalAlignment="Center" />
-                    <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
-                               Foreground="{DynamicResource AccentTextFillColorPrimaryBrush}">
-                        <Run Text="{Binding SelectedComputerCount, Mode=OneWay}" /><Run Text=" machines selected" />
-                    </TextBlock>
-                </StackPanel>
-
-                <!-- Action buttons (update mode only for Scan/Install) -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0,0,0" VerticalAlignment="Center">
-                    <!-- Scan (N) — update mode only -->
-                    <ui:Button x:Name="SelectionScanButton"
-                               Icon="{ui:SymbolIcon Search24}"
-                               IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
-                               Click="OnSelectionScanClick"
-                               ToolTip="Scan only the selected machines for applicable updates.">
-                        <ui:Button.Content>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Scan (" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding SelectedComputerCount, Mode=OneWay}" VerticalAlignment="Center" />
-                                <TextBlock Text=")" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </ui:Button.Content>
-                        <ui:Button.Style>
-                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsUpdateMode}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ui:Button.Style>
-                    </ui:Button>
-                    <!-- Install (N) — update mode + CanShowInstallToolbar only -->
-                    <ui:Button x:Name="SelectionInstallButton"
-                               Margin="8,0,0,0"
-                               Appearance="Primary"
-                               Icon="{ui:SymbolIcon ArrowDownload24}"
-                               IsEnabled="{Binding IsBusy, Converter={StaticResource InverseBool}}"
-                               Click="OnSelectionInstallClick"
-                               ToolTip="Download and install applicable updates on the selected machines.">
-                        <ui:Button.Content>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="Install (" VerticalAlignment="Center" />
-                                <TextBlock Text="{Binding SelectedComputerCount, Mode=OneWay}" VerticalAlignment="Center" />
-                                <TextBlock Text=")" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </ui:Button.Content>
-                        <ui:Button.Style>
-                            <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
-                                <Setter Property="Visibility" Value="Collapsed" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding CanShowInstallToolbar}" Value="True">
-                                        <Setter Property="Visibility" Value="Visible" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ui:Button.Style>
-                    </ui:Button>
-                </StackPanel>
-
-                <!-- Clear selection -->
-                <ui:Button Grid.Column="2" x:Name="SelectionClearButton"
-                           Appearance="Secondary"
-                           Icon="{ui:SymbolIcon Dismiss24}"
-                           Content="Clear selection"
-                           Click="OnSelectionClearClick"
-                           ToolTip="Deselect all rows." />
-            </Grid>
+                Visibility="{Binding IsVitalsSweepRunning, Converter={StaticResource BoolToVis}}">
+            <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Warning24" Margin="0,0,8,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                <TextBlock VerticalAlignment="Center" FontSize="12" TextWrapping="NoWrap"
+                           Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                           Text="{Binding SweepStatus}" />
+                <TextBlock VerticalAlignment="Center" FontSize="12" Margin="6,0,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="— Scan &amp; Install resume when finished" />
+            </StackPanel>
         </Border>
 
         <!-- Machines grid + update grid + the M13/M29 empty-state overlay are all siblings in root
@@ -402,6 +412,7 @@
                      ClipboardCopyMode="IncludeHeader"
                      SelectionChanged="OnGridSelectionChanged"
                      MouseDoubleClick="OnRowDoubleClick"
+                     MouseLeftButtonDown="OnGridEmptyAreaClick"
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
@@ -416,75 +427,8 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn Header="Vitals" Width="Auto" MinWidth="64" SortMemberPath="VitalityScore">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <!-- 0-100 vitality score, coloured by band. DataTriggers + DynamicResource
-                                 so colors re-resolve on theme switch. Hidden until scored. -->
-                            <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left" MinWidth="26"
-                                    Visibility="{Binding VitalityBand, Converter={StaticResource NotNullToVis}}">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Healthy">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorSuccessBackgroundBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Warning">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCautionBackgroundBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Critical">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding VitalityBand}" Value="Offline">
-                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                                <!-- Tooltip is the "why": the scored reasons (worst first) over the raw digest.
-                                     Right-click ▸ Details… ▸ Vitals shows the full breakdown. -->
-                                <Border.ToolTip>
-                                    <ToolTip>
-                                        <StackPanel MaxWidth="340">
-                                            <TextBlock Text="{Binding VitalsSummary}" FontWeight="SemiBold" TextWrapping="Wrap"
-                                                       Visibility="{Binding VitalsSummary, Converter={StaticResource StringToVis}}" />
-                                            <ItemsControl ItemsSource="{Binding VitalityReasons}" Margin="0,4,0,0">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <TextBlock Text="{Binding StringFormat='• {0}'}" TextWrapping="Wrap" />
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                            <TextBlock Text="Right-click ▸ Details… ▸ Vitals for the full breakdown."
-                                                       FontSize="11" Margin="0,6,0,0"
-                                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
-                                        </StackPanel>
-                                    </ToolTip>
-                                </Border.ToolTip>
-                                <TextBlock Text="{Binding VitalityScore, TargetNullValue=—}"
-                                           HorizontalAlignment="Center" FontSize="11" FontWeight="SemiBold">
-                                    <TextBlock.Style>
-                                        <Style TargetType="TextBlock">
-                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding VitalityBand}" Value="Healthy">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorSuccessBrush}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding VitalityBand}" Value="Warning">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
-                                                </DataTrigger>
-                                                <DataTrigger Binding="{Binding VitalityBand}" Value="Critical">
-                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBlock.Style>
-                                </TextBlock>
-                            </Border>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="Vitals" Width="Auto" MinWidth="64" SortMemberPath="VitalityScore"
+                                        CellTemplate="{StaticResource VitalsPillCellTemplate}" />
                 <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -629,6 +573,8 @@
                      SelectionUnit="FullRow"
                      ClipboardCopyMode="IncludeHeader"
                      SelectionChanged="OnGridSelectionChanged"
+                     MouseDoubleClick="OnRowDoubleClick"
+                     MouseLeftButtonDown="OnGridEmptyAreaClick"
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewMouseLeftButtonUp="OnUpdateGridLeftClick"
                      PreviewKeyDown="OnGridKeyDown">
@@ -644,6 +590,10 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
+                <!-- Item 3: vitals pill — same rows as the Health grid; the vitals sweep already fills
+                     VitalityScore/Band/Reasons, so this is a display-only addition with no new probing. -->
+                <DataGridTemplateColumn Header="Vitals" Width="Auto" MinWidth="64" SortMemberPath="VitalityScore"
+                                        CellTemplate="{StaticResource VitalsPillCellTemplate}" />
                 <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="110" SortMemberPath="PatchState">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>

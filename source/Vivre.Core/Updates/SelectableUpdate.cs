@@ -22,6 +22,30 @@ public partial class SelectableUpdate : ObservableObject
     [ObservableProperty]
     public partial bool IsSelected { get; set; }
 
+    /// <summary>
+    /// True when this update was successfully installed during the current app session.
+    /// Runtime-only — never persisted, never serialised. Reset when the applicable list is
+    /// repopulated by a fresh scan (via <see cref="Reset"/>).
+    /// Drives the "Installed — reboot pending" / "Installed" chip and the disabled/greyed row in the UI.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool InstalledThisSession { get; set; }
+
+    /// <summary>
+    /// Whether the install that set <see cref="InstalledThisSession"/> reported a reboot as required.
+    /// Only meaningful when <see cref="InstalledThisSession"/> is true.
+    /// Runtime-only — never persisted.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool InstalledThisSessionRebootPending { get; set; }
+
+    /// <summary>Resets all session-install state. Called when a new scan repopulates the applicable list.</summary>
+    public void Reset()
+    {
+        InstalledThisSession = false;
+        InstalledThisSessionRebootPending = false;
+    }
+
     /// <summary>KB article id (e.g. "5037782"), null if the update has none.</summary>
     public string? Kb => Update.ArticleId;
 

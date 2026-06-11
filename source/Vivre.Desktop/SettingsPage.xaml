@@ -72,6 +72,30 @@
                 </Grid>
             </Border>
 
+            <!-- ── Grid columns (flat row) ───────────────────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0" Symbol="Table24" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:TextBlock Text="Grid columns" />
+                        <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                                      Text="Show or hide built-in columns; add custom PowerShell columns." />
+                    </StackPanel>
+                    <ui:Button Grid.Column="2" Content="Manage columns…"
+                               VerticalAlignment="Center" Margin="16,0,0,0"
+                               Click="OnOpenColumns"
+                               ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
+                </Grid>
+            </Border>
+
             <!-- ── Remote credentials (collapsed expander) ──────────────────── -->
             <ui:CardExpander x:Name="CredentialCard" Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Key24}"
@@ -121,52 +145,58 @@
                 </StackPanel>
             </ui:CardExpander>
 
-            <!-- ── Integrations & paths (collapsed expander) ─────────────── -->
+            <!-- ── Integrations (collapsed expander) ─────────────────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Link24}"
-                             Header="Integrations &amp; paths">
+                             Header="Integrations">
                 <StackPanel Margin="0,8,0,0">
-                    <Grid>
+
+                    <!-- WhatsUp Gold server -->
+                    <ui:TextBlock Text="WhatsUp Gold server" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="WugServerBox"
+                                PlaceholderText="e.g. 10.70.25.111"
+                                LostFocus="OnWugServerChanged"
+                                Margin="0,0,0,4" />
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16"
+                                  Text="Used by right-click ▸ WhatsUp Gold maintenance… to put machines in or out of monitoring maintenance. Hostname or IP; connects over HTTPS with the credentials you enter in that dialog." />
+
+                    <!-- Package library folder -->
+                    <ui:TextBlock Text="Package library folder" Margin="0,0,0,4" />
+                    <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="130" />
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-
-                        <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8"
-                                      Text="WUG server" />
-                        <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="WugServerBox"
-                                      PlaceholderText="e.g. 10.70.25.111"
-                                      LostFocus="OnWugServerChanged" />
-
-                        <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center"
-                                      Text="Packages folder" />
-                        <ui:TextBox   Grid.Row="1" Grid.Column="1" x:Name="PackagesFolderBox"
-                                      PlaceholderText="e.g. \\server\packages"
-                                      LostFocus="OnPackagesFolderChanged" />
+                        <ui:TextBox Grid.Column="0" x:Name="PackagesFolderBox"
+                                    PlaceholderText="e.g. \\server\packages"
+                                    LostFocus="OnPackagesFolderChanged"
+                                    Margin="0,0,8,0" />
+                        <ui:Button Grid.Column="1" Content="Browse…"
+                                   Click="OnBrowsePackagesFolder"
+                                   ToolTip="Pick the package library folder." />
                     </Grid>
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                                  Text="Source library for right-click ▸ Software ▸ Stage software… — each subfolder or file here becomes a stageable package. Local or UNC path (e.g. \\server\packages). This is where packages come from, not where they're delivered." />
+
                 </StackPanel>
             </ui:CardExpander>
 
-            <!-- ── Tools &amp; about (collapsed expander) ───────────────── -->
+            <!-- ── Help &amp; about (collapsed expander) ─────────────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
-                             Icon="{ui:SymbolIcon Wrench24}"
-                             Header="Tools &amp; about">
-                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <ui:Button Content="Columns…" Icon="{ui:SymbolIcon Table24}"
-                               Click="OnOpenColumns"
-                               ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
-                    <ui:Button Content="How to use Vivre…" Icon="{ui:SymbolIcon QuestionCircle24}"
-                               Margin="8,0,0,0"
-                               Click="OnOpenHelp"
-                               ToolTip="Open the in-app how-to guide (F1)." />
-                    <ui:Button Content="About Vivre…" Icon="{ui:SymbolIcon Info24}"
-                               Margin="8,0,0,0"
-                               Click="OnOpenAbout"
-                               ToolTip="Version, licence, and credits." />
+                             Icon="{ui:SymbolIcon Info24}"
+                             Header="Help &amp; about">
+                <StackPanel Margin="0,8,0,0">
+                    <ui:TextBlock x:Name="VersionText" Appearance="Secondary"
+                                  Margin="0,0,0,10" />
+                    <StackPanel Orientation="Horizontal">
+                        <ui:Button Content="How to use Vivre…" Icon="{ui:SymbolIcon QuestionCircle24}"
+                                   Click="OnOpenHelp"
+                                   ToolTip="Open the in-app how-to guide (F1)." />
+                        <ui:Button Content="About Vivre…" Icon="{ui:SymbolIcon Info24}"
+                                   Margin="8,0,0,0"
+                                   Click="OnOpenAbout"
+                                   ToolTip="Version, licence, and credits." />
+                    </StackPanel>
                 </StackPanel>
             </ui:CardExpander>
 
