@@ -26,6 +26,162 @@
         <local:LogSeveritySymbolConverter x:Key="SeveritySymbol" />
         <local:StringToVisibilityConverter x:Key="StringToVis" />
         <local:FleetSectionToVisibilityConverter x:Key="FleetSectionToVis" />
+        <local:CompactThicknessConverter x:Key="CompactThickness" />
+
+        <!-- Toolbar button label: collapsed in compact mode, visible in expanded mode.
+             Bind to ToolbarCompact on the MainWindow ancestor via a DataTrigger. -->
+        <Style x:Key="ToolbarLabelStyle" TargetType="TextBlock">
+            <Setter Property="Visibility" Value="Visible" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}}" Value="True">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
+        <!-- ═══════════════════════════════════════════════════════════════════════
+             COMMAND-BAR BUTTON STYLES — Task-Manager / Fluent CommandBar pattern.
+             Frameless at rest (no border, no fill), subtle fill on hover/press,
+             all using DynamicResource Fluent theme tokens (light + dark safe).
+             ═══════════════════════════════════════════════════════════════════════ -->
+
+        <!-- Frameless ui:Button for the command bar.
+             Appearance=Transparent zeroes the rest fill via the template trigger.
+             We then override MouseOverBackground/PressedBackground/border so the
+             hover uses Fluent SubtleFill tokens instead of the default elevated fill.
+             BorderThickness=0 + BorderBrush=Transparent removes the rest-state box.
+             BasedOn preserves all sizing, padding, icon layout, and disabled state. -->
+        <Style x:Key="ToolbarButtonStyle" TargetType="ui:Button"
+               BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance"          Value="Transparent" />
+            <Setter Property="BorderThickness"     Value="0" />
+            <Setter Property="BorderBrush"         Value="Transparent" />
+            <Setter Property="MouseOverBackground" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+            <Setter Property="MouseOverBorderBrush" Value="Transparent" />
+            <Setter Property="PressedBackground"   Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+            <Setter Property="PressedBorderBrush"  Value="Transparent" />
+        </Style>
+
+        <!-- Frameless ui:SplitButton.  SplitButton is BasedOn DefaultUiButtonStyle and
+             exposes the same MouseOverBackground / PressedBackground attached properties,
+             so identical overrides apply.  The inner PART_Content / PART_Toggle borders
+             each bind Background from the control's MouseOverBackground / PressedBackground
+             properties, so setting them here flows through correctly. -->
+        <Style x:Key="ToolbarSplitButtonStyle" TargetType="ui:SplitButton"
+               BasedOn="{StaticResource {x:Type ui:SplitButton}}">
+            <Setter Property="Appearance"           Value="Transparent" />
+            <Setter Property="BorderThickness"      Value="0" />
+            <Setter Property="BorderBrush"          Value="Transparent" />
+            <Setter Property="MouseOverBackground"  Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+            <Setter Property="MouseOverBorderBrush" Value="Transparent" />
+            <Setter Property="PressedBackground"    Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+            <Setter Property="PressedBorderBrush"   Value="Transparent" />
+        </Style>
+
+        <!-- Monitor ToggleButton — frameless rest; subtle fill on hover/press;
+             ON state: accent-coloured icon+label (AccentTextFillColorPrimaryBrush) +
+             faint accent-tinted background (SubtleFillColorSecondaryBrush tinted by the
+             ToggleButtonBackgroundChecked token) — clearly "on" without a solid box.
+             We provide a minimal ControlTemplate so the trigger logic is fully owned here:
+             the WPF-UI DefaultToggleButtonStyle trigger for IsChecked=True sets a solid
+             ToggleButtonBackgroundChecked fill, which we don't want.
+             CornerRadius bound to the Fluent ControlCornerRadius token for consistency. -->
+        <Style x:Key="ToolbarMonitorStyle" TargetType="ToggleButton">
+            <Setter Property="FocusVisualStyle"         Value="{DynamicResource DefaultControlFocusVisualStyle}" />
+            <Setter Property="Background"               Value="Transparent" />
+            <Setter Property="Foreground"               Value="{DynamicResource TextFillColorPrimaryBrush}" />
+            <Setter Property="BorderBrush"              Value="Transparent" />
+            <Setter Property="BorderThickness"          Value="0" />
+            <Setter Property="HorizontalAlignment"      Value="Left" />
+            <Setter Property="VerticalAlignment"        Value="Center" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment"   Value="Center" />
+            <Setter Property="FontSize"                 Value="{DynamicResource ControlContentThemeFontSize}" />
+            <Setter Property="SnapsToDevicePixels"      Value="True" />
+            <Setter Property="OverridesDefaultStyle"    Value="True" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="ContentBorder"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="{DynamicResource ControlCornerRadius}"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter x:Name="ContentPresenter"
+                                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True"
+                                              TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <!-- Hover (unchecked) -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsChecked"   Value="False" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ContentBorder" Property="Background"
+                                        Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                            </MultiTrigger>
+                            <!-- Pressed (unchecked) -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsPressed"  Value="True" />
+                                    <Condition Property="IsChecked"  Value="False" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ContentBorder" Property="Background"
+                                        Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                            </MultiTrigger>
+                            <!-- ON state: faint accent-tinted background + accent foreground.
+                                 SubtleFillColorSecondaryBrush gives the tinted look in both themes;
+                                 AccentTextFillColorPrimaryBrush colours icon + label in accent. -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsEnabled" Value="True" />
+                                    <Condition Property="IsChecked" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ContentBorder" Property="Background"
+                                        Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+                                <Setter TargetName="ContentPresenter" Property="TextElement.Foreground"
+                                        Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                            </MultiTrigger>
+                            <!-- Hover (checked) -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsMouseOver" Value="True" />
+                                    <Condition Property="IsChecked"   Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ContentBorder" Property="Background"
+                                        Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                <Setter TargetName="ContentPresenter" Property="TextElement.Foreground"
+                                        Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                            </MultiTrigger>
+                            <!-- Pressed (checked) -->
+                            <MultiTrigger>
+                                <MultiTrigger.Conditions>
+                                    <Condition Property="IsPressed" Value="True" />
+                                    <Condition Property="IsChecked" Value="True" />
+                                </MultiTrigger.Conditions>
+                                <Setter TargetName="ContentBorder" Property="Background"
+                                        Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+                                <Setter TargetName="ContentPresenter" Property="TextElement.Foreground"
+                                        Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
+                            </MultiTrigger>
+                            <!-- Disabled -->
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="ContentBorder" Property="Background"
+                                        Value="Transparent" />
+                                <Setter TargetName="ContentPresenter" Property="TextElement.Foreground"
+                                        Value="{DynamicResource TextFillColorDisabledBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
     </ui:FluentWindow.Resources>
 
     <!-- Keyboard accelerators → routed to code-behind. -->
@@ -57,7 +213,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="Vivre">
+        <ui:TitleBar Grid.Row="0" Title="Vivre" Height="36">
             <ui:TitleBar.Icon>
                 <ui:ImageIcon Source="pack://application:,,,/Assets/AppIcon.png" Width="18" Height="18" />
             </ui:TitleBar.Icon>
@@ -81,17 +237,25 @@
             </tb:TaskbarIcon.ContextMenu>
         </tb:TaskbarIcon>
 
-        <!-- Shell row 1: NavigationView pane overlaid with keep-alive content host.
-             NavView spans the full row and owns the left pane (hamburger toggle, icon strip).
-             ContentHost sits over the NavView with a left Margin that matches the pane width so
-             it never overlaps the pane — code-behind adjusts that margin on PaneOpened/PaneClosed.
-             Navigate() is never called on NavView, so its built-in Frame stays empty; SelectionChanged
-             only toggles the Visibility of ComputersSection / SettingsSection in ContentHost. -->
-        <Grid Grid.Row="1">
+        <!-- Shell row 1: NavigationView pane beside the keep-alive content host.
+             Column 0 = the nav pane (compact 48 px or open 200 px — code-behind sets the Width);
+             Column 1 = the content area (*). NavView spans both columns so its left pane renders
+             in column 0 and its (empty) right frame renders in column 1. ContentHost is placed in
+             column 1 only, so WPF naturally constrains it to the content-area width.
+             Navigate() is never called on NavView; SelectionChanged only toggles the Visibility of
+             sections in ContentHost (keep-alive: sections are never rebuilt on nav switch). -->
+        <Grid Grid.Row="1" x:Name="ShellGrid">
+            <Grid.ColumnDefinitions>
+                <!-- Column 0: nav pane width — set from code-behind (48 compact, 200 open). -->
+                <ColumnDefinition x:Name="NavPaneColumn" Width="48" />
+                <!-- Column 1: content area — takes the remaining width. -->
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
 
             <!-- NavigationView — pane-only (no Navigate() calls; built-in Frame is empty).
-                 LeftCompact: icons shown when compact (pane closed), icons+labels when open. -->
-            <ui:NavigationView x:Name="NavView"
+                 Spans both columns so the left pane occupies column 0 and the empty frame occupies
+                 column 1. LeftCompact: icons shown when compact (pane closed), icons+labels when open. -->
+            <ui:NavigationView x:Name="NavView" Grid.ColumnSpan="2"
                                PaneDisplayMode="Left"
                                IsPaneOpen="False"
                                IsPaneToggleVisible="True"
@@ -150,11 +314,11 @@
 
             </ui:NavigationView>
 
-            <!-- Keep-alive content host — placed over the NavView with a left margin equal to the
-                 pane's compact/open width. Both sections live here permanently; SelectionChanged
-                 toggles their Visibility only — the workspace (TabControlEx + loaded state) is NEVER
-                 rebuilt when switching Computers ↔ Settings. -->
-            <Grid x:Name="ContentHost" Margin="48,0,0,0">
+            <!-- Keep-alive content host — column 1 of the ShellGrid (the content area to the right of
+                 the nav pane). Both sections live here permanently; SelectionChanged toggles their
+                 Visibility only — the workspace (TabControlEx + loaded state) is NEVER rebuilt when
+                 switching Computers ↔ Settings. -->
+            <Grid x:Name="ContentHost" Grid.Column="1">
 
                 <!-- ═════════════════ COMPUTERS SECTION ══════════════════════ -->
                 <Grid x:Name="ComputersSection" Visibility="Visible">
@@ -170,76 +334,93 @@
                          (Grid.Column 1, Auto: Lists / Add-computer box / Add / Paste). The * column gives the
                          left actions the remaining width and clips them when the window is narrow, so the
                          right input cluster is always reachable. -->
-                    <Grid Grid.Row="0" Margin="12,4,12,10"
+                    <Grid x:Name="CommandBarGrid" Grid.Row="0" Margin="12,2,12,6"
                           Visibility="{Binding IsWorkspaceTab, Converter={StaticResource BoolToVis}}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
 
-                        <!-- Left action cluster -->
-                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center" ClipToBounds="True">
+                        <!-- Left action cluster. Named so AdaptiveLayoutController can measure it. -->
+                        <StackPanel x:Name="ActionCluster" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
 
-                            <!-- Hot path: Ping All (split), Check Vitals, Monitor -->
-                            <ui:SplitButton Appearance="Primary"
-                                            Icon="{ui:SymbolIcon ArrowSync24}"
-                                            Content="Ping All"
+                            <!-- Hot path: Ping All (split), Check Vitals, Monitor.
+                                 All buttons use icon+label in a centred StackPanel as Content (no Icon= attribute)
+                                 so collapsing the label TextBlock leaves the icon correctly centred. -->
+                            <ui:SplitButton Style="{StaticResource ToolbarSplitButtonStyle}"
                                             Command="{Binding SelectedTab.PingAllCommand}"
-                                            ToolTip="Ping every machine in this tab (F5)">
+                                            ToolTip="Ping All — ping every machine in this tab (F5)">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Ping All" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
                                 <ui:SplitButton.Flyout>
                                     <ContextMenu>
                                         <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
                                     </ContextMenu>
                                 </ui:SplitButton.Flyout>
                             </ui:SplitButton>
-                            <ui:Button Margin="8,0,0,0" Icon="{ui:SymbolIcon Pulse24}" Content="Check Vitals"
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.CheckVitalsCommand}"
-                                       ToolTip="Pull SCCM client health AND deep OS vitals. Read-only." />
-                            <ToggleButton Margin="8,0,0,0" Padding="11,6"
-                                          VerticalAlignment="Center"
-                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
-                                          ToolTip="Continuously re-check online/offline. Stop halts it.">
+                                       ToolTip="Check Vitals — pull SCCM client health AND deep OS vitals. Read-only.">
                                 <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Eye24" Margin="0,0,8,0" />
-                                    <TextBlock Text="Monitor" VerticalAlignment="Center" />
+                                    <ui:SymbolIcon Symbol="Pulse24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Check Vitals" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ToggleButton Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}" Padding="11,6"
+                                          Style="{StaticResource ToolbarMonitorStyle}"
+                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
+                                          ToolTip="Monitor — continuously re-check online/offline. Stop halts it.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Eye24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Monitor" Style="{StaticResource ToolbarLabelStyle}" />
                                 </StackPanel>
                             </ToggleButton>
 
-                            <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
 
-                            <!-- Operations: de-emphasised; Clear Results moved to overflow -->
-                            <ui:Button Appearance="Secondary" Icon="{ui:SymbolIcon Delete24}" Content="Remove Offline"
+                            <!-- Operations: de-emphasised -->
+                            <ui:Button Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.RemoveOfflineCommand}"
-                                       ToolTip="Remove every offline machine from this tab." />
-                            <ui:Button Margin="8,0,0,0" Appearance="Secondary" Icon="{ui:SymbolIcon Stop24}" Content="Stop"
+                                       ToolTip="Remove Offline — remove every offline machine from this tab.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Delete24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Remove Offline" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.StopCommand}"
                                        IsEnabled="{Binding SelectedTab.IsBusy}"
-                                       ToolTip="Cancel all running operations in this tab." />
-                            <ui:Button x:Name="OverflowButton" Margin="8,0,0,0" Appearance="Secondary"
-                                       Icon="{ui:SymbolIcon MoreHorizontal24}"
-                                       AutomationProperties.Name="More actions"
-                                       ToolTip="More actions"
-                                       Click="OnOverflowButtonClick">
-                                <ui:Button.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Clear Results" Command="{Binding SelectedTab.ClearResultsCommand}"
-                                                  ToolTip="Clear the Command result column on every row." />
-                                        <Separator />
-                                        <MenuItem x:Name="ExportCsvMenuItem" Header="Export to CSV…"
-                                                  Click="OnExportCsv"
-                                                  ToolTip="Export the visible rows to a CSV file." />
-                                    </ContextMenu>
-                                </ui:Button.ContextMenu>
+                                       ToolTip="Stop — cancel all running operations in this tab.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Stop24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Stop" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       Style="{StaticResource ToolbarButtonStyle}"
+                                       Command="{Binding SelectedTab.ClearResultsCommand}"
+                                       ToolTip="Clear results — clear the Command result column on every row.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Eraser24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Clear results" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
                             </ui:Button>
 
                             <!-- Update options button — visible only in Patching mode. -->
-                            <ui:Button x:Name="UpdateOptionsButton" Margin="8,0,0,0" Appearance="Secondary"
-                                       Icon="{ui:SymbolIcon Settings24}" Content="Update options"
+                            <ui:Button x:Name="UpdateOptionsButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        AutomationProperties.Name="Update options"
-                                       ToolTip="Configure update source, drivers, and exclusions"
+                                       ToolTip="Update options — configure update source, drivers, and exclusions"
                                        Click="OnUpdateOptionsButtonClick">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Update options" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
                                 <ui:Button.Style>
-                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
@@ -286,7 +467,7 @@
 
                             <!-- Divider: shown in update mode only, AND only when no rows are selected
                                  (selection bar owns Scan/Install when rows are selected). -->
-                            <Border Width="1" Margin="12,4" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
+                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
                                 <Border.Style>
                                     <Style TargetType="Border">
                                         <Setter Property="Visibility" Value="Collapsed" />
@@ -304,11 +485,10 @@
 
                             <!-- Updates (update-mode only, and only when no rows selected — selection bar
                                  owns Scan/Install for the selection so both don't show simultaneously). -->
-                            <ui:Button Icon="{ui:SymbolIcon Search24}" Content="Scan all"
-                                       Command="{Binding SelectedTab.ScanTargetCommand}"
-                                       ToolTip="Scan all machines in this tab for applicable updates.">
+                            <ui:Button Command="{Binding SelectedTab.ScanTargetCommand}"
+                                       ToolTip="Scan all — scan all machines in this tab for applicable updates.">
                                 <ui:Button.Style>
-                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
@@ -320,14 +500,17 @@
                                         </Style.Triggers>
                                     </Style>
                                 </ui:Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Search24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Scan all" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
                             </ui:Button>
-                            <ui:Button x:Name="InstallButton" Margin="8,0,0,0" Appearance="Primary"
-                                       Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install all"
+                            <ui:Button x:Name="InstallButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
                                        Click="OnInstallClick"
-                                       ToolTip="Download and install applicable updates on all machines in this tab (Ctrl+Enter).">
+                                       ToolTip="Install all — download and install applicable updates on all machines in this tab (Ctrl+Enter).">
                                 <ui:Button.Style>
-                                    <Style TargetType="ui:Button" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding SelectedTab.CanShowInstallToolbar}" Value="True">
@@ -339,15 +522,24 @@
                                         </Style.Triggers>
                                     </Style>
                                 </ui:Button.Style>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="ArrowDownload24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Install all" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
                             </ui:Button>
 
                         </StackPanel>
 
                         <!-- Right input cluster: Lists ▾ / Add-computer box / Add / Paste -->
-                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
-                            <ui:Button x:Name="ListsButton" Icon="{ui:SymbolIcon DocumentBulletList24}" Content="Lists"
-                                       Appearance="Secondary" Click="OnListsButtonClick"
-                                       ToolTip="Open, save, or delete a named machine list">
+                        <StackPanel x:Name="RightCluster" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
+                            <ui:Button x:Name="ListsButton"
+                                       Style="{StaticResource ToolbarButtonStyle}"
+                                       Click="OnListsButtonClick"
+                                       ToolTip="Lists — open, save, or delete a named machine list">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="DocumentBulletList24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Lists" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
                                 <ui:Button.ContextMenu>
                                     <ContextMenu Opened="OnListsFlyoutOpened">
                                         <MenuItem Header="Open list" Tag="OpenList" />
@@ -360,14 +552,23 @@
                             <ui:TextBox x:Name="QuickAddBox" Width="180" Margin="8,0,0,0" PlaceholderText="Add computer…"
                                         ToolTip="Type a computer name and press Enter, or use Ctrl+L to jump here"
                                         KeyDown="OnQuickAddKeyDown" />
-                            <ui:Button x:Name="AddButton" Margin="6,0,0,0" Icon="{ui:SymbolIcon Add24}" Content="Add"
-                                       Click="OnQuickAdd" ToolTip="Add this computer (or press Enter in the box)" />
-                            <ui:Button Margin="6,0,0,0" Appearance="Secondary" Icon="{ui:SymbolIcon ClipboardPaste24}"
+                            <ui:Button x:Name="AddButton" Margin="6,0,0,0"
+                                       Style="{StaticResource ToolbarButtonStyle}"
+                                       Click="OnQuickAdd" ToolTip="Add — add this computer (or press Enter in the box)">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Add24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Add" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ui:Button Margin="6,0,0,0"
+                                       Style="{StaticResource ToolbarButtonStyle}"
                                        Click="OnPasteList"
                                        Height="{Binding ActualHeight, ElementName=AddButton}"
                                        VerticalContentAlignment="Center"
                                        AutomationProperties.Name="Paste a list of machines"
-                                       ToolTip="Paste a list of machines from the clipboard" />
+                                       ToolTip="Paste a list of machines from the clipboard">
+                                <ui:SymbolIcon Symbol="ClipboardPaste24" />
+                            </ui:Button>
                         </StackPanel>
 
                     </Grid>
