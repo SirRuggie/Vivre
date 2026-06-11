@@ -186,6 +186,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Live selected-row count for the contextual command bar label (e.g. "3 machines selected").</summary>
     public int SelectedComputerCount => SelectedComputers.Count;
 
+    /// <summary>Raised by <see cref="RequestClearSelection"/> so the active <c>WorkspaceView</c> can call
+    /// <c>UnselectAll()</c> on both its DataGrids. The VM itself does NOT hold a reference to the grids —
+    /// the view subscribes in <c>OnViewLoaded</c> and unsubscribes in <c>OnViewUnloaded</c>.</summary>
+    public event Action? ClearSelectionRequested;
+
+    /// <summary>Called by MainWindow's command-bar Clear button to deselect all rows in the active grids.
+    /// Raises <see cref="ClearSelectionRequested"/>; the subscribed WorkspaceView handles the actual UnselectAll.</summary>
+    public void RequestClearSelection() => ClearSelectionRequested?.Invoke();
+
     /// <summary>Live "Online: (online/total)" summary for this tab, shown in the bottom status bar.
     /// Recomputed whenever a row's online state changes or the list grows/shrinks.</summary>
     public string OnlineSummary => $"Online: ({Computers.Count(c => c.IsOnline == true)}/{Computers.Count})";
@@ -391,9 +400,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     [NotifyCanExecuteChangedFor(nameof(UninstallCheckedCommand))]
     [NotifyCanExecuteChangedFor(nameof(ScanFocusedCommand))]
     [NotifyCanExecuteChangedFor(nameof(StopCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ScanTargetCommand))]
+    [NotifyCanExecuteChangedFor(nameof(InstallTargetCommand))]
     [NotifyPropertyChangedFor(nameof(CanInstallChecked))]
     [NotifyPropertyChangedFor(nameof(CanUninstallChecked))]
+    [NotifyPropertyChangedFor(nameof(CanInstallAll))]
     [NotifyPropertyChangedFor(nameof(SweepStatus))]
+    [NotifyPropertyChangedFor(nameof(IsVitalsSweepRunning))]
     public partial bool IsBusy { get; set; }
 
     /// <summary>M8 + M12: one-line sweep narration shown beside the ProgressRing and in the status bar.
@@ -415,6 +428,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 : $"{_sweepLabel} · {elapsedStr}";
         }
     }
+
+    /// <summary>P: true while the active sweep is the vitals check ("Checking vitals" label AND busy).
+    /// Drives the amber banner in WorkspaceView Row 1. Keyed off the same narration the status bar uses —
+    /// IsBusy ensures it clears when the sweep ends; the label check ensures it doesn't flip for
+    /// non-vitals concurrent sweeps ("Running custom columns", "Scanning for updates", etc.).</summary>
+    public bool IsVitalsSweepRunning =>
+        IsBusy && string.Equals(_sweepLabel, "Checking vitals", StringComparison.Ordinal);
 
     /// <summary>M11: the fleet band stays visible during a patch sweep OR during the 3-second hold-open
     /// after completion.</summary>
@@ -686,6 +706,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(GridOverlayState));
         OnPropertyChanged(nameof(ShowMachineGrid));
         OnPropertyChanged(nameof(ShowUpdateGrid));
+        // Bug 1: Scan all / Install all are gated on HasMachines — re-evaluate their CanExecute
+        // and the computed CanInstallAll whenever a row is added, removed, or the list is cleared.
+        ScanTargetCommand.NotifyCanExecuteChanged();
+        InstallTargetCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanInstallAll));
         RaiseFleetChanged();
     }
 
@@ -949,8 +974,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Names of the saved machine lists.</summary>
     public IReadOnlyList<string> SavedLists() => _lists.List();
 
-    /// <summary>Loads a saved list into the grid.</summary>
-    public void OpenList(string name) => SetComputers(_lists.Load(name));
+    /// <summary>Loads a saved list into the grid and renames the tab to the list's name.</summary>
+    public void OpenList(string name)
+    {
+        SetComputers(_lists.Load(name));
+        Title = name;
+    }
 
     /// <summary>Saves the current grid as a named list.</summary>
     public void SaveCurrentAsList(string name) => _lists.Save(name, Computers.Select(c => c.Name));
@@ -959,6 +988,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public void DeleteList(string name) => _lists.Delete(name);
 
     private bool CanStartSweep() => !IsBusy;
+
+    /// <summary>CanExecute for ScanTargetCommand and InstallTargetCommand: the toolbar Scan/Install all
+    /// buttons must also be disabled when the tab has no machines to avoid kicking an empty sweep.</summary>
+    private bool CanScanOrInstallAll() => !IsBusy && Computers.Count > 0;
+
+    /// <summary>Bug 1: Install all button (Click handler, not RelayCommand) uses this for IsEnabled.
+    /// Mirrors the CanExecute of InstallTargetCommand so both paths stay in sync.</summary>
+    public bool CanInstallAll => !IsBusy && Computers.Count > 0;
 
     private bool CanStop() => IsBusy || IsMonitoring;
 
@@ -1453,6 +1490,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0
         && !c.IsPatching && c.RebootRequired != true;
 
+    /// <summary>Number of updates in the focused machine's Applicable list that were installed in
+    /// this session (i.e. have <see cref="SelectableUpdate.InstalledThisSession"/> set). Zero when
+    /// none have been installed or no machine is focused. Used by the summary line in the Updates panel.</summary>
+    public int FocusedSessionInstalledCount =>
+        FocusedComputer?.ApplicableUpdates.Count(u => u.InstalledThisSession) ?? 0;
+
+    /// <summary>True when at least one session-installed update on the focused machine reported a
+    /// reboot as required. Drives the "reboot pending" qualifier in the summary line.</summary>
+    public bool FocusedSessionRebootPending =>
+        FocusedComputer?.ApplicableUpdates.Any(u => u.InstalledThisSession && u.InstalledThisSessionRebootPending) == true;
+
     /// <summary>
     /// Uninstalls only the ticked updates on the focused machine. Only enabled in Installed scope
     /// and when at least one ticked update is actually uninstallable. The confirmation dialog lives
@@ -1490,8 +1538,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         foreach (SelectableUpdate update in target)
         {
             // "All" never selects a non-removable update in Installed scope (neither WUA nor DISM
-            // can remove it, so ticking it is meaningless). "None" always clears.
-            update.IsSelected = selected && (!installed || update.IsUninstallable);
+            // can remove it, so ticking it is meaningless), and never re-ticks an update already
+            // installed this session in Applicable scope (it can't be re-targeted). "None" always clears.
+            bool tickable = installed ? update.IsUninstallable : !update.InstalledThisSession;
+            update.IsSelected = selected && tickable;
         }
     }
 
@@ -1541,6 +1591,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
 
         RefreshChecklistCommandState();
+        // Re-evaluate session-install summary when the list is replaced by a fresh scan.
+        OnPropertyChanged(nameof(FocusedSessionInstalledCount));
+        OnPropertyChanged(nameof(FocusedSessionRebootPending));
     }
 
     private void OnChecklistItemChanged(object? sender, PropertyChangedEventArgs e)
@@ -1548,6 +1601,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (e.PropertyName == nameof(SelectableUpdate.IsSelected))
         {
             RefreshChecklistCommandState();
+        }
+        else if (e.PropertyName == nameof(SelectableUpdate.InstalledThisSession)
+              || e.PropertyName == nameof(SelectableUpdate.InstalledThisSessionRebootPending))
+        {
+            OnPropertyChanged(nameof(FocusedSessionInstalledCount));
+            OnPropertyChanged(nameof(FocusedSessionRebootPending));
         }
     }
 
@@ -1628,6 +1687,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private void OnSweepNarrationTick(object? sender, EventArgs e)
     {
         OnPropertyChanged(nameof(SweepStatus));
+        OnPropertyChanged(nameof(IsVitalsSweepRunning));
         OnPropertyChanged(nameof(FleetElapsed));
         OnPropertyChanged(nameof(FleetNofM));
     }
@@ -1663,6 +1723,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             // Refresh all narration/fleet properties now that the op ended.
             OnPropertyChanged(nameof(SweepStatus));
+            OnPropertyChanged(nameof(IsVitalsSweepRunning));
             OnPropertyChanged(nameof(FleetElapsed));
             OnPropertyChanged(nameof(FleetNofM));
             OnPropertyChanged(nameof(IsPatchOperationOrFleetHeld));
@@ -2067,6 +2128,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             options.ScheduleAt = scheduledTime;
         }
 
+        // Snapshot the target set now (before IsPatching is set) so we know which rows to mark
+        // after a zero-failure install.  Must mirror the IncludeKbArticleIds computation below
+        // EXACTLY (ticked AND has a KB id) — a ticked KB-less update is silently not targeted by
+        // the agent, so marking it "Installed" would lie.  If no checklist exists (never scanned)
+        // the snapshot is empty — no rows to mark, but the partial-failure banner still applies.
+        SelectableUpdate[] targetSnapshot = computer.ApplicableUpdates.Count > 0
+            ? [.. computer.ApplicableUpdates.Where(u => u.IsSelected && !string.IsNullOrWhiteSpace(u.Kb))]
+            : [];
+
         if (computer.ApplicableUpdates.Count > 0)
         {
             if (!computer.ApplicableUpdates.Any(u => u.IsSelected))
@@ -2114,6 +2184,37 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.ScheduledNextRun = when;
                 computer.UpdateMessage = $"Scheduled for {when:g}";
                 _scheduledTasks[computer.Name] = when;
+            }
+
+            // Reflect the install result in the per-machine Updates panel (display-only; no
+            // install logic changes).  The protocol doesn't tell us which individual updates
+            // succeeded vs failed, so:
+            //   • Zero failures + ≥1 installed  → mark every item in the target snapshot
+            //     as "installed this session" (greyed/struck chip); untick them so they are
+            //     excluded from any future InstallChecked without re-selection.
+            //   • Any failures                  → leave per-row state untouched; show an
+            //     honest banner on the Computer instead.
+            if (final.Phase is PatchPhase.Done or PatchPhase.PendingReboot
+                && final.InstalledCount > 0
+                && final.FailedCount == 0
+                && scheduleAt is null)
+            {
+                bool rebootPending = final.RebootPending || final.Phase == PatchPhase.PendingReboot;
+                foreach (SelectableUpdate item in targetSnapshot)
+                {
+                    item.InstalledThisSession = true;
+                    item.InstalledThisSessionRebootPending = rebootPending;
+                    // Untick so InstallChecked doesn't re-target already-installed items;
+                    // the user would need to re-tick deliberately to re-install.
+                    item.IsSelected = false;
+                }
+            }
+            else if (final.Phase is PatchPhase.Done or PatchPhase.PendingReboot
+                     && final.FailedCount > 0
+                     && scheduleAt is null)
+            {
+                computer.LastInstallNote =
+                    $"Install completed with {final.FailedCount} failure(s) — rescan after reboot for exact state.";
             }
         }
         catch (OperationCanceledException)
@@ -2164,6 +2265,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.ApplicableMessage = status.Message;
                 computer.ApplicableCount = status.AvailableCount;
                 computer.LastScannedApplicable = DateTime.Now;
+                // A new Applicable scan supersedes any prior session-install state: the fresh scan
+                // is the new source of truth, so clear the partial-failure banner.  Per-row
+                // InstalledThisSession flags are reset inside ReplaceUpdatesForScope (new items).
+                computer.LastInstallNote = null;
             }
         }
 
@@ -2819,13 +2924,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public string InstallButtonLabel =>
         SelectedComputers.Count > 0 ? $"Install selected ({SelectedComputers.Count})" : "Install all";
 
-    /// <summary>Toolbar Scan: scoped to the selection, or every row when nothing's selected.</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    /// <summary>Toolbar Scan: scoped to the selection, or every row when nothing's selected.
+    /// Disabled when the tab has no machines (see <see cref="CanScanOrInstallAll"/>).</summary>
+    [RelayCommand(CanExecute = nameof(CanScanOrInstallAll))]
     private Task ScanTarget() =>
         SelectedComputers.Count > 0 ? ScanSelectedAsync([.. SelectedComputers]) : ScanUpdatesAsync();
 
-    /// <summary>Toolbar Install: scoped to the selection, or every row when nothing's selected.</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    /// <summary>Toolbar Install: scoped to the selection, or every row when nothing's selected.
+    /// Disabled when the tab has no machines (see <see cref="CanScanOrInstallAll"/>).</summary>
+    [RelayCommand(CanExecute = nameof(CanScanOrInstallAll))]
     private Task InstallTarget() =>
         SelectedComputers.Count > 0 ? InstallSelectedAsync([.. SelectedComputers]) : InstallUpdatesAsync();
 

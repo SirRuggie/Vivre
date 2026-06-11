@@ -445,12 +445,38 @@ public partial class MainWindow : FluentWindow
 
     // --- unified bottom dock (Activity + per-machine Updates) ---
 
+    // The machine grid must always remain the dominant pane — keep the dock to at most this
+    // fraction of the section height.  40% leaves the grid ≥ 60% of the space at any height.
+    // Adjust here if the balance needs tuning; the floor constant beneath it prevents the
+    // dock opening uselessly thin regardless of the fraction.
+    private const double DockMaxOpenFraction = 0.40;
+
+    /// <summary>Sensible floor so a degenerate saved value can't open the dock uselessly thin.</summary>
+    private const double DockMinOpenHeight = 100;
+
     private GridLength _activityHeight = new(170);
     private WorkspaceViewModel? _observedTab;
 
     private void HookBottomDock()
     {
         if (Shell is not { } shell) return;
+
+        // Seed _activityHeight from the persisted value when it's sane (> 0).
+        if (Settings is { } store)
+        {
+            try
+            {
+                double saved = store.Load().BottomDockHeight;
+                if (saved > 0)
+                {
+                    _activityHeight = new GridLength(saved);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log?.Warn(null, $"Couldn't load dock height setting. {ex.Message}");
+            }
+        }
 
         shell.PropertyChanged += OnShellPropertyChanged;
         SubscribeToSelectedTab(shell.SelectedTab);
@@ -499,6 +525,13 @@ public partial class MainWindow : FluentWindow
             }
         }
 
+        // Selection change swaps a different button set into the ActionCluster — re-measure so
+        // labels collapse to icon-only (with tooltips) at narrow widths, exactly like Health↔Patching.
+        if (e.PropertyName == nameof(WorkspaceViewModel.HasSelection))
+        {
+            _adaptiveLayout?.RefreshToolbar();
+        }
+
         if (e.PropertyName == nameof(WorkspaceViewModel.FleetProgress)
             && sender is WorkspaceViewModel vm2)
         {
@@ -540,7 +573,27 @@ public partial class MainWindow : FluentWindow
 
     private void ShowDock()
     {
-        ActivityRow.Height = _activityHeight;
+        // Re-assert the workspace grid row as star-sized in case a previous splitter drag
+        // pinned it to a fixed pixel height — this ensures the grid always flexes with the window.
+        WorkspaceGridRow.Height = new GridLength(1, GridUnitType.Star);
+
+        // Clamp the open height so the dock never dominates the layout.
+        // Skip the fraction clamp on startup (ActualHeight == 0 — the window hasn't laid out yet).
+        double rawHeight = _activityHeight.Value;
+        double sectionHeight = ComputersSection.ActualHeight;
+        double openHeight;
+        if (sectionHeight > 0)
+        {
+            double maxHeight = sectionHeight * DockMaxOpenFraction;
+            openHeight = Math.Max(DockMinOpenHeight, Math.Min(rawHeight, maxHeight));
+        }
+        else
+        {
+            // Pre-layout: use the remembered height as-is (fraction clamp not yet meaningful).
+            openHeight = Math.Max(DockMinOpenHeight, rawHeight);
+        }
+
+        ActivityRow.Height = new GridLength(openHeight);
         SplitterRow.Height = GridLength.Auto;
         ActivitySplitter.Visibility = Visibility.Visible;
         ActivityPanel.Visibility = Visibility.Visible;
@@ -553,13 +606,44 @@ public partial class MainWindow : FluentWindow
         if (ActivityRow.ActualHeight > 0)
         {
             _activityHeight = new GridLength(ActivityRow.ActualHeight);
+            PersistDockHeight(ActivityRow.ActualHeight);
         }
+
+        // Re-assert the workspace grid row as star-sized so the grid flexes with the window
+        // regardless of any fixed pixel height a prior splitter drag may have left on it.
+        WorkspaceGridRow.Height = new GridLength(1, GridUnitType.Star);
 
         ActivitySplitter.Visibility = Visibility.Collapsed;
         ActivityPanel.Visibility = Visibility.Collapsed;
         ActivityPanel.Opacity = 0;
         SplitterRow.Height = new GridLength(0);
         ActivityRow.Height = new GridLength(0);
+    }
+
+    private void OnActivitySplitterDragCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        // Persist the raw user-dragged height immediately so it survives even if the app closes
+        // while the dock stays open (HideDock won't be called in that case).
+        if (ActivityRow.ActualHeight > 0)
+        {
+            _activityHeight = new GridLength(ActivityRow.ActualHeight);
+            PersistDockHeight(ActivityRow.ActualHeight);
+        }
+    }
+
+    private void PersistDockHeight(double height)
+    {
+        if (Settings is null) return;
+        try
+        {
+            AppSettings s = Settings.Load();
+            s.BottomDockHeight = height;
+            Settings.Save(s);
+        }
+        catch (Exception ex)
+        {
+            Log?.Warn(null, $"Couldn't save dock height. {ex.Message}");
+        }
     }
 
     private void OnActivityLogToggleChanged(object sender, RoutedEventArgs e)
@@ -742,10 +826,7 @@ public partial class MainWindow : FluentWindow
     {
         if (Shell?.SelectedTab is not WorkspaceViewModel vm) return;
 
-        var dialog = new TextPromptWindow(
-            "Exclude updates",
-            "Comma-separated update title terms to skip (e.g. SQL, Silverlight, Edge):",
-            vm.ExcludeText) { Owner = this };
+        var dialog = new ExcludeUpdatesWindow(vm.ExcludeText) { Owner = this };
 
         if (dialog.ShowDialog() == true && dialog.Value is { } text)
         {
@@ -765,6 +846,29 @@ public partial class MainWindow : FluentWindow
         if (Shell?.SelectedTab is WorkspaceViewModel { HasSelection: true } vm)
         {
             _ = RunInstallFlowAsync(vm, selectionOnly: true);
+        }
+    }
+
+    // --- selection cluster handlers (command bar, in-place swap) ---
+
+    /// <summary>Command-bar Scan (N): scans only the selected machines.</summary>
+    private void OnSelectionScanClick(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is WorkspaceViewModel { HasSelection: true } vm)
+        {
+            _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
+        }
+    }
+
+    /// <summary>Command-bar Install (N): same confirm-then-install flow as the toolbar, scoped to selection.</summary>
+    private void OnSelectionInstallClick(object sender, RoutedEventArgs e) => TriggerInstallForSelection();
+
+    /// <summary>Command-bar Clear selection: raises the VM event so the active WorkspaceView's grids clear.</summary>
+    private void OnSelectionClearClick(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is WorkspaceViewModel vm)
+        {
+            vm.RequestClearSelection();
         }
     }
 
@@ -1132,7 +1236,9 @@ public partial class MainWindow : FluentWindow
 
     private void SaveCurrentAsList(WorkspaceViewModel vm)
     {
-        var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:") { Owner = this };
+        // Pre-fill with the tab's current title so a renamed tab ("Region C", etc.) doesn't need
+        // re-typing. The user can overtype it before saving.
+        var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.Title) { Owner = this };
         if (dialog.ShowDialog() == true && dialog.Value is { } name) vm.SaveCurrentAsList(name);
     }
 

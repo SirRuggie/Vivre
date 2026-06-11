@@ -15,10 +15,9 @@ public class BootServicingStateTests
     {
         (bool busy, string reason) = BootServicingState.Evaluate(
             cbsRebootInProgress: false,
-            cbsRebootPending: false,
-            cbsPackagesPending: false,
             pendingXmlExists: false,
-            pendingFileRename: false,
+            cbsPackagesPending: false,
+            cbsRebootPending: false,
             wuauRebootRequired: false);
 
         Assert.False(busy);
@@ -27,19 +26,17 @@ public class BootServicingStateTests
 
     [Theory]
     [InlineData("cbsRebootInProgress")]
-    [InlineData("cbsRebootPending")]
-    [InlineData("cbsPackagesPending")]
     [InlineData("pendingXmlExists")]
-    [InlineData("pendingFileRename")]
+    [InlineData("cbsPackagesPending")]
+    [InlineData("cbsRebootPending")]
     [InlineData("wuauRebootRequired")]
     public void Any_single_signal_short_circuits_to_busy(string signal)
     {
         (bool busy, string reason) = BootServicingState.Evaluate(
             cbsRebootInProgress: signal == "cbsRebootInProgress",
-            cbsRebootPending: signal == "cbsRebootPending",
-            cbsPackagesPending: signal == "cbsPackagesPending",
             pendingXmlExists: signal == "pendingXmlExists",
-            pendingFileRename: signal == "pendingFileRename",
+            cbsPackagesPending: signal == "cbsPackagesPending",
+            cbsRebootPending: signal == "cbsRebootPending",
             wuauRebootRequired: signal == "wuauRebootRequired");
 
         Assert.True(busy);
@@ -53,10 +50,9 @@ public class BootServicingStateTests
         // in-progress servicing (the more urgent "do not touch the stack" signal).
         (bool busy, string reason) = BootServicingState.Evaluate(
             cbsRebootInProgress: true,
-            cbsRebootPending: true,
-            cbsPackagesPending: false,
             pendingXmlExists: false,
-            pendingFileRename: false,
+            cbsPackagesPending: false,
+            cbsRebootPending: true,
             wuauRebootRequired: false);
 
         Assert.True(busy);

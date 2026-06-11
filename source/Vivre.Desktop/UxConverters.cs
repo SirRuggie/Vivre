@@ -16,6 +16,19 @@ public sealed class StringToVisibilityConverter : IValueConverter
 }
 
 /// <summary>
+/// Non-zero integer → <c>true</c>, zero → <c>false</c>. Used to drive a <see cref="System.Windows.Controls.TextBlock"/>
+/// visibility trigger keyed on a count: when the count is zero the element collapses.
+/// </summary>
+public sealed class NonZeroToBoolConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int n && n != 0;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
+/// <summary>
 /// Tri-state <see cref="bool"/>? → a status <c>SymbolRegular</c> so the grid dots carry a SHAPE,
 /// not colour alone (WCAG 1.4.1). Mirrors <see cref="StatusBrushConverter"/>'s polarity so the
 /// glyph and the colour always agree:

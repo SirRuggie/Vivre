@@ -102,6 +102,12 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
   hit-test regression fixed. **LeftMinimal is shelved** — WPF-UI's minimal pane does not render hierarchical
   (Fleet ▸ child) items, so `MinWidth=800` keeps the app out of that state.
 
+- **Round 4  ✅ *(done — 1.9.2)*** — live-usage hardening: selection actions moved INTO the command bar
+  (in-place transform; the floating selection bar and its layout shift are gone); double-click opens
+  Details; agent reboot-guard / download-progress fixes; bottom-dock height clamp + persistence; Settings
+  clarity pass (Integrations / Help & about / Grid columns); vitals pill on Patching; installed-this-session
+  marking in the update panel.
+
 ## Interim / deferred
 - **Mode chips** — superseded: removed in Round 2 (1.9.0); a tab's mode is now fixed by its Fleet section
   (the Health / Patching nav destinations).

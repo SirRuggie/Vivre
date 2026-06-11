@@ -18,7 +18,6 @@ namespace Vivre.UpdateAgent
     {
         private const string CbsKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing";
         private const string WuauRebootKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired";
-        private const string SessionManagerKey = @"SYSTEM\CurrentControlSet\Control\Session Manager";
 
         /// <summary>True if a reboot/servicing operation is already pending; <paramref name="reason"/>
         /// is a short human explanation. Any read failure is treated as "signal absent" (a probe
@@ -27,10 +26,9 @@ namespace Vivre.UpdateAgent
         {
             (bool busy, string r) = BootServicingState.Evaluate(
                 cbsRebootInProgress: SubKeyExists(CbsKey + @"\RebootInProgress"),
-                cbsRebootPending: SubKeyExists(CbsKey + @"\RebootPending"),
-                cbsPackagesPending: SubKeyExists(CbsKey + @"\PackagesPending"),
                 pendingXmlExists: PendingXmlExists(),
-                pendingFileRename: PendingFileRenameQueued(),
+                cbsPackagesPending: SubKeyExists(CbsKey + @"\PackagesPending"),
+                cbsRebootPending: SubKeyExists(CbsKey + @"\RebootPending"),
                 wuauRebootRequired: KeyExists(WuauRebootKey));
 
             reason = r;
@@ -74,30 +72,5 @@ namespace Vivre.UpdateAgent
             }
         }
 
-        private static bool PendingFileRenameQueued()
-        {
-            try
-            {
-                using (RegistryKey k = Registry.LocalMachine.OpenSubKey(SessionManagerKey))
-                {
-                    if (k?.GetValue("PendingFileRenameOperations") is string[] ops)
-                    {
-                        foreach (string op in ops)
-                        {
-                            if (!string.IsNullOrEmpty(op))
-                            {
-                                return true;
-                            }
-                        }
-                    }
-                }
-
-                return false;
-            }
-            catch
-            {
-                return false;
-            }
-        }
     }
 }

@@ -47,6 +47,13 @@ public sealed class AppSettings
     /// <summary>Whether the left NavigationView pane is expanded (true) or collapsed/compact (false).
     /// Default false — starts collapsed so the icon-only pane takes minimal horizontal space.</summary>
     public bool NavPaneOpen { get; set; } = false;
+
+    /// <summary>Last height (device-independent pixels) the bottom dock was explicitly sized to —
+    /// either by dragging the splitter or on close. Stored RAW (the exact user-dragged value);
+    /// the fraction clamp in ShowDock applies at open time, so a value above 40% of the section
+    /// height will open at the clamped height rather than this raw value until the user resizes
+    /// further. Default 170.</summary>
+    public double BottomDockHeight { get; set; } = 170;
 }
 
 /// <summary>

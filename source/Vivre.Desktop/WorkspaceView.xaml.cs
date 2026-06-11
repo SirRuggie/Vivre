@@ -5,6 +5,7 @@ using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Data;
 using System.Windows.Documents;
 using System.Windows.Input;
@@ -27,7 +28,7 @@ namespace Vivre.Desktop;
 /// The per-tab content: the command bar, add-computers bar, and the computer grid.
 /// Its DataContext is the tab's <see cref="WorkspaceViewModel"/> (set by the shell's
 /// TabControl). Code-behind is the grid glue WPF can't do in XAML — selection sync,
-/// the right-click action menu, double-click to run, Delete/Copy, quick-add.
+/// the right-click action menu, double-click to open Details, Delete/Copy, quick-add.
 /// </summary>
 public partial class WorkspaceView : UserControl
 {
@@ -36,9 +37,6 @@ public partial class WorkspaceView : UserControl
     /// <see cref="OnGridRightClick"/> immediately before the menu is built.</summary>
     private Computer? _contextRow;
 
-    // Measured natural height of the selection bar (captured on first animation-in so the
-    // slide uses the real height rather than a hard-coded constant).
-    private double _selectionBarHeight;
 
     public WorkspaceView()
     {
@@ -58,7 +56,8 @@ public partial class WorkspaceView : UserControl
 
     /// <summary>Once the tab's view-model is attached, apply the saved column layout and keep the grid in
     /// step with it (built-in show/hide + the user's custom script columns), wire custom-column sorting,
-    /// and subscribe to selection changes to drive the contextual command bar animation.</summary>
+    /// and subscribe to the VM's clear-selection event so the command bar's Clear button can deselect
+    /// both DataGrids.</summary>
     private void OnViewLoaded(object sender, RoutedEventArgs e)
     {
         if (_columnsWired || ViewModel is not { } vm)
@@ -70,12 +69,9 @@ public partial class WorkspaceView : UserControl
         _wiredVm = vm;
         vm.CustomColumns.CollectionChanged += OnLayoutChanged;
         vm.HiddenColumns.CollectionChanged += OnLayoutChanged;
-        vm.SelectedComputers.CollectionChanged += OnSelectionChanged;
-        vm.PropertyChanged += OnVmPropertyChanged;
+        vm.ClearSelectionRequested += OnClearSelectionRequested;
         ComputerGrid.Sorting += OnComputerGridSorting;
         SyncColumns();
-        // Seed bar state — if the view is loaded while a selection exists (tab switch), show bar immediately.
-        SetSelectionBarState(vm.HasSelection, animate: false);
     }
 
     /// <summary>The TabControl recreates this view when you switch tabs, so drop the layout subscriptions
@@ -93,8 +89,7 @@ public partial class WorkspaceView : UserControl
         {
             vm.CustomColumns.CollectionChanged -= OnLayoutChanged;
             vm.HiddenColumns.CollectionChanged -= OnLayoutChanged;
-            vm.SelectedComputers.CollectionChanged -= OnSelectionChanged;
-            vm.PropertyChanged -= OnVmPropertyChanged;
+            vm.ClearSelectionRequested -= OnClearSelectionRequested;
         }
 
         _wiredVm = null;
@@ -265,6 +260,50 @@ public partial class WorkspaceView : UserControl
         {
             vm.FocusedComputer = focused;
         }
+    }
+
+    /// <summary>
+    /// Clears the selection when the user left-clicks genuinely empty grid space (the blank area
+    /// below the last row) — standard Explorer/Excel behavior. Uses the bubbling phase so rows,
+    /// cells, headers, and scroll bars have already handled their own input first.
+    ///
+    /// Walks up from <see cref="MouseButtonEventArgs.OriginalSource"/> using
+    /// <see cref="VisualTreeHelper.GetParent"/>. If any of the "active" grid elements is
+    /// encountered before reaching the <see cref="DataGrid"/> itself, the click is on real content
+    /// and the method returns without touching the selection. Only when the walk reaches the
+    /// DataGrid having seen none of those types does it call <c>UnselectAll()</c>.
+    /// </summary>
+    private void OnGridEmptyAreaClick(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not DataGrid grid)
+        {
+            return;
+        }
+
+        DependencyObject? node = e.OriginalSource as DependencyObject;
+        while (node is not null && !ReferenceEquals(node, grid))
+        {
+            if (node is DataGridRow
+                or DataGridCell
+                or DataGridColumnHeader
+                or ScrollBar
+                or ButtonBase)
+            {
+                return;
+            }
+
+            node = VisualTreeHelper.GetParent(node);
+        }
+
+        if (node is null)
+        {
+            // OriginalSource wasn't in the grid's visual tree (e.g. popup content whose event
+            // routed logically) — that's not empty grid space; leave the selection alone.
+            return;
+        }
+
+        // Walk reached the DataGrid without hitting any interactive element — truly empty space.
+        grid.UnselectAll();
     }
 
     private WorkspaceViewModel? ViewModel => DataContext as WorkspaceViewModel;
@@ -774,11 +813,16 @@ public partial class WorkspaceView : UserControl
     private void OnShowDetails(object sender, RoutedEventArgs e)
     {
         if (ViewModel is { } vm && ContextOrFocused() is { } computer)
-        {
-            new ComputerDetailWindow(vm.CreateDetailViewModel(computer)) { Owner = OwnerWindow }.Show();
-            // Fill in the OS on demand (the window binds the live model, so it appears when ready).
-            _ = vm.FetchOperatingSystemAsync(computer);
-        }
+            OpenDetails(vm, computer);
+    }
+
+    /// <summary>Opens a <see cref="ComputerDetailWindow"/> for <paramref name="computer"/> and starts
+    /// the OS fetch. Called from both the Details right-click item and the row double-click handler.</summary>
+    private void OpenDetails(WorkspaceViewModel vm, Computer computer)
+    {
+        new ComputerDetailWindow(vm.CreateDetailViewModel(computer)) { Owner = OwnerWindow }.Show();
+        // Fill in the OS on demand (the window binds the live model, so it appears when ready).
+        _ = vm.FetchOperatingSystemAsync(computer);
     }
 
     private void OnShowMessages(object sender, RoutedEventArgs e)
@@ -926,10 +970,9 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        // The double-click selects this row first, so target the current selection — same machines
-        // the right-click "Run script (selected)" would use (no surprise single-machine scope).
-        IReadOnlyList<Computer> targets = vm.SelectedComputers.Count > 0 ? [.. vm.SelectedComputers] : [computer];
-        OpenScriptRunner(targets);
+        // Open Details for the double-clicked row's machine (Details is single-machine — use the row
+        // directly rather than the selection). Scripts are right-click ▸ Run script only.
+        OpenDetails(vm, computer);
     }
 
     private async void OnGridKeyDown(object sender, KeyEventArgs e)
@@ -1002,6 +1045,35 @@ public partial class WorkspaceView : UserControl
         }
     }
 
+    /// <summary>
+    /// Fix D: handles the Unchecked event on every filter chip.
+    /// When the user clicks the already-lit chip (deselecting it), ConvertBack returns DoNothing so
+    /// the binding doesn't update ActiveFilter.  We read the chip's Tag to know which filter it
+    /// carries, then apply the "fall back to All" logic ourselves.
+    /// Guard: only act when <c>vm.ActiveFilter == f</c> so that binding-driven sibling unchecks
+    /// (which fire when another chip is checked) are no-ops.
+    /// Special case: if the user clicks the lit "All" chip, re-light it — All is always on.
+    /// </summary>
+    private void OnFilterChipUnchecked(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ToggleButton chip) return;
+        if (chip.Tag is not ViewModels.RowFilter f) return;
+        if (ViewModel is not { } vm) return;
+
+        if (f == ViewModels.RowFilter.All && vm.ActiveFilter == ViewModels.RowFilter.All)
+        {
+            // The "All" chip itself was clicked while already lit — re-light it; All is always on.
+            chip.IsChecked = true;
+            return;
+        }
+
+        // Only fall back to All when this chip is the currently active one.
+        if (vm.ActiveFilter == f)
+        {
+            vm.ActiveFilter = ViewModels.RowFilter.All;
+        }
+    }
+
     private static T? FindParent<T>(DependencyObject? element) where T : DependencyObject
     {
         while (element is not null and not T)
@@ -1012,99 +1084,12 @@ public partial class WorkspaceView : UserControl
         return element as T;
     }
 
-    // --- contextual selection command bar ---
+    // --- selection clear (driven by the command-bar's Clear button via the VM event) ---
 
-    /// <summary>Fires whenever the selection count changes — animates the bar in or out.</summary>
-    private void OnSelectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
+    /// <summary>Raised by <see cref="WorkspaceViewModel.RequestClearSelection"/>; deselects all rows in both grids.</summary>
+    private void OnClearSelectionRequested()
     {
-        if (ViewModel is { } vm)
-        {
-            SetSelectionBarState(vm.HasSelection, animate: true);
-        }
-    }
-
-    /// <summary>Re-measures the selection bar height when the mode switches so the bar stays
-    /// the correct height in Update mode (where Scan/Install buttons add vertical space).</summary>
-    private void OnVmPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(WorkspaceViewModel.IsUpdateMode) && ViewModel is { HasSelection: true })
-        {
-            // Force re-measure next show: reset the cached height and re-show after layout completes.
-            _selectionBarHeight = 0;
-            // Use Loaded priority so layout has run and the Scan/Install buttons have been shown/hidden.
-            Dispatcher.InvokeAsync(() => SetSelectionBarState(show: true, animate: false),
-                System.Windows.Threading.DispatcherPriority.Loaded);
-        }
-    }
-
-    /// <summary>
-    /// Shows or hides the contextual selection bar. When <paramref name="animate"/> is true,
-    /// a ~150 ms fade + height slide is used; when false the state is set immediately (used on
-    /// load to avoid a spurious animation when a tab is first shown with a pre-existing selection).
-    /// The bar's natural height is captured on the first animate-in so the slide stays crisp
-    /// even if the content reflows.
-    /// </summary>
-    private void SetSelectionBarState(bool show, bool animate)
-    {
-        // Capture the natural height the first time we show (measure at Auto height so we get the real value).
-        if (show && _selectionBarHeight <= 0)
-        {
-            SelectionBar.Height = double.NaN;  // Auto — let it measure
-            SelectionBar.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            _selectionBarHeight = SelectionBar.DesiredSize.Height;
-            // Fallback: Machines-mode bar = ~38px (label + padding). Update mode adds Scan/Install
-            // buttons (~32px WPF-UI button + padding) so needs at least 46px.
-            if (_selectionBarHeight < 20)
-            {
-                _selectionBarHeight = (ViewModel?.IsUpdateMode == true) ? 46 : 38;
-            }
-            SelectionBar.Height = 0;  // restore before animating
-        }
-
-        if (!animate)
-        {
-            SelectionBar.Height = show ? _selectionBarHeight : 0;
-            SelectionBar.Opacity = show ? 1 : 0;
-            return;
-        }
-
-        double targetHeight = show ? _selectionBarHeight : 0;
-        double targetOpacity = show ? 1 : 0;
-        var duration = new Duration(TimeSpan.FromMilliseconds(150));
-
-        SelectionBar.BeginAnimation(HeightProperty,
-            new System.Windows.Media.Animation.DoubleAnimation(targetHeight, duration)
-            {
-                EasingFunction = new System.Windows.Media.Animation.CubicEase
-                    { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut }
-            });
-        SelectionBar.BeginAnimation(OpacityProperty,
-            new System.Windows.Media.Animation.DoubleAnimation(targetOpacity, duration));
-    }
-
-    /// <summary>Selection bar Scan button: scans only the selected machines.</summary>
-    private void OnSelectionScanClick(object sender, RoutedEventArgs e)
-    {
-        if (ViewModel is { } vm && vm.SelectedComputers.Count > 0)
-        {
-            _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
-        }
-    }
-
-    /// <summary>Selection bar Install button: runs the same confirm-then-install flow as the toolbar,
-    /// scoped to the current selection. Delegates to the shell window to reuse the confirm dialog.</summary>
-    private void OnSelectionInstallClick(object sender, RoutedEventArgs e)
-    {
-        if (OwnerWindow is MainWindow main)
-        {
-            main.TriggerInstallForSelection();
-        }
-    }
-
-    /// <summary>Selection bar Clear button: deselects all rows in the active grid.</summary>
-    private void OnSelectionClearClick(object sender, RoutedEventArgs e)
-    {
-        DataGrid grid = ViewModel?.IsUpdateMode == true ? UpdateGrid : ComputerGrid;
-        grid.UnselectAll();
+        ComputerGrid.UnselectAll();
+        UpdateGrid.UnselectAll();
     }
 }

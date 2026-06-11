@@ -14,7 +14,7 @@ namespace Vivre.Core.Vitals;
 /// <param name="LastBootTime">Last OS boot time (drives the uptime penalty); null if unknown.</param>
 /// <param name="StoppedAutoServiceCount">Count of auto-start services that aren't running.</param>
 /// <param name="RecentErrorEventCount">Count of Critical/Error events in the last 24h (System+Application).</param>
-/// <param name="RebootPending">A reboot is pending (CBS / file-rename / CCM).</param>
+/// <param name="RebootPending">A reboot is pending (CBS / CCM).</param>
 /// <param name="UserLoggedOn">An interactive user session is present.</param>
 public sealed record MachineVitals(
     double? SystemDriveFreePercent = null,
