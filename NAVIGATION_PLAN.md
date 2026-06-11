@@ -79,7 +79,7 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
   saved Light/System briefly flashes dark) if it can be done cleanly.
 - Highest-risk phase — the keep-alive under NavigationView is the load-bearing bit.
 
-### Phase 2 — Cross-Domain RDP → nav item  ✅ *(done — 1.8.1; `RequireRdpHost=false` for testing, flip before release)*
+### Phase 2 — Cross-Domain RDP → nav item  ✅ *(done — 1.8.1; `RequireRdpHost=true` since 1.9.0)*
 - Promote RDP from the View-menu tab to a machine-gated nav destination (singleton preserved, MSTSC sessions
   kept alive via the same content-host pattern).
 
@@ -91,8 +91,20 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
 - Refine the Fleet/Operations/Updates clusters per Option A; retire menu items superseded by the nav/Settings;
   final polish.
 
+### Post-phase polish rounds
+- **Round 2  ✅ *(done — 1.9.0)*** — Fleet ▸ **Health** / **Patching** nav split (two independent keep-alive
+  tab strips; mode chips removed; Ctrl+M toggles sections); menu bar removed; filter-chip icons; credentials
+  CardExpander.
+- **Round 3  ✅ *(done — 1.9.1)*** — responsive shell: `AdaptiveLayoutController` collapses the nav pane to
+  the compact icon rail below ~1200 px (with hysteresis; the user's open/close intent is persisted) and drops
+  toolbar labels to centred icon-only buttons only when the measured labelled cluster no longer fits; title
+  bar slimmed to 36 px; the … overflow removed; frameless Task-Manager-style command bar; tab-header
+  hit-test regression fixed. **LeftMinimal is shelved** — WPF-UI's minimal pane does not render hierarchical
+  (Fleet ▸ child) items, so `MinWidth=800` keeps the app out of that state.
+
 ## Interim / deferred
-- **Mode chips stay** (decision 4) — revisit the mode UX after the shell settles.
+- **Mode chips** — superseded: removed in Round 2 (1.9.0); a tab's mode is now fixed by its Fleet section
+  (the Health / Patching nav destinations).
 - Software-service-map and custom/hidden-columns editing may stay in their existing dialogs (linked from the
   Settings page) rather than being fully embedded, unless cheap to inline.
 

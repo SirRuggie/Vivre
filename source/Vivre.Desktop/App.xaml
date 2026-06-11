@@ -55,7 +55,7 @@
                                         BorderThickness="1,1,1,0">
                                     <!-- M26: accent focus ring drawn around the header content. -->
                                     <Border x:Name="FocusRing" CornerRadius="3" BorderThickness="2"
-                                            BorderBrush="Transparent" IsHitTestVisible="False">
+                                            BorderBrush="Transparent">
                                         <ContentPresenter ContentSource="Header" VerticalAlignment="Center" />
                                     </Border>
                                 </Border>

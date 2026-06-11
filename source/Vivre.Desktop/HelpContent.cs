@@ -156,7 +156,7 @@ public static class HelpContent
             Keywords = "export csv report excel ticket maintenance window save what got patched",
             Lines =
             [
-                "Click the … (More actions) button in the toolbar ▸ Export to CSV… — or right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
+                "Right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
                 "Columns: machine, online, status, updates available, update/reboot messages, last error, OS, scheduled task, plus any custom columns you've added.",
                 "Opens cleanly in Excel.",
             ],

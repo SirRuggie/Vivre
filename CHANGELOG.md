@@ -7,6 +7,10 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **Tab headers were dead to the mouse** — the ✕ close button, the right-click menu (close / close others /
+  close all / rename), double-click rename, and middle-click close all did nothing in both Fleet strips: the
+  tab header's keyboard-focus ring disabled hit-testing for everything inside it. Removed the offending
+  attribute; all four interactions work again.
 - **Reboot Pending column over-reported on every machine** — healthy boxes showed a pending reboot when
   none was due. The detection OR'd in `PendingFileRenameOperations`, which is populated by benign file
   operations (AV definition swaps, installer temp cleanup) and accumulates on long-uptime servers, so it
@@ -27,6 +31,14 @@ it ships, then gets a dated heading.
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
 
 ### Changed
+- **The shell now adapts to window width** — below ~1200 px the nav pane auto-collapses to the compact icon
+  rail (Health / Patching stay one click away); widen again and it restores your last open/closed choice.
+  The toolbar measures whether its labelled buttons genuinely fit and only then drops them to centred
+  icon-only buttons (tighter-spaced, with full-label tooltips); the title bar slimmed to a 36 px band.
+- **Frameless command bar** — toolbar buttons sit directly on the surface (icon + label, a subtle highlight
+  on hover only), Task-Manager style; the Monitor toggle shows accent text on a faint fill when on instead
+  of a solid box. The **…** overflow is gone: **Clear results** is a regular toolbar button and **Export to
+  CSV** lives in the grid right-click ▸ Export.
 - **Fleet ▸ Health and Fleet ▸ Patching replace the single Computers workspace** — the left nav now has
   a collapsible **Fleet** parent with two independent keep-alive destinations: **Health** (ping, vitals,
   SCCM actions — the former "Machines" mode) and **Patching** (Windows Update scanning and install — the
@@ -38,7 +50,7 @@ it ships, then gets a dated heading.
   patching mode). The Get-Started card's "Switch modes" row now points at the Health / Patching nav items.
 - **Menu bar removed** — File / View / Updates are gone; their items moved to where they're used: the tab
   right-click menu (New tab, Clear this tab, Rename, Close…), a **Lists ▾** toolbar button (open / save /
-  delete named machine lists), the **…** overflow (Export to CSV), an **Update options ▾** button shown in
+  delete named machine lists), the grid right-click ▸ Export (Export to CSV), an **Update options ▾** button shown in
   Patching (update source / drivers / exclusions), and an **Activity-log** toggle on the status bar. The
   title bar is now just the app title and the window controls.
 - **Filter chips all carry icons** — the All / Updates / Done chips gained icons to match Reboot pending /
@@ -56,8 +68,7 @@ it ships, then gets a dated heading.
   standalone library manager: browse the categorised PowerShell library, edit in a syntax-highlighted editor,
   and add / save / delete scripts. (Running scripts against machines is unchanged — still the grid's
   right-click ▸ Run Script.)
-- **Computers workspace polish** — the command bar is now a single clean row with rarely-used actions behind
-  a "…" overflow; selecting machines raises a **contextual command bar** (Scan / Install scoped to the
+- **Computers workspace polish** — the command bar is now a single clean row; selecting machines raises a **contextual command bar** (Scan / Install scoped to the
   selection) rather than mutating toolbar labels; the workspace tabs gain modern browser-style headers with a
   right-click **Close other / Close all** menu; operation progress is reported in **one** place (the bottom
   status bar — a slim strip plus the live narration and counts) instead of three; and the **Settings** page

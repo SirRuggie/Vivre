@@ -58,3 +58,28 @@ public sealed class LogSeveritySymbolConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();
 }
+
+/// <summary>
+/// Maps a <see cref="bool"/> (the window's <c>ToolbarCompact</c> flag) to one of two
+/// <see cref="Thickness"/> values supplied via the <c>ConverterParameter</c> as
+/// <c>"normal;compact"</c> — each in <c>left,top,right,bottom</c> (or shorthand) form.
+/// Used to tighten the spacing between command-bar buttons (and the group dividers) when labels
+/// collapse to icons, so the bar reads as one cohesive group rather than floating icons. Bound as a
+/// local value, so the expanded layout the collapse measurement relies on is untouched (the
+/// expanded width is still measured with the normal spacing).
+/// </summary>
+public sealed class CompactThicknessConverter : IValueConverter
+{
+    private static readonly ThicknessConverter Tc = new();
+
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        string[] parts = (parameter as string ?? "0;0").Split(';');
+        bool compact = value is true;
+        string spec = (compact && parts.Length > 1 ? parts[1] : parts[0]).Trim();
+        return Tc.ConvertFromInvariantString(spec) ?? new Thickness(0);
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}

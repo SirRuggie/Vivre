@@ -24,6 +24,27 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class MainWindow : FluentWindow
 {
+    // ── toolbar compact state (set by AdaptiveLayoutController; XAML binds style triggers to this) ──
+
+    /// <summary>
+    /// True when the window is narrow enough that toolbar button labels are hidden and buttons
+    /// show icons only.  Set by <see cref="AdaptiveLayoutController"/>; XAML style triggers bind
+    /// to this to collapse label TextBlocks and show full-label tooltips.
+    /// </summary>
+    public static readonly DependencyProperty ToolbarCompactProperty =
+        DependencyProperty.Register(
+            nameof(ToolbarCompact),
+            typeof(bool),
+            typeof(MainWindow),
+            new PropertyMetadata(false));
+
+    /// <summary>Gets or sets whether the command-bar buttons are in icon-only (compact) mode.</summary>
+    public bool ToolbarCompact
+    {
+        get => (bool)GetValue(ToolbarCompactProperty);
+        set => SetValue(ToolbarCompactProperty, value);
+    }
+
     // --- keyboard accelerators (wired in MainWindow.xaml's InputBindings/CommandBindings) ---
     public static readonly RoutedUICommand NewTabKey = new("New tab", nameof(NewTabKey), typeof(MainWindow));
     public static readonly RoutedUICommand CloseTabKey = new("Close tab", nameof(CloseTabKey), typeof(MainWindow));
@@ -55,6 +76,9 @@ public partial class MainWindow : FluentWindow
 
     private ShellViewModel? Shell => DataContext as ShellViewModel;
 
+    // ── adaptive layout controller (owns Wide/Medium/Narrow pane state + ContentHost margin) ──
+    private AdaptiveLayoutController? _adaptiveLayout;
+
     private void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
         StartRelativeTimeRefresh();
@@ -78,16 +102,16 @@ public partial class MainWindow : FluentWindow
         // Show the Health section by default on startup.
         ShowNavSection(NavSection.Health);
 
-        // Restore persisted pane open/close state.
-        try
-        {
-            if (Settings?.Load() is { NavPaneOpen: true })
-            {
-                NavView.IsPaneOpen = true;
-                ContentHost.Margin = new Thickness(NavView.OpenPaneLength, 0, 0, 0);
-            }
-        }
-        catch { /* settings read failed; leave default closed */ }
+        _adaptiveLayout = new AdaptiveLayoutController(
+            NavView,
+            ContentHost,
+            NavPaneColumn,
+            Settings,
+            compact => ToolbarCompact = compact,
+            () => Shell?.SelectedTab is WorkspaceViewModel { IsUpdateMode: true },
+            ActionCluster,
+            CommandBarGrid);
+        _adaptiveLayout.Initialise(this);
     }
 
     // --- NavigationView pane ---
@@ -173,6 +197,10 @@ public partial class MainWindow : FluentWindow
         }
 
         UpdateStatusBarVisibility();
+
+        // The active section's mode (Health vs Patching) changed — the Patching toolbar is wider,
+        // so re-check whether the command-bar labels still fit.
+        _adaptiveLayout?.RefreshToolbar();
     }
 
     /// <summary>
@@ -191,32 +219,32 @@ public partial class MainWindow : FluentWindow
     {
         // Guard: ContentHost may not exist yet if this fires during InitializeComponent.
         if (ContentHost is null) return;
-        // Shift ContentHost right to reveal the expanded pane label+icon strip.
-        ContentHost.Margin = new Thickness(sender.OpenPaneLength, 0, 0, 0);
-        SaveNavPaneState(true);
+
+        // Delegate to the adaptive controller when initialised; it manages the NavPaneColumn width
+        // and persists the user's intent only when at Wide width.
+        if (_adaptiveLayout is { } ctrl)
+        {
+            ctrl.OnPaneOpened();
+        }
+        else
+        {
+            // Fallback before Loaded fires (shouldn't normally occur).
+            NavPaneColumn.Width = new System.Windows.GridLength(sender.OpenPaneLength);
+        }
     }
 
     private void OnNavPaneClosed(NavigationView sender, RoutedEventArgs e)
     {
         // Guard: ContentHost may not exist yet if this fires during InitializeComponent.
         if (ContentHost is null) return;
-        // Shift ContentHost left to expose only the compact icon strip.
-        ContentHost.Margin = new Thickness(sender.CompactPaneLength, 0, 0, 0);
-        SaveNavPaneState(false);
-    }
 
-    private void SaveNavPaneState(bool open)
-    {
-        if (Settings is null) return;
-        try
+        if (_adaptiveLayout is { } ctrl)
         {
-            AppSettings s = Settings.Load();
-            s.NavPaneOpen = open;
-            Settings.Save(s);
+            ctrl.OnPaneClosed();
         }
-        catch (Exception ex)
+        else
         {
-            Log?.Warn(null, $"Couldn't save nav pane state. {ex.Message}");
+            NavPaneColumn.Width = new System.Windows.GridLength(sender.CompactPaneLength);
         }
     }
 
@@ -678,21 +706,6 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    // --- overflow button (…) — opens ContextMenu on click, no chevron ---
-
-    private void OnOverflowButtonClick(object sender, RoutedEventArgs e)
-    {
-        if (OverflowButton.ContextMenu is { } menu)
-        {
-            // Gate Export to CSV on HasComputers (no rows = nothing to export).
-            ExportCsvMenuItem.IsEnabled = Shell?.SelectedTab is WorkspaceViewModel { HasComputers: true };
-
-            menu.PlacementTarget = OverflowButton;
-            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-            menu.IsOpen = true;
-        }
-    }
-
     // --- update source ---
 
     private void OnSourceWindowsUpdate(object sender, RoutedEventArgs e) => SetSource(UpdateSource.WindowsUpdate);
@@ -1072,13 +1085,6 @@ public partial class MainWindow : FluentWindow
         if (Shell?.SelectedTab is WorkspaceViewModel vm) SaveCurrentAsList(vm);
     }
 
-    // --- overflow (…) Export ---
-
-    private void OnExportCsv(object sender, RoutedEventArgs e)
-    {
-        if (Shell?.SelectedTab is WorkspaceViewModel vm) ExportTabCsv(vm);
-    }
-
     // --- tab context menu: New tab / Clear this tab ---
 
     private void OnClearThisTab(object sender, RoutedEventArgs e)
@@ -1095,36 +1101,6 @@ public partial class MainWindow : FluentWindow
         }
 
         vm?.SetComputers([]);
-    }
-
-    private void ExportTabCsv(WorkspaceViewModel vm)
-    {
-        if (vm.VisibleRowCount == 0)
-        {
-            Log?.Warn(null, "Export: nothing to export (no rows shown).");
-            return;
-        }
-
-        var dialog = new SaveFileDialog
-        {
-            Title = "Export tab to CSV",
-            Filter = "CSV file (*.csv)|*.csv|All files (*.*)|*.*",
-            FileName = $"{SanitizeFileName(vm.Title)}-report.csv",
-            DefaultExt = ".csv",
-            AddExtension = true,
-        };
-
-        if (dialog.ShowDialog(this) != true) return;
-
-        try
-        {
-            File.WriteAllText(dialog.FileName, vm.BuildReportCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            Log?.Info(null, $"Exported {vm.VisibleRowCount} row(s) to {dialog.FileName}");
-        }
-        catch (Exception ex)
-        {
-            Log?.Error(null, $"Export failed: {ex.Message}");
-        }
     }
 
     private static string SanitizeFileName(string name)
