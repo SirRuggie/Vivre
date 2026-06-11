@@ -34,8 +34,8 @@ public partial class HelpTopic : ObservableObject
 public static class HelpContent
 {
     public const string GettingStarted = "Getting started";
-    public const string Machines = "Machines view";
-    public const string Updates = "Windows Update view";
+    public const string Machines = "Fleet ▸ Health";
+    public const string Updates = "Fleet ▸ Patching";
     public const string Tips = "Tips & shortcuts";
     public const string Trouble = "Troubleshooting";
     public const string CrossDomainRdp = "Cross-Domain RDP";
@@ -51,7 +51,7 @@ public static class HelpContent
             [
                 "Vivre manages your Windows / SCCM machines at scale from one tabbed grid.",
                 "• Each row is one machine; ping it, pull its health, run scripts or SCCM actions, and patch it.",
-                "• A tab has two views: Machines (health & actions) and Windows Update (patching).",
+                "• The left nav has two Fleet sections: Health (ping, vitals, SCCM actions) and Patching (Windows Update).",
                 "• Pick machines, then act on them from the toolbar or the right-click menu.",
             ],
             Tip = "Most per-machine actions live on the right-click menu. Select rows first, then right-click.",
@@ -63,8 +63,8 @@ public static class HelpContent
             Lines =
             [
                 "Quick add: type a name in the \"Add computer…\" box (top-right) and press Enter.",
-                "A list: click the Paste button (or File ▸ Paste computers…) and paste names, one per line.",
-                "A saved list: File ▸ Open list ▸ pick one.",
+                "A list: click the Paste button (clipboard icon, top-right) and paste names, one per line.",
+                "A saved list: click the Lists ▾ button (top-right) ▸ Open list ▸ pick one.",
             ],
         },
         new HelpTopic
@@ -74,8 +74,8 @@ public static class HelpContent
             Lines =
             [
                 "1. Load the machines you want in the tab.",
-                "2. File ▸ Save tab as list… and give it a name.",
-                "3. Later, File ▸ Open list to load it into a tab; File ▸ Delete list to remove a saved one.",
+                "2. Click Lists ▾ (top-right command bar) ▸ Save tab as list… and give it a name.",
+                "3. Later, Lists ▾ ▸ Open list to load it into a tab; Lists ▾ ▸ Delete list to remove a saved one.",
             ],
             Tip = "Lists are plain .txt files under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
         },
@@ -106,12 +106,14 @@ public static class HelpContent
         },
         new HelpTopic
         {
-            Category = GettingStarted, Icon = SymbolRegular.ArrowSwap24, Title = "How do I switch between Machines and Windows Update?",
-            Keywords = "mode view toggle switch update",
+            Category = GettingStarted, Icon = SymbolRegular.ArrowSwap24, Title = "How do I switch between Health and Patching?",
+            Keywords = "mode view toggle switch update health patching fleet section nav",
             Lines =
             [
-                "Use the Machines / Windows Update chips above the grid (or press Ctrl+M to toggle).",
-                "The setting is per-tab, so different tabs can be in different views.",
+                "Click Fleet ▸ Health or Fleet ▸ Patching in the left navigation.",
+                "Or press Ctrl+M to toggle between them — the nav highlight follows.",
+                "Health shows the machines / health-check view; Patching shows the Windows Update view.",
+                "Each section has its own independent set of tabs, so you can have different machine lists in Health and Patching simultaneously.",
             ],
         },
         new HelpTopic
@@ -154,7 +156,7 @@ public static class HelpContent
             Keywords = "export csv report excel ticket maintenance window save what got patched",
             Lines =
             [
-                "File ▸ Export to CSV… — or right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
+                "Click the … (More actions) button in the toolbar ▸ Export to CSV… — or right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
                 "Columns: machine, online, status, updates available, update/reboot messages, last error, OS, scheduled task, plus any custom columns you've added.",
                 "Opens cleanly in Excel.",
             ],
@@ -340,7 +342,7 @@ public static class HelpContent
             Lines =
             [
                 "Right-click the machine ▸ Show messages — opens the activity log filtered to just that machine.",
-                "Or open the full log any time: View ▸ Activity log (search by machine or text).",
+                "Or open the full log any time: click Activity log in the status bar (bottom-right) to open the dock — search by machine or text.",
                 "In the log, right-click a line ▸ Copy (or Copy all) to copy entries out — they paste as tab-separated time / machine / message.",
             ],
         },
@@ -372,11 +374,11 @@ public static class HelpContent
         // ---------------- Windows Update view ----------------
         new HelpTopic
         {
-            Category = Updates, Icon = SymbolRegular.ArrowSwap24, Title = "How do I get to Windows Update?",
-            Keywords = "switch update mode view patching",
+            Category = Updates, Icon = SymbolRegular.ArrowSwap24, Title = "How do I get to Windows Update / Patching?",
+            Keywords = "switch update mode view patching fleet section nav",
             Lines =
             [
-                "Click the Windows Update chip above the grid (or press Ctrl+M). The grid swaps to the patch columns and the patch actions appear.",
+                "Click Fleet ▸ Patching in the left navigation (or press Ctrl+M from Health). The grid swaps to the patch columns and the patch actions appear.",
             ],
         },
         new HelpTopic
@@ -387,7 +389,7 @@ public static class HelpContent
             [
                 "Both share one panel at the bottom of the window, with tabs:",
                 "• Updates — opens when you click a machine in Windows Update view; shows its Applicable / Installed updates, with a filter box and All / None.",
-                "• Activity — the shared log (also opened by View ▸ Activity log).",
+                "• Activity — the shared log (also toggled by the Activity log button in the status bar, bottom-right).",
                 "Click a machine to jump straight to its Updates tab. Drag the handle on the panel's top edge (the divider bar) to resize it.",
                 "Click Close (top-right of the panel) to dismiss it and hand the grid back the full height.",
             ],
@@ -398,9 +400,9 @@ public static class HelpContent
             Keywords = "source windows microsoft update wsus managed drivers exclude",
             Lines =
             [
-                "Updates menu ▸ Source ▸ Windows Update / Microsoft Update / Managed (WSUS/SCCM).",
-                "Updates ▸ Include drivers to also scan/install drivers (off by default).",
-                "Updates ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
+                "Click Update options ▾ in the command bar (visible in Patching mode) ▸ Source ▸ Windows Update / Microsoft Update / Managed (WSUS/SCCM).",
+                "Update options ▾ ▸ Include drivers to also scan/install drivers (off by default).",
+                "Update options ▾ ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
             ],
         },
         new HelpTopic
@@ -482,7 +484,7 @@ public static class HelpContent
             Lines =
             [
                 "• Ctrl+T new tab · Ctrl+W close tab · F2 rename tab · Ctrl+L focus the add box.",
-                "• Ctrl+M switch Machines / Windows Update · F5 Ping All · Ctrl+Enter Install.",
+                "• Ctrl+M toggle Fleet ▸ Health / Patching · F5 Ping All · Ctrl+Enter Install.",
                 "• Shift+F10 (or the Menu key) opens the right-click menu from the keyboard.",
                 "• Delete removes the selected machines · Ctrl+C copies the selected rows.",
                 "• F1 opens this guide.",

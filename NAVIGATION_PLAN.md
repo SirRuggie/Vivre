@@ -15,16 +15,19 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
 - Expand/collapse **persisted to settings**.
 - The menu bar **stays** for File/workspace operations (New tab, Open/Save/Delete list, Paste, Export CSV, Exit).
 
-## Decisions (locked 2026-06-09)
+## Decisions (locked 2026-06-09; updated 2026-06-10)
 
-1. **No "Updates" nav section.** Machines ⇄ Windows Update stays a **per-tab toggle** on
-   `WorkspaceViewModel.IsUpdateMode` — it is per-tab state, not a destination. The on-canvas chips remain.
+1. **Fleet ▸ Health + Fleet ▸ Patching replace the single Computers workspace** *(updated 2026-06-10)* —
+   The former single "Computers" workspace is now a collapsible **Fleet** parent with two independent
+   keep-alive destinations: **Health** (health / SCCM actions — formerly "Machines mode") and **Patching**
+   (Windows Update — formerly "Windows Update mode"). Mode is fixed by section, not a per-tab toggle.
+   The on-canvas mode chips are removed. Ctrl+M now toggles between Fleet sections (Health↔Patching).
 2. **No "Reports" nav section.** Reporting today is just two identical CSV exports (`BuildReportCsv`) + a
    software-report CSV + the activity log — too thin to warrant a section. Exports stay where they are.
 3. **"Scripts" is a library MANAGER only** — edit / add / remove scripts in an accessible view (reuses
    `ScriptLibrary` over `%APPDATA%\Vivre\Scripts`). **No run-from-here**; running stays the Computers
    right-click ▸ Run script against machines (`ScriptRunnerWindow`, unchanged).
-4. **Mode toggle stays as on-canvas chips "for now"** — interim; the mode UX is to be revisited later.
+4. ~~**Mode toggle stays as on-canvas chips**~~ — **removed** (see decision 1). Chips replaced by Fleet nav.
 5. **Toolbar = Option A** — keep the Fleet / Operations / Updates clusters (from the modernization's M1),
    refined; no Fluent overflow. One-click speed/glanceability matters for a sysadmin tool.
 6. **Cross-Domain RDP → a nav item** (confirmed) — promote it from the View-menu tab to a machine-gated nav
@@ -34,7 +37,9 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
 
 ```
 ┌─ pane (LeftCompact) ─┐
-│  ▣  Computers        │  → the workspace tabs live here; Machines⇄Updates = per-tab chips
+│ ▾ Fleet              │  → collapsible parent; NOT a destination itself
+│     Health           │  → health check / SCCM actions (formerly "Machines mode"); default on launch
+│     Patching         │  → Windows Update scan + install (formerly "Windows Update mode")
 │  ⟨⟩ Scripts          │  → script library manager (edit/add/remove; no run)
 │  🔌 Cross-Domain RDP │  → machine-gated (APVHOP); singleton
 │  ───────────────────  │

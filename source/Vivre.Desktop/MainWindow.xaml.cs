@@ -18,9 +18,9 @@ using MessageBoxResult = Wpf.Ui.Controls.MessageBoxResult;
 namespace Vivre.Desktop;
 
 /// <summary>
-/// The shell window: menu bar, NavigationView pane (Computers / Settings), and the keep-alive content
-/// host that holds the workspace and the Settings page side by side (Visibility-toggled). Per-tab grid
-/// behaviour lives in <see cref="WorkspaceView"/>; this code-behind handles app-level concerns.
+/// The shell window: no menu bar; NavigationView pane (Fleet ▸ Health · Patching / Scripts / Cross-Domain RDP /
+/// Settings); keep-alive content host that holds all sections Visibility-toggled (never rebuilt on nav switch).
+/// Per-tab grid behaviour lives in <see cref="WorkspaceView"/>; this code-behind handles app-level concerns.
 /// </summary>
 public partial class MainWindow : FluentWindow
 {
@@ -57,7 +57,6 @@ public partial class MainWindow : FluentWindow
 
     private void OnWindowLoaded(object sender, RoutedEventArgs e)
     {
-        BuildFileMenu();
         StartRelativeTimeRefresh();
         HookOperationToasts();
         HookBottomDock();
@@ -76,8 +75,8 @@ public partial class MainWindow : FluentWindow
             ScriptsSection.Initialize(library);
         }
 
-        // Show the Computers section and set the nav highlight on startup.
-        ShowNavSection(NavSection.Computers);
+        // Show the Health section by default on startup.
+        ShowNavSection(NavSection.Health);
 
         // Restore persisted pane open/close state.
         try
@@ -93,11 +92,17 @@ public partial class MainWindow : FluentWindow
 
     // --- NavigationView pane ---
 
-    /// <summary>The four nav destinations.</summary>
-    private enum NavSection { Computers, Scripts, Rdp, Settings }
+    /// <summary>The nav destinations (Health and Patching replace Computers).</summary>
+    private enum NavSection { Health, Patching, Scripts, Rdp, Settings }
 
-    /// <summary>Click handler on the Computers nav item — drives the section toggle.</summary>
-    private void OnComputersNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Computers);
+    /// <summary>Click handler on the Fleet parent nav item — expands/collapses only; does NOT change section.</summary>
+    private void OnFleetNavClick(object sender, RoutedEventArgs e) { /* expand/collapse only — children are the real destinations */ }
+
+    /// <summary>Click handler on the Health nav item — drives the section toggle.</summary>
+    private void OnHealthNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Health);
+
+    /// <summary>Click handler on the Patching nav item — drives the section toggle.</summary>
+    private void OnPatchingNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Patching);
 
     /// <summary>Click handler on the Scripts nav item — drives the section toggle.</summary>
     private void OnScriptsNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Scripts);
@@ -122,33 +127,51 @@ public partial class MainWindow : FluentWindow
 
         if (d is NavigationViewItem item)
         {
-            NavSection section = ReferenceEquals(item, ComputersNavItem) ? NavSection.Computers
-                               : ReferenceEquals(item, ScriptsNavItem)   ? NavSection.Scripts
-                               : ReferenceEquals(item, RdpNavItem)       ? NavSection.Rdp
-                               :                                            NavSection.Settings;
+            // Fleet parent click: expand/collapse only — do NOT navigate away.
+            if (ReferenceEquals(item, FleetNavItem)) return;
+
+            NavSection section = ReferenceEquals(item, HealthNavItem)   ? NavSection.Health
+                               : ReferenceEquals(item, PatchingNavItem) ? NavSection.Patching
+                               : ReferenceEquals(item, ScriptsNavItem)  ? NavSection.Scripts
+                               : ReferenceEquals(item, RdpNavItem)      ? NavSection.Rdp
+                               :                                           NavSection.Settings;
             ShowNavSection(section);
         }
     }
 
     /// <summary>
     /// Shows exactly one nav section and collapses the others. Neither Navigate() nor ReplaceContent()
-    /// is ever called — all four sections stay in the visual tree permanently. This is the keep-alive
+    /// is ever called — all sections stay in the visual tree permanently. This is the keep-alive
     /// mechanism: ComputersSection, ScriptsSection, RdpSection, and SettingsSection are
-    /// Visibility-toggled only and are never rebuilt on a nav switch. The RDP section's
-    /// WindowsFormsHost + MSTSC ActiveX control survive all nav switches because the element is never
-    /// removed from the tree.
+    /// Visibility-toggled only and are never rebuilt on a nav switch. Within ComputersSection the two
+    /// TabControlEx strips (Health and Patching) are also Visibility-toggled — never removed.
     /// </summary>
     private void ShowNavSection(NavSection section)
     {
         if (ComputersSection is null || ScriptsSection is null || RdpSection is null || SettingsSection is null) return;
-        ComputersSection.Visibility = section == NavSection.Computers ? Visibility.Visible : Visibility.Collapsed;
+
+        bool computers = section is NavSection.Health or NavSection.Patching;
+        ComputersSection.Visibility = computers            ? Visibility.Visible : Visibility.Collapsed;
         ScriptsSection.Visibility   = section == NavSection.Scripts   ? Visibility.Visible : Visibility.Collapsed;
         RdpSection.Visibility       = section == NavSection.Rdp       ? Visibility.Visible : Visibility.Collapsed;
         SettingsSection.Visibility  = section == NavSection.Settings  ? Visibility.Visible : Visibility.Collapsed;
-        ComputersNavItem.IsActive = section == NavSection.Computers;
-        ScriptsNavItem.IsActive   = section == NavSection.Scripts;
-        RdpNavItem.IsActive       = section == NavSection.Rdp;
-        SettingsNavItem.IsActive  = section == NavSection.Settings;
+
+        // Update nav highlight.
+        HealthNavItem.IsActive   = section == NavSection.Health;
+        PatchingNavItem.IsActive = section == NavSection.Patching;
+        ScriptsNavItem.IsActive  = section == NavSection.Scripts;
+        RdpNavItem.IsActive      = section == NavSection.Rdp;
+        SettingsNavItem.IsActive = section == NavSection.Settings;
+
+        // Mirror section switch into the ShellViewModel so the SelectedTab routing stays in sync.
+        if (Shell is { } shell)
+        {
+            if (section == NavSection.Health)
+                shell.ActiveFleetSection = ViewModels.FleetSection.Health;
+            else if (section == NavSection.Patching)
+                shell.ActiveFleetSection = ViewModels.FleetSection.Patching;
+        }
+
         UpdateStatusBarVisibility();
     }
 
@@ -204,8 +227,7 @@ public partial class MainWindow : FluentWindow
     {
         // Columns window needs a WorkspaceViewModel and the current builtin column headers.
         // It's opened from WorkspaceView; here we delegate to the active tab's WorkspaceView.
-        // The simplest path: find the active tab's WorkspaceView in the visual tree and invoke its columns action.
-        if (Shell?.SelectedTab is not WorkspaceViewModel vm) return;
+        if (Shell?.SelectedTab is not WorkspaceViewModel) return;
 
         // WorkspaceView exposes OpenColumnsWindow as an internal helper.
         if (FindActiveWorkspaceView() is { } wsv)
@@ -216,8 +238,12 @@ public partial class MainWindow : FluentWindow
 
     private WorkspaceView? FindActiveWorkspaceView()
     {
-        // Walk the PART_ItemsHolder children to find the visible WorkspaceView.
-        if (WorkspaceTabs.Template.FindName("PART_ItemsHolder", WorkspaceTabs) is System.Windows.Controls.Panel holder)
+        // Walk the PART_ItemsHolder of the currently-visible tab strip to find the active WorkspaceView.
+        TabControlEx activeStrip = Shell?.ActiveFleetSection == ViewModels.FleetSection.Patching
+            ? PatchingTabs
+            : HealthTabs;
+
+        if (activeStrip.Template.FindName("PART_ItemsHolder", activeStrip) is System.Windows.Controls.Panel holder)
         {
             foreach (ContentPresenter cp in holder.Children.OfType<ContentPresenter>())
             {
@@ -252,12 +278,20 @@ public partial class MainWindow : FluentWindow
     {
         if (Shell is not { } shell) return;
 
-        foreach (WorkspaceViewModel tab in shell.Tabs.OfType<WorkspaceViewModel>())
+        // Hook existing tabs in both sections.
+        foreach (WorkspaceViewModel tab in shell.AllTabs)
         {
             tab.OperationCompleted += OnOperationCompleted;
         }
 
-        shell.Tabs.CollectionChanged += (_, e) =>
+        // Subscribe to both collections for future tabs.
+        SubscribeToastsToCollection(shell.HealthTabs);
+        SubscribeToastsToCollection(shell.PatchingTabs);
+    }
+
+    private void SubscribeToastsToCollection(System.Collections.ObjectModel.ObservableCollection<WorkspaceViewModel> tabs)
+    {
+        tabs.CollectionChanged += (_, e) =>
         {
             if (e.OldItems is not null)
             {
@@ -349,7 +383,7 @@ public partial class MainWindow : FluentWindow
 
         SubscribeToSelectedTab(null);
 
-        foreach (IDisposable tab in Shell?.Tabs.OfType<IDisposable>().ToArray() ?? [])
+        foreach (IDisposable tab in Shell?.AllTabs.OfType<IDisposable>().ToArray() ?? [])
         {
             tab.Dispose();
         }
@@ -364,7 +398,7 @@ public partial class MainWindow : FluentWindow
     {
         if (Shell is not { } shell) return;
 
-        foreach (var computer in shell.Tabs.OfType<WorkspaceViewModel>().SelectMany(tab => tab.Computers))
+        foreach (var computer in shell.AllTabs.SelectMany(tab => tab.Computers))
         {
             computer.RefreshRelativeTime();
         }
@@ -391,7 +425,7 @@ public partial class MainWindow : FluentWindow
         if (Shell is not { } shell) return;
 
         shell.PropertyChanged += OnShellPropertyChanged;
-        SubscribeToSelectedTab(shell.SelectedTab as WorkspaceViewModel);
+        SubscribeToSelectedTab(shell.SelectedTab);
         RecomputeBottomDock();
     }
 
@@ -399,7 +433,7 @@ public partial class MainWindow : FluentWindow
     {
         if (e.PropertyName == nameof(ShellViewModel.SelectedTab))
         {
-            SubscribeToSelectedTab(Shell?.SelectedTab as WorkspaceViewModel);
+            SubscribeToSelectedTab(Shell?.SelectedTab);
             RecomputeBottomDock();
             UpdateStatusBarVisibility();
         }
@@ -456,7 +490,7 @@ public partial class MainWindow : FluentWindow
     private void RecomputeBottomDock()
     {
         bool updates = UpdatesTriggerActive;
-        bool activity = ActivityLogMenuItem.IsChecked;
+        bool activity = ActivityLogToggle?.IsChecked == true;
 
         UpdatesTab.Visibility = updates ? Visibility.Visible : Visibility.Collapsed;
         if (!updates && BottomDockTabs.SelectedItem == UpdatesTab)
@@ -500,9 +534,9 @@ public partial class MainWindow : FluentWindow
         ActivityRow.Height = new GridLength(0);
     }
 
-    private void OnToggleActivityLog(object sender, RoutedEventArgs e)
+    private void OnActivityLogToggleChanged(object sender, RoutedEventArgs e)
     {
-        if (ActivityLogMenuItem.IsChecked)
+        if (ActivityLogToggle.IsChecked == true)
         {
             BottomDockTabs.SelectedItem = ActivityTab;
         }
@@ -512,7 +546,11 @@ public partial class MainWindow : FluentWindow
 
     private void OnCloseBottomDock(object sender, RoutedEventArgs e)
     {
-        ActivityLogMenuItem.IsChecked = false;
+        if (ActivityLogToggle is not null)
+        {
+            ActivityLogToggle.IsChecked = false;
+        }
+
         if (Shell?.SelectedTab is WorkspaceViewModel vm)
         {
             vm.FocusedComputer = null;
@@ -529,7 +567,11 @@ public partial class MainWindow : FluentWindow
             shell.ActivityLog.SearchText = machine;
         }
 
-        ActivityLogMenuItem.IsChecked = true;
+        if (ActivityLogToggle is not null)
+        {
+            ActivityLogToggle.IsChecked = true;
+        }
+
         BottomDockTabs.SelectedItem = ActivityTab;
         RecomputeBottomDock();
     }
@@ -642,6 +684,9 @@ public partial class MainWindow : FluentWindow
     {
         if (OverflowButton.ContextMenu is { } menu)
         {
+            // Gate Export to CSV on HasComputers (no rows = nothing to export).
+            ExportCsvMenuItem.IsEnabled = Shell?.SelectedTab is WorkspaceViewModel { HasComputers: true };
+
             menu.PlacementTarget = OverflowButton;
             menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
             menu.IsOpen = true;
@@ -785,13 +830,18 @@ public partial class MainWindow : FluentWindow
         if (Shell?.SelectedTab is { } tab) CloseTabWithGuard(tab);
     }
 
+    /// <summary>Returns the active section's tab collection.</summary>
+    private System.Collections.ObjectModel.ObservableCollection<WorkspaceViewModel>? ActiveTabs =>
+        Shell is { } shell
+            ? (shell.ActiveFleetSection == ViewModels.FleetSection.Health ? shell.HealthTabs : shell.PatchingTabs)
+            : null;
+
     private void OnFocusAddKey(object sender, ExecutedRoutedEventArgs e)
     {
         // Only meaningful when on the Computers section.
         if (ComputersSection.Visibility == Visibility.Visible)
         {
-            QuickAddBox.Focus();
-            QuickAddBox.SelectAll();
+            (FindName("QuickAddBox") as UIElement)?.Focus();
         }
     }
 
@@ -800,8 +850,17 @@ public partial class MainWindow : FluentWindow
         if (Shell?.SelectedTab is WorkspaceViewModel tab) RenameTab(tab);
     }
 
-    private void OnToggleModeKey(object sender, ExecutedRoutedEventArgs e) =>
-        (Shell?.SelectedTab as WorkspaceViewModel)?.ToggleUpdateModeCommand.Execute(null);
+    private void OnToggleModeKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (Shell is not { } shell) return;
+
+        // Toggle between Health and Patching sections; update the nav highlight to match.
+        shell.ToggleFleetSection();
+        NavSection next = shell.ActiveFleetSection == ViewModels.FleetSection.Health
+            ? NavSection.Health
+            : NavSection.Patching;
+        ShowNavSection(next);
+    }
 
     private void OnRefreshKey(object sender, ExecutedRoutedEventArgs e)
     {
@@ -823,19 +882,19 @@ public partial class MainWindow : FluentWindow
 
     private void OnCloseTab(object sender, RoutedEventArgs e)
     {
-        if (sender is FrameworkElement { DataContext: ITabViewModel tab }) CloseTabWithGuard(tab);
+        if (sender is FrameworkElement { DataContext: WorkspaceViewModel tab }) CloseTabWithGuard(tab);
     }
 
-    private async void CloseTabWithGuard(ITabViewModel tab)
+    private async void CloseTabWithGuard(WorkspaceViewModel tab)
     {
-        if (tab is WorkspaceViewModel { HasWork: true } workspace)
+        if (tab.HasWork)
         {
-            int n = workspace.Computers.Count;
+            int n = tab.Computers.Count;
             string detail = n > 0 ? $"{n} machine(s)" : "a running operation";
             var confirm = new MessageBox
             {
                 Title = "Close tab",
-                Content = $"Close \"{workspace.Title}\"? It has {detail}.\n\nMachines stay in any saved list — re-open to bring them back.",
+                Content = $"Close \"{tab.Title}\"? It has {detail}.\n\nMachines stay in any saved list — re-open to bring them back.",
                 PrimaryButtonText = "Close tab",
                 CloseButtonText = "Keep open",
             };
@@ -847,34 +906,34 @@ public partial class MainWindow : FluentWindow
 
     private void OnCloseOtherTabs(object sender, RoutedEventArgs e)
     {
-        if (Shell is { } shell && sender is FrameworkElement { DataContext: ITabViewModel keep })
+        if (ActiveTabs is { } tabs && sender is FrameworkElement { DataContext: WorkspaceViewModel keep })
         {
-            CloseTabs([.. shell.Tabs.Where(t => t != keep)]);
+            CloseTabs([.. tabs.Where(t => t != keep)]);
         }
     }
 
     private void OnCloseTabsToRight(object sender, RoutedEventArgs e)
     {
-        if (Shell is { } shell && sender is FrameworkElement { DataContext: ITabViewModel anchor })
+        if (ActiveTabs is { } tabs && sender is FrameworkElement { DataContext: WorkspaceViewModel anchor })
         {
-            int index = shell.Tabs.IndexOf(anchor);
-            if (index >= 0) CloseTabs([.. shell.Tabs.Skip(index + 1)]);
+            int index = tabs.IndexOf(anchor);
+            if (index >= 0) CloseTabs([.. tabs.Skip(index + 1)]);
         }
     }
 
     private void OnCloseAllTabs(object sender, RoutedEventArgs e)
     {
-        if (Shell is { } shell)
+        if (ActiveTabs is { } tabs)
         {
-            CloseTabs([.. shell.Tabs]);
+            CloseTabs([.. tabs]);
         }
     }
 
-    private async void CloseTabs(IReadOnlyList<ITabViewModel> tabs)
+    private async void CloseTabs(IReadOnlyList<WorkspaceViewModel> tabs)
     {
         if (Shell is not { } shell || tabs.Count == 0) return;
 
-        int withWork = tabs.OfType<WorkspaceViewModel>().Count(t => t.HasWork);
+        int withWork = tabs.Count(t => t.HasWork);
         if (withWork > 0)
         {
             var confirm = new MessageBox
@@ -889,7 +948,7 @@ public partial class MainWindow : FluentWindow
             if (await confirm.ShowDialogAsync() != MessageBoxResult.Primary) return;
         }
 
-        foreach (ITabViewModel tab in tabs) shell.CloseTabCommand.Execute(tab);
+        foreach (WorkspaceViewModel tab in tabs) shell.CloseTabCommand.Execute(tab);
     }
 
     private void OnTabHeaderClick(object sender, MouseButtonEventArgs e)
@@ -903,7 +962,7 @@ public partial class MainWindow : FluentWindow
     private void OnTabHeaderMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.ChangedButton == MouseButton.Middle
-            && sender is FrameworkElement { DataContext: ITabViewModel tab })
+            && sender is FrameworkElement { DataContext: WorkspaceViewModel tab })
         {
             CloseTabWithGuard(tab);
             e.Handled = true;
@@ -946,71 +1005,96 @@ public partial class MainWindow : FluentWindow
     {
         if (Shell?.SelectedTab is not WorkspaceViewModel vm) return;
 
-        string[] names = QuickAddBox.Text.Split(
+        var qab = FindName("QuickAddBox") as Wpf.Ui.Controls.TextBox;
+        string[] names = (qab?.Text ?? string.Empty).Split(
             [',', ';', ' ', '\t', '\r', '\n'],
             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 
         if (names.Length > 0)
         {
             vm.AddComputers(names);
-            QuickAddBox.Text = string.Empty;
+            if (qab is not null) qab.Text = string.Empty;
         }
     }
 
-    // --- File menu ---
+    // --- Lists button and Update options button — open their ContextMenus on click ---
 
-    private void OnFileMenuOpened(object sender, RoutedEventArgs e)
+    private void OnListsButtonClick(object sender, RoutedEventArgs e)
     {
-        if (ReferenceEquals(e.OriginalSource, FileMenu)) BuildFileMenu();
+        if (sender is FrameworkElement btn && btn.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = btn;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
     }
 
-    private void BuildFileMenu()
+    private void OnUpdateOptionsButtonClick(object sender, RoutedEventArgs e)
     {
-        FileMenu.Items.Clear();
+        if (UpdateOptionsButton.ContextMenu is { } menu)
+        {
+            menu.PlacementTarget = UpdateOptionsButton;
+            menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+            menu.IsOpen = true;
+        }
+    }
 
-        var newTab = new MenuItem { Header = "_New tab", InputGestureText = "Ctrl+T" };
-        newTab.Click += OnNewTab;
-        FileMenu.Items.Add(newTab);
+    // --- Lists ▾ drop-down ---
 
-        FileMenu.Items.Add(new Separator());
+    /// <summary>Rebuilds the Open and Delete list submenus every time the Lists flyout opens.</summary>
+    private void OnListsFlyoutOpened(object sender, RoutedEventArgs e)
+    {
+        if (sender is not ContextMenu cm) return;
 
         WorkspaceViewModel? vm = Shell?.SelectedTab as WorkspaceViewModel;
-
-        var newClear = new MenuItem { Header = "_Clear this tab", IsEnabled = vm is not null };
-        newClear.Click += (_, _) => vm?.SetComputers([]);
-        FileMenu.Items.Add(newClear);
-
         IReadOnlyList<string> lists = vm?.SavedLists() ?? [];
 
-        var openMenu = new MenuItem { Header = "_Open list", IsEnabled = vm is not null };
-        AddListItems(openMenu, lists, name => vm?.OpenList(name));
-        FileMenu.Items.Add(openMenu);
+        // Find the Open list and Delete list items by Tag.
+        MenuItem? openMenu = cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "OpenList");
+        MenuItem? deleteMenu = cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "DeleteList");
 
-        var saveItem = new MenuItem { Header = "_Save tab as list…", IsEnabled = vm is not null };
-        saveItem.Click += (_, _) => { if (vm is not null) SaveCurrentAsList(vm); };
-        FileMenu.Items.Add(saveItem);
+        if (openMenu is not null)
+        {
+            openMenu.Items.Clear();
+            AddListItems(openMenu, lists, name => vm?.OpenList(name));
+            openMenu.IsEnabled = vm is not null;
+        }
 
-        var deleteMenu = new MenuItem { Header = "_Delete list" };
-        AddListItems(deleteMenu, lists, name => { if (vm is not null) ConfirmDeleteList(vm, name); });
-        FileMenu.Items.Add(deleteMenu);
+        if (deleteMenu is not null)
+        {
+            deleteMenu.Items.Clear();
+            AddListItems(deleteMenu, lists, name => { if (vm is not null) ConfirmDeleteList(vm, name); });
+        }
+    }
 
-        FileMenu.Items.Add(new Separator());
+    private void OnSaveTabAsList(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is WorkspaceViewModel vm) SaveCurrentAsList(vm);
+    }
 
-        var pasteItem = new MenuItem { Header = "_Paste computers…", IsEnabled = vm is not null };
-        pasteItem.Click += (_, _) => { if (vm is not null) new LoadComputersWindow(vm) { Owner = this }.ShowDialog(); };
-        FileMenu.Items.Add(pasteItem);
+    // --- overflow (…) Export ---
 
-        FileMenu.Items.Add(new Separator());
+    private void OnExportCsv(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.SelectedTab is WorkspaceViewModel vm) ExportTabCsv(vm);
+    }
 
-        var exportItem = new MenuItem { Header = "_Export to CSV…", IsEnabled = vm is { HasComputers: true } };
-        exportItem.Click += (_, _) => { if (vm is not null) ExportTabCsv(vm); };
-        FileMenu.Items.Add(exportItem);
+    // --- tab context menu: New tab / Clear this tab ---
 
-        FileMenu.Items.Add(new Separator());
+    private void OnClearThisTab(object sender, RoutedEventArgs e)
+    {
+        // DataContext on the ContextMenu is the WorkspaceViewModel for that tab header.
+        WorkspaceViewModel? vm = null;
+        if (sender is FrameworkElement { DataContext: WorkspaceViewModel tabVm })
+        {
+            vm = tabVm;
+        }
+        else
+        {
+            vm = Shell?.SelectedTab as WorkspaceViewModel;
+        }
 
-        var exitItem = new MenuItem { Header = "E_xit" };
-        exitItem.Click += (_, _) => Close();
-        FileMenu.Items.Add(exitItem);
+        vm?.SetComputers([]);
     }
 
     private void ExportTabCsv(WorkspaceViewModel vm)
