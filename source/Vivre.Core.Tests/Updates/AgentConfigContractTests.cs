@@ -56,4 +56,33 @@ public class AgentConfigContractTests
         Assert.Empty(cfg.Excludes);
         Assert.Empty(cfg.IncludeKbs);
     }
+
+    [Fact]
+    public void Scan_config_round_trips_with_scope_and_result_path()
+    {
+        // The SMB lane's Scan mode carries two extra keys (Scope + ResultPath) the WinRM lane omits;
+        // assert they bind onto the agent POCO so the agent reads the right scope and result target.
+        var options = new PatchOptions { Source = UpdateSource.WindowsUpdate, Scope = UpdateScope.Installed };
+
+        string json = WuaUpdateLane.BuildAgentConfigJson(
+            options, @"C:\ProgramData\Vivre\agent\p.json", "Scan", "Installed", @"C:\ProgramData\Vivre\agent\s.json");
+        AgentConfig cfg = JsonSerializer.Deserialize<AgentConfig>(json)!;
+
+        Assert.Equal("Scan", cfg.Mode);
+        Assert.Equal("Installed", cfg.Scope);
+        Assert.Equal(@"C:\ProgramData\Vivre\agent\s.json", cfg.ResultPath);
+        Assert.Equal(@"C:\ProgramData\Vivre\agent\p.json", cfg.ProgressPath);
+    }
+
+    [Fact]
+    public void Non_scan_config_leaves_scope_and_result_path_null()
+    {
+        // The three-arg callers (the WinRM lane) must keep emitting null Scope/ResultPath so nothing in
+        // the install/uninstall path changes shape.
+        string json = WuaUpdateLane.BuildAgentConfigJson(new PatchOptions(), "p", "Install");
+        AgentConfig cfg = JsonSerializer.Deserialize<AgentConfig>(json)!;
+
+        Assert.Null(cfg.Scope);
+        Assert.Null(cfg.ResultPath);
+    }
 }

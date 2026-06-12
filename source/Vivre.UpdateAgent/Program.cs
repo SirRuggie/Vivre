@@ -21,22 +21,60 @@ namespace Vivre.UpdateAgent
     {
         private static int Main(string[] args)
         {
+            // SMB lane: the Service Control Manager launches us as LocalSystem via the service binPath
+            // "Vivre.UpdateAgent.exe --service <config.json>". ServiceBase.Run must own the main thread
+            // so the SCM dispatcher can drive start/stop; AgentService hosts the same work and does the
+            // "I'm running" check-in that keeps StartService from timing out with error 1053.
+            if (args != null && args.Length >= 2 &&
+                string.Equals(args[0], "--service", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    System.ServiceProcess.ServiceBase.Run(new AgentService(args[1]));
+                    return 0;
+                }
+                catch (Exception ex)
+                {
+                    // Only reachable if launched with --service outside the SCM (it requires a service
+                    // dispatcher). Never the WinRM/console path.
+                    Console.Error.WriteLine(ex);
+                    return 1;
+                }
+            }
+
+            // WinRM lane (and local): the one-time SYSTEM scheduled task runs us in plain console mode
+            // as "Vivre.UpdateAgent.exe <config.json>".
+            if (args == null || args.Length < 1 || string.IsNullOrWhiteSpace(args[0]))
+            {
+                Console.Error.WriteLine("usage: Vivre.UpdateAgent <config.json>  (or: --service <config.json>)");
+                return 2;
+            }
+
+            return RunFromConfig(args[0], heartbeat: null);
+        }
+
+        /// <summary>
+        /// Loads the config, runs the requested operation (Install / Uninstall / Scan) writing the
+        /// append-only progress JSONL, and handles the optional post-op reboot. Shared by the console
+        /// entry (WinRM lane, <paramref name="heartbeat"/> null) and <see cref="AgentService"/> (SMB
+        /// lane, which passes a heartbeat so a long quiet WUA search still proves liveness). Never
+        /// throws — a fault becomes a terminal Error line and a non-zero return.
+        /// </summary>
+        internal static int RunFromConfig(string configPath, AgentHeartbeat heartbeat)
+        {
             ProgressWriter progress = null;
             try
             {
-                if (args == null || args.Length < 1 || string.IsNullOrWhiteSpace(args[0]))
-                {
-                    Console.Error.WriteLine("usage: Vivre.UpdateAgent <config.json>");
-                    return 2;
-                }
-
-                AgentConfig config = AgentConfigLoader.Load(args[0]);
+                AgentConfig config = AgentConfigLoader.Load(configPath);
                 progress = new ProgressWriter(config.ProgressPath);
+                heartbeat?.Start(progress);
 
                 // Never touch the servicing stack (WUA/DISM) while a reboot is already pending or a
                 // servicing transaction is staged/in-flight — that's how we'd collide with the OS's
                 // boot-time offline-servicing pass. Defer cleanly and let the user reboot first.
-                if (BootBusyGuard.IsServicingBusy(out string busyReason))
+                // (A read-only Scan is safe during a pending reboot, so only the mutating modes defer.)
+                bool isScan = string.Equals(config.Mode, "Scan", StringComparison.OrdinalIgnoreCase);
+                if (!isScan && BootBusyGuard.IsServicingBusy(out string busyReason))
                 {
                     progress.Write("PendingReboot",
                         "Deferred — " + busyReason + ". Reboot the machine, then re-run. (Not started, to avoid colliding with Windows servicing.)",
@@ -44,9 +82,19 @@ namespace Vivre.UpdateAgent
                     return 0;
                 }
 
-                bool rebootNeeded = string.Equals(config.Mode, "Uninstall", StringComparison.OrdinalIgnoreCase)
-                    ? RunUninstall(config, progress)
-                    : RunInstall(config, progress);
+                bool rebootNeeded;
+                if (isScan)
+                {
+                    rebootNeeded = RunScan(config, progress);
+                }
+                else if (string.Equals(config.Mode, "Uninstall", StringComparison.OrdinalIgnoreCase))
+                {
+                    rebootNeeded = RunUninstall(config, progress);
+                }
+                else
+                {
+                    rebootNeeded = RunInstall(config, progress);
+                }
 
                 // Reboot (RebootAndWait) only after the operation method has returned — its WUA COM
                 // objects are now out of scope. Force-release the RCWs so nothing of ours holds a
@@ -77,6 +125,12 @@ namespace Vivre.UpdateAgent
                 }
 
                 return 1;
+            }
+            finally
+            {
+                // Stop the heartbeat before we return so no stray Heartbeat line trails the terminal
+                // (Done/Error/PendingReboot) line the controller stops on.
+                heartbeat?.Stop();
             }
         }
 
@@ -319,6 +373,202 @@ namespace Vivre.UpdateAgent
             {
                 return (false, false, ex.Message);
             }
+        }
+
+        // --- scan ----------------------------------------------------------
+
+        /// <summary>
+        /// Read-only WUA search for the SMB lane (the WinRM lane scans over PowerShell instead). Mirrors
+        /// <c>WuaUpdateLane.BuildScanScript</c>: Applicable scope returns IsInstalled=0 rows, Installed
+        /// scope returns IsInstalled=1 rows with their install dates from WUA history. Writes the update
+        /// array to <see cref="AgentConfig.ResultPath"/> for the controller to read back over SMB, then a
+        /// terminal Done line. Never reboots (returns false). Excludes are applied controller-side
+        /// (matching the WinRM scan), so the agent returns the raw list.
+        /// </summary>
+        private static bool RunScan(AgentConfig config, ProgressWriter progress)
+        {
+            bool installedScope = string.Equals(config.Scope, "Installed", StringComparison.OrdinalIgnoreCase);
+            progress.Write("Searching",
+                installedScope ? "Scanning installed updates…" : "Scanning for updates…",
+                0, 0, 0, 0, false);
+
+            var session = new UpdateSession();
+            IUpdateSearcher searcher = session.CreateUpdateSearcher();
+            ApplySource(searcher, config);
+
+            string typeFilter = config.IncludeDrivers ? string.Empty : " and Type='Software'";
+            string installedFilter = installedScope ? "IsInstalled=1" : "IsInstalled=0";
+            ISearchResult result = searcher.Search(installedFilter + " and IsHidden=0" + typeFilter);
+
+            // Installed scope: map each installed update to its most recent install date from WUA
+            // history, by Identity UpdateID and (fallback) by KB — same dual keying as the PS scan,
+            // because WUSA-installed updates sometimes show a different UpdateID in history.
+            var datesById = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            var datesByKb = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+            if (installedScope)
+            {
+                BuildHistoryDateMaps(searcher, datesById, datesByKb);
+            }
+
+            var rows = new List<Dictionary<string, object>>();
+            foreach (IUpdate u in result.Updates)
+            {
+                // Wrap each update so one stale COM proxy or odd subtype is skipped, not fatal.
+                try
+                {
+                    string title = u.Title;
+                    if (string.IsNullOrWhiteSpace(title))
+                    {
+                        continue;
+                    }
+
+                    string kb = (u.KBArticleIDs != null && u.KBArticleIDs.Count > 0) ? u.KBArticleIDs[0] : null;
+
+                    double size = 0;
+                    try { size = Math.Round((double)u.MaxDownloadSize / 1048576.0, 1); } catch { }
+
+                    bool isUninstallable = true;
+                    if (installedScope)
+                    {
+                        try { isUninstallable = u.IsUninstallable; } catch { isUninstallable = false; }
+                    }
+
+                    bool isDownloaded = false;
+                    try { isDownloaded = u.IsDownloaded; } catch { }
+
+                    string installedAt = null;
+                    if (installedScope)
+                    {
+                        DateTime found;
+                        string uid = null;
+                        try { uid = u.Identity != null ? u.Identity.UpdateID : null; } catch { }
+                        if (uid != null && datesById.TryGetValue(uid, out found))
+                        {
+                            installedAt = found.ToString("o", CultureInfo.InvariantCulture);
+                        }
+                        else if (kb != null && datesByKb.TryGetValue(kb, out found))
+                        {
+                            installedAt = found.ToString("o", CultureInfo.InvariantCulture);
+                        }
+                    }
+
+                    rows.Add(new Dictionary<string, object>
+                    {
+                        ["Title"] = title,
+                        ["KB"] = kb,
+                        ["IsDownloaded"] = isDownloaded,
+                        ["SizeMb"] = size,
+                        ["IsUninstallable"] = isUninstallable,
+                        ["InstalledAt"] = installedAt,
+                    });
+                }
+                catch
+                {
+                    // Skip an update that can't be read.
+                }
+            }
+
+            WriteScanResult(config.ResultPath, rows);
+
+            string message = installedScope
+                ? (rows.Count == 0 ? "No installed updates" : rows.Count + " installed update(s)")
+                : (rows.Count == 0 ? "Up to date" : rows.Count + " update(s) available");
+            progress.Write("Done", message, 100, rows.Count, 0, 0, false);
+            return false;
+        }
+
+        /// <summary>Fills the UpdateID→date and KB→date maps from WUA's install history (Operation 1),
+        /// keeping the most recent date per key. Best-effort: a history read failure leaves the maps
+        /// empty (rows then carry no install date, exactly like the PS scan's try/catch).</summary>
+        private static void BuildHistoryDateMaps(
+            IUpdateSearcher searcher,
+            Dictionary<string, DateTime> datesById,
+            Dictionary<string, DateTime> datesByKb)
+        {
+            try
+            {
+                int count = searcher.GetTotalHistoryCount();
+                if (count <= 0)
+                {
+                    return;
+                }
+
+                IUpdateHistoryEntryCollection history = searcher.QueryHistory(0, count);
+                foreach (IUpdateHistoryEntry h in history)
+                {
+                    try
+                    {
+                        // Operation 1 == uoInstallation (the embedded-interop enum name isn't surfaced,
+                        // so compare the underlying value, exactly like the PS scan's "-ne 1").
+                        if ((int)h.Operation != 1 || h.UpdateIdentity == null)
+                        {
+                            continue;
+                        }
+
+                        string id = h.UpdateIdentity.UpdateID;
+                        if (!string.IsNullOrEmpty(id) &&
+                            (!datesById.TryGetValue(id, out DateTime prev) || prev < h.Date))
+                        {
+                            datesById[id] = h.Date;
+                        }
+
+                        // Pull the KB out of the title ("...(KB1234567)...") for the fallback map.
+                        string kb = ExtractKb(h.Title);
+                        if (kb != null &&
+                            (!datesByKb.TryGetValue(kb, out DateTime prevKb) || prevKb < h.Date))
+                        {
+                            datesByKb[kb] = h.Date;
+                        }
+                    }
+                    catch
+                    {
+                        // Skip an unreadable history entry.
+                    }
+                }
+            }
+            catch
+            {
+                // No history available — leave the maps empty.
+            }
+        }
+
+        /// <summary>Pulls the digits from the first "KB#######" token in a title, or null.</summary>
+        private static string ExtractKb(string title)
+        {
+            if (string.IsNullOrEmpty(title))
+            {
+                return null;
+            }
+
+            int i = title.IndexOf("KB", StringComparison.OrdinalIgnoreCase);
+            if (i < 0)
+            {
+                return null;
+            }
+
+            int start = i + 2;
+            int end = start;
+            while (end < title.Length && char.IsDigit(title[end]))
+            {
+                end++;
+            }
+
+            return end > start ? title.Substring(start, end - start) : null;
+        }
+
+        /// <summary>Serializes the scan rows to <paramref name="path"/> as a JSON array (JavaScriptSerializer
+        /// on net48; the controller reads it with System.Text.Json — the same cross-framework contract as
+        /// the config). A null/empty path means the caller didn't ask for a result file.</summary>
+        private static void WriteScanResult(string path, List<Dictionary<string, object>> rows)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return;
+            }
+
+            var serializer = new JavaScriptSerializer { MaxJsonLength = int.MaxValue };
+            string json = serializer.Serialize(rows);
+            System.IO.File.WriteAllText(path, json, new UTF8Encoding(false));
         }
 
         // --- shared job driver ---------------------------------------------

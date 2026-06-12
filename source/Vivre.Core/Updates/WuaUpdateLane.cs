@@ -26,6 +26,7 @@ public sealed class WuaUpdateLane
     private readonly IPowerShellHost _powerShell;
     private readonly TimeSpan _watchdogPollInterval;
     private readonly Func<byte[]> _agentBytes;
+    private readonly ISmbAgentLane _smb;
 
     /// <param name="powerShell">The remoting host all transport goes through.</param>
     /// <param name="watchdogPollInterval">How often the liveness watchdog wakes to check for total
@@ -34,14 +35,19 @@ public sealed class WuaUpdateLane
     /// <param name="agentBytesProvider">Supplies the compiled agent EXE bytes to drop on the target.
     /// Defaults to reading <c>Vivre.UpdateAgent.exe</c> from the app directory; overridden only by
     /// tests (which have no bundled agent) so the install/uninstall streaming path can be tested.</param>
+    /// <param name="smbLane">The SMB + SCM fallback lane used when a host rejects WinRM/Kerberos
+    /// (0x80090322). Defaults to a real <see cref="SmbAgentLane"/> over the same agent bytes; overridden
+    /// by tests to assert the lane selection delegates on the typed Kerberos exception.</param>
     public WuaUpdateLane(
         IPowerShellHost powerShell,
         TimeSpan? watchdogPollInterval = null,
-        Func<byte[]>? agentBytesProvider = null)
+        Func<byte[]>? agentBytesProvider = null,
+        ISmbAgentLane? smbLane = null)
     {
         _powerShell = powerShell;
         _watchdogPollInterval = watchdogPollInterval ?? TimeSpan.FromSeconds(15);
         _agentBytes = agentBytesProvider ?? ReadAgentBytes;
+        _smb = smbLane ?? new SmbAgentLane(_agentBytes);
     }
 
     // --- scan -------------------------------------------------------------
@@ -56,7 +62,18 @@ public sealed class WuaUpdateLane
         ArgumentNullException.ThrowIfNull(options);
 
         string script = BuildScanScript(options.Source, options.IncludeDrivers, options.Scope);
-        PSExecutionResult result = await RunScriptAsync(host, script, credential, cancellationToken).ConfigureAwait(false);
+
+        PSExecutionResult result;
+        try
+        {
+            result = await RunScriptAsync(host, script, credential, cancellationToken).ConfigureAwait(false);
+        }
+        catch (KerberosWrongPrincipalException)
+        {
+            // WinRM rejects Kerberos on this host — scan over the SMB + SCM agent lane instead. Same
+            // result shape; the degradation is surfaced only through Vitals, never on this result.
+            return await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
+        }
 
         if (result.HadErrors && result.Output.Count == 0)
         {
@@ -120,9 +137,9 @@ public sealed class WuaUpdateLane
 
         string runId = Guid.NewGuid().ToString("N");
         string taskName = $"Vivre_WUA_{runId}";
-        string exePath = $@"C:\Windows\Temp\{taskName}.exe";
-        string configPath = $@"C:\Windows\Temp\{taskName}_config.json";
-        string progressPath = $@"C:\Windows\Temp\{taskName}_progress.json";
+        string exePath = $@"{AgentDropDir}\{taskName}.exe";
+        string configPath = $@"{AgentDropDir}\{taskName}_config.json";
+        string progressPath = $@"{AgentDropDir}\{taskName}_progress.json";
 
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, startingMessage));
 
@@ -222,6 +239,17 @@ public sealed class WuaUpdateLane
             }
 
             return last;
+        }
+        catch (KerberosWrongPrincipalException)
+        {
+            // WinRM rejects Kerberos on this host (often a cached fast-fail before anything was dropped).
+            // Run the operation over the SMB + SCM agent lane instead — same result shape; the Kerberos
+            // degradation surfaces only through Vitals, never on this operation result. Stop the WinRM
+            // watchdog first so it can't trip during the (potentially long) SMB run.
+            watchdogCts.Cancel();
+            return string.Equals(mode, "Uninstall", StringComparison.OrdinalIgnoreCase)
+                ? await _smb.UninstallAsync(host, options, progress, cancellationToken).ConfigureAwait(false)
+                : await _smb.InstallAsync(host, options, progress, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (watchdogStale && !cancellationToken.IsCancellationRequested)
         {
@@ -617,16 +645,22 @@ public sealed class WuaUpdateLane
     /// <summary>
     /// The settings JSON the on-target <c>Vivre.UpdateAgent.exe</c> reads (its AgentConfig
     /// deserialises this). Keys match AgentConfig's property names. <paramref name="mode"/> is
-    /// "Install" or "Uninstall"; <paramref name="progressPath"/> is the target path the agent
+    /// "Install", "Uninstall", or "Scan"; <paramref name="progressPath"/> is the target path the agent
     /// appends its progress JSONL to (the same file the streaming controller tails). Public so
     /// the shape stays host-free unit-testable.
     /// </summary>
-    public static string BuildAgentConfigJson(PatchOptions options, string progressPath, string mode)
+    /// <param name="scope">Scan scope ("Applicable"/"Installed") for <c>mode = "Scan"</c>; null otherwise.</param>
+    /// <param name="resultPath">Where a Scan writes its JSON update array (the SMB lane reads it back);
+    /// null for Install/Uninstall. Both default to null so the WinRM lane's three-arg callers and the
+    /// cross-framework round-trip test are unaffected.</param>
+    public static string BuildAgentConfigJson(
+        PatchOptions options, string progressPath, string mode, string? scope = null, string? resultPath = null)
     {
         WuaServerSelection sel = WuaServerSelection.For(options.Source);
         var config = new
         {
             Mode = mode,
+            Scope = scope,
             ServerSelection = sel.ServerSelection,
             ServiceId = sel.ServiceId,
             IncludeDrivers = options.IncludeDrivers,
@@ -640,6 +674,7 @@ public sealed class WuaUpdateLane
                 .ToArray(),
             RebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait,
             ProgressPath = progressPath,
+            ResultPath = resultPath,
         };
 
         return JsonSerializer.Serialize(config);
@@ -664,6 +699,15 @@ public sealed class WuaUpdateLane
     }
 
     private const string AgentExeName = "Vivre.UpdateAgent.exe";
+
+    /// <summary>
+    /// The Administrators/SYSTEM-only directory both lanes drop the agent + its config into, replacing
+    /// the old world-writable <c>C:\Windows\Temp</c> so a non-privileged local user can't plant or swap
+    /// the binary we run as SYSTEM (defense-in-depth alongside the SHA-256 integrity gate). The WinRM
+    /// bootstrap creates + hardens it on the target; the SMB lane creates + hardens it over the admin
+    /// share. Per-run filenames keep concurrent runs from colliding.
+    /// </summary>
+    internal const string AgentDropDir = @"C:\ProgramData\Vivre\agent";
 
 
     /// <summary>
@@ -699,12 +743,32 @@ public sealed class WuaUpdateLane
 
         return $$"""
             $ErrorActionPreference = 'Stop'
+
+            # Drop into an Administrators/SYSTEM-only directory (not world-writable C:\Windows\Temp), so a
+            # non-privileged local user can't plant or swap the binary we then run as SYSTEM. Create it if
+            # absent and harden the ACL: break inheritance, grant only SYSTEM + Administrators. ACL
+            # hardening is best-effort (the SHA-256 gate below is the authoritative integrity control).
+            $dropDir = Split-Path -Parent '{{exePath}}'
+            if (-not (Test-Path -LiteralPath $dropDir)) {
+                New-Item -ItemType Directory -Path $dropDir -Force | Out-Null
+            }
+            try {
+                $acl = New-Object System.Security.AccessControl.DirectorySecurity
+                $acl.SetAccessRuleProtection($true, $false)
+                $inh = [System.Security.AccessControl.InheritanceFlags]'ContainerInherit, ObjectInherit'
+                $sys = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-18'
+                $adm = New-Object System.Security.Principal.SecurityIdentifier 'S-1-5-32-544'
+                $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($sys, 'FullControl', $inh, 'None', 'Allow')))
+                $acl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule($adm, 'FullControl', $inh, 'None', 'Allow')))
+                Set-Acl -LiteralPath $dropDir -AclObject $acl
+            } catch { }
+
             [System.IO.File]::WriteAllBytes('{{exePath}}', [Convert]::FromBase64String('{{base64Exe}}'))
             [System.IO.File]::WriteAllBytes('{{configPath}}', [Convert]::FromBase64String('{{base64Config}}'))
 
-            # Integrity gate: the EXE lands in a world-writable temp dir and runs as SYSTEM, so verify
-            # the bytes on disk match the agent we shipped before we launch it. This catches a tampered
-            # or replaced binary (closing most of the drop->run TOCTOU window).
+            # Integrity gate: the EXE runs as SYSTEM, so verify the bytes on disk match the agent we
+            # shipped before we launch it. This catches a tampered or replaced binary (closing the
+            # drop->run TOCTOU window the hardened ACL above narrows).
             $expectedHash = '{{expectedSha256}}'
             $actualHash = (Get-FileHash -LiteralPath '{{exePath}}' -Algorithm SHA256).Hash
             if ($actualHash -ne $expectedHash) {
