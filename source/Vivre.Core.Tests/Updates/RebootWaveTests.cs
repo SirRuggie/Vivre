@@ -6,8 +6,9 @@ namespace Vivre.Core.Tests.Updates;
 /// <summary>
 /// The Reboot Wave's per-box state machine, driven by a shared <see cref="FakeBox"/> the reboot/reach/
 /// build fakes all read, with millisecond timers so the loop runs fast. Confirms the behaviour locked
-/// with the operator: graceful-then-forced escalation, the clock only flags "Overdue" (UBR decides),
-/// late returns still get verified, and genuine failures (not-ready, won't-reboot, never-returns) go red.
+/// with the operator: graceful→forced escalation (scoped to boxes the operator explicitly selected and
+/// confirmed — the wave never runs on its own), the clock only flags "Overdue" (UBR decides), late returns
+/// still get verified, and genuine failures (not-ready, won't-reboot, never-returns) go red.
 /// </summary>
 public class RebootWaveTests
 {
@@ -35,6 +36,8 @@ public class RebootWaveTests
     [Fact]
     public async Task Graceful_that_wont_go_offline_escalates_to_forced_then_commits()
     {
+        // Scoped escalation: the operator selected + confirmed this box, so a graceful reboot that won't take
+        // is completed with a forced one. (The wave only ever runs on operator-selected boxes — see the VM.)
         var box = new FakeBox { GracefulTakesOffline = false, ForcedTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr };
         var (wave, reboot) = Build(box);
 
@@ -42,7 +45,7 @@ public class RebootWaveTests
 
         Assert.Equal(PatchPhase.Done, result.Phase);
         Assert.True(reboot.Graceful);
-        Assert.True(reboot.Forced); // escalated
+        Assert.True(reboot.Forced); // escalated to complete the operator-ordered reboot
     }
 
     [Fact]
@@ -97,7 +100,7 @@ public class RebootWaveTests
 
         Assert.Equal(PatchPhase.Error, result.Phase);
         Assert.Contains("did not go offline", result.Message);
-        Assert.True(reboot.Forced); // we did try forcing it first
+        Assert.True(reboot.Forced); // we did try forcing it first (to complete the operator-ordered reboot)
     }
 
     [Fact]

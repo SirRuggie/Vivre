@@ -82,39 +82,30 @@ namespace Vivre.UpdateAgent
                     return 0;
                 }
 
-                bool rebootNeeded;
+                // The agent NEVER reboots the box. It runs the operation and only REPORTS whether a reboot is
+                // required (a PendingReboot progress line the controller surfaces); acting on that — the
+                // reboot itself — is always a separate, explicit operator action (a confirmed Reboot Wave /
+                // Reboot, or an operator-created scheduled task), never the agent's own decision. The
+                // reboot-required return value is therefore intentionally discarded here.
                 if (isScan)
                 {
-                    rebootNeeded = RunScan(config, progress);
+                    _ = RunScan(config, progress);
                 }
                 else if (string.Equals(config.Mode, "AddPackage", StringComparison.OrdinalIgnoreCase))
                 {
-                    rebootNeeded = RunAddPackage(config, progress);
+                    _ = RunAddPackage(config, progress);
                 }
                 else if (string.Equals(config.Mode, "Cleanup", StringComparison.OrdinalIgnoreCase))
                 {
-                    rebootNeeded = RunComponentCleanup(progress);
+                    _ = RunComponentCleanup(progress);
                 }
                 else if (string.Equals(config.Mode, "Uninstall", StringComparison.OrdinalIgnoreCase))
                 {
-                    rebootNeeded = RunUninstall(config, progress);
+                    _ = RunUninstall(config, progress);
                 }
                 else
                 {
-                    rebootNeeded = RunInstall(config, progress);
-                }
-
-                // Reboot (RebootAndWait) only after the operation method has returned — its WUA COM
-                // objects are now out of scope. Force-release the RCWs so nothing of ours holds a
-                // handle into the servicing stack as the box goes down, then schedule the restart
-                // with enough delay for the controller to reap the task + temp files, and exit
-                // immediately (no lingering process).
-                if (rebootNeeded && config.RebootAfter)
-                {
-                    GC.Collect();
-                    GC.WaitForPendingFinalizers();
-                    GC.Collect();
-                    System.Diagnostics.Process.Start("shutdown.exe", "/r /t 20 /c \"Vivre update reboot\"");
+                    _ = RunInstall(config, progress);
                 }
 
                 return 0;

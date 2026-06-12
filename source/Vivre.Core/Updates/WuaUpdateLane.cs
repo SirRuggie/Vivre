@@ -50,6 +50,11 @@ public sealed class WuaUpdateLane
         _smb = smbLane ?? new SmbAgentLane(_agentBytes);
     }
 
+    /// <summary>The SMB/DCOM lane this WUA lane uses, exposed so the sibling 2016 full-package lane
+    /// (<see cref="FullPackageLcuLane"/>, owned by <see cref="PatchService"/>) rides the exact same
+    /// transport + agent bytes rather than standing up a second one.</summary>
+    internal ISmbAgentLane Smb => _smb;
+
     // --- scan -------------------------------------------------------------
 
     public async Task<HostPatchStatus> ScanAsync(
@@ -676,7 +681,8 @@ public sealed class WuaUpdateLane
                 .Where(kb => !string.IsNullOrWhiteSpace(kb))
                 .Select(kb => kb.Trim())
                 .ToArray(),
-            RebootAfter = options.RebootBehavior == RebootBehavior.RebootAndWait,
+            // No RebootAfter key: the agent never reboots — it only reports reboot-required, and the reboot
+            // is always a separate explicit operator action. (The RebootBehavior auto-reboot path was removed.)
             ProgressPath = progressPath,
             ResultPath = resultPath,
         };

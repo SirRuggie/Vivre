@@ -219,7 +219,6 @@ public class WuaUpdateLaneTests
 
         Assert.Equal(UpdateSource.WindowsUpdate, options.Source);
         Assert.Equal(RunBehavior.InstallNow, options.RunBehavior);
-        Assert.Equal(RebootBehavior.ReportOnly, options.RebootBehavior);
         Assert.Empty(options.ExcludeNameContains);
         Assert.True(options.MaxConcurrentHosts >= 1);
         Assert.True(options.PerHostTimeout > TimeSpan.Zero);
@@ -284,7 +283,6 @@ public class WuaUpdateLaneTests
             IncludeDrivers = true,
             ExcludeNameContains = ["SQL", " Silverlight "],
             IncludeKbArticleIds = ["5037782", " 5040442 "],
-            RebootBehavior = RebootBehavior.RebootAndWait,
         };
 
         using JsonDocument doc = JsonDocument.Parse(
@@ -295,7 +293,6 @@ public class WuaUpdateLaneTests
         Assert.Equal(3, root.GetProperty("ServerSelection").GetInt32());
         Assert.Equal(WuaServerSelection.MicrosoftUpdateServiceId, root.GetProperty("ServiceId").GetString());
         Assert.True(root.GetProperty("IncludeDrivers").GetBoolean());
-        Assert.True(root.GetProperty("RebootAfter").GetBoolean());
         Assert.Equal(@"C:\Windows\Temp\p.json", root.GetProperty("ProgressPath").GetString());
         Assert.Equal(["SQL", "Silverlight"], [.. root.GetProperty("Excludes").EnumerateArray().Select(e => e.GetString()!)]);
         Assert.Equal(["5037782", "5040442"], [.. root.GetProperty("IncludeKbs").EnumerateArray().Select(e => e.GetString()!)]);
@@ -315,7 +312,6 @@ public class WuaUpdateLaneTests
         Assert.Equal(JsonValueKind.Null, root.GetProperty("ServiceId").ValueKind);
         Assert.Empty(root.GetProperty("IncludeKbs").EnumerateArray());
         Assert.Empty(root.GetProperty("Excludes").EnumerateArray());
-        Assert.False(root.GetProperty("RebootAfter").GetBoolean());
     }
 
     // --- helpers ---

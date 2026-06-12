@@ -8,8 +8,10 @@ namespace Vivre.Core.Updates;
 /// <list type="number">
 ///   <item>Re-check readiness in the instant before rebooting (TrustedInstaller stopped + RebootPending) —
 ///   reboot only when the online phase is genuinely done, so we never hit the 2-hour Stopping hang.</item>
-///   <item>Reboot graceful first (SQL/services flush); if the box won't drop off the network within the
-///   go-offline window, escalate to a forced reboot and say so.</item>
+///   <item>Reboot graceful first (let SQL/services flush); if the box won't drop off within the go-offline
+///   window, escalate to a forced reboot to complete it. This escalation is scoped strictly: the wave only
+///   runs on boxes the operator explicitly SELECTED and CONFIRMED, so the force is the tail of a reboot they
+///   ordered on a specific box — never the tool deciding on its own to reboot or force anything.</item>
 ///   <item>While offline, the clock only ever FLAGS "Overdue — check console" past the ceiling; it never
 ///   stops watching and never fails the box.</item>
 ///   <item>When the box returns, Verify — and a "can't read the build yet" (pingable but still coming up)
@@ -59,15 +61,19 @@ public sealed class RebootWave
             return Fail(progress, $"{host} isn't reboot-ready — {ready.Reason}. Stage it (and let it finish) first.");
         }
 
-        // 2) Graceful reboot first (let SQL/services flush cleanly).
+        // 2) Graceful reboot first (let SQL/services flush cleanly). NOTE ON SCOPE: reaching this method at
+        // all means the operator already picked THIS specific box and confirmed a Reboot Wave on it — the
+        // tool never gets here on its own. So the escalation below is the *completion* of a reboot the
+        // operator ordered on a box they selected, never an independent decision to reboot or force anything.
         progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Rebooting (graceful)…"));
         await _reboot.RebootAsync(host, forced: false, cancellationToken).ConfigureAwait(false);
 
-        // 3) Wait for it to drop off the network; escalate to a forced reboot if it won't.
+        // 3) Wait for it to drop off the network; if the graceful reboot the operator ordered won't take
+        // within the window, escalate to a forced reboot to make THAT ordered reboot actually complete.
         if (!await WaitForOfflineAsync(host, options.GoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
         {
             progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
-                $"Still up after {options.GoOfflineWindow.TotalMinutes:N0} min — escalating to a forced reboot…"));
+                $"Still up after {options.GoOfflineWindow.TotalMinutes:N0} min — escalating to a forced reboot to complete it…"));
             await _reboot.RebootAsync(host, forced: true, cancellationToken).ConfigureAwait(false);
 
             if (!await WaitForOfflineAsync(host, options.GoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
