@@ -27,13 +27,55 @@ machine list. The Machines-view features (SCCM health, client actions, Run Scrip
   runs it from a **one-time SYSTEM scheduled task**, and streams the agent's progress back over a
   **single persistent WinRM session**.
 
+The drop directory is the **Administrators/SYSTEM-only** `C:\ProgramData\Vivre\agent` (the WinRM
+bootstrap creates + ACL-hardens it on the target), not the old world-writable `C:\Windows\Temp` —
+so a non-privileged local user can't plant or swap the binary that then runs as SYSTEM. Per-run
+filenames (`Vivre_WUA_<runId>.*`) isolate concurrent runs.
+
+---
+
+## Kerberos-broken hosts: the SMB + SCM fallback lane
+
+A growing set of domain servers reject WinRM with Kerberos `0x80090322` (SEC_E_WRONG_PRINCIPAL). For
+those, both transports above are dead, so Vivre falls back to the **BatchPatch/PsExec model**, driven
+entirely from the operator's machine on the **current Windows login** (NTLM SSO — no Kerberos, no
+credential prompt): `Vivre.Core/Updates/SmbAgentLane.cs` + `Remoting/RemoteServiceController.cs`.
+
+1. **Drop** the signed agent + config to `\\host\C$\ProgramData\Vivre\agent` over the admin share
+   (ACL-hardened to SYSTEM + Administrators) and **SHA-256-verify** the dropped EXE.
+2. **Launch** it as a one-shot **LocalSystem service** through the SCM over the SMB `svcctl` named
+   pipe (`RemoteServiceController`, P/Invoke advapi32). The agent runs in `--service` mode and reports
+   RUNNING immediately, so `StartService` never trips the SCM's **1053** start-timeout.
+3. **Tail** the agent's progress JSONL over SMB (same shape the WinRM lane streams); an agent
+   heartbeat + a silence watchdog detect a dead/hung agent. A **Scan** also reads back the agent's
+   JSON update array.
+4. **Teardown:** stop → wait for stopped → `DeleteService` → delete the per-run drop files.
+
+**Selection lives in `WuaUpdateLane`** (not the routing decorator): Scan / Install / Uninstall try
+WinRM first and, on the typed `KerberosWrongPrincipalException`, transparently route here. The
+operation result is **deliberately indistinguishable** from a WinRM run — the Kerberos degradation is
+surfaced only through Vitals, never on an operation result. The lane runs on the **ambient identity
+only** (an alternate credential is ignored — the whole point is that the current login works over
+SMB/DCOM where Kerberos doesn't). **Not yet supported:** *Schedule* over this lane (it surfaces a
+neutral "scheduling isn't available — run now" message; scheduling rides the WinRM scheduled task).
+
 ---
 
 ## The compiled agent (`Vivre.UpdateAgent`)
 
-A ~25 KB **net48** console EXE (net48 runs on every modern Windows target with no runtime to
-deploy). It does search → download → install/uninstall locally as SYSTEM and writes append-only
-progress JSONL that the controller tails.
+A small **net48** EXE (net48 runs on every modern Windows target with no runtime to deploy). It does
+search → download → install/uninstall locally as SYSTEM and writes append-only progress JSONL that
+the controller tails.
+
+- **Two launch modes.** `Vivre.UpdateAgent.exe <config.json>` is plain console mode (the WinRM lane's
+  SYSTEM scheduled task). `Vivre.UpdateAgent.exe --service <config.json>` hosts the same work under a
+  `ServiceBase` so the SMB lane can run it as a LocalSystem service: `OnStart` returns immediately (the
+  SCM "I'm running" check-in that avoids error 1053), the work runs on a thread, and the agent
+  self-stops when done. Service mode also writes a periodic **heartbeat** line (console mode does not —
+  so the WinRM stream is byte-identical to before).
+- **Three operations.** `Mode` is Install (default), Uninstall, or **Scan** (the SMB lane's read-only
+  WUA search, mirroring the WinRM scan script; it writes the update array to `ResultPath` for the
+  controller to read back over SMB).
 
 - It uses WUA's own `IDownloadProgressChangedCallback` / `IInstallationProgressChangedCallback` for
   **ground-truth percent** — the thing PowerShell can't supply.

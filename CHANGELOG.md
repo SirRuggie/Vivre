@@ -7,6 +7,16 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Boxes that reject WinRM (Kerberos) are detected and flagged instead of silently failing** — a growing
+  set of servers refuse the WinRM login with a Kerberos error (`0x80090322` — their Active Directory
+  identity is out of sync, classic after a VM snapshot revert; BatchPatch reaches them, Vivre couldn't).
+  Vivre now recognises that specific rejection, switches the host to the SMB/DCOM path on your current
+  Windows login (**no credential prompt, ever**), and caches the decision so it never re-waits on the
+  doomed ~20s connect. **Vitals** names the problem and the fix ("WinRM/Kerberos auth failing — verify the
+  host's SPN / encryption-type / re-sync the machine account") and docks the score, so the AD issue stays
+  visible — while operation results stay clean (no "fell back" wording). The on-target update agent is now
+  Authenticode-signed. *(The SMB scan/install execution path for these boxes is in progress, gated on a
+  one-time on-box pilot.)*
 - **Run operations on different machines at the same time** — scanning or installing on one set of
   machines no longer locks the whole tab: kick off Install on server A, then immediately Scan server B,
   from the toolbar or the per-machine panel. Rows already busy with an operation are skipped with a
@@ -33,6 +43,11 @@ it ships, then gets a dated heading.
   signals are gathered but deliberately not scored.
 
 ### Fixed
+- **A Kerberos auth rejection no longer masquerades as "the remote session ended"** — when a target refuses
+  the WinRM login with `0x80090322` (SEC_E_WRONG_PRINCIPAL), Vivre was reporting "Lost connection — the
+  remote session ended (the target may have rebooted)", which is wrong (nothing dropped or rebooted — the
+  login was refused) and could wrongly trip the reboot/self-heal path. It's now classified honestly as a
+  Kerberos rejection so the diagnosis is accurate and the host is routed appropriately. Covered by tests.
 - **The empty-state cards are truly centered** — the "Get started" card and the "No machines match
   this filter" state now sit dead-centre of the visible content area at every window width, in both
   Health and Patching. The long-standing top-left placement was a workaround for a "DataGrid width

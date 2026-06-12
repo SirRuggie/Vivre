@@ -30,7 +30,11 @@ public partial class App : Application
         base.OnStartup(e);
 
         // Shared singletons (one PowerShell host, one credential store, …) used by every tab.
-        var powerShell = new PSRunspaceHost();
+        // Wrap the real WinRM host so a host that rejects Kerberos (0x80090322) is recorded once and
+        // routed to SMB/DCOM instead of re-paying the ~20s doomed WinRM connect. Transparent to every
+        // consumer (all take IPowerShellHost). The shared cache also feeds the Vitals Kerberos finding.
+        var transportCache = new HostTransportCache();
+        var powerShell = new RoutingPowerShellHost(new PSRunspaceHost(), transportCache);
         var pinger = new HostPinger();
         var hostProbe = new WmiHostProbe();
         var rebootProbe = new HostRebootProbe(powerShell);
@@ -43,7 +47,7 @@ public partial class App : Application
         var activity = new ActivityLog();
         var scripts = new ScriptLibrary();
         var patch = new PatchService(powerShell);
-        var vitals = new VitalsProbe(powerShell);
+        var vitals = new VitalsProbe(powerShell, new DcomVitalsProbe());
         var remediation = new RemediationService(powerShell);
         var deployment = new DeploymentService(powerShell);
         var software = new SoftwareProbe(powerShell);
