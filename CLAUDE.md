@@ -28,7 +28,10 @@ Keep this file, UPDATE_PLAN, and NAVIGATION_PLAN current when a decision changes
 
 - `source/Vivre.slnx` — the solution (`.slnx` format, the .NET 10 default).
   - **`Vivre.Core`** (net10.0) — non-UI logic: `Models`, `Net` (ping), `PowerShell`
-    (`PSRunspaceHost` — the one place remoting happens), `Sccm` (`ConfigMgrClient`, client actions),
+    (`PSRunspaceHost` — the one WinRM choke point, wrapped by `RoutingPowerShellHost`: on a Kerberos
+    `0x80090322` rejection it flips the host to the SMB/DCOM path via the session-scoped
+    `HostTransportCache`, and Vitals scores the degradation — see **OVERNIGHT_KERBEROS_STATUS.md** at the
+    workspace root), `Sccm` (`ConfigMgrClient`, client actions),
     `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
     store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md),
     `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score),
