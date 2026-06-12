@@ -10,15 +10,25 @@ namespace Vivre.Core.Vitals;
 /// Structure mirrors <see cref="Sccm.ConfigMgrClient"/>: one <see cref="VitalsScript"/> run through
 /// <see cref="IPowerShellHost"/> (local vs remote chosen by <see cref="HostName.IsLocal"/>), emitting a
 /// single <c>[PSCustomObject]</c> that <see cref="Parse"/> reads into <see cref="MachineVitals"/>.
-/// PS7 has no <c>Get-WmiObject</c>, so every probe uses <c>Get-CimInstance</c>/<c>Get-WinEvent</c> and
+/// PS7 has no <c>Get-WmiObject</c>, so every probe uses <c>Get-CimInstance</c> and
 /// sits in its own <c>try/catch</c> — a denied or absent source degrades to a null field rather than
 /// failing the whole pull.
+///
+/// When a <see cref="IDcomVitalsReader"/> is supplied and WinRM is rejected with Kerberos error
+/// 0x80090322, the probe automatically falls back to DCOM to retrieve real vitals, while keeping
+/// <see cref="WinRmHealth.KerberosRejected"/> so the row stays visibly flagged for the admin's attention.
+/// If the DCOM reader also fails the original blank-flagged snapshot is returned unchanged.
 /// </remarks>
 public sealed class VitalsProbe : IVitalsProbe
 {
     private readonly IPowerShellHost _powerShell;
+    private readonly IDcomVitalsReader? _dcomReader;
 
-    public VitalsProbe(IPowerShellHost powerShell) => _powerShell = powerShell;
+    public VitalsProbe(IPowerShellHost powerShell, IDcomVitalsReader? dcomReader = null)
+    {
+        _powerShell = powerShell;
+        _dcomReader = dcomReader;
+    }
 
     public async Task<MachineVitals> GetVitalsAsync(
         string host,
@@ -27,12 +37,76 @@ public sealed class VitalsProbe : IVitalsProbe
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
 
-        PSExecutionResult result = HostName.IsLocal(host)
-            ? await _powerShell.RunLocalAsync(VitalsScript, cancellationToken).ConfigureAwait(false)
-            : await _powerShell.RunRemoteAsync(host, VitalsScript, credential, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+        PSExecutionResult result;
+        try
+        {
+            result = HostName.IsLocal(host)
+                ? await _powerShell.RunLocalAsync(VitalsScript, cancellationToken).ConfigureAwait(false)
+                : await _powerShell.RunRemoteAsync(host, VitalsScript, credential, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+        }
+        catch (KerberosWrongPrincipalException ex)
+        {
+            // The host rejected Kerberos: WinRM can't read it on the current login, and the routing host
+            // has flipped it to the SMB/DCOM transport. If a DCOM reader is wired in, try to pull REAL
+            // vitals over DCOM so the row shows real numbers — the KerberosRejected flag + the actual WinRM
+            // error are kept either way so the admin's attention channel is never silenced. If DCOM also
+            // fails, fall back to the blank flagged snapshot. Health channel only — no "fell back" wording
+            // on any operation result.
+            string detail = ex.Message;
+            if (_dcomReader is not null)
+            {
+                try
+                {
+                    MachineVitals dcom = await _dcomReader.ReadAsync(host, cancellationToken).ConfigureAwait(false);
+                    return dcom with { WinRmHealth = WinRmHealth.KerberosRejected, WinRmFailureDetail = detail };
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // DCOM also failed — surface it as the flagged "Unknown" snapshot below (the
+                    // operator-visible signal that this box needs attention); no transport detail leaks.
+                }
+            }
 
-        return Parse(result);
+            return new MachineVitals { WinRmHealth = WinRmHealth.KerberosRejected, WinRmFailureDetail = detail };
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && !HostName.IsLocal(host) && _dcomReader is not null)
+        {
+            // WinRM failed for a NON-Kerberos reason (the WinRM service is stopped/misconfigured —
+            // "the client cannot connect to the destination" — or the session dropped mid-read —
+            // "the remote session ended"). DCOM may still read this host on the current login, so try it
+            // before giving up, and flag the row WinRmUnavailable so a DCOM-rescued box never looks
+            // identical to a healthy WinRM read. We do NOT cache this as a transport decision (it's often
+            // transient) and it's reached only for remote hosts. If DCOM also fails, rethrow the ORIGINAL
+            // WinRM error so the caller surfaces "Vitals failed — <reason>" unchanged.
+            MachineVitals? rescued = null;
+            try
+            {
+                rescued = await _dcomReader.ReadAsync(host, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                // DCOM didn't rescue it — fall through to rethrow the original WinRM failure (ex).
+            }
+
+            if (rescued is not null)
+            {
+                return rescued with { WinRmHealth = WinRmHealth.WinRmUnavailable, WinRmFailureDetail = ex.Message };
+            }
+
+            throw; // rethrow the original WinRM error so it surfaces as today
+        }
+
+        // A successful WinRM read means the fast Kerberos path is healthy for this host.
+        return Parse(result) with { WinRmHealth = WinRmHealth.Healthy };
     }
 
     private static MachineVitals Parse(PSExecutionResult result)
@@ -53,14 +127,12 @@ public sealed class VitalsProbe : IVitalsProbe
             CpuLoadPercent: GetDouble(row, "CpuLoadPercent"),
             LastBootTime: GetDateTime(row, "LastBootTime"),
             StoppedAutoServiceCount: GetInt(row, "StoppedAutoServiceCount"),
-            RecentErrorEventCount: GetInt(row, "RecentErrorEventCount"),
             RebootPending: GetNullableBool(row, "RebootPending"),
             UserLoggedOn: GetNullableBool(row, "UserLoggedOn"))
         {
             OperatingSystem = GetString(row, "OperatingSystem"),
             Drives = ParseDrives(row),
             StoppedAutoServices = GetStringList(row, "StoppedAutoServices"),
-            RecentErrorEvents = ParseEvents(row),
             LoggedOnUsers = GetStringList(row, "LoggedOnUsers"),
         };
     }
@@ -84,23 +156,6 @@ public sealed class VitalsProbe : IVitalsProbe
         }
 
         return drives;
-    }
-
-    private static IReadOnlyList<EventDigest> ParseEvents(PSObject row)
-    {
-        var events = new List<EventDigest>();
-        foreach (PSObject item in EnumerateObjects(row, "RecentErrorEvents"))
-        {
-            events.Add(new EventDigest(
-                GetDateTime(item, "Time"),
-                GetString(item, "Log"),
-                GetString(item, "Provider"),
-                GetInt(item, "Id") ?? 0,
-                GetString(item, "Level"),
-                GetString(item, "Message")));
-        }
-
-        return events;
     }
 
     // --- PSObject reading helpers (extend ConfigMgrClient's set with double/int/list/object). ---
@@ -295,26 +350,6 @@ public sealed class VitalsProbe : IVitalsProbe
             $stoppedNames = @($stopped | Select-Object -First 15 -ExpandProperty DisplayName)
         } catch { }
 
-        # --- Recent Critical/Error events (System + Application, last 24h) ---
-        $eventCount = $null; $events = @()
-        try {
-            $raw = @(Get-WinEvent -FilterHashtable @{ LogName = 'System','Application'; Level = 1,2; StartTime = (Get-Date).AddHours(-24) } -MaxEvents 50 -ErrorAction Stop)
-            $eventCount = $raw.Count
-            $events = @($raw | Select-Object -First 25 | ForEach-Object {
-                [PSCustomObject]@{
-                    Time     = $_.TimeCreated
-                    Log      = $_.LogName
-                    Provider = $_.ProviderName
-                    Id       = [int]$_.Id
-                    Level    = $_.LevelDisplayName
-                    Message  = (($_.Message -split "`r?`n") | Select-Object -First 1)
-                }
-            })
-        } catch {
-            # Get-WinEvent throws a terminating "No events were found" when the filter matches nothing.
-            if ($_.Exception.Message -match 'No events were found') { $eventCount = 0 }
-        }
-
         # --- Pending reboot (CBS key / Windows Update / SCCM client) ---
         # PendingFileRenameOperations is deliberately NOT used: benign file ops (AV definition swaps,
         # installer temp cleanup) populate it and it accumulates on long-uptime servers, so it massively
@@ -353,8 +388,6 @@ public sealed class VitalsProbe : IVitalsProbe
             LastBootTime            = $lastBoot
             StoppedAutoServiceCount = $stoppedCount
             StoppedAutoServices     = $stoppedNames
-            RecentErrorEventCount   = $eventCount
-            RecentErrorEvents       = $events
             RebootPending           = $rebootPending
             UserLoggedOn            = $userLoggedOn
             LoggedOnUsers           = $users

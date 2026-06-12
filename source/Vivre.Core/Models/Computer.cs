@@ -151,10 +151,6 @@ public partial class Computer : ObservableObject
     [NotifyPropertyChangedFor(nameof(VitalsSummary))]
     public partial int? StoppedAutoServiceCount { get; set; }
 
-    /// <summary>Count of Critical/Error events in the last 24h, null until vitals are read.</summary>
-    [ObservableProperty]
-    public partial int? RecentErrorEventCount { get; set; }
-
     /// <summary>When vitals were last read for this row (null = never).</summary>
     [ObservableProperty]
     public partial DateTime? VitalsCheckedAt { get; set; }
@@ -170,6 +166,35 @@ public partial class Computer : ObservableObject
 
     /// <summary>The worst contributing factors behind the score (the "why"), for the triage panel.</summary>
     public IReadOnlyList<string> VitalityReasons { get; set; } = [];
+
+    /// <summary>
+    /// True when the box has a non-runtime admin-attention finding (currently: WinRM/Kerberos
+    /// degradation — the host was reached over SMB/DCOM because it rejected Kerberos). The band-floor
+    /// in <see cref="VitalityScorer"/> guarantees a visual grid distinction (amber not green), but this
+    /// property allows the UI to surface an additional badge/indicator on the row.
+    /// </summary>
+    [ObservableProperty]
+    public partial bool VitalityNeedsAttention { get; set; }
+
+    /// <summary>True when this row's vitals were read over the SMB/DCOM fallback because WinRM was
+    /// unusable — drives the Machine Details "Connection" callout. Set in the view model's ApplyVitals.</summary>
+    [ObservableProperty]
+    public partial bool WinRmDegraded { get; set; }
+
+    /// <summary>Short plain-English caption for the connection callout (what happened), or null when WinRM
+    /// is healthy. From <see cref="WinRmHealthGuidance.Caption"/>.</summary>
+    [ObservableProperty]
+    public partial string? WinRmStateCaption { get; set; }
+
+    /// <summary>The actual WinRM error that triggered the fallback (the "what"), or null. Surfaced in the
+    /// connection callout's expandable details.</summary>
+    [ObservableProperty]
+    public partial string? WinRmFailureDetail { get; set; }
+
+    /// <summary>The fix for the WinRM degradation, as scannable bullets (shown in the Connection
+    /// callout), or null. From <see cref="WinRmHealthGuidance.FixBullets"/>.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<string>? WinRmFix { get; set; }
 
     /// <summary>The full vitals snapshot behind the score, kept off the observable surface for the
     /// triage panel's per-drive / per-event breakdown. Null until vitals are read.</summary>

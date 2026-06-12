@@ -14,7 +14,6 @@ public class VitalityScorerTests
             CpuLoadPercent: 12,
             LastBootTime: DateTime.Now.AddDays(-2),
             StoppedAutoServiceCount: 0,
-            RecentErrorEventCount: 0,
             RebootPending: false);
 
         VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
@@ -85,12 +84,12 @@ public class VitalityScorerTests
     [Fact]
     public void Noisy_signals_do_not_lower_the_score()
     {
-        // Lots of "stopped" auto-start services and error events, but healthy resources. These signals
-        // are info-only (idle-by-design services, benign event noise like DCOM 10016), so the box still
-        // reads Healthy and they never appear as score reasons.
+        // Lots of "stopped" auto-start services, but healthy resources. Stopped services are info-only
+        // (idle-by-design: trigger/delayed-start, updaters), so the box still reads Healthy and they
+        // never appear as score reasons.
         var vitals = new MachineVitals(
             SystemDriveFreePercent: 60, MemoryUsedPercent: 20, CpuLoadPercent: 5,
-            StoppedAutoServiceCount: 12, RecentErrorEventCount: 80, RebootPending: false)
+            StoppedAutoServiceCount: 12, RebootPending: false)
         {
             StoppedAutoServices = ["Edge Update", "Remote Registry"],
         };
@@ -185,5 +184,137 @@ public class VitalityScorerTests
 
         Assert.Equal(100, result.Score);
         Assert.Equal(VitalityBand.Healthy, result.Band);
+    }
+
+    // --- WinRM/Kerberos degradation: an admin-attention finding (the box may be runtime-healthy).
+    //     Docks the score modestly, ALWAYS surfaces the fix-bearing reason, sets NeedsAttention. ---
+
+    [Fact]
+    public void Kerberos_rejected_flags_attention_and_names_the_fix()
+    {
+        var vitals = new MachineVitals(
+            SystemDriveFreePercent: 60, MemoryUsedPercent: 40, CpuLoadPercent: 10,
+            LastBootTime: DateTime.Now.AddDays(-2), RebootPending: false)
+        {
+            WinRmHealth = WinRmHealth.KerberosRejected,
+        };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        Assert.True(result.NeedsAttention);
+        Assert.Equal(88, result.Score);            // pristine 100 - 12
+        Assert.Contains(result.Reasons, r => r.Contains("0x80090322"));
+    }
+
+    [Fact]
+    public void Kerberos_reason_is_always_surfaced_even_amid_worse_problems()
+    {
+        // Three real problems would normally fill the worst-3 reasons and truncate everything else,
+        // but the Kerberos finding must still appear (it carries the fix).
+        var vitals = new MachineVitals(
+            SystemDriveFreePercent: 3,   // -40
+            MemoryUsedPercent: 96,       // -20
+            CpuLoadPercent: 97,          // -15
+            RebootPending: true)         // -10
+        {
+            WinRmHealth = WinRmHealth.KerberosRejected,
+        };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        Assert.True(result.NeedsAttention);
+        Assert.True(result.Reasons.Count <= 3);                                  // still capped at the worst-few
+        Assert.Contains("0x80090322", result.Reasons[0]);                        // Kerberos finding is always first
+        Assert.Contains(result.Reasons, r => r.Contains("Disk critically low")); // the worst real penalty survives the cap
+    }
+
+    [Fact]
+    public void Healthy_winrm_does_not_flag_attention_or_dock_score()
+    {
+        var vitals = new MachineVitals(SystemDriveFreePercent: 60, MemoryUsedPercent: 40, CpuLoadPercent: 10)
+        {
+            WinRmHealth = WinRmHealth.Healthy,
+        };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        Assert.False(result.NeedsAttention);
+        Assert.Equal(100, result.Score);
+        Assert.DoesNotContain(result.Reasons, r => r.Contains("0x80090322"));
+    }
+
+    [Fact]
+    public void Kerberos_rejected_on_empty_snapshot_still_flags_attention()
+    {
+        // Reached over SMB/DCOM but vitals came back blank: still Unknown, but flag the Kerberos fix.
+        var vitals = new MachineVitals { WinRmHealth = WinRmHealth.KerberosRejected };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        Assert.Equal(VitalityBand.Unknown, result.Band);
+        Assert.Null(result.Score);
+        Assert.True(result.NeedsAttention);
+        Assert.Contains(result.Reasons, r => r.Contains("0x80090322"));
+        Assert.Contains("Vitals unavailable", result.Reasons); // the blank-read reason is retained alongside the fix
+    }
+
+    [Fact]
+    public void Kerberos_fallback_with_perfect_vitals_floors_band_to_warning_not_healthy()
+    {
+        // A Kerberos-fallback box with pristine vitals must show amber, not green, so it can never
+        // look identical to a genuinely healthy box on the grid. Score stays at 88 (docked by 12),
+        // only the band is floored from Healthy → Warning.
+        var vitals = new MachineVitals(
+            SystemDriveFreePercent: 60,
+            MemoryUsedPercent: 40,
+            CpuLoadPercent: 10,
+            LastBootTime: DateTime.Now.AddDays(-2),
+            RebootPending: false)
+        {
+            WinRmHealth = WinRmHealth.KerberosRejected,
+        };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        // Score is unchanged from the 12-point dock — band is floored, NOT the number.
+        Assert.Equal(88, result.Score);
+        Assert.Equal(VitalityBand.Warning, result.Band); // NOT Healthy
+        Assert.True(result.NeedsAttention);
+        Assert.Contains(result.Reasons, r => r.Contains("0x80090322"));
+    }
+
+    [Fact]
+    public void Kerberos_penalty_can_tip_a_borderline_box_from_healthy_to_warning()
+    {
+        // disk 8% → -20 → 80 (the Healthy floor); + Kerberos -12 → 68 → Warning. Pins both the penalty
+        // magnitude and the band edge.
+        var vitals = new MachineVitals(SystemDriveFreePercent: 8) { WinRmHealth = WinRmHealth.KerberosRejected };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        Assert.Equal(68, result.Score);
+        Assert.Equal(VitalityBand.Warning, result.Band);
+        Assert.True(result.NeedsAttention);
+        Assert.Contains(result.Reasons, r => r.Contains("0x80090322"));
+    }
+
+    [Fact]
+    public void Winrm_unavailable_fallback_with_perfect_vitals_floors_band_and_flags_without_kerberos_text()
+    {
+        // A non-Kerberos DCOM-rescued box (WinRM service down / session dropped) with pristine vitals must
+        // also show amber + flagged — never green — but its reason names the WinRM-service fix, not Kerberos.
+        var vitals = new MachineVitals(
+            SystemDriveFreePercent: 60, MemoryUsedPercent: 40, CpuLoadPercent: 10, RebootPending: false)
+        {
+            WinRmHealth = WinRmHealth.WinRmUnavailable,
+        };
+
+        VitalityResult result = VitalityScorer.Score(vitals, isOnline: true);
+
+        Assert.Equal(88, result.Score);                  // same 12-point dock as the Kerberos case
+        Assert.Equal(VitalityBand.Warning, result.Band); // floored from Healthy
+        Assert.True(result.NeedsAttention);
+        Assert.Contains(result.Reasons, r => r.Contains("WinRM", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(result.Reasons, r => r.Contains("0x80090322")); // not the Kerberos finding
     }
 }
