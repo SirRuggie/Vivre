@@ -1,7 +1,11 @@
 namespace Vivre.Core.Updates;
 
 /// <summary>Reboots a host — graceful (let SQL/services flush) or forced (`/f`-equivalent). Implemented
-/// over DCOM on the ambient login so it works on the Kerberos-broken Vision boxes.</summary>
+/// over DCOM on the ambient login so it works on the Kerberos-broken Vision boxes.
+/// <para><b>Scope:</b> the only caller is the Reboot Wave, which runs only on boxes the operator explicitly
+/// selected and confirmed. The forced call is the tail of completing one of those operator-ordered reboots
+/// (graceful→8min→force) — it is never an independent decision to reboot or force a box the operator didn't
+/// pick. Locked rule: nothing reboots or forces a reboot without the operator's explicit per-box trigger.</para></summary>
 public interface IRebootTrigger
 {
     Task RebootAsync(string host, bool forced, CancellationToken cancellationToken);
@@ -27,13 +31,13 @@ public interface IReachabilityProbe
 }
 
 /// <summary>
-/// The two timers + cadence for a Reboot Wave. They are deliberately separate: the go-offline window is
-/// the graceful→forced escalation, the offline ceiling is only when to FLAG "Overdue" (it never stops the
-/// watch). The hard cap bounds live tracking of a box that never returns — the standalone Verify action
-/// remains the durable net for one that comes back later.
+/// The two timers + cadence for a Reboot Wave. They are deliberately separate: the go-offline window is the
+/// graceful→forced escalation (to complete the operator-ordered reboot), the offline ceiling is only when to
+/// FLAG "Overdue" (it never stops the watch). The hard cap bounds live tracking of a box that never returns —
+/// the standalone Verify action remains the durable net for one that comes back later.
 /// </summary>
-/// <param name="GoOfflineWindow">After a graceful reboot, how long to wait for the box to drop off the
-/// network before escalating to a forced reboot. Default 8 minutes.</param>
+/// <param name="GoOfflineWindow">After the graceful reboot, how long to wait for the box to drop off the
+/// network before escalating to a forced reboot to complete it. Default 8 minutes.</param>
 /// <param name="OfflineCeiling">How long a box may be offline (committing) before it's flagged "Overdue —
 /// check console/iLO". The watch CONTINUES past this. Default 90 minutes.</param>
 /// <param name="PollInterval">How often to poll reachability while waiting. Default 20 seconds.</param>

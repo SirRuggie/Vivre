@@ -21,16 +21,6 @@ public enum RunBehavior
     ScheduleAt,
 }
 
-/// <summary>What to do once the install finishes.</summary>
-public enum RebootBehavior
-{
-    /// <summary>Install only; report "reboot required" and leave the box to be rebooted manually (default).</summary>
-    ReportOnly,
-
-    /// <summary>Reboot the target after install and wait for it to come back online (Phase 2).</summary>
-    RebootAndWait,
-}
-
 /// <summary>
 /// The shared, session-only patch settings (mirrors the session-only credential model —
 /// held in memory, not persisted). Steers scope via <see cref="Source"/> +
@@ -75,8 +65,9 @@ public sealed class PatchOptions
     /// <summary>The trigger time when <see cref="RunBehavior"/> is <see cref="RunBehavior.ScheduleAt"/>.</summary>
     public DateTime? ScheduleAt { get; set; }
 
-    /// <summary>Whether to reboot + wait after install.</summary>
-    public RebootBehavior RebootBehavior { get; set; } = RebootBehavior.ReportOnly;
+    // NOTE: there is deliberately no auto-reboot option. Installs report reboot-required and stop; the
+    // reboot is always a separate, explicit operator action (a confirmed Reboot/Reboot Wave, or an
+    // operator-created scheduled task). Nothing here ever causes a box to reboot on its own.
 
     /// <summary>Cap on how many hosts install at once. Each install holds a persistent streaming
     /// WinRM session (mostly idle-waiting once open) plus the target downloading/installing as

@@ -50,8 +50,8 @@ namespace Vivre.UpdateAgent
         /// <summary>When non-empty, restrict to updates whose first KB id is in this list (the ticked checklist).</summary>
         public string[] IncludeKbs { get; set; }
 
-        /// <summary>Reboot the box after a successful install/uninstall that requires it.</summary>
-        public bool RebootAfter { get; set; }
+        // NOTE: there is deliberately no "RebootAfter" / auto-reboot field. The agent never reboots the box —
+        // it only reports reboot-required. Rebooting is always a separate, explicit operator action.
 
         /// <summary>The append-only progress JSONL the controller tails.</summary>
         public string ProgressPath { get; set; }

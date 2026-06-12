@@ -25,7 +25,6 @@ public class AgentConfigContractTests
             IncludeDrivers = true,
             ExcludeNameContains = ["SQL", " Silverlight "],
             IncludeKbArticleIds = ["5037782", " 5040442 "],
-            RebootBehavior = RebootBehavior.RebootAndWait,
         };
 
         string json = WuaUpdateLane.BuildAgentConfigJson(options, @"C:\Windows\Temp\p.json", "Install");
@@ -35,7 +34,6 @@ public class AgentConfigContractTests
         Assert.Equal(3, cfg.ServerSelection);
         Assert.Equal(WuaServerSelection.MicrosoftUpdateServiceId, cfg.ServiceId);
         Assert.True(cfg.IncludeDrivers);
-        Assert.True(cfg.RebootAfter);
         Assert.Equal(@"C:\Windows\Temp\p.json", cfg.ProgressPath);
         Assert.Equal(new[] { "SQL", "Silverlight" }, cfg.Excludes);
         Assert.Equal(new[] { "5037782", "5040442" }, cfg.IncludeKbs);
@@ -52,7 +50,6 @@ public class AgentConfigContractTests
         Assert.Equal("Uninstall", cfg.Mode);
         Assert.Equal(2, cfg.ServerSelection);
         Assert.Null(cfg.ServiceId);
-        Assert.False(cfg.RebootAfter);
         Assert.Empty(cfg.Excludes);
         Assert.Empty(cfg.IncludeKbs);
     }
