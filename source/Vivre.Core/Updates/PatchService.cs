@@ -25,10 +25,26 @@ public sealed class PatchService : IPatchService
 {
     private readonly WuaUpdateLane _wua;
 
-    // Hosts with a CBS/DISM operation in flight (install / uninstall / Installed-scope scan).
+    // The Server 2016 full-package CU lane + its night-time reboot wave. Built here (not in the
+    // composition root) so they ride the WUA lane's same SMB/DCOM transport + agent bytes, and so every
+    // 2016 operation shares the _inFlight per-host guard below with Install/Uninstall.
+    private readonly FullPackageLcuLane _lcu;
+    private readonly RebootWave _wave;
+
+    // Hosts with a CBS/DISM operation in flight (install / uninstall / Installed-scope scan / 2016
+    // stage / cleanup / reboot-wave). Verify is read-only and deliberately not claimed.
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
 
-    public PatchService(IPowerShellHost powerShell) => _wua = new WuaUpdateLane(powerShell);
+    public PatchService(IPowerShellHost powerShell)
+    {
+        _wua = new WuaUpdateLane(powerShell);
+        _lcu = new FullPackageLcuLane(_wua.Smb);
+        _wave = new RebootWave(
+            new DcomRebootTrigger(),
+            new DcomRebootReadinessProbe(),
+            new TcpReachabilityProbe(),
+            new DcomLcuBuildReader());
+    }
 
     public async Task<HostPatchStatus> ScanAsync(
         string host,
@@ -112,6 +128,103 @@ public sealed class PatchService : IPatchService
         {
             Release(host);
         }
+    }
+
+    // --- Server 2016 full-package CU lane (gated to build 14393 by the caller) --------------------
+
+    public async Task<HostPatchStatus> StageLcuAsync(
+        string host,
+        string packageDirectory,
+        LcuTarget target,
+        PatchOptions options,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageDirectory);
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        if (!TryClaim(host))
+        {
+            progress.Report(AlreadyInProgress);
+            return AlreadyInProgress;
+        }
+
+        try
+        {
+            return await _lcu.StageAsync(host, packageDirectory, target, options, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Release(host);
+        }
+    }
+
+    public async Task<HostPatchStatus> ComponentCleanupLcuAsync(
+        string host,
+        PatchOptions options,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        if (!TryClaim(host))
+        {
+            progress.Report(AlreadyInProgress);
+            return AlreadyInProgress;
+        }
+
+        try
+        {
+            return await _lcu.ComponentCleanupAsync(host, options, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Release(host);
+        }
+    }
+
+    public async Task<HostPatchStatus> RebootWaveLcuAsync(
+        string host,
+        int targetUbr,
+        RebootWaveOptions waveOptions,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentNullException.ThrowIfNull(waveOptions);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        if (!TryClaim(host))
+        {
+            progress.Report(AlreadyInProgress);
+            return AlreadyInProgress;
+        }
+
+        try
+        {
+            return await _wave.RebootAndCommitAsync(host, targetUbr, waveOptions, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Release(host);
+        }
+    }
+
+    public Task<LcuVerifyResult> VerifyLcuAsync(
+        string host,
+        int targetUbr,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+
+        // Read-only registry read (no CBS/DISM): never serialized, so a box can be verified even while
+        // something else is queued against it — mirrors the unclaimed Applicable-scope scan.
+        return _lcu.VerifyAsync(host, targetUbr, cancellationToken);
     }
 
     // host is validated non-null/whitespace at each public entry point.

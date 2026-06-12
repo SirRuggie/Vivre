@@ -196,6 +196,12 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial IReadOnlyList<string>? WinRmFix { get; set; }
 
+    /// <summary>The parsed OS build (e.g. 14393 for Server 2016), or null until the OS has been read.
+    /// Drives the self-populating 2016 panel + the LCU/WUA routing (<c>LcuRouting</c>). Null is deliberately
+    /// "not 2016" — an unread box is never classified or routed into the 2016 lane.</summary>
+    [ObservableProperty]
+    public partial int? OsBuild { get; set; }
+
     /// <summary>The full vitals snapshot behind the score, kept off the observable surface for the
     /// triage panel's per-drive / per-event breakdown. Null until vitals are read.</summary>
     public MachineVitals? Vitals { get; set; }
