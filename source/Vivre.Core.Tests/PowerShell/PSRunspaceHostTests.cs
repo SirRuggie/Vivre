@@ -158,6 +158,104 @@ public class PSRunspaceHostTests
         Assert.Same(other, PSRunspaceHost.TranslateRemotingException(other, "HOST1"));
     }
 
+    // --- connect-time Kerberos wrong-principal (0x80090322): an AUTH rejection at login, NOT a
+    //     mid-run session drop. Must classify distinctly (so callers switch to SMB/DCOM) and must
+    //     never read "the remote session ended / the target may have rebooted". Pure logic. ---
+
+    [Fact]
+    public void Translate_kerberos_wrong_principal_in_message_becomes_kerberos_rejected()
+    {
+        // The live form: the SSPI code is carried in the transport exception's message text
+        // ("...errorcode 0x80090322 occurred while using Kerberos authentication...").
+        var raw = new PSRemotingTransportException(
+            "Connecting to remote server APVVISIONF5 failed: WinRM cannot process the request. " +
+            "The following error with errorcode 0x80090322 occurred while using Kerberos authentication.");
+
+        Exception translated = PSRunspaceHost.TranslateRemotingException(raw, "APVVISIONF5");
+
+        KerberosWrongPrincipalException k = Assert.IsType<KerberosWrongPrincipalException>(translated);
+        Assert.Equal("APVVISIONF5", k.Host);
+    }
+
+    [Fact]
+    public void Translate_kerberos_wrong_principal_in_inner_exception_becomes_kerberos_rejected()
+    {
+        var raw = new InvalidOperationException("wrapper",
+            new Exception("An unknown security error occurred: SEC_E_WRONG_PRINCIPAL."));
+
+        Assert.IsType<KerberosWrongPrincipalException>(
+            PSRunspaceHost.TranslateRemotingException(raw, "HOST1"));
+    }
+
+    [Fact]
+    public void Translate_generic_transport_without_kerberos_code_still_session_lost()
+    {
+        // A transport failure that is NOT 0x80090322 must still map to session-lost, not Kerberos.
+        Exception translated = PSRunspaceHost.TranslateRemotingException(
+            new PSRemotingTransportException("The WinRM client cannot complete the operation within the time specified."),
+            "HOST1");
+
+        Assert.IsType<RemoteSessionLostException>(translated);
+    }
+
+    [Fact]
+    public void Translate_kerberos_wrong_principal_by_typed_errorcode_becomes_kerberos_rejected()
+    {
+        // The other stack form: the SSPI status arrives as the typed ErrorCode, NOT in the message text.
+        // The message deliberately omits 0x80090322/SEC_E_WRONG_PRINCIPAL so this proves the typed path fired.
+        var raw = new PSRemotingTransportException("Connecting to the remote server failed.")
+        {
+            ErrorCode = unchecked((int)0x80090322),
+        };
+
+        Assert.IsType<KerberosWrongPrincipalException>(PSRunspaceHost.TranslateRemotingException(raw, "HOST1"));
+    }
+
+    [Fact]
+    public void Translate_kerberos_target_unknown_becomes_kerberos_rejected()
+    {
+        // The second Kerberos failure seen in the fleet (0x80090303 SEC_E_TARGET_UNKNOWN): the host has no
+        // SPN (typically not domain-joined). This is the VERBATIM message a SCERIS test box returned — it
+        // must classify as a Kerberos fallback (→ SMB/DCOM), not a session loss.
+        var raw = new PSRemotingTransportException(
+            "Connecting to remote server APVSCERISEPMTEST failed with the following error message : " +
+            "WinRM cannot process the request. The following error occurred while using Kerberos " +
+            "authentication: Cannot find the computer APVSCERISEPMTEST. Verify that the computer exists on " +
+            "the network and that the name provided is spelled correctly.");
+
+        Exception translated = PSRunspaceHost.TranslateRemotingException(raw, "APVSCERISEPMTEST");
+
+        KerberosWrongPrincipalException k = Assert.IsType<KerberosWrongPrincipalException>(translated);
+        Assert.Equal("APVSCERISEPMTEST", k.Host);
+    }
+
+    [Fact]
+    public void Translate_kerberos_target_unknown_by_typed_errorcode_becomes_kerberos_rejected()
+    {
+        var raw = new PSRemotingTransportException("Connecting to the remote server failed.")
+        {
+            ErrorCode = unchecked((int)0x80090303),
+        };
+
+        Assert.IsType<KerberosWrongPrincipalException>(PSRunspaceHost.TranslateRemotingException(raw, "HOST1"));
+    }
+
+    [Fact]
+    public void Translate_cannot_find_computer_without_kerberos_stays_session_lost()
+    {
+        // Guard the broadened matcher: a "cannot find the computer" failure that does NOT mention Kerberos
+        // (an offline/unreachable host) must still be a session-loss, not a mis-flagged Kerberos fallback —
+        // otherwise a transiently-down box would get wrongly routed to SMB/DCOM for the session.
+        Exception translated = PSRunspaceHost.TranslateRemotingException(
+            new PSRemotingTransportException(
+                "WinRM cannot complete the operation. Verify that the specified computer name is valid, " +
+                "that the computer is accessible over the network, and that a firewall exception for the " +
+                "WinRM service is enabled."),
+            "HOST1");
+
+        Assert.IsType<RemoteSessionLostException>(translated);
+    }
+
     // --- execute-phase abandon: no unobserved task exceptions (Fix 2 regression guard) ---
 
     /// <summary>

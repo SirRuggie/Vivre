@@ -242,6 +242,17 @@ public sealed class PSRunspaceHost : IPowerShellHost
             return new RemoteShellInitException(host, ex);
         }
 
+        // Connect-time Kerberos failure (wrong-principal 0x80090322 OR target-unknown 0x80090303): an
+        // AUTH/identity failure at login, NOT a mid-run session drop. It arrives AS a
+        // PSRemotingTransportException, so classify it BEFORE the generic transport→session-lost branch
+        // below — otherwise it is mislabeled as "the remote session ended (the target may have rebooted)",
+        // which is wrong and would wrongly trip the reboot/self-heal machinery. Callers catch this to
+        // switch the host to SMB/DCOM (vitals fallback + the SMB install lane).
+        if (IsKerberosWinRmFailure(ex))
+        {
+            return new KerberosWrongPrincipalException(host, ex);
+        }
+
         // The remote session died for a non-cancellation reason (box rebooted / WinRM dropped /
         // the pipeline was stopped server-side). PipelineStoppedException's .Message is the
         // infamous "The pipeline has been stopped." that otherwise leaks into the UI. We translate
@@ -260,6 +271,65 @@ public sealed class PSRunspaceHost : IPowerShellHost
         for (Exception? e = ex; e is not null; e = e.InnerException)
         {
             if (e.Message.Contains("InitialSessionState", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The two Kerberos SSPI status codes that mean "WinRM can't authenticate to this host on the
+    /// current login": SEC_E_WRONG_PRINCIPAL (0x80090322 — the KDC issued a service ticket the target can't
+    /// honour) and SEC_E_TARGET_UNKNOWN (0x80090303 — Kerberos can't find an SPN for the host, e.g. it has
+    /// no AD computer account / isn't domain-joined). Both are negative <see cref="int"/> HRESULTs.</summary>
+    private const int SecEWrongPrincipal = unchecked((int)0x80090322);
+    private const int SecETargetUnknown = unchecked((int)0x80090303);
+
+    /// <summary>
+    /// True when <paramref name="ex"/> (or any inner exception) is a connect-time Kerberos failure that
+    /// makes WinRM unusable on the ambient login for this host — so callers switch it to SMB/DCOM. Covers
+    /// BOTH:
+    /// <list type="bullet">
+    ///   <item>wrong-principal (0x80090322 / "the target principal name is incorrect") — a stale SPN /
+    ///   machine-account or encryption-type mismatch; and</item>
+    ///   <item>target-unknown (0x80090303 / "Cannot find the computer … using Kerberos authentication") —
+    ///   no SPN for the host (typically not domain-joined).</item>
+    /// </list>
+    /// Belt-and-suspenders: WSMan surfaces the SSPI status as the typed
+    /// <see cref="PSRemotingTransportException.ErrorCode"/> on some stacks and only in the message text on
+    /// others, so check the typed code first, then scan the message chain culture-insensitively. The
+    /// target-unknown message match REQUIRES the Kerberos context ("Kerberos" + "Cannot find the computer")
+    /// so a plain offline/DNS/typo failure — which never mentions Kerberos — still maps to
+    /// <see cref="RemoteSessionLostException"/> instead of being mis-flagged as a Kerberos fallback.
+    /// </summary>
+    private static bool IsKerberosWinRmFailure(Exception? ex)
+    {
+        for (Exception? e = ex; e is not null; e = e.InnerException)
+        {
+            if (e is PSRemotingTransportException transport
+                && (transport.ErrorCode == SecEWrongPrincipal || transport.ErrorCode == SecETargetUnknown))
+            {
+                return true;
+            }
+
+            string m = e.Message;
+
+            // Wrong-principal (0x80090322).
+            if (m.Contains("0x80090322", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("SEC_E_WRONG_PRINCIPAL", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("the target principal name is incorrect", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            // Target-unknown (0x80090303): no SPN for the host. WinRM phrases it as "The following error
+            // occurred while using Kerberos authentication: Cannot find the computer <name>." Require the
+            // Kerberos context so an offline/typo'd host (no Kerberos mention) is NOT swept in.
+            if (m.Contains("0x80090303", StringComparison.OrdinalIgnoreCase)
+                || m.Contains("SEC_E_TARGET_UNKNOWN", StringComparison.OrdinalIgnoreCase)
+                || (m.Contains("Kerberos", StringComparison.OrdinalIgnoreCase)
+                    && m.Contains("Cannot find the computer", StringComparison.OrdinalIgnoreCase)))
             {
                 return true;
             }
