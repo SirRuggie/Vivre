@@ -228,8 +228,67 @@
                             <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
                                 <ui:TextBlock Text="{Binding Computer.VitalityBand, TargetNullValue='Not checked yet'}" FontTypography="BodyStrong" />
                                 <TextBlock FontSize="12" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                           Text="{Binding Computer.VitalsCheckedAt, StringFormat='Checked {0:g}', TargetNullValue='Run Check Vitals (Machines view) to populate this.'}" />
+                                           Text="{Binding Computer.VitalsCheckedAt, StringFormat='Checked {0:g}', TargetNullValue='Vitals haven\'t been read for this machine yet.'}" />
                             </StackPanel>
+                        </StackPanel>
+
+                        <!-- Check Vitals button — always visible so the user can run or re-run vitals from
+                             the detail window without going back to the fleet grid. Prominent (Primary) when
+                             vitals are absent; available as a small re-check button once they're populated.
+                             Disabled while a fleet sweep already holds this machine OR while the command
+                             itself is running (AsyncRelayCommand default). -->
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0" VerticalAlignment="Center">
+                            <ui:Button Command="{Binding CheckVitalsCommand}"
+                                       ToolTipService.ShowOnDisabled="True">
+                                <ui:Button.ToolTip>
+                                    <ToolTip Content="Busy — an operation is already running on this machine." />
+                                </ui:Button.ToolTip>
+                                <ui:Button.Style>
+                                    <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
+                                        <!-- Default (vitals present): small secondary button for re-checks. -->
+                                        <Setter Property="Appearance" Value="Secondary" />
+                                        <Setter Property="Padding" Value="10,4" />
+                                        <Style.Triggers>
+                                            <!-- No vitals yet: accent primary so it catches the eye. -->
+                                            <DataTrigger Binding="{Binding Computer.VitalsCheckedAt}" Value="{x:Null}">
+                                                <Setter Property="Appearance" Value="Primary" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                                <ui:Button.Content>
+                                    <StackPanel Orientation="Horizontal">
+                                        <ui:ProgressRing Width="14" Height="14" IsIndeterminate="True" Margin="0,0,6,0"
+                                                         VerticalAlignment="Center"
+                                                         Visibility="{Binding CheckVitalsCommand.IsRunning, Converter={StaticResource BoolToVis}}" />
+                                        <ui:SymbolIcon Symbol="Pulse24" FontSize="14" Margin="0,0,6,0"
+                                                       VerticalAlignment="Center">
+                                            <ui:SymbolIcon.Style>
+                                                <Style TargetType="ui:SymbolIcon">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CheckVitalsCommand.IsRunning}" Value="True">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </ui:SymbolIcon.Style>
+                                        </ui:SymbolIcon>
+                                        <TextBlock VerticalAlignment="Center">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Check Vitals" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding CheckVitalsCommand.IsRunning}" Value="True">
+                                                            <Setter Property="Text" Value="Checking…" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </StackPanel>
+                                </ui:Button.Content>
+                            </ui:Button>
                         </StackPanel>
 
                         <!-- Everything below only makes sense once vitals have been read. -->

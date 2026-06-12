@@ -341,15 +341,41 @@ public partial class MainWindow : FluentWindow
 
     private DispatcherTimer? _completionBarTimer;
 
+    // FIFO queue for completion banners: when multiple ops finish near-simultaneously, show one at
+    // a time in finish order, each for its normal hold duration. Drained by OnCompletionBarTick.
+    private readonly Queue<(string Summary, ViewModels.OperationSeverity Severity)> _completionBarQueue = new();
+
     private void OnOperationCompleted(string summary, ViewModels.OperationSeverity severity)
     {
         if (IsActive)
         {
-            Dispatcher.BeginInvoke(() => ShowCompletionBar(summary, severity));
+            Dispatcher.BeginInvoke(() => EnqueueCompletionBar(summary, severity));
             return;
         }
 
         Dispatcher.BeginInvoke(() => TrayIcon.ShowBalloonTip("Vivre", summary, Hardcodet.Wpf.TaskbarNotification.BalloonIcon.Info));
+    }
+
+    /// <summary>Adds a completion notification to the queue. If no banner is currently showing,
+    /// starts the first one immediately. Concurrent ops that finish while the current banner is
+    /// visible are queued and shown in order once the hold timer expires.</summary>
+    private void EnqueueCompletionBar(string summary, ViewModels.OperationSeverity severity)
+    {
+        _completionBarQueue.Enqueue((summary, severity));
+
+        // Only start showing if we're not already in a hold cycle.
+        if (_completionBarTimer is null || !_completionBarTimer.IsEnabled)
+        {
+            ShowNextCompletionBar();
+        }
+    }
+
+    private void ShowNextCompletionBar()
+    {
+        if (_completionBarQueue.Count == 0) return;
+
+        (string summary, ViewModels.OperationSeverity severity) = _completionBarQueue.Dequeue();
+        ShowCompletionBar(summary, severity);
     }
 
     private void ShowCompletionBar(string summary, ViewModels.OperationSeverity severity)
@@ -375,6 +401,12 @@ public partial class MainWindow : FluentWindow
     {
         _completionBarTimer?.Stop();
         CompletionBar.IsOpen = false;
+
+        // Drain the next queued banner, if any.
+        if (_completionBarQueue.Count > 0)
+        {
+            ShowNextCompletionBar();
+        }
     }
 
     // --- keep relative times current ---

@@ -7,6 +7,17 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Run operations on different machines at the same time** — scanning or installing on one set of
+  machines no longer locks the whole tab: kick off Install on server A, then immediately Scan server B,
+  from the toolbar or the per-machine panel. Rows already busy with an operation are skipped with a
+  per-row "Skipped — busy (Install running)" note that stays until the next action touches them; the
+  status bar narrates multiple operations ("2 operations · Install 3/12 · Scan 7/40"), the fleet band
+  sums their progress, completion banners queue one at a time, and Stop cancels everything in the tab
+  ("Stop all — N operations running"). Total remote load stays bounded by the same shared budget as
+  before — concurrency never adds connections.
+- **Check Vitals from the machine details window** — the Vitals tab has its own Check Vitals button that
+  reads health + vitals for just that one machine (busy spinner while it runs; disabled while a fleet
+  sweep already holds the machine). No more sweeping the whole tab to populate one box.
 - **Installed updates are marked in the panel** — after a zero-failure install, that install's updates show
   greyed with an **"Installed — reboot pending"** chip (or just "Installed" when no reboot is needed), their
   checkboxes untick so Install checked can't re-target them, and the summary line adds "· N installed this
@@ -22,6 +33,27 @@ it ships, then gets a dated heading.
   signals are gathered but deliberately not scored.
 
 ### Fixed
+- **A dead host can no longer crash the app at fleet scale** — abandoning a connection attempt to an
+  unreachable machine raced the PowerShell SDK's connection-retry, which then fired into torn-down
+  transport state: a NullReferenceException on a raw background thread, which terminates the process
+  (confirmed via the Windows Event Log at 318/319 of a 319-machine sweep). Two-part fix: WSMan
+  connection retries are disabled (`MaxConnectionRetryCount = 0` — dead hosts now fail fast in ~20s,
+  and the retry that raced disposal never exists), and abandoned connections/pipelines are no longer
+  disposed while live — cleanup defers until the abandoned task settles. Covered by a regression test.
+- **A hung host can no longer stall a sweep indefinitely** — the SCCM-health half of Check Vitals had
+  no per-host timeout (now 60s), and the timeouts that existed only *requested* an abort while the call
+  could wait minutes more for a zombie connection to acknowledge; timeouts now unblock the sweep
+  immediately while teardown completes in the background. Worst case per dead host is ~3 minutes and
+  the sweep always completes — no more sitting at 318/319.
+- **Custom columns start filling immediately on big fleets** — the column fill shared one
+  first-come-first-served budget with the vitals sweep and queued behind all of its rows (~2 minutes of
+  blank columns on 319 machines). The budget now guarantees the column fill a small reserved slice
+  (4 of the same 32 — the total cap is unchanged), so columns populate from the first seconds.
+- **Patching no longer runs a phantom "Custom columns" pass** — every tab loaded the saved
+  custom-column definitions, so Patching tabs ran real remote probes for columns their grid can't even
+  display. The fill now runs only on Health tabs that actually have columns configured.
+- **The amber sweep banner names the right actions per section** — Health reads "Ping & Check Vitals
+  resume when finished" instead of borrowing Patching's "Scan & Install".
 - **Install no longer defers on phantom "file-rename" reboots** — the update agent's pre-install servicing
   guard was the one remaining place counting `PendingFileRenameOperations`, so clicking Install flipped
   whole fleets to "Reboot pending (file-rename operations queued)" and quietly never started those installs.

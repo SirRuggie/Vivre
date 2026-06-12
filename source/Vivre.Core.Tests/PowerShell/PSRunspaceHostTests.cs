@@ -157,4 +157,60 @@ public class PSRunspaceHostTests
 
         Assert.Same(other, PSRunspaceHost.TranslateRemotingException(other, "HOST1"));
     }
+
+    // --- execute-phase abandon: no unobserved task exceptions (Fix 2 regression guard) ---
+
+    /// <summary>
+    /// Verifies the execute-phase abandon path: cancelling a long-running local script throws
+    /// OperationCanceledException promptly and leaves no unobserved task exception behind.
+    /// <para>
+    /// RunLocalAsync flows through RunInRunspaceAsync, which is the shared execute path for both
+    /// local and remote calls. On abandon, a ContinueWith disposes the resources after invokeTask
+    /// settles; this test forces GC to trigger any pending finalizers that would fire the
+    /// UnobservedTaskException event if that continuation were missing or incorrectly written.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task Cancel_during_execute_phase_throws_OCE_and_leaves_no_unobserved_task_exception()
+    {
+        bool unobservedRaised = false;
+        EventHandler<UnobservedTaskExceptionEventArgs> handler =
+            (_, __) => unobservedRaised = true;
+
+        TaskScheduler.UnobservedTaskException += handler;
+        try
+        {
+            // Cancel after ~1 second; generous outer bound of 10 s keeps CI flake-free.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            {
+                var task = _host.RunLocalAsync("Start-Sleep -Seconds 30", cts.Token);
+
+                // Give the task at most 10 s to surface the OCE — far more than needed in
+                // practice (~1 s cancel + BeginStop settle time), but robust against a loaded
+                // CI runner. WaitAsync itself throws OCE if the inner task doesn't complete
+                // in time, so the assertion still catches it either way.
+                await task.WaitAsync(TimeSpan.FromSeconds(10));
+            });
+
+            // Allow the abandoned invokeTask's continuation to run and be GC-finalised.
+            // Two rounds ensure that any Task finalizers (which fire the unobserved event)
+            // complete, even on generational heaps where a single collect may not reach all
+            // generations in one pass.
+            await Task.Delay(200);
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(GC.MaxGeneration, GCCollectionMode.Forced, blocking: true);
+            GC.WaitForPendingFinalizers();
+
+            Assert.False(unobservedRaised,
+                "An unobserved task exception was raised after execute-phase cancellation. " +
+                "The abandon-path continuation in RunInRunspaceAsync is missing or incorrect.");
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= handler;
+        }
+    }
 }

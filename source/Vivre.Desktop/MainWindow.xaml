@@ -101,9 +101,16 @@
         <Style x:Key="BusyAwareTooltipStyle" TargetType="ToolTip"
                BasedOn="{StaticResource DefaultToolTipStyle}">
             <Style.Triggers>
-                <DataTrigger Binding="{Binding PlacementTarget.DataContext.SelectedTab.IsBusy, RelativeSource={RelativeSource Self}}" Value="True">
+                <!-- Show the "waiting for operation" explanation only when the tab IS busy AND
+                     the button IS disabled — an enabled button during a concurrent sweep is normal
+                     and should show its regular tooltip, not a misleading "waiting" message. -->
+                <MultiDataTrigger>
+                    <MultiDataTrigger.Conditions>
+                        <Condition Binding="{Binding PlacementTarget.DataContext.SelectedTab.IsBusy, RelativeSource={RelativeSource Self}}" Value="True" />
+                        <Condition Binding="{Binding PlacementTarget.IsEnabled, RelativeSource={RelativeSource Self}}" Value="False" />
+                    </MultiDataTrigger.Conditions>
                     <Setter Property="ContentTemplate" Value="{StaticResource BusyTooltipContentTemplate}" />
-                </DataTrigger>
+                </MultiDataTrigger>
             </Style.Triggers>
         </Style>
 
@@ -425,7 +432,7 @@
                                        Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.StopCommand}"
                                        IsEnabled="{Binding SelectedTab.IsBusy}"
-                                       ToolTip="Stop — cancel all running operations in this tab.">
+                                       ToolTip="{Binding SelectedTab.StopTooltip}">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Stop24" Margin="0,0,6,0" />
                                     <TextBlock Text="Stop" Style="{StaticResource ToolbarLabelStyle}" />
@@ -621,7 +628,7 @@
 
                             <!-- Scan (N): HasSelection AND IsUpdateMode -->
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                       IsEnabled="{Binding SelectedTab.CanActOnSelection}"
                                        Click="OnSelectionScanClick"
                                        ToolTipService.ShowOnDisabled="True">
                                 <ui:Button.ToolTip>
@@ -652,7 +659,7 @@
 
                             <!-- Install (N): HasSelection AND IsUpdateMode AND CanShowInstallToolbar -->
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       IsEnabled="{Binding SelectedTab.IsBusy, Converter={StaticResource InverseBool}}"
+                                       IsEnabled="{Binding SelectedTab.CanActOnSelection}"
                                        Click="OnSelectionInstallClick"
                                        ToolTipService.ShowOnDisabled="True">
                                 <ui:Button.ToolTip>

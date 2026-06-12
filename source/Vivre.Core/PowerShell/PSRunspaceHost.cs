@@ -20,7 +20,9 @@ public sealed class PSRunspaceHost : IPowerShellHost
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         cancellationToken.ThrowIfCancellationRequested();
 
-        using Runspace runspace = RunspaceFactory.CreateRunspace();
+        // Ownership of the runspace transfers to RunInRunspaceAsync — it disposes on every path.
+        // Local Open() is synchronous and cannot be abandoned; no connect-phase guard needed.
+        Runspace runspace = RunspaceFactory.CreateRunspace();
         runspace.Open();
 
         return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments: null, cancellationToken).ConfigureAwait(false);
@@ -40,7 +42,8 @@ public sealed class PSRunspaceHost : IPowerShellHost
         ArgumentNullException.ThrowIfNull(arguments);
         cancellationToken.ThrowIfCancellationRequested();
 
-        using Runspace runspace = RunspaceFactory.CreateRunspace();
+        // Ownership of the runspace transfers to RunInRunspaceAsync — see above.
+        Runspace runspace = RunspaceFactory.CreateRunspace();
         runspace.Open();
 
         return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments, cancellationToken).ConfigureAwait(false);
@@ -69,14 +72,42 @@ public sealed class PSRunspaceHost : IPowerShellHost
         {
             // Bound the connect so an unreachable host fails fast instead of hanging.
             OpenTimeout = RemoteOpenTimeoutMs,
+
+            // The SDK's default MaxConnectionRetryCount=5 schedules retries via
+            // WSManClientSessionTransportManager.StartCreateRetry as an unguarded
+            // ThreadPool.QueueUserWorkItem. When a per-host timeout causes us to abandon
+            // Runspace.Open() and then dispose the runspace, the queued retry fires into
+            // the torn-down session state → NullReferenceException on a raw pool thread →
+            // process termination (no handler can catch raw-thread faults in modern .NET).
+            // Setting 0 causes RetrySessionCreation to decline on the first transport error
+            // so the work item is never scheduled; no retry race, no process kill.
+            // Retry codes are refused/unavailable conditions (not slowness), so slow-but-alive
+            // hosts are unaffected — OpenTimeout governs those independently. Our per-host
+            // timeouts and re-run sweep supersede transport-level retry for a fleet tool.
+            MaxConnectionRetryCount = 0,
         };
 
-        using Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
+        Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
 
         // Runspace.Open() blocks doing the network connect and does NOT observe the token once
         // it's running — so a rebooting/unreachable host would hang it for the full OpenTimeout.
-        // Run it on the pool and stop *waiting* the instant the token trips (WaitAsync); the
-        // using-dispose then tears down the half-open runspace, aborting the connect.
+        // Run it on the pool and stop *waiting* the instant the token trips (WaitAsync).
+        //
+        // Connect-phase abandon-path disposal:
+        //   We must NOT dispose the runspace synchronously while openTask is still live — that
+        //   is the dispose-under-live-task race that causes the SDK to dereference torn-down
+        //   transport state. Instead we attach a single continuation: after openTask settles it
+        //   observes any exception and then disposes the runspace. Worst-case lifetime on abandon
+        //   = OpenTimeout (20 s) — after which WSMan's own connect times out, the task settles,
+        //   and the continuation disposes. On this path (OCE catch) we rethrow; the runspace is
+        //   NOT disposed in any finally or catch other than the continuation.
+        //
+        // Connect-phase observed-fault disposal:
+        //   openTask faulted and WaitAsync already observed it — the task is settled, so we
+        //   dispose the runspace immediately (no race) and translate the exception.
+        //
+        // Connect success: ownership of the runspace transfers to RunInRunspaceAsync, which
+        //   disposes it on every execute-phase path (success, observed fault, execute-abandon).
         Task openTask = Task.Run(runspace.Open);
         try
         {
@@ -84,19 +115,30 @@ public sealed class PSRunspaceHost : IPowerShellHost
         }
         catch (OperationCanceledException)
         {
-            // Keep the abandoned Open() from surfacing as an unobserved fault on dispose.
-            _ = openTask.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            // Defer disposal: continuation is the sole disposal path on connect-abandon.
+            _ = openTask.ContinueWith(
+                static (t, state) =>
+                {
+                    _ = t.Exception; // observe any fault (exactly once)
+                    try { ((Runspace)state!).Dispose(); } catch { /* dispose races are benign */ }
+                },
+                runspace,
+                TaskScheduler.Default);
             throw;
         }
         catch (Exception ex)
         {
+            // openTask faulted; WaitAsync observed it — task is settled, safe to dispose now.
+            runspace.Dispose();
+
             // Connect-phase failure (e.g. WinRM/PSRP shell init on a degraded target — the
-            // InitialSessionState type-initializer / MaxShellsPerUser case). The open task faulted
-            // and WaitAsync observed it, so no continuation is needed; translate it into a typed,
-            // actionable exception instead of letting the raw SDK string propagate.
+            // InitialSessionState type-initializer / MaxShellsPerUser case). Translate into a
+            // typed, actionable exception instead of letting the raw SDK string propagate.
             throw TranslateRemotingException(ex, host);
         }
 
+        // Connect succeeded. Ownership of the runspace transfers to RunInRunspaceAsync.
+        // (No using/finally here — RunInRunspaceAsync owns disposal from this point on.)
         try
         {
             return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments: null, cancellationToken).ConfigureAwait(false);
@@ -130,10 +172,18 @@ public sealed class PSRunspaceHost : IPowerShellHost
             credential)
         {
             OpenTimeout = RemoteOpenTimeoutMs,
+
+            // See RunRemoteAsync for the full rationale. MaxConnectionRetryCount=0 prevents
+            // WSManClientSessionTransportManager.StartCreateRetry from scheduling an unguarded
+            // thread-pool work item that races disposal of the abandoned runspace → NRE →
+            // process death. Retry codes are refused/unavailable (not slowness); OpenTimeout
+            // governs slow-but-alive hosts independently.
+            MaxConnectionRetryCount = 0,
         };
 
-        using Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
+        Runspace runspace = RunspaceFactory.CreateRunspace(connectionInfo);
 
+        // Same abandon-path deferral as RunRemoteAsync — see that method for full rationale.
         Task openTask = Task.Run(runspace.Open);
         try
         {
@@ -141,14 +191,23 @@ public sealed class PSRunspaceHost : IPowerShellHost
         }
         catch (OperationCanceledException)
         {
-            _ = openTask.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            _ = openTask.ContinueWith(
+                static (t, state) =>
+                {
+                    _ = t.Exception;
+                    try { ((Runspace)state!).Dispose(); } catch { /* dispose races are benign */ }
+                },
+                runspace,
+                TaskScheduler.Default);
             throw;
         }
         catch (Exception ex)
         {
+            runspace.Dispose();
             throw TranslateRemotingException(ex, host);
         }
 
+        // Connect succeeded. Ownership of the runspace transfers to RunInRunspaceAsync.
         try
         {
             return await RunInRunspaceAsync(runspace, script, onOutput, arguments: null, cancellationToken).ConfigureAwait(false);
@@ -218,6 +277,25 @@ public sealed class PSRunspaceHost : IPowerShellHost
     /// this is what the streaming install/uninstall controller uses to forward per-line
     /// progress JSON back to the UI as it arrives rather than at end-of-script.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <strong>Ownership:</strong> This method takes ownership of <paramref name="runspace"/>
+    /// and disposes it (together with its own <c>ps</c> and <c>output</c>) on every path —
+    /// success, observed fault, and execute-phase abandonment. Callers must NOT dispose
+    /// the runspace after calling this method.
+    /// </para>
+    /// <para>
+    /// <strong>Execute-phase abandon:</strong> When the cancellation token fires while the
+    /// invoke is still live, we stop <em>waiting</em> (via WaitAsync) but must not dispose
+    /// the three disposables synchronously — that races the still-running task and causes the
+    /// SDK to dereference torn-down state. A single continuation is attached that, after
+    /// <c>invokeTask</c> settles, observes its exception (exactly once) and disposes
+    /// <c>output</c> → <c>ps</c> → <c>runspace</c> in order. The <c>executeAbandoned</c>
+    /// flag prevents the outer finally from also disposing (exactly-once guarantee; no
+    /// reliance on SDK idempotence). Worst-case lifetime on execute-abandon: until BeginStop
+    /// lands or WSMan times out internally (bounded by the host's WSMan timeout).
+    /// </para>
+    /// </remarks>
     private static async Task<PSExecutionResult> RunInRunspaceAsync(
         Runspace runspace,
         string script,
@@ -225,91 +303,152 @@ public sealed class PSRunspaceHost : IPowerShellHost
         IReadOnlyDictionary<string, object?>? arguments,
         CancellationToken cancellationToken)
     {
-        using var ps = SmaPowerShell.Create();
-        ps.Runspace = runspace;
-        ps.AddScript(script);
+        // Declare before the try so they are visible in the finally; initialized to null so the
+        // finally can null-check before disposing in the rare event construction itself throws.
+        SmaPowerShell? ps = null;
+        PSDataCollection<PSObject>? output = null;
 
-        // Bind named arguments to the script's param() block. Passing values (e.g. a PSCredential
-        // or a string[]) as real parameters keeps sensitive/awkward data out of the script TEXT —
-        // no interpolation, no quoting hazards, nothing to leak if the script is ever logged.
-        if (arguments is not null)
-        {
-            foreach (KeyValuePair<string, object?> arg in arguments)
-            {
-                ps.AddParameter(arg.Key, arg.Value);
-            }
-        }
-
-        // Cancellation stops the running pipeline; the SDK then surfaces a
-        // PipelineStoppedException, which we translate to OperationCanceledException.
-        //
-        // BeginStop, NOT Stop: CancellationTokenSource.Cancel() runs this callback
-        // synchronously on the *caller's* thread — which is the UI thread for the Stop
-        // button. PowerShell.Stop() BLOCKS until the pipeline has actually stopped, and
-        // for a remote pipeline whose target is rebooting/unreachable that can take the
-        // full WSMan timeout (minutes) — freezing the whole UI. BeginStop initiates the
-        // stop and returns immediately: the awaited InvokeAsync below still throws
-        // PipelineStoppedException once the stop lands, the runspace's using-dispose tears
-        // the half-dead connection down, and the sweep's cancellation race has already
-        // freed the UI. A cancellation callback must never throw, so swallow the benign
-        // races (pipeline already completed/stopped/disposed — nothing left to stop).
-        using CancellationTokenRegistration registration =
-            cancellationToken.Register(static state =>
-            {
-                try
-                {
-                    ((SmaPowerShell)state!).BeginStop(null, null);
-                }
-                catch (Exception)
-                {
-                    // Pipeline already finished or was disposed between the token tripping
-                    // and this callback — there is nothing left to cancel.
-                }
-            }, ps);
-
-        // Pre-allocate the output collection so streaming-mode handlers can subscribe
-        // before the pipeline starts producing items. In non-streaming mode this is the
-        // same end-state collection that the synchronous overload would return.
-        // `using`: PSDataCollection<T> holds a wait handle (and, in streaming mode, the DataAdded
-        // closure capturing onOutput) — without disposal each remote call leaks a handle until GC.
-        // The result is snapshotted via [.. output] before return, so disposing afterwards is safe.
-        using var output = new PSDataCollection<PSObject>();
-        if (onOutput is not null)
-        {
-            output.DataAdded += (sender, args) =>
-            {
-                // Snapshot the new index off the collection — the handler may be invoked
-                // after additional items have already been appended.
-                PSObject? added = ((PSDataCollection<PSObject>)sender!)[args.Index];
-                if (added is not null)
-                {
-                    try
-                    {
-                        onOutput(added);
-                    }
-                    catch
-                    {
-                        // A faulty consumer callback must not tear the pipeline down.
-                    }
-                }
-            };
-        }
+        // executeAbandoned gates exactly-once disposal: when true the ContinueWith owns all
+        // three disposables; the finally must not also dispose them.
+        bool executeAbandoned = false;
 
         try
         {
-            await ps.InvokeAsync<PSObject, PSObject>(input: null, output).ConfigureAwait(false);
+            ps = SmaPowerShell.Create();
+            output = new PSDataCollection<PSObject>();
 
-            cancellationToken.ThrowIfCancellationRequested();
+            ps.Runspace = runspace;
+            ps.AddScript(script);
 
-            return new PSExecutionResult(
-                Output: [.. output],
-                Errors: [.. ps.Streams.Error.Select(static e => e.ToString())],
-                Warnings: [.. ps.Streams.Warning.Select(static w => w.ToString())],
-                HadErrors: ps.HadErrors);
+            // Bind named arguments to the script's param() block. Passing values (e.g. a
+            // PSCredential or a string[]) as real parameters keeps sensitive/awkward data out of
+            // the script TEXT — no interpolation, no quoting hazards, nothing to leak if logged.
+            if (arguments is not null)
+            {
+                foreach (KeyValuePair<string, object?> arg in arguments)
+                {
+                    ps.AddParameter(arg.Key, arg.Value);
+                }
+            }
+
+            // Cancellation stops the running pipeline; the SDK then surfaces a
+            // PipelineStoppedException, which we translate to OperationCanceledException.
+            //
+            // BeginStop, NOT Stop: CancellationTokenSource.Cancel() runs this callback
+            // synchronously on the *caller's* thread — which is the UI thread for the Stop
+            // button. PowerShell.Stop() BLOCKS until the pipeline has actually stopped, and
+            // for a remote pipeline whose target is rebooting/unreachable that can take the
+            // full WSMan timeout (minutes) — freezing the whole UI. BeginStop initiates the
+            // stop and returns immediately: the awaited InvokeAsync below still throws
+            // PipelineStoppedException once the stop lands. A cancellation callback must never
+            // throw, so swallow the benign races (pipeline already completed/stopped/disposed).
+            //
+            // On the execute-phase abandon path (executeAbandoned=true) the token has by
+            // definition already fired before we reach the finally, so the registration's
+            // own disposal (which unregisters and completes synchronously) is safe even after
+            // ps is queued for deferred disposal by the continuation — the registration holds
+            // a reference to ps but does not call into it after Cancel() has returned.
+            using CancellationTokenRegistration registration =
+                cancellationToken.Register(static state =>
+                {
+                    try
+                    {
+                        ((SmaPowerShell)state!).BeginStop(null, null);
+                    }
+                    catch (Exception)
+                    {
+                        // Pipeline already finished or was disposed between the token tripping
+                        // and this callback — there is nothing left to cancel.
+                    }
+                }, ps);
+
+            // Subscribe the streaming handler BEFORE starting the invoke so no early output
+            // items are missed. In non-streaming mode output is a plain capture collection.
+            if (onOutput is not null)
+            {
+                output.DataAdded += (sender, args) =>
+                {
+                    // Snapshot the new index off the collection — the handler may be invoked
+                    // after additional items have already been appended.
+                    PSObject? added = ((PSDataCollection<PSObject>)sender!)[args.Index];
+                    if (added is not null)
+                    {
+                        try
+                        {
+                            onOutput(added);
+                        }
+                        catch
+                        {
+                            // A faulty consumer callback must not tear the pipeline down.
+                        }
+                    }
+                };
+            }
+
+            Task invokeTask = ps.InvokeAsync<PSObject, PSObject>(input: null, output);
+            try
+            {
+                // WaitAsync mirrors the connect-phase's abandon pattern: when the token trips we
+                // stop waiting for InvokeAsync without synchronously disposing the live task's
+                // resources. BeginStop (fired by the registration above) initiates the pipeline
+                // stop asynchronously; the task will settle shortly after.
+                await invokeTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+
+                cancellationToken.ThrowIfCancellationRequested();
+
+                return new PSExecutionResult(
+                    Output: [.. output],
+                    Errors: [.. ps.Streams.Error.Select(static e => e.ToString())],
+                    Warnings: [.. ps.Streams.Warning.Select(static w => w.ToString())],
+                    HadErrors: ps.HadErrors);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                // Execute-phase abandon: do NOT dispose synchronously while invokeTask is live.
+                // Transfer disposal to a single continuation that runs after invokeTask settles:
+                // it observes the fault (exactly once via t.Exception) and disposes output → ps
+                // → runspace in order, each wrapped in its own try/catch so that a failure in
+                // one does not prevent the others from being disposed. The executeAbandoned flag
+                // causes the outer finally to skip disposal (exactly-once; no SDK idempotence).
+                executeAbandoned = true;
+                SmaPowerShell capturedPs = ps;
+                PSDataCollection<PSObject> capturedOutput = output;
+                _ = invokeTask.ContinueWith(
+                    static (t, state) =>
+                    {
+                        _ = t.Exception; // observe the fault exactly once
+                        var (o, p, r) =
+                            ((PSDataCollection<PSObject>, SmaPowerShell, Runspace))state!;
+                        try { o.Dispose(); } catch { /* dispose races are benign */ }
+                        try { p.Dispose(); } catch { /* dispose races are benign */ }
+                        try { r.Dispose(); } catch { /* dispose races are benign */ }
+                    },
+                    (capturedOutput, capturedPs, runspace),
+                    TaskScheduler.Default);
+                throw new OperationCanceledException(cancellationToken);
+            }
+            catch (PipelineStoppedException) when (cancellationToken.IsCancellationRequested)
+            {
+                // InvokeAsync completed synchronously with a PipelineStoppedException before
+                // WaitAsync could observe the token — invokeTask is settled, so the outer
+                // finally's disposal is safe (no live-task race). Translate to OCE.
+                throw new OperationCanceledException(cancellationToken);
+            }
         }
-        catch (PipelineStoppedException) when (cancellationToken.IsCancellationRequested)
+        finally
         {
-            throw new OperationCanceledException(cancellationToken);
+            // On success and observed-fault paths: invokeTask is settled, disposal is safe.
+            // On PipelineStoppedException-as-cancel: invokeTask is settled, disposal is safe.
+            // On execute-phase abandon (executeAbandoned=true): continuation owns disposal —
+            // skip here to preserve exactly-once ownership without relying on SDK idempotence.
+            // Null checks guard the rare case where construction of ps or output threw before
+            // the try block fully initialised them.
+            if (!executeAbandoned)
+            {
+                try { output?.Dispose(); } catch { }
+                try { ps?.Dispose(); } catch { }
+                try { runspace.Dispose(); } catch { }
+            }
         }
     }
 }

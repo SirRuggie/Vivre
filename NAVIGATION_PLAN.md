@@ -108,6 +108,16 @@ A left `ui:NavigationView` replaces the top tab strip as the app's primary navig
   clarity pass (Integrations / Help & about / Grid columns); vitals pill on Patching; installed-this-session
   marking in the update panel.
 
+- **Round 5  ✅ *(done — 1.10.0)*** — row-disjoint concurrency: a per-row operation registry lets
+  operations on disjoint machines run simultaneously within a tab (busy rows are skipped with a
+  persistent per-row message); composed narration, summed fleet band, queued completion banners,
+  Stop-cancels-all. Remoting hardened at fleet scale: the WSMan connection-retry crash fixed at the
+  source (`MaxConnectionRetryCount = 0`) plus deferred abandon-path disposal; real per-host timeouts
+  (health 60s / vitals 120s, awaits unblock at the timeout); a reserved slice of the shared read budget
+  (4 of 32) keeps passive custom-column fills from starving behind sweeps (cross-tab ordering remains
+  FIFO by design — the shared budget caps total remote load). Per-machine Check Vitals added to the
+  details window.
+
 ## Interim / deferred
 - **Mode chips** — superseded: removed in Round 2 (1.9.0); a tab's mode is now fixed by its Fleet section
   (the Health / Patching nav destinations).
