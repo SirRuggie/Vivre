@@ -3108,7 +3108,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.MemoryUsedPercent = null;
         computer.CpuLoadPercent = null;
         computer.StoppedAutoServiceCount = null;
-        computer.RecentErrorEventCount = null;
         computer.Vitals = null;
         computer.VitalityReasons = [];
     }
@@ -3121,7 +3120,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.MemoryUsedPercent = v.MemoryUsedPercent;
         computer.CpuLoadPercent = v.CpuLoadPercent;
         computer.StoppedAutoServiceCount = v.StoppedAutoServiceCount;
-        computer.RecentErrorEventCount = v.RecentErrorEventCount;
         if (v.LastBootTime is { } boot)
         {
             computer.LastBootTime = boot;
@@ -3145,6 +3143,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.VitalityScore = r.Score;
         computer.VitalityBand = r.Band;
         computer.VitalityReasons = r.Reasons;
+        computer.VitalityNeedsAttention = r.NeedsAttention;
+
+        // Connection callout (Machine Details): when WinRM was unusable and we fell back to SMB/DCOM,
+        // surface WHAT failed + how to fix. Cleared when WinRM is healthy so the callout hides.
+        computer.WinRmStateCaption = WinRmHealthGuidance.Caption(v.WinRmHealth);
+        computer.WinRmFix = WinRmHealthGuidance.FixBullets(v.WinRmHealth);
+        computer.WinRmFailureDetail = v.WinRmFailureDetail;
+        computer.WinRmDegraded = computer.WinRmStateCaption is not null;
+
         computer.LastStatus = r.Score is { } s
             ? $"Vitality {s} ({r.Band})"
             : r.Band.ToString();

@@ -13,7 +13,6 @@ namespace Vivre.Core.Vitals;
 /// <param name="CpuLoadPercent">Instantaneous CPU load as a percentage (0-100); a coarse snapshot.</param>
 /// <param name="LastBootTime">Last OS boot time (drives the uptime penalty); null if unknown.</param>
 /// <param name="StoppedAutoServiceCount">Count of auto-start services that aren't running.</param>
-/// <param name="RecentErrorEventCount">Count of Critical/Error events in the last 24h (System+Application).</param>
 /// <param name="RebootPending">A reboot is pending (CBS / CCM).</param>
 /// <param name="UserLoggedOn">An interactive user session is present.</param>
 public sealed record MachineVitals(
@@ -23,7 +22,6 @@ public sealed record MachineVitals(
     double? CpuLoadPercent = null,
     DateTime? LastBootTime = null,
     int? StoppedAutoServiceCount = null,
-    int? RecentErrorEventCount = null,
     bool? RebootPending = null,
     bool? UserLoggedOn = null)
 {
@@ -37,11 +35,24 @@ public sealed record MachineVitals(
     /// <summary>Display names of the auto-start services found stopped (capped by the probe).</summary>
     public IReadOnlyList<string> StoppedAutoServices { get; init; } = [];
 
-    /// <summary>The most recent Critical/Error events (capped by the probe), newest first.</summary>
-    public IReadOnlyList<EventDigest> RecentErrorEvents { get; init; } = [];
-
     /// <summary>User names of interactive sessions, when resolvable.</summary>
     public IReadOnlyList<string> LoggedOnUsers { get; init; } = [];
+
+    /// <summary>
+    /// WinRM/Kerberos transport health observed while gathering these vitals; null when not assessed.
+    /// Transport metadata — deliberately NOT part of <see cref="IsEmpty"/> (it is not an OS reading) and
+    /// never surfaced on an operation result; it only feeds the Vitals "needs attention" finding.
+    /// </summary>
+    public WinRmHealth? WinRmHealth { get; init; }
+
+    /// <summary>
+    /// The actual WinRM error that triggered the SMB/DCOM fallback (the host-named, translated message),
+    /// or null when WinRM was healthy. Lets Machine Details show the operator WHAT failed (e.g. "Cannot
+    /// find the computer … using Kerberos authentication" or "the client cannot connect to the
+    /// destination") rather than just a generic flag. Transport metadata — like <see cref="WinRmHealth"/>
+    /// it never counts toward <see cref="IsEmpty"/> and never appears on an operation result.
+    /// </summary>
+    public string? WinRmFailureDetail { get; init; }
 
     /// <summary>Time since the last boot, or null when <see cref="LastBootTime"/> is unknown.</summary>
     public TimeSpan? Uptime => LastBootTime is { } boot ? DateTime.Now - boot : null;
@@ -49,7 +60,7 @@ public sealed record MachineVitals(
     /// <summary>True when no signal at all was read — the probe round-tripped but came back blank.</summary>
     public bool IsEmpty =>
         SystemDriveFreePercent is null && MemoryUsedPercent is null && CpuLoadPercent is null
-        && LastBootTime is null && StoppedAutoServiceCount is null && RecentErrorEventCount is null
+        && LastBootTime is null && StoppedAutoServiceCount is null
         && RebootPending is null && Drives.Count == 0;
 }
 
@@ -59,18 +70,3 @@ public sealed record MachineVitals(
 /// <param name="FreeGb">Free space in GB.</param>
 /// <param name="SizeGb">Total drive size in GB.</param>
 public sealed record DriveVitals(string Letter, double FreePercent, double FreeGb, double SizeGb);
-
-/// <summary>A condensed Event Log entry for the triage view.</summary>
-/// <param name="Time">When the event was logged.</param>
-/// <param name="Log">Log name (e.g. "System").</param>
-/// <param name="Provider">Event source / provider.</param>
-/// <param name="Id">Event id.</param>
-/// <param name="Level">Level name (e.g. "Error", "Critical").</param>
-/// <param name="Message">First line of the event message.</param>
-public sealed record EventDigest(
-    DateTime? Time,
-    string? Log,
-    string? Provider,
-    int Id,
-    string? Level,
-    string? Message);
