@@ -14,8 +14,13 @@ namespace Vivre.UpdateAgent
     /// </summary>
     internal sealed class AgentConfig
     {
-        /// <summary>"Install" (default), "Uninstall", or "Scan".</summary>
+        /// <summary>"Install" (default), "Uninstall", "Scan", or "AddPackage" (the 2016 full-package LCU
+        /// lane — DISM /Add-Package of a local .msu, no WUA).</summary>
         public string Mode { get; set; }
+
+        /// <summary>For <c>Mode = "AddPackage"</c>: the local path to the full CU package (.msu) the
+        /// controller already copied to the target's ACL'd drop dir. The agent DISM-adds this; null otherwise.</summary>
+        public string PackagePath { get; set; }
 
         /// <summary>
         /// Scan scope: "Applicable" (default — IsInstalled=0, the install checklist) or "Installed"

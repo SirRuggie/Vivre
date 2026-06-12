@@ -87,6 +87,14 @@ namespace Vivre.UpdateAgent
                 {
                     rebootNeeded = RunScan(config, progress);
                 }
+                else if (string.Equals(config.Mode, "AddPackage", StringComparison.OrdinalIgnoreCase))
+                {
+                    rebootNeeded = RunAddPackage(config, progress);
+                }
+                else if (string.Equals(config.Mode, "Cleanup", StringComparison.OrdinalIgnoreCase))
+                {
+                    rebootNeeded = RunComponentCleanup(progress);
+                }
                 else if (string.Equals(config.Mode, "Uninstall", StringComparison.OrdinalIgnoreCase))
                 {
                     rebootNeeded = RunUninstall(config, progress);
@@ -131,6 +139,192 @@ namespace Vivre.UpdateAgent
                 // Stop the heartbeat before we return so no stray Heartbeat line trails the terminal
                 // (Done/Error/PendingReboot) line the controller stops on.
                 heartbeat?.Stop();
+            }
+        }
+
+        // --- full-package LCU (Server 2016 lane) ---------------------------
+
+        /// <summary>
+        /// The 2016 full-package lane: DISM-adds a complete cumulative-update .msu (sidesteps the broken
+        /// Express delta pipeline). Runs as SYSTEM (the SCM-launched service), streams DISM's percent as
+        /// Staging progress, and — crucially — verifies the stage actually registered a pending reboot
+        /// before reporting reboot-ready (DISM can exit 0 as a silent no-op). NEVER reboots here; the
+        /// operator commits later via the controller's Reboot Wave. Returns false (no agent-side reboot).
+        ///
+        /// <para>Primary path is <c>dism /add-package</c> on the .msu directly — with a current servicing
+        /// stack this handles a combined SSU+LCU and its internal ordering. If beta validation shows
+        /// 14393's DISM rejects the .msu, add an expand-to-cab fallback here (the one beta-contingent bit).</para>
+        /// </summary>
+        private static bool RunAddPackage(AgentConfig config, ProgressWriter progress)
+        {
+            string pkg = config.PackagePath;
+            if (string.IsNullOrWhiteSpace(pkg) || !File.Exists(pkg))
+            {
+                throw new InvalidOperationException("AddPackage: package not found at '" + (pkg ?? "<null>") + "'.");
+            }
+
+            // Disk floor: the .msu is already here, but DISM expands it + grows WinSxS during the apply.
+            // Refuse to stage on a tight system drive (run Component Cleanup first). 8 GB matches the lane gate.
+            try
+            {
+                var sysDrive = new DriveInfo(Path.GetPathRoot(Environment.SystemDirectory));
+                double freeGb = sysDrive.AvailableFreeSpace / 1073741824.0;
+                if (freeGb < 8.0)
+                {
+                    progress.Write("Error",
+                        "Insufficient disk: " + freeGb.ToString("0.0", CultureInfo.InvariantCulture)
+                        + " GB free on the system drive (need at least 8 GB). Run Component Cleanup, then re-stage.",
+                        100, 1, 0, 1, false);
+                    return false;
+                }
+            }
+            catch
+            {
+                // Can't read free space — let DISM surface any real disk error rather than blocking.
+            }
+
+            progress.Write("Staging", "Adding cumulative update via DISM…", 0, 1, 0, 0, false);
+            int exit = RunDism("/online /add-package /packagepath:\"" + pkg + "\" /norestart /english",
+                progress, "Staging", "Staging update");
+
+            // DISM/CBS success codes: 0 = applied, 3010 = applied (reboot required), 1641 = reboot
+            // initiated. 0x800f081e (CBS_E_NOT_APPLICABLE) = already installed / superseded — that's a
+            // green no-op, not a failure.
+            const int ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
+            const int ERROR_SUCCESS_REBOOT_INITIATED = 1641;
+            const int CBS_E_NOT_APPLICABLE = unchecked((int)0x800F081E);
+
+            if (exit == CBS_E_NOT_APPLICABLE)
+            {
+                progress.Write("Done", "Already installed — this CU is not applicable (no change).", 100, 1, 1, 0, false);
+                return false;
+            }
+
+            bool ok = exit == 0 || exit == ERROR_SUCCESS_REBOOT_REQUIRED || exit == ERROR_SUCCESS_REBOOT_INITIATED;
+            if (!ok)
+            {
+                progress.Write("Error",
+                    "DISM add-package failed (exit 0x" + exit.ToString("X8") + "). See %WINDIR%\\Logs\\DISM\\dism.log and CBS.log on the host.",
+                    100, 1, 0, 1, false);
+                return false;
+            }
+
+            // Success exit, but confirm a pending reboot was actually registered — otherwise the "apply"
+            // was a silent no-op and the box is NOT reboot-ready (do not mislabel it).
+            if (!IsCbsRebootPending())
+            {
+                progress.Write("Error",
+                    "DISM reported success but no pending reboot was registered — the update did not stage. Re-check the package and component store.",
+                    100, 1, 0, 1, false);
+                return false;
+            }
+
+            progress.Write("PendingReboot",
+                "Staged — reboot-ready. Run a Reboot Wave to commit the update.",
+                100, 1, 1, 0, true);
+            return false; // staging never auto-reboots; the operator's Reboot Wave commits it
+        }
+
+        /// <summary>
+        /// Runs <c>dism.exe</c> with <paramref name="arguments"/>, live-streaming the latest percent as
+        /// progress under <paramref name="phase"/> with the message <paramref name="prefix"/>. DISM redraws
+        /// its bar with backspace/CR, so we read stdout in chunks and pull the most-recent "NN.N%" rather
+        /// than whole lines; stderr is drained separately so a full pipe can't deadlock. Returns the exit
+        /// code. Shared by AddPackage (the LCU stage) and Component Cleanup. /english forces a parseable
+        /// percent format on localized hosts.
+        /// </summary>
+        private static int RunDism(string arguments, ProgressWriter progress, string phase, string prefix)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "dism.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            using (var p = new System.Diagnostics.Process { StartInfo = psi })
+            {
+                p.ErrorDataReceived += (s, e) => { /* drain stderr so the pipe can't fill and deadlock */ };
+                p.Start();
+                p.BeginErrorReadLine();
+
+                var sb = new StringBuilder();
+                var chunk = new char[256];
+                int lastPct = -1;
+                int n;
+                while ((n = p.StandardOutput.Read(chunk, 0, chunk.Length)) > 0)
+                {
+                    sb.Append(chunk, 0, n);
+                    var matches = System.Text.RegularExpressions.Regex.Matches(sb.ToString(), @"(\d{1,3}(?:\.\d+)?)%");
+                    if (matches.Count > 0)
+                    {
+                        string last = matches[matches.Count - 1].Groups[1].Value;
+                        if (double.TryParse(last, NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                        {
+                            int pct = (int)Math.Round(val);
+                            if (pct < 0) pct = 0; else if (pct > 100) pct = 100;
+                            if (pct != lastPct)
+                            {
+                                lastPct = pct;
+                                progress.Write(phase, prefix + " — " + pct + "%", pct, 1, 0, 0, false);
+                            }
+                        }
+                    }
+
+                    // Keep the buffer bounded (we only ever need the tail to find the latest percent).
+                    if (sb.Length > 4096)
+                    {
+                        sb.Remove(0, sb.Length - 1024);
+                    }
+                }
+
+                p.WaitForExit();
+                return p.ExitCode;
+            }
+        }
+
+        /// <summary>
+        /// Reclaims component-store space: <c>DISM /Online /Cleanup-Image /StartComponentCleanup</c>,
+        /// streaming percent. Never reboots. (RunFromConfig's BootBusyGuard already refuses this when a
+        /// reboot is pending / servicing is in progress, so it won't collide with a staged update.)
+        /// </summary>
+        private static bool RunComponentCleanup(ProgressWriter progress)
+        {
+            progress.Write("Scanning", "Cleaning the component store (DISM /StartComponentCleanup)…", 0, 1, 0, 0, false);
+            int exit = RunDism("/online /cleanup-image /startcomponentcleanup /english",
+                progress, "Scanning", "Cleaning component store");
+
+            const int ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
+            if (exit == 0)
+            {
+                progress.Write("Done", "Component cleanup complete.", 100, 1, 1, 0, false);
+                return false;
+            }
+
+            if (exit == ERROR_SUCCESS_REBOOT_REQUIRED)
+            {
+                progress.Write("PendingReboot", "Component cleanup complete — a reboot is recommended.", 100, 1, 1, 0, true);
+                return false;
+            }
+
+            progress.Write("Error",
+                "Component cleanup failed (exit 0x" + exit.ToString("X8") + "). See %WINDIR%\\Logs\\DISM\\dism.log.",
+                100, 1, 0, 1, false);
+            return false;
+        }
+
+        /// <summary>True when the CBS "RebootPending" key exists — the authoritative "an update is staged
+        /// and a reboot will commit it" signal. Its presence after a DISM add is how we know the stage
+        /// actually applied (vs. a silent no-op).</summary>
+        private static bool IsCbsRebootPending()
+        {
+            using (var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
+                @"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending"))
+            {
+                return key != null;
             }
         }
 
