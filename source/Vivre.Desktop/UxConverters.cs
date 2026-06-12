@@ -28,6 +28,18 @@ public sealed class NonZeroToBoolConverter : IValueConverter
         throw new NotSupportedException();
 }
 
+/// <summary>Non-zero integer → Visible; zero or non-int (null) → Collapsed. Hides a section whose
+/// backing count is empty — e.g. "Stopped auto-start services" when nothing is stopped (and on
+/// DCOM-fallback rows, where services aren't gathered, the count is null → hidden).</summary>
+public sealed class NonZeroToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        value is int n && n != 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
+        throw new NotSupportedException();
+}
+
 /// <summary>
 /// Tri-state <see cref="bool"/>? → a status <c>SymbolRegular</c> so the grid dots carry a SHAPE,
 /// not colour alone (WCAG 1.4.1). Mirrors <see cref="StatusBrushConverter"/>'s polarity so the

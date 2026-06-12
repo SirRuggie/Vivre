@@ -194,13 +194,13 @@ public static class HelpContent
             Keywords = "vitals vitality score health disk memory cpu uptime stopped services event log unhealthy triage",
             Lines =
             [
-                "Click Check Vitals — the same button that pulls SCCM client health also reads deep OS health: system-drive free space, memory and CPU load, uptime, plus (for context) stopped auto-start services and recent Critical/Error events.",
+                "Click Check Vitals — the same button that pulls SCCM client health also reads deep OS health: system-drive free space, memory and CPU load, uptime, plus (for context) any stopped auto-start services.",
                 "It rolls the reliable signals (disk, memory, CPU, uptime, reboot-pending) into a 0–100 vitality score shown as a coloured chip in the Vitals column: green = Healthy (80+), amber = Warning (50–79), red = Critical (under 50). Offline/Unknown show grey.",
-                "Stopped services and event counts are shown for triage but NOT scored — they're too noisy (idle-by-design services, benign errors like DCOM 10016) to trust on their own.",
-                "Hover the chip to see why (the top reasons), or right-click ▸ Details… ▸ Vitals for the full breakdown — drives, services by name, and recent events. The bottom bar tallies the fleet, e.g. \"Vitals: Healthy 40 · Warning 6 · Critical 2\".",
+                "Stopped auto-start services are shown for triage but NOT scored — they're too noisy (idle-by-design services) to trust on their own; the section only appears when something is actually stopped.",
+                "Hover the chip to see why (the top reasons), or right-click ▸ Details… ▸ Vitals for the full breakdown — drives, plus stopped services by name when present. The bottom bar tallies the fleet, e.g. \"Vitals: Healthy 40 · Warning 6 · Critical 2\".",
                 "Use the Unhealthy filter chip to show just the Warning/Critical/Offline machines, then sort by the Vitals column to put the sickest first.",
             ],
-            Tip = "Read-only — one click, no confirm. Reading services / the event log over WinRM needs admin rights on the target; anything it can't read is skipped rather than counted against the score. See \"What does the Vitality score mean?\" for the full scoring breakdown.",
+            Tip = "Read-only — one click, no confirm. Reading the service list over WinRM needs admin rights on the target; anything it can't read is skipped rather than counted against the score. See \"What does the Vitality score mean?\" for the full scoring breakdown.",
         },
         new HelpTopic
         {
@@ -219,9 +219,24 @@ public static class HelpContent
                 "The Vitals chip shows the top 3 worst reasons (the highest-penalty problems) as the \"why\" behind the number. Hover the chip to read them; open right-click ▸ Details… ▸ Vitals for the full breakdown and inline triage actions.",
                 "CPU and memory are point-in-time samples taken at check time — a momentary spike during the check can temporarily lower a score. Re-run Check Vitals when the box is idle to clear it.",
                 "The Unhealthy filter chip includes Offline machines — not just Warning/Critical. An offline box counts as unhealthy even though its internals are unknown (you can't read the vitals of a machine that doesn't answer).",
-                "Two signals are gathered but deliberately NOT scored: stopped auto-start services and recent error/critical event counts. They're dominated by benign noise on healthy boxes (trigger/delayed-start services, ubiquitous harmless events like DCOM 10016), so they appear in Details ▸ Vitals as context but never move the number.",
+                "Stopped auto-start services are gathered but deliberately NOT scored — they're dominated by benign noise on healthy boxes (trigger/delayed-start services, updaters), so they appear in Details ▸ Vitals (with a Start button) when any are stopped, but never move the number.",
             ],
             Tip = "\"Vitality 100 (Healthy)\" means no penalty fired. The only way to score below 80 is for one of the scored signals (disk, memory, CPU, reboot pending, uptime) to exceed its threshold.",
+        },
+        new HelpTopic
+        {
+            Category = Machines, Icon = SymbolRegular.PlugDisconnected24,
+            Title = "Why is a machine amber-flagged or showing \"WinRM unavailable\"?",
+            Keywords = "winrm kerberos dcom smb fallback connection unavailable degraded needs attention amber 0x80090322 0x80090303 spn quickconfig session ended not domain joined",
+            Lines =
+            [
+                "Some machines refuse WinRM (the fast remote-PowerShell channel) — a Kerberos/SPN problem, a stopped WinRM service, or a dropped session. Rather than fail, Vivre automatically reads their health over a backup channel (DCOM/SMB) using your current Windows login — no password prompt, the same way SCCM reaches them.",
+                "So you still get real vitals — but the row is flagged amber and \"needs attention\" so a machine on the backup channel never looks identical to a fully-healthy one.",
+                "To see exactly what happened: right-click ▸ Details… ▸ Vitals. A Connection box at the top shows a plain-English summary, and the \"What happened & how to fix\" expander reveals the actual WinRM error (selectable, so you can copy it for a ticket) plus the fix.",
+                "Most common (0x80090322): the host runs a web app under a domain service account — e.g. SSRS on the Deltek Vision servers — and that account owns the host's HTTP SPN for report single sign-on. Kerberos can't hand the same hostname to WinRM too, so WinRM is rejected. This is BY DESIGN — don't 'fix' the SPN or you'll break the app's SSO. Vivre just uses the DCOM/SMB backup; nothing to do.",
+                "Other causes: the box genuinely isn't domain-joined / has no SPN (0x80090303) → join it / register the SPN only if you need WinRM; or the WinRM service isn't running → run \"winrm quickconfig\" on the host; or a one-off dropped session, which usually clears itself on the next Check Vitals.",
+            ],
+            Tip = "This is health-channel only — scans, installs and other actions still just work on these machines (over the same backup channel where needed); they don't show any \"degraded\" wording. The amber flag is only there so you know the box could use a WinRM fix when you have time.",
         },
         new HelpTopic
         {

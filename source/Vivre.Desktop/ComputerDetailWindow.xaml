@@ -7,7 +7,7 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Machine details"
-        Height="640" Width="680"
+        Height="760" Width="820" MinHeight="600" MinWidth="680"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
@@ -22,7 +22,19 @@
         <local:LogSeveritySymbolConverter x:Key="SeveritySymbol" />
         <local:StringToVisibilityConverter x:Key="StringToVis" />
         <local:NotNullToVisibilityConverter x:Key="NotNullToVis" />
+        <local:NonZeroToVisibilityConverter x:Key="NonZeroToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- One light card per Vitals section, so groups read as distinct blocks instead of one long,
+             clumped list. ~12px between cards; the card's own padding replaces the old per-header top margin. -->
+        <Style x:Key="SectionCard" TargetType="Border">
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DividerStrokeColorDefaultBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}" />
+            <Setter Property="Padding" Value="12" />
+            <Setter Property="Margin" Value="0,12,0,0" />
+        </Style>
     </ui:FluentWindow.Resources>
 
     <Grid>
@@ -184,7 +196,7 @@
         <TabControl Grid.Row="2" Margin="16,0,16,16">
             <TabItem Header="Vitals">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
-                    <StackPanel Margin="4,8,4,4">
+                    <StackPanel Margin="12,12,12,12">
                         <!-- Score + band + when it was read.
                              DataTriggers + DynamicResource so colors re-resolve on theme switch. -->
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -291,6 +303,56 @@
                             </ui:Button>
                         </StackPanel>
 
+                        <!-- Connection callout: shown only when this row's vitals came via the SMB/DCOM
+                             fallback (WinRM was unusable). Surfaces WHAT the WinRM failure was + how to fix,
+                             with the actual error (copyable) tucked into an expander. -->
+                        <Border Margin="0,12,0,0" Padding="14,12" CornerRadius="6"
+                                Background="{DynamicResource SystemFillColorCautionBackgroundBrush}"
+                                BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1"
+                                Visibility="{Binding Computer.WinRmDegraded, Converter={StaticResource BoolToVis}}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Warning24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                    <ui:TextBlock Text="Connection" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                </StackPanel>
+                                <TextBlock Margin="0,6,0,0" TextWrapping="Wrap" Text="{Binding Computer.WinRmStateCaption}" />
+                                <!-- Open by default: this callout only appears when WinRM was degraded, so the
+                                     fix is exactly what the operator opened the window to read. -->
+                                <Expander Margin="0,8,0,0" Header="What happened &amp; how to fix" IsExpanded="True">
+                                    <StackPanel Margin="0,8,0,0">
+                                        <Border Height="1" Margin="0,0,0,8"
+                                                Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
+                                        <ItemsControl ItemsSource="{Binding Computer.WinRmFix}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,3">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="•" Margin="0,0,8,0" VerticalAlignment="Top"
+                                                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <!-- The exact WinRM error, behind its own toggle so a long stack doesn't push the
+                                             bullets off-screen. Read-only + selectable so it copies cleanly into a ticket. -->
+                                        <Expander Margin="0,8,0,0" Header="Show error">
+                                            <TextBox Text="{Binding Computer.WinRmFailureDetail, Mode=OneWay, TargetNullValue='(no detail captured)'}"
+                                                     IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Padding="0" Margin="0,6,0,0"
+                                                     Background="Transparent" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                                     FontFamily="Cascadia Mono, Consolas" MaxHeight="90"
+                                                     VerticalScrollBarVisibility="Auto"
+                                                     ToolTip="Select to copy the exact error." />
+                                        </Expander>
+                                    </StackPanel>
+                                </Expander>
+                            </StackPanel>
+                        </Border>
+
                         <!-- Everything below only makes sense once vitals have been read. -->
                         <StackPanel Visibility="{Binding Computer.VitalsCheckedAt, Converter={StaticResource NotNullToVis}}">
                             <!-- Triage action status + busy spinner (shown once an action has run). -->
@@ -302,131 +364,140 @@
                                 <TextBlock Text="{Binding TriageStatus}" TextWrapping="Wrap" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
-                            <ui:TextBlock Text="Why this score" FontTypography="BodyStrong" Margin="0,16,0,4" />
-                            <ItemsControl ItemsSource="{Binding Computer.VitalityReasons}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal" Margin="0,2">
-                                            <ui:SymbolIcon Symbol="Warning24" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
-                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <ui:TextBlock Text="Readings" FontTypography="BodyStrong" Margin="0,16,0,4" />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                </Grid.ColumnDefinitions>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                    <RowDefinition Height="Auto" />
-                                </Grid.RowDefinitions>
-                                <ui:TextBlock Grid.Row="0" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,2" Text="System drive free" />
-                                <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,2"
-                                           Text="{Binding Computer.Vitals.SystemDriveFreePercent, StringFormat='{}{0:0.#}%', TargetNullValue='—'}" />
-                                <ui:TextBlock Grid.Row="1" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,2" Text="Memory used" />
-                                <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,0,2"
-                                           Text="{Binding Computer.Vitals.MemoryUsedPercent, StringFormat='{}{0:0}%', TargetNullValue='—'}" />
-                                <ui:TextBlock Grid.Row="2" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,2" Text="CPU load" />
-                                <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,0,0,2"
-                                           Text="{Binding Computer.Vitals.CpuLoadPercent, StringFormat='{}{0:0}%', TargetNullValue='—'}" />
-                                <ui:TextBlock Grid.Row="3" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,2" Text="Last boot" />
-                                <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,0,0,2"
-                                           Text="{Binding Computer.Vitals.LastBootTime, StringFormat=g, TargetNullValue='—'}" />
-                                <ui:TextBlock Grid.Row="4" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,0" Text="Reboot pending" />
-                                <TextBlock Grid.Row="4" Grid.Column="1"
-                                           Text="{Binding Computer.Vitals.RebootPending, Converter={StaticResource YesNo}}" />
-                            </Grid>
-
-                            <ui:TextBlock Text="Drives" FontTypography="BodyStrong" Margin="0,16,0,4" />
-                            <ItemsControl ItemsSource="{Binding Computer.Vitals.Drives}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Margin="0,1" TextWrapping="Wrap">
-                                            <Run Text="{Binding Letter, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding FreePercent, Mode=OneWay, StringFormat='{}{0:0.#}% free'}" /><Run Text="  ·  " /><Run Text="{Binding FreeGb, Mode=OneWay, StringFormat='{}{0:0.#}'}" /><Run Text=" / " /><Run Text="{Binding SizeGb, Mode=OneWay, StringFormat='{}{0:0.#} GB'}" />
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                            <ui:Button Content="Free up space…" Margin="0,8,0,0" Padding="10,4" HorizontalAlignment="Left"
-                                       Click="OnFreeDiskSpace" IsEnabled="{Binding IsIdle}"
-                                       ToolTip="Clear TEMP, the Windows Update cache, and the recycle bin on the system drive." />
-
-                            <ui:TextBlock Text="Stopped auto-start services" FontTypography="BodyStrong" Margin="0,16,0,4" />
-                            <ItemsControl ItemsSource="{Binding Computer.Vitals.StoppedAutoServices}">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate>
-                                        <Grid Margin="0,1">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding}" TextWrapping="Wrap" VerticalAlignment="Center" />
-                                            <ui:Button Grid.Column="1" Content="Start" Padding="10,2" Margin="8,0,0,0"
-                                                       Command="{Binding DataContext.StartServiceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                       CommandParameter="{Binding}"
-                                                       IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                       ToolTip="Start this service now" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-
-                            <Grid Margin="0,16,0,4">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-                                <ui:TextBlock Grid.Column="0" Text="Top processes (by memory)" FontTypography="BodyStrong" VerticalAlignment="Center" />
-                                <ui:Button Grid.Column="1" Content="Load" Padding="10,2"
-                                           Command="{Binding LoadProcessesCommand}" IsEnabled="{Binding IsIdle}"
-                                           ToolTip="List the top processes so you can end a runaway one." />
-                            </Grid>
-                            <ui:DataGrid ItemsSource="{Binding TopProcesses}"
-                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal" MaxHeight="220">
-                                <ui:DataGrid.Columns>
-                                    <DataGridTextColumn Header="Process" Binding="{Binding Name}" Width="*" />
-                                    <DataGridTextColumn Header="PID" Binding="{Binding Id}" Width="Auto" />
-                                    <DataGridTextColumn Header="Memory (MB)" Binding="{Binding WorkingSetMb, StringFormat=N0}" Width="Auto" MinWidth="90" />
-                                    <DataGridTextColumn Header="CPU (s)" Binding="{Binding CpuSeconds, StringFormat=N0, TargetNullValue=—}" Width="Auto" MinWidth="70" />
-                                    <DataGridTemplateColumn Header="" Width="Auto">
-                                        <DataGridTemplateColumn.CellTemplate>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <ui:TextBlock Text="Why this score" FontTypography="BodyStrong" Margin="0,0,0,6" />
+                                    <ItemsControl ItemsSource="{Binding Computer.VitalityReasons}">
+                                        <ItemsControl.ItemTemplate>
                                             <DataTemplate>
-                                                <ui:Button Content="End" Padding="10,1" Margin="4,1" Click="OnEndProcess"
-                                                           IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ui:DataGrid}}"
-                                                           ToolTip="Force-end this process" />
+                                                <Grid Margin="0,3">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
+                                                        <ColumnDefinition Width="*" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:SymbolIcon Grid.Column="0" Symbol="Warning24" FontSize="14" Margin="0,1,8,0" VerticalAlignment="Top" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding}" TextWrapping="Wrap" />
+                                                </Grid>
                                             </DataTemplate>
-                                        </DataGridTemplateColumn.CellTemplate>
-                                    </DataGridTemplateColumn>
-                                </ui:DataGrid.Columns>
-                            </ui:DataGrid>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
 
-                            <ui:TextBlock Text="Recent error / critical events (24h)" FontTypography="BodyStrong" Margin="0,16,0,4" />
-                            <ui:DataGrid ItemsSource="{Binding Computer.Vitals.RecentErrorEvents}"
-                                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
-                                      HeadersVisibility="Column" GridLinesVisibility="Horizontal" MaxHeight="220">
-                                <ui:DataGrid.Columns>
-                                    <DataGridTextColumn Header="Time" Binding="{Binding Time, StringFormat=HH:mm}" Width="Auto" />
-                                    <DataGridTextColumn Header="Level" Binding="{Binding Level}" Width="Auto" />
-                                    <DataGridTextColumn Header="Source" Binding="{Binding Provider}" Width="Auto" MinWidth="80" />
-                                    <DataGridTextColumn Header="Id" Binding="{Binding Id}" Width="Auto" />
-                                    <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
-                                        <DataGridTextColumn.ElementStyle>
-                                            <Style TargetType="TextBlock">
-                                                <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                                                <Setter Property="ToolTip" Value="{Binding Message}" />
-                                            </Style>
-                                        </DataGridTextColumn.ElementStyle>
-                                    </DataGridTextColumn>
-                                </ui:DataGrid.Columns>
-                            </ui:DataGrid>
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <ui:TextBlock Text="Readings" FontTypography="BodyStrong" Margin="0,0,0,6" />
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+                                        <ui:TextBlock Grid.Row="0" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,3" Text="System drive free" />
+                                        <TextBlock Grid.Row="0" Grid.Column="1" Margin="0,0,0,3"
+                                                   Text="{Binding Computer.Vitals.SystemDriveFreePercent, StringFormat='{}{0:0.#}%', TargetNullValue='—'}" />
+                                        <ui:TextBlock Grid.Row="1" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,3" Text="Memory used" />
+                                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,0,0,3"
+                                                   Text="{Binding Computer.Vitals.MemoryUsedPercent, StringFormat='{}{0:0}%', TargetNullValue='—'}" />
+                                        <ui:TextBlock Grid.Row="2" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,3" Text="CPU load" />
+                                        <TextBlock Grid.Row="2" Grid.Column="1" Margin="0,0,0,3"
+                                                   Text="{Binding Computer.Vitals.CpuLoadPercent, StringFormat='{}{0:0}%', TargetNullValue='—'}" />
+                                        <ui:TextBlock Grid.Row="3" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,3" Text="Last boot" />
+                                        <TextBlock Grid.Row="3" Grid.Column="1" Margin="0,0,0,3"
+                                                   Text="{Binding Computer.Vitals.LastBootTime, StringFormat=g, TargetNullValue='—'}" />
+                                        <ui:TextBlock Grid.Row="4" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,0" Text="Reboot pending" />
+                                        <TextBlock Grid.Row="4" Grid.Column="1"
+                                                   Text="{Binding Computer.Vitals.RebootPending, Converter={StaticResource YesNo}}" />
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <ui:TextBlock Text="Drives" FontTypography="BodyStrong" Margin="0,0,0,6" />
+                                    <ItemsControl ItemsSource="{Binding Computer.Vitals.Drives}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <TextBlock Margin="0,2" TextWrapping="Wrap">
+                                                    <Run Text="{Binding Letter, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="  " /><Run Text="{Binding FreePercent, Mode=OneWay, StringFormat='{}{0:0.#}% free'}" /><Run Text="  ·  " /><Run Text="{Binding FreeGb, Mode=OneWay, StringFormat='{}{0:0.#}'}" /><Run Text=" / " /><Run Text="{Binding SizeGb, Mode=OneWay, StringFormat='{}{0:0.#} GB'}" />
+                                                </TextBlock>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <ui:Button Content="Free up space…" Margin="0,10,0,0" Padding="10,4" HorizontalAlignment="Left"
+                                               Click="OnFreeDiskSpace" IsEnabled="{Binding IsIdle}"
+                                               ToolTip="Clear TEMP, the Windows Update cache, and the recycle bin on the system drive." />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Stopped auto-start services: only shown when there are any (each row has a
+                                 Start button — real triage). Hidden on clean boxes and on DCOM-fallback rows
+                                 (which don't gather services), so no empty card. -->
+                            <Border Style="{StaticResource SectionCard}"
+                                    Visibility="{Binding Computer.StoppedAutoServiceCount, Converter={StaticResource NonZeroToVis}}">
+                                <StackPanel>
+                                    <ui:TextBlock Text="Stopped auto-start services" FontTypography="BodyStrong" Margin="0,0,0,6" />
+                                    <ItemsControl ItemsSource="{Binding Computer.Vitals.StoppedAutoServices}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,1">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="{Binding}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                                <ui:Button Grid.Column="1" Content="Start" Padding="10,2" Margin="8,0,0,0"
+                                                           Command="{Binding DataContext.StartServiceCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           CommandParameter="{Binding}"
+                                                           IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                           ToolTip="Start this service now" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource SectionCard}">
+                                <StackPanel>
+                                    <Grid Margin="0,0,0,6">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:TextBlock Grid.Column="0" Text="Top processes (by memory)" FontTypography="BodyStrong" VerticalAlignment="Center" />
+                                        <ui:Button Grid.Column="1" Content="Load" Padding="10,2"
+                                                   Command="{Binding LoadProcessesCommand}" IsEnabled="{Binding IsIdle}"
+                                                   ToolTip="List the top processes so you can end a runaway one." />
+                                    </Grid>
+                                    <ui:DataGrid ItemsSource="{Binding TopProcesses}"
+                                              AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False"
+                                              HeadersVisibility="Column" GridLinesVisibility="Horizontal" MaxHeight="220">
+                                        <ui:DataGrid.Columns>
+                                            <DataGridTextColumn Header="Process" Binding="{Binding Name}" Width="*" />
+                                            <DataGridTextColumn Header="PID" Binding="{Binding Id}" Width="Auto" />
+                                            <DataGridTextColumn Header="Memory (MB)" Binding="{Binding WorkingSetMb, StringFormat=N0}" Width="Auto" MinWidth="90" />
+                                            <DataGridTextColumn Header="CPU (s)" Binding="{Binding CpuSeconds, StringFormat=N0, TargetNullValue=—}" Width="Auto" MinWidth="70" />
+                                            <DataGridTemplateColumn Header="" Width="Auto">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <ui:Button Content="End" Padding="10,1" Margin="4,1" Click="OnEndProcess"
+                                                                   IsEnabled="{Binding DataContext.IsIdle, RelativeSource={RelativeSource AncestorType=ui:DataGrid}}"
+                                                                   ToolTip="Force-end this process" />
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </ui:DataGrid.Columns>
+                                    </ui:DataGrid>
+                                </StackPanel>
+                            </Border>
+
                         </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
