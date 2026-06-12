@@ -33,6 +33,14 @@ it ships, then gets a dated heading.
   signals are gathered but deliberately not scored.
 
 ### Fixed
+- **The empty-state cards are truly centered** — the "Get started" card and the "No machines match
+  this filter" state now sit dead-centre of the visible content area at every window width, in both
+  Health and Patching. The long-standing top-left placement was a workaround for a "DataGrid width
+  leaks into the layout" drift that runtime measurement disproved: a new env-gated layout probe
+  (`VIVRE_LAYOUT_PROBE=1`, kept as a permanent diagnostic) showed centre-vs-viewport deltas of 0.0
+  at four widths in both overlay states — and even at the old commit where the drift was originally
+  "verified". That report was an artifact of the since-banned screenshot verification pipeline, not
+  a real layout bug.
 - **A dead host can no longer crash the app at fleet scale** — abandoning a connection attempt to an
   unreachable machine raced the PowerShell SDK's connection-retry, which then fired into torn-down
   transport state: a NullReferenceException on a raw background thread, which terminates the process

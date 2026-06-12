@@ -112,7 +112,147 @@ public partial class MainWindow : FluentWindow
             ActionCluster,
             CommandBarGrid);
         _adaptiveLayout.Initialise(this);
+
+        // Layout diagnostic probe (permanent, env-gated, zero cost when unset). Launch with
+        // VIVRE_LAYOUT_PROBE=1: the app steps itself through four window widths, measures the
+        // empty-state overlays' ancestor chain and centre-vs-viewport deltas in BOTH overlay
+        // states, writes %TEMP%\vivre-layout-probe.txt, and exits. Measure-only: it never alters
+        // alignment, so it reports what the live XAML actually does. This is the instrument that
+        // disproved the "DataGrid width leak" centering lore (deltas 0.0 at all widths, both
+        // states, two code generations) — keep it for any future layout-drift suspicion.
+        if (Environment.GetEnvironmentVariable("VIVRE_LAYOUT_PROBE") == "1")
+        {
+            _ = RunLayoutProbeAsync();
+        }
     }
+
+    #region Layout diagnostic probe (env-gated: VIVRE_LAYOUT_PROBE=1)
+
+    private async Task RunLayoutProbeAsync()
+    {
+        var sb = new StringBuilder();
+        string path = Path.Combine(Path.GetTempPath(), "vivre-layout-probe.txt");
+        try
+        {
+            await Task.Delay(800); // let first layout settle
+
+            // Find the Get-started card: the TextBlock "Get started" → its ancestor Border.
+            System.Windows.Controls.TextBlock? title =
+                FindDescendant<System.Windows.Controls.TextBlock>(this, tb => tb.Text == "Get started");
+            if (title is null) { File.WriteAllText(path, "PROBE FAIL: card title not found"); Application.Current.Shutdown(); return; }
+            DependencyObject d = title;
+            while (d is not null and not Border) d = System.Windows.Media.VisualTreeHelper.GetParent(d);
+            if (d is not Border card) { File.WriteAllText(path, "PROBE FAIL: card border not found"); Application.Current.Shutdown(); return; }
+
+            // Measure-only: the live XAML's own alignment is what gets measured.
+            foreach ((string label, double? w) in new (string, double?)[] { ("narrow-900", 900), ("normal-1360", 1360), ("wide-1900", 1900), ("maximized", null) })
+            {
+                if (w is { } width) { WindowState = WindowState.Normal; Width = width; Height = 780; }
+                else { WindowState = WindowState.Maximized; }
+                await Task.Delay(450); // layout + any animations settle
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+
+                sb.AppendLine($"=== {label} ===");
+                sb.AppendLine($"window: ActualWidth={ActualWidth:F1} state={WindowState}");
+                sb.AppendLine($"ContentHost: ActualWidth={ContentHost.ActualWidth:F1}");
+
+                // Card centre vs viewport centre (both in window coordinates).
+                Point cardTopLeft = card.TransformToVisual(this).Transform(new Point(0, 0));
+                double cardCenterX = cardTopLeft.X + card.ActualWidth / 2.0;
+                Point hostTopLeft = ContentHost.TransformToVisual(this).Transform(new Point(0, 0));
+                double viewportCenterX = hostTopLeft.X + ContentHost.ActualWidth / 2.0;
+                sb.AppendLine($"cardCenterX={cardCenterX:F1}  viewportCenterX={viewportCenterX:F1}  delta={(cardCenterX - viewportCenterX):F1}");
+
+                // Ancestor chain: card → window, ActualWidth + DesiredSize at each level.
+                AppendAncestors(sb, card);
+                sb.AppendLine();
+            }
+
+            // ── Phase 2: the HARD state — machines loaded, grid rendered WIDER than the viewport,
+            //    then a non-matching filter collapses it and shows the filter-empty overlay.
+            //    (AutoCheckOnLoad must be off for this run so no remote sweeps fire.)
+            if (Shell?.SelectedTab is WorkspaceViewModel vm)
+            {
+                // Narrow window FIRST so the visible grid's column extent exceeds the viewport.
+                WindowState = WindowState.Normal; Width = 900; Height = 780;
+                vm.SetComputers([.. Enumerable.Range(1, 25).Select(i => $"PROBE-MACHINE-{i:D2}")]);
+                await Task.Delay(600); // let the grid render its full column set at narrow width
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                sb.AppendLine($"=== grid-visible @900 (pre-filter) === GridOverlayState={vm.GridOverlayState}");
+
+                // Now filter to nothing → state 3 → filter-empty overlay shows, grid collapses.
+                vm.FilterText = "ZZZ_NO_MATCH";
+                await Task.Delay(400);
+                await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+                sb.AppendLine($"after filter: GridOverlayState={vm.GridOverlayState}");
+
+                System.Windows.Controls.TextBlock? noMatch =
+                    FindDescendant<System.Windows.Controls.TextBlock>(this, tb => tb.Text == "No machines match this filter");
+                if (noMatch is null) { sb.AppendLine("PROBE FAIL: filter-empty panel not found"); }
+                else
+                {
+                    DependencyObject p = noMatch;
+                    while (p is not null and not StackPanel) p = System.Windows.Media.VisualTreeHelper.GetParent(p);
+                    if (p is StackPanel panel)
+                    {
+                        // Measure-only: the live XAML's own alignment is what gets measured.
+                        foreach ((string label, double? w) in new (string, double?)[] { ("fe-narrow-900", 900), ("fe-normal-1360", 1360), ("fe-wide-1900", 1900), ("fe-maximized", null) })
+                        {
+                            if (w is { } width) { WindowState = WindowState.Normal; Width = width; Height = 780; }
+                            else { WindowState = WindowState.Maximized; }
+                            await Task.Delay(450);
+                            await Dispatcher.InvokeAsync(() => { }, System.Windows.Threading.DispatcherPriority.Background);
+
+                            sb.AppendLine($"=== {label} ===");
+                            sb.AppendLine($"window: ActualWidth={ActualWidth:F1} state={WindowState}  GridOverlayState={vm.GridOverlayState}");
+                            Point feTopLeft = panel.TransformToVisual(this).Transform(new Point(0, 0));
+                            double feCenterX = feTopLeft.X + panel.ActualWidth / 2.0;
+                            Point hostTopLeft2 = ContentHost.TransformToVisual(this).Transform(new Point(0, 0));
+                            double viewportCenterX2 = hostTopLeft2.X + ContentHost.ActualWidth / 2.0;
+                            sb.AppendLine($"panelCenterX={feCenterX:F1}  viewportCenterX={viewportCenterX2:F1}  delta={(feCenterX - viewportCenterX2):F1}");
+                            AppendAncestors(sb, panel);
+                            sb.AppendLine();
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            sb.AppendLine($"PROBE EXCEPTION: {ex}");
+        }
+
+        File.WriteAllText(path, sb.ToString());
+        Application.Current.Shutdown();
+    }
+
+    private static void AppendAncestors(StringBuilder sb, DependencyObject start)
+    {
+        sb.AppendLine("ancestors (type/name: Actual / Desired):");
+        DependencyObject? a = start;
+        while (a is not null)
+        {
+            if (a is FrameworkElement fe)
+            {
+                sb.AppendLine($"  {fe.GetType().Name}/{fe.Name}: A={fe.ActualWidth:F1} D={fe.DesiredSize.Width:F1}");
+            }
+            a = System.Windows.Media.VisualTreeHelper.GetParent(a);
+        }
+    }
+
+    private static T? FindDescendant<T>(DependencyObject root, Func<T, bool> predicate) where T : DependencyObject
+    {
+        int n = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+        for (int i = 0; i < n; i++)
+        {
+            DependencyObject child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T t && predicate(t)) return t;
+            if (FindDescendant(child, predicate) is { } found) return found;
+        }
+        return null;
+    }
+
+    #endregion
 
     // --- NavigationView pane ---
 

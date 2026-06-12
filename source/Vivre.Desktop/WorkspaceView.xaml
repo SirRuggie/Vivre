@@ -809,16 +809,20 @@
                2 = cold start   → M29 "Get started" card
                3 = filter-empty → M13 simple "No matches" state
                0 = data present → no overlay (panels collapsed) -->
-        <!-- Empty-state overlay, anchored TOP-LEFT with an inset. Centering was re-attempted (Round 2) but
-             the card drifts right at wider widths: with the grid collapsed there's no ScrollViewer bounding
-             the row, and the DataGrid's column width still leaks into the shared Row-2 cell, so a centred
-             child centres within a too-wide area and slides off to the right. Top-left is overflow-proof and
-             consistent at any window size. Not hit-test-blocking: the visible state's buttons handle their
-             own input; collapsed siblings don't steal it. -->
+        <!-- Empty-state overlay, TRULY CENTERED in the visible viewport. The old "DataGrid width
+             leaks into the shared cell so centering drifts" lore was DISPROVEN by runtime
+             measurement (the VIVRE_LAYOUT_PROBE harness in MainWindow): card-center == viewport-center
+             with delta 0.0 at 900/1360/1900/maximized, in BOTH overlay states (including after the
+             grid rendered wider than the viewport), and even at the Round-2 commit (90cb524) where the
+             "drift" was originally reported — that report was an artifact of the since-banned
+             screenshot verification pipeline. A collapsed grid's wide DesiredSize propagates up as
+             desire only; every ancestor arranges viewport-clamped, so Center is exact.
+             Not hit-test-blocking: the visible state's buttons handle their own input; collapsed
+             siblings don't steal it. -->
         <Grid Grid.Row="2" Panel.ZIndex="5">
 
             <!-- State 2 — M29: cold-start "Get started" card (GitHub Desktop style). -->
-            <Border HorizontalAlignment="Left" VerticalAlignment="Top" Margin="40,56,0,0"
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     MaxWidth="460"
                     CornerRadius="8" Padding="32,24"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
@@ -888,7 +892,7 @@
             </Border>
 
             <!-- State 3 — M13: filter-empty state (has a clickable button so IsHitTestVisible stays True). -->
-            <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="40,56,0,0" Orientation="Vertical">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Orientation="Vertical">
                 <StackPanel.Style>
                     <Style TargetType="StackPanel">
                         <Setter Property="Visibility" Value="Collapsed" />
