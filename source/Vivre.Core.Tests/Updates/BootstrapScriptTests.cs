@@ -15,9 +15,9 @@ public class BootstrapScriptTests
         var options = new PatchOptions { RunBehavior = behavior, ScheduleAt = at };
         return WuaUpdateLane.BuildBootstrapScript(
             taskName: "Vivre_WUA_test",
-            exePath: @"C:\Windows\Temp\Vivre_WUA_test.exe",
-            configPath: @"C:\Windows\Temp\Vivre_WUA_test_config.json",
-            progressPath: @"C:\Windows\Temp\Vivre_WUA_test_progress.json",
+            exePath: @"C:\ProgramData\Vivre\agent\Vivre_WUA_test.exe",
+            configPath: @"C:\ProgramData\Vivre\agent\Vivre_WUA_test_config.json",
+            progressPath: @"C:\ProgramData\Vivre\agent\Vivre_WUA_test_progress.json",
             base64Exe: "QUJD",
             base64Config: "e30=",
             expectedSha256: "0000000000000000000000000000000000000000000000000000000000000000",
@@ -47,9 +47,28 @@ public class BootstrapScriptTests
     {
         string script = Bootstrap(RunBehavior.InstallNow);
 
-        // The EXE lands in a world-writable temp dir and runs as SYSTEM, so the bootstrap must
-        // hash-check it against the expected SHA-256 before launch.
+        // The EXE runs as SYSTEM, so the bootstrap must hash-check it against the expected SHA-256
+        // before launch.
         Assert.Contains("Get-FileHash", script);
         Assert.Contains("integrity check failed", script);
+    }
+
+    [Fact]
+    public void Bootstrap_creates_and_hardens_the_drop_dir_before_writing_the_agent()
+    {
+        string script = Bootstrap(RunBehavior.InstallNow);
+
+        // The drop dir must be created and ACL-hardened to SYSTEM (S-1-5-18) + Administrators
+        // (S-1-5-32-544) with inheritance broken, so a non-privileged local user can't plant the
+        // binary we run as SYSTEM. And it must happen BEFORE the EXE is written.
+        int dirCreate = script.IndexOf("New-Item -ItemType Directory", StringComparison.Ordinal);
+        int acl = script.IndexOf("SetAccessRuleProtection", StringComparison.Ordinal);
+        int write = script.IndexOf("WriteAllBytes", StringComparison.Ordinal);
+
+        Assert.True(dirCreate >= 0, "bootstrap should create the drop dir");
+        Assert.True(acl >= 0, "bootstrap should harden the drop dir ACL");
+        Assert.Contains("S-1-5-18", script);
+        Assert.Contains("S-1-5-32-544", script);
+        Assert.True(dirCreate < write && acl < write, "the dir must be created + hardened before the EXE is dropped");
     }
 }

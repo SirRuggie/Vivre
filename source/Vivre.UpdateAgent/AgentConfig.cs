@@ -14,8 +14,21 @@ namespace Vivre.UpdateAgent
     /// </summary>
     internal sealed class AgentConfig
     {
-        /// <summary>"Install" (default) or "Uninstall".</summary>
+        /// <summary>"Install" (default), "Uninstall", or "Scan".</summary>
         public string Mode { get; set; }
+
+        /// <summary>
+        /// Scan scope: "Applicable" (default — IsInstalled=0, the install checklist) or "Installed"
+        /// (IsInstalled=1, the uninstall checklist). Only read in <c>Mode = "Scan"</c>; the SMB lane
+        /// sets it, the WinRM lane (which scans over PowerShell, not the agent) leaves it null.
+        /// </summary>
+        public string Scope { get; set; }
+
+        /// <summary>
+        /// Where <c>Mode = "Scan"</c> writes the JSON update array the controller reads back over SMB.
+        /// Null for Install/Uninstall (which report through <see cref="ProgressPath"/> only).
+        /// </summary>
+        public string ResultPath { get; set; }
 
         /// <summary>WUA ServerSelectionEnum: 1 managed, 2 Windows Update, 3 other-by-ServiceID.</summary>
         public int ServerSelection { get; set; }

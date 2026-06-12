@@ -1,9 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <!--
-    The on-target Windows Update worker. Compiled .NET Framework 4.8 (present on every
-    modern Windows target with no runtime to deploy — the same reason BatchPatch's agent
-    is .NET Framework). It uses WUA's REAL progress callbacks
+    The on-target Windows Update worker, compiled .NET Framework 4.8. We stay on net48 (not net462)
+    because the agent uses C# tuples (ValueTuple), which are inbox in the BCL only from 4.7 onward —
+    NOT in 4.6.2. Targeting 4.6.2 (the version inbox on Server 2016) would force either shipping a
+    separate System.ValueTuple.dll (breaking the single-EXE base64 drop) or refactoring out every tuple
+    usage in this reliability-critical worker. .NET 4.8 is deployed across the fleet via Windows Update;
+    if a guaranteed-Server-2016-inbox build is ever required, remove the ValueTuple usage and retarget
+    net462. Same .NET-Framework rationale as BatchPatch's agent. It uses WUA's REAL progress callbacks
     (IDownloadProgressChangedCallback / IInstallationProgressChangedCallback) for accurate
     live download AND install percent — the ground-truth source PowerShell cannot supply.
     Dropped to the target (base64 over WinRM) by WuaUpdateLane and run from the one-time
@@ -38,10 +42,30 @@
   <ItemGroup>
     <!-- JavaScriptSerializer for reading the config + writing progress JSON, no NuGet. -->
     <Reference Include="System.Web.Extensions" />
+    <!-- ServiceBase, so the SMB lane can launch the agent as a LocalSystem service via the SCM
+         (the BatchPatch-equivalent path for hosts that reject WinRM/Kerberos). Inbox in net48. -->
+    <Reference Include="System.ServiceProcess" />
     <Reference Include="Interop.WUApiLib">
       <HintPath>Interop.WUApiLib.dll</HintPath>
       <EmbedInteropTypes>true</EmbedInteropTypes>
     </Reference>
   </ItemGroup>
+
+  <!--
+    Authenticode-sign the agent with the internal self-signed code-signing cert so the dropped EXE has
+    a valid signature and a stable publisher identity (for EDR allow-listing), as anti-tamper alongside
+    the runtime SHA-256 self-check and the Administrators/SYSTEM-only drop dir. Best-effort: if the cert
+    isn't in the store (CI / a fresh clone) the build WARNS and continues — the ACL + hash gates still
+    protect the launch. No timestamp server is used (the self-signed cert is valid to 2031; this avoids
+    a network dependency in the build). Re-issued the cert? Pass -p:AgentSignThumbprint=<new>.
+  -->
+  <PropertyGroup>
+    <AgentSignThumbprint Condition="'$(AgentSignThumbprint)' == ''">1A5CE867A4660C271C9C7AA0DD2F923A1FE05953</AgentSignThumbprint>
+  </PropertyGroup>
+
+  <Target Name="SignUpdateAgent" AfterTargets="Build" Condition="'$(OS)' == 'Windows_NT'">
+    <Exec ContinueOnError="true"
+          Command="powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command &quot;$c = Get-ChildItem Cert:\CurrentUser\My\$(AgentSignThumbprint) -ErrorAction SilentlyContinue; if ($c) { Set-AuthenticodeSignature -FilePath '$(TargetPath)' -Certificate $c -HashAlgorithm SHA256 | Out-Null; Write-Host ('Signed agent: ' + $c.Subject) } else { Write-Warning 'Agent code-signing cert $(AgentSignThumbprint) not found in CurrentUser\My; agent left UNSIGNED (ACL + SHA-256 self-check still apply).' }&quot;" />
+  </Target>
 
 </Project>
