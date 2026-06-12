@@ -19,6 +19,16 @@ public sealed class AppSettings
     /// one package). Populates the Stage software window's package dropdown; empty by default.</summary>
     public string PackagesFolder { get; set; } = string.Empty;
 
+    /// <summary>Folder the Server 2016 full-package CU lane reads the monthly cumulative-update <c>.msu</c>
+    /// from (the operator drops the catalog download here; auto-fetch is off by design). Defaults to
+    /// <c>C:\Vivre\VivrePackages</c>; configurable in Settings.</summary>
+    public string LcuPackagesFolder { get; set; } = @"C:\Vivre\VivrePackages";
+
+    /// <summary>This cycle's Server 2016 cumulative update — the KB the lane stages and the UBR it verifies
+    /// after the reboot. Surfaced in the 2016 panel and confirmed by the operator each month; defaults to
+    /// the cycle in flight when the lane shipped.</summary>
+    public MonthlyCu MonthlyCu { get; set; } = new();
+
     /// <summary>Remembered "product name → Windows service name" pairs for the Check software dialog, so
     /// once you tell Vivre that (e.g.) CrowdStrike's service is CSFalconService it pre-fills it next time.
     /// Seeded with the common security agents; grows as you check more. Lookups are case-insensitive
@@ -54,6 +64,27 @@ public sealed class AppSettings
     /// height will open at the clamped height rather than this raw value until the user resizes
     /// further. Default 170.</summary>
     public double BottomDockHeight { get; set; } = 170;
+}
+
+/// <summary>
+/// The month's Server 2016 cumulative update the operator confirms each cycle. Kept deliberately small —
+/// the KB to stage, the architecture token expected in the <c>.msu</c> name, and the UBR the box should
+/// report once the CU commits (what Verify / the Reboot Wave check). Maps to <c>LcuTarget</c> in the lane.
+/// </summary>
+public sealed class MonthlyCu
+{
+    /// <summary>The CU article, e.g. "KB5094122" (bare "5094122" also accepted by the lane).</summary>
+    public string Kb { get; set; } = "KB5094122";
+
+    /// <summary>Architecture token expected in the .msu filename (Server 2016 is x64).</summary>
+    public string Arch { get; set; } = "x64";
+
+    /// <summary>The build revision (UBR) the box should report after the CU commits, e.g. 9234 → the box
+    /// reads 14393.9234. Verify and the Reboot Wave use this as the pass/fail check.</summary>
+    public int TargetUbr { get; set; } = 9234;
+
+    /// <summary>The display Vivre shows in the 2016 panel, e.g. "KB5094122 / 9234".</summary>
+    public string Display => $"{Kb} / {TargetUbr}";
 }
 
 /// <summary>

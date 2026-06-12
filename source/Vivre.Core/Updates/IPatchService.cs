@@ -47,4 +47,50 @@ public interface IPatchService
         ConnectionCredential? credential,
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken = default);
+
+    // --- Server 2016 (build 14393) full-package cumulative-update lane -----------------------------
+    // These four sidestep the broken Express-delta WUA pipeline on 2016 by DISM-adding the full CU .msu
+    // over SMB/DCOM. The caller gates to 14393 (see LcuRouting); each shares this service's per-host
+    // serialization with Install/Uninstall so a stage can't collide with a WUA install on the same box.
+
+    /// <summary>
+    /// Daytime step: verify the right CU package is in <paramref name="packageDirectory"/>, then deliver +
+    /// DISM-add it on <paramref name="host"/> while it keeps serving. Does not reboot. Terminal status is
+    /// <see cref="PatchPhase.PendingReboot"/> (staged — reboot-ready), <see cref="PatchPhase.Done"/>
+    /// (already current), or a failure carrying the catalog link when the package isn't present/correct.
+    /// </summary>
+    Task<HostPatchStatus> StageLcuAsync(
+        string host,
+        string packageDirectory,
+        LcuTarget target,
+        PatchOptions options,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Reclaims component-store space (DISM /StartComponentCleanup as SYSTEM) so a tight 2016 box
+    /// has room for the CU. The agent refuses if a reboot is already pending, so it can't disturb a staged
+    /// update. Run before <see cref="StageLcuAsync"/> on a low-disk box.</summary>
+    Task<HostPatchStatus> ComponentCleanupLcuAsync(
+        string host,
+        PatchOptions options,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Night step: reboot a staged box and track the commit until the UBR confirms success, a
+    /// rollback is detected, the reboot won't take, or it stays offline past the hard cap. Graceful first,
+    /// auto-escalating to forced; the clock only flags "overdue", the UBR decides pass/fail.</summary>
+    Task<HostPatchStatus> RebootWaveLcuAsync(
+        string host,
+        int targetUbr,
+        RebootWaveOptions waveOptions,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>The durable net: read the host's build/UBR and decide whether the staged CU committed.
+    /// Read-only (no CBS/DISM), so it is never serialized — an operator can check any box, any time. A box
+    /// that can't be read yet is <see cref="LcuVerifyOutcome.Unreachable"/> (retry), never a failure.</summary>
+    Task<LcuVerifyResult> VerifyLcuAsync(
+        string host,
+        int targetUbr,
+        CancellationToken cancellationToken = default);
 }

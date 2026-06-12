@@ -66,6 +66,10 @@ public enum RowFilter
 
     /// <summary>Rows whose vitality is Warning / Critical / Offline (the sick ones, for triage).</summary>
     Unhealthy,
+
+    /// <summary>Confirmed Server 2016 (build 14393) rows — the self-populating view that drives the
+    /// full-package CU lane. Unread boxes (no OS build yet) are excluded until a vitals check confirms them.</summary>
+    Server2016,
 }
 
 /// <summary>
@@ -322,6 +326,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             RowFilter.Errors => c.PatchState == PatchState.Error || !string.IsNullOrEmpty(c.LastError) || !string.IsNullOrEmpty(c.UpdateError),
             RowFilter.Done => c.PatchState == PatchState.Done,
             RowFilter.Unhealthy => c.VitalityBand is VitalityBand.Warning or VitalityBand.Critical or VitalityBand.Offline,
+            RowFilter.Server2016 => LcuRouting.Is2016(c.OsBuild),
             _ => true,
         };
     }
@@ -724,7 +729,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             foreach (string prop in (string[])
                 [nameof(Computer.Name), nameof(Computer.IsOnline), nameof(Computer.PatchState),
                  nameof(Computer.RebootRequired), nameof(Computer.LastError), nameof(Computer.UpdateError),
-                 nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates), nameof(Computer.VitalityBand)])
+                 nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates), nameof(Computer.VitalityBand),
+                 nameof(Computer.OsBuild)])
             {
                 live.LiveFilteringProperties.Add(prop);
             }
@@ -780,6 +786,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         ScanTargetCommand.NotifyCanExecuteChanged();
         InstallTargetCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanInstallAll));
+        OnPropertyChanged(nameof(Server2016Count));
+        OnPropertyChanged(nameof(HasServer2016));
         RaiseFleetChanged();
     }
 
@@ -797,6 +805,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             case nameof(Computer.UpdateProgress):
             case nameof(Computer.VitalityBand):
                 RaiseFleetChanged();
+                break;
+            // A vitals check populates OsBuild, which is what makes a box appear in the self-populating
+            // 2016 panel — re-tally so the panel's count + visibility track the fleet as it's classified.
+            case nameof(Computer.OsBuild):
+                OnPropertyChanged(nameof(Server2016Count));
+                OnPropertyChanged(nameof(HasServer2016));
                 break;
         }
     }
@@ -2108,10 +2122,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         IReadOnlyList<Computer> rows,
         Func<Computer, CancellationToken, Task> operation,
         string? operationLabel = null,
-        SemaphoreSlim? throttle = null)
+        SemaphoreSlim? throttle = null,
+        TimeSpan? perHostTimeout = null)
     {
         // Scans pass the high scan throttle; install/uninstall default to the conservative one.
         throttle ??= _patchThrottle;
+        // The Reboot Wave self-bounds at its own hard cap and passes a longer per-host timeout; everything
+        // else uses the shared PatchOptions timeout so a single hung box can't pin the grid.
+        TimeSpan hostTimeout = perHostTimeout ?? _patchOptions.PerHostTimeout;
 
         // Derive a sweep narration label from the operation type so the ProgressRing isn't silent.
         string? narrationLabel = operationLabel switch
@@ -2168,7 +2186,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         bool cancelled = false;
         try
         {
-            Task work = Task.WhenAll(eligible.Select(row => RunOnePatchHostAsync(row, operation, throttle, record, cts.Token)));
+            Task work = Task.WhenAll(eligible.Select(row => RunOnePatchHostAsync(row, operation, throttle, record, hostTimeout, cts.Token)));
 
             Task cancelledTask = Task.Delay(Timeout.Infinite, cts.Token);
             if (await Task.WhenAny(work, cancelledTask) == work)
@@ -2227,24 +2245,61 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return (s, sev);
         }
 
-        // Install / Uninstall: compute real counts to drive severity.
+        // 2016 lane — Stage: the two-bucket result the operator asked for. A staged box ends amber
+        // (RebootPending); an already-current box ends green (Done). Both are successes — only Error is red.
+        if (string.Equals(label, "Stage", StringComparison.Ordinal))
+        {
+            int staged = rows.Count(r => r.PatchState == PatchState.RebootPending);
+            int current = rows.Count(r => r.PatchState == PatchState.Done);
+            int errs = rows.Count(r => r.PatchState == PatchState.Error);
+            var bits = new List<string>(3);
+            if (staged > 0) bits.Add($"{staged} staged — run Reboot Wave");
+            if (current > 0) bits.Add($"{current} already current");
+            if (errs > 0) bits.Add($"{errs} failed");
+            string s = bits.Count > 0 ? $"Stage finished — {string.Join(", ", bits)}" : "Stage finished";
+            if (errs > 0) s += " — see Activity log";
+            OperationSeverity sev = errs == 0 ? OperationSeverity.Success
+                : (staged > 0 || current > 0) ? OperationSeverity.Warning
+                : OperationSeverity.Error;
+            return (s, sev);
+        }
+
+        // 2016 lane — Clean up / Reboot Wave / Verify: a simple done/failed tally (reboot-pending rows are
+        // still mid-commit during a wave, so they count as neither yet).
+        if (label is "Clean up" or "Reboot Wave" or "Verify")
+        {
+            int ok = rows.Count(r => r.PatchState == PatchState.Done);
+            int errs = rows.Count(r => r.PatchState == PatchState.Error);
+            string s = $"{label} finished — {ok} ok";
+            if (errs > 0) s += $", {errs} failed — see Activity log";
+            OperationSeverity sev = errs == 0 ? OperationSeverity.Success
+                : ok > 0 ? OperationSeverity.Warning
+                : OperationSeverity.Error;
+            return (s, sev);
+        }
+
+        // Install / Uninstall: compute real counts to drive severity. In a mixed "Install all" the reboot
+        // bucket splits — a 2016 box at RebootPending was STAGED (awaiting the Reboot Wave), a non-2016 box
+        // genuinely needs a reboot — so the operator sees the two outcomes distinctly (installed vs staged).
         int done = rows.Count(r => r.PatchState == PatchState.Done);
-        int reboot = rows.Count(r => r.PatchState == PatchState.RebootPending);
+        int staged2016 = rows.Count(r => r.PatchState == PatchState.RebootPending && LcuRouting.Is2016(r.OsBuild));
+        int needReboot = rows.Count(r => r.PatchState == PatchState.RebootPending && !LcuRouting.Is2016(r.OsBuild));
         int failed = rows.Count(r => r.PatchState == PatchState.Error);
-        var parts = new List<string> { $"{done} succeeded" };
-        if (reboot > 0) parts.Add($"{reboot} need reboot");
+        var parts = new List<string> { $"{done} installed" };
+        if (staged2016 > 0) parts.Add($"{staged2016} staged — run Reboot Wave");
+        if (needReboot > 0) parts.Add($"{needReboot} need reboot");
         if (failed > 0) parts.Add($"{failed} failed");
         string summary = $"{label} finished — " + string.Join(", ", parts);
         if (failed > 0) summary += " — see Activity log";
 
-        // All-succeeded (done > 0, failed == 0) OR reboot-only (both counts non-zero but no pure fails):
-        // any failure at all = Error; mixed done+fail = Warning; all failed with no done/reboot = Error.
+        // Any failure at all = Error severity unless something also succeeded (partial = Warning); all
+        // failed with nothing installed/staged/reboot = Error.
         OperationSeverity severity;
         if (failed == 0)
         {
             severity = OperationSeverity.Success;
         }
-        else if (done > 0 || reboot > 0)
+        else if (done > 0 || staged2016 > 0 || needReboot > 0)
         {
             severity = OperationSeverity.Warning; // partial failure
         }
@@ -2261,13 +2316,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         Func<Computer, CancellationToken, Task> operation,
         SemaphoreSlim throttle,
         OperationRecord record,
+        TimeSpan hostTimeout,
         CancellationToken token)
     {
         await throttle.WaitAsync(token).ConfigureAwait(false);
         try
         {
             using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
-            perHost.CancelAfter(_patchOptions.PerHostTimeout);
+            perHost.CancelAfter(hostTimeout);
             try
             {
                 await operation(row, perHost.Token).ConfigureAwait(false);
@@ -2275,7 +2331,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
             {
                 // Per-host timeout (not a user Stop): surface it and let the rest of the sweep continue.
-                row.UpdateError = $"Timed out after {_patchOptions.PerHostTimeout.TotalHours:N0}h";
+                row.UpdateError = $"Timed out after {hostTimeout.TotalHours:N0}h";
                 row.UpdateMessage = "Timed out";
                 row.UpdatePhase = PatchPhase.Error.ToString();
                 _activity.Error(row.Name, row.UpdateError);
@@ -2400,6 +2456,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
+        // Per-box routing by OS build (the single decision; LcuRouting.Is2016 is the same predicate the
+        // self-populating 2016 panel uses). Confirmed Server 2016 → the full-package CU lane (the broken
+        // Express-delta WUA pipeline is exactly what fails its monthly CU). An unread box is deliberately
+        // NOT guessed onto either lane — a vitals check classifies it first. Everything else → WUA.
+        // [DECISION SURFACED TO OPERATOR: unread → skip-with-nudge, not silent-fallback-to-WUA. Flip this
+        //  one block to fall through if you'd rather an unclassified box just take the WUA path.]
+        if (computer.OsBuild is null)
+        {
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "Unknown OS build — run Check Vitals first so Vivre can pick the right update lane.";
+            return;
+        }
+
+        if (LcuRouting.Is2016(computer.OsBuild))
+        {
+            await StageLcuRowAsync(computer, scheduleAt, token).ConfigureAwait(false);
+            return;
+        }
+
         // Honor the per-machine checklist. Clone the shared options (concurrent hosts read it) and
         // scope this host's install to its ticked KBs: never scanned ⇒ no checklist ⇒ install all
         // (not-excluded, unchanged); scanned but nothing ticked ⇒ skip without launching a task.
@@ -2514,6 +2589,321 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         finally
         {
             computer.IsPatching = false;
+        }
+    }
+
+    // --- Server 2016 full-package CU lane (the self-populating 2016 panel + "Install all" routing) ---
+
+    /// <summary>This cycle's Server 2016 CU, e.g. "KB5094122 / 9234" — shown in the 2016 panel, set in
+    /// Settings. The lane stages this KB and Verify checks the box reaches this UBR.</summary>
+    public string MonthlyCuDisplay => _appSettings.Load().MonthlyCu?.Display ?? "(set in Settings)";
+
+    /// <summary>The folder the operator drops the monthly CU <c>.msu</c> into (read-only display for the panel).</summary>
+    public string LcuPackagesFolder => _appSettings.Load().LcuPackagesFolder;
+
+    /// <summary>How many confirmed Server 2016 boxes are in this tab — drives the panel's count + visibility.
+    /// Unread boxes (no OS build yet) don't count until a vitals check classifies them.</summary>
+    public int Server2016Count => Computers.Count(c => LcuRouting.Is2016(c.OsBuild));
+
+    /// <summary>True when this tab has at least one confirmed 2016 box (the panel/buttons are meaningful).</summary>
+    public bool HasServer2016 => Server2016Count > 0;
+
+    /// <summary>The 2016 rows the panel acts on: the selected 2016 rows, or every 2016 row when none are
+    /// selected. (Non-2016 selections are ignored — the panel only ever surfaces 2016 boxes.)</summary>
+    private IReadOnlyList<Computer> Server2016Targets()
+    {
+        var selected = SelectedComputers.Where(c => LcuRouting.Is2016(c.OsBuild)).ToList();
+        return selected.Count > 0 ? selected : [.. Computers.Where(c => LcuRouting.Is2016(c.OsBuild))];
+    }
+
+    private static LcuTarget BuildLcuTarget(AppSettings s) =>
+        new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
+
+    /// <summary>Panel button: free component-store space on the targeted 2016 boxes (DISM cleanup as SYSTEM),
+    /// so a tight box has room for the CU. Safe to run any time — the agent refuses if a reboot is pending.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task CleanUp2016Async() =>
+        RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", _patchThrottle);
+
+    /// <summary>Panel button: stage this month's CU on the targeted 2016 boxes (deliver + DISM-add while they
+    /// keep serving). Stops at "staged — reboot-ready"; the Reboot Wave commits it later.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task Stage2016Async() =>
+        RunPatchSweepAsync(Server2016Targets(), (c, ct) => StageLcuRowAsync(c, null, ct), "Stage", _patchThrottle);
+
+    /// <summary>Panel button: reboot + commit the SELECTED staged 2016 boxes (graceful first, then forced
+    /// after the go-offline window to complete that operator-ordered reboot; the UBR decides pass/fail).
+    /// Long-running — the View must confirm first (production reboot). This is the one reboot path in Vivre,
+    /// and unlike the other 2016 actions it acts ONLY on boxes the operator explicitly selected — it never
+    /// falls back to "all 2016", so a reboot is never a whole-fleet default.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task RebootWave2016Async()
+    {
+        var selected = SelectedComputers.Where(c => LcuRouting.Is2016(c.OsBuild)).ToList();
+        if (selected.Count == 0)
+        {
+            _activity.Warn(null, "Reboot Wave: select the Server 2016 box(es) you want to reboot first — it never reboots the whole set by default.");
+            return Task.CompletedTask;
+        }
+
+        return RunPatchSweepAsync(selected, RebootWaveLcuRowAsync, "Reboot Wave", _patchThrottle,
+            // The wave self-bounds at its own hard cap; give the per-host watchdog a margin beyond it so it
+            // never cuts a legitimately-still-committing box short. Standalone Verify is the net past this.
+            RebootWaveOptions.Default.HardCap + TimeSpan.FromMinutes(15));
+    }
+
+    /// <summary>Panel button: read each targeted 2016 box's build/UBR and confirm the CU committed. Read-only;
+    /// a box that can't be read yet is "not back up yet" (re-run later), never a failure.</summary>
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private Task Verify2016Async() =>
+        RunPatchSweepAsync(Server2016Targets(), VerifyLcuRowAsync, "Verify", _remoteSweepThrottle.Active);
+
+    /// <summary>Per-host stage for the 2016 lane: resolve + deliver + DISM-add this month's CU, then map the
+    /// terminal status to a glanceable row state — amber "staged — run Reboot Wave" (the action-needed state,
+    /// distinct from green-done and red-failed), green "already current", or red on failure.</summary>
+    private async Task StageLcuRowAsync(Computer computer, DateTime? scheduleAt, CancellationToken token)
+    {
+        if (computer.IsPatching)
+        {
+            return;
+        }
+
+        // The 2016 lane is stage-and-stop — it has no scheduled-install mode (the operator commits via the
+        // Reboot Wave). Say so rather than silently staging now on a scheduled request.
+        if (scheduleAt is not null)
+        {
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "Server 2016 uses Stage + Reboot Wave — scheduled install isn't available here.";
+            return;
+        }
+
+        AppSettings settings = _appSettings.Load();
+        if (string.IsNullOrWhiteSpace(settings.MonthlyCu?.Kb))
+        {
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "Set this month's CU (KB + UBR) in Settings before staging 2016 boxes.";
+            return;
+        }
+
+        LcuTarget target = BuildLcuTarget(settings);
+
+        computer.IsPatching = true;
+        computer.UpdateError = null;
+        computer.UpdateProgress = 0;
+        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdateMessage = "Checking the update package…";
+
+        // Same mapping on every progress tick AND on the terminal return, so a late progress post can't
+        // clobber the final row state (they converge to the same values regardless of order).
+        var progress = new Progress<HostPatchStatus>(s => ApplyLcuStageStatus(computer, s, target.Kb));
+        try
+        {
+            HostPatchStatus final = await _patch
+                .StageLcuAsync(computer.Name, settings.LcuPackagesFolder, target, _patchOptions, progress, token)
+                .ConfigureAwait(false);
+            ApplyLcuStageStatus(computer, final, target.Kb);
+
+            switch (final.Phase)
+            {
+                case PatchPhase.PendingReboot:
+                    _activity.Info(computer.Name, $"Staged {target.Kb} — reboot-ready (run the Reboot Wave to commit).");
+                    break;
+                case PatchPhase.Done:
+                    _activity.Info(computer.Name, $"{computer.Name} is already current for {target.Kb}.");
+                    break;
+                case PatchPhase.Error:
+                    _activity.Error(computer.Name, $"Stage {target.Kb} failed — {final.Message}");
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Stage failed";
+            computer.UpdatePhase = PatchPhase.Error.ToString();
+            _activity.Error(computer.Name, $"Stage failed — {ex.Message}");
+        }
+        finally
+        {
+            computer.IsPatching = false;
+        }
+    }
+
+    /// <summary>Maps a stage <see cref="HostPatchStatus"/> onto a row. PendingReboot forces the amber
+    /// reboot-pending state (Vivre's "staged — action needed"): <see cref="Computer.RebootRequired"/> must be
+    /// set true or the derived state would read green-done for a box that hasn't actually rebooted yet.</summary>
+    private static void ApplyLcuStageStatus(Computer computer, HostPatchStatus status, string kb)
+    {
+        switch (status.Phase)
+        {
+            case PatchPhase.PendingReboot:
+                computer.RebootRequired = true; // → amber RebootPending (the staged / action-needed state)
+                computer.UpdatePhase = PatchPhase.PendingReboot.ToString();
+                computer.UpdateProgress = 100;
+                computer.UpdateError = null;
+                computer.UpdateMessage = $"Staged {kb} — run Reboot Wave to commit";
+                break;
+            case PatchPhase.Done:
+                computer.UpdatePhase = PatchPhase.Done.ToString();
+                computer.UpdateProgress = 100;
+                computer.UpdateError = null;
+                computer.UpdateMessage = $"Already current ({kb})";
+                break;
+            case PatchPhase.Error:
+                computer.UpdatePhase = PatchPhase.Error.ToString();
+                computer.UpdateError = status.Message;
+                computer.UpdateMessage = status.Message;
+                break;
+            default:
+                computer.UpdatePhase = status.Phase.ToString();
+                computer.UpdateProgress = status.Percent;
+                computer.UpdateMessage = status.Message;
+                break;
+        }
+    }
+
+    /// <summary>Per-host component-store cleanup (DISM /StartComponentCleanup as SYSTEM) for the 2016 lane.</summary>
+    private async Task ComponentCleanupLcuRowAsync(Computer computer, CancellationToken token)
+    {
+        if (computer.IsPatching)
+        {
+            return;
+        }
+
+        computer.IsPatching = true;
+        computer.UpdateError = null;
+        computer.UpdateProgress = 0;
+        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdateMessage = "Cleaning the component store…";
+
+        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        try
+        {
+            HostPatchStatus final = await _patch
+                .ComponentCleanupLcuAsync(computer.Name, _patchOptions, progress, token)
+                .ConfigureAwait(false);
+            ApplyStatus(computer, final);
+            if (final.Phase == PatchPhase.Done)
+            {
+                computer.UpdateMessage = "Component store cleaned";
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Cleanup failed";
+            computer.UpdatePhase = PatchPhase.Error.ToString();
+            _activity.Error(computer.Name, $"Component cleanup failed — {ex.Message}");
+        }
+        finally
+        {
+            computer.IsPatching = false;
+        }
+    }
+
+    /// <summary>Per-host Reboot Wave: reboot a staged box and track the commit until the UBR confirms (green),
+    /// a rollback is detected (red), or it stays offline past the hard cap (red — use Verify when it returns).</summary>
+    private async Task RebootWaveLcuRowAsync(Computer computer, CancellationToken token)
+    {
+        if (computer.IsPatching)
+        {
+            return;
+        }
+
+        int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+
+        computer.IsPatching = true;
+        computer.UpdateError = null;
+        computer.UpdatePhase = PatchPhase.Rebooting.ToString();
+        computer.UpdateMessage = "Starting reboot wave…";
+
+        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        try
+        {
+            HostPatchStatus final = await _patch
+                .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token)
+                .ConfigureAwait(false);
+            ApplyStatus(computer, final);
+            if (final.Phase == PatchPhase.Done)
+            {
+                computer.RebootRequired = false; // committed — clear the staged/reboot-pending flag (→ green)
+                _activity.Info(computer.Name, final.Message);
+            }
+            else if (final.Phase == PatchPhase.Error)
+            {
+                _activity.Error(computer.Name, $"Reboot wave — {final.Message}");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Reboot wave failed";
+            computer.UpdatePhase = PatchPhase.Error.ToString();
+            _activity.Error(computer.Name, $"Reboot wave failed — {ex.Message}");
+        }
+        finally
+        {
+            computer.IsPatching = false;
+        }
+    }
+
+    /// <summary>Per-host Verify: read the box's build/UBR and decide whether the staged CU committed. Read-only
+    /// (no IsPatching claim) so it can run any time. Verified clears reboot-pending (→ green); wrong build is
+    /// red; "can't read it yet" just leaves a re-check message (never a failure).</summary>
+    private async Task VerifyLcuRowAsync(Computer computer, CancellationToken token)
+    {
+        int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+
+        computer.UpdateError = null;
+        computer.UpdateMessage = "Verifying build…";
+        try
+        {
+            LcuVerifyResult result = await _patch.VerifyLcuAsync(computer.Name, targetUbr, token).ConfigureAwait(false);
+            switch (result.Outcome)
+            {
+                case LcuVerifyOutcome.Verified:
+                    computer.RebootRequired = false;
+                    computer.UpdatePhase = PatchPhase.Done.ToString();
+                    computer.UpdateMessage = result.Message;
+                    break;
+                case LcuVerifyOutcome.WrongBuild:
+                    computer.UpdatePhase = PatchPhase.Error.ToString();
+                    computer.UpdateError = result.Message;
+                    computer.UpdateMessage = result.Message;
+                    _activity.Error(computer.Name, result.Message);
+                    break;
+                case LcuVerifyOutcome.Unreachable:
+                    // Pingable-but-still-coming-up, or unreachable — a retry, not a failure. Leave the row's
+                    // existing state (it may still be staged/amber) and just surface the re-check hint.
+                    computer.UpdateMessage = result.Message;
+                    break;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            computer.UpdateMessage = "Cancelled";
+            throw;
+        }
+        catch (Exception ex)
+        {
+            computer.UpdateError = ex.Message;
+            computer.UpdateMessage = "Verify failed";
+            _activity.Error(computer.Name, $"Verify failed — {ex.Message}");
         }
     }
 
@@ -3134,6 +3524,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (!string.IsNullOrWhiteSpace(v.OperatingSystem))
         {
             computer.OperatingSystem = v.OperatingSystem;
+        }
+
+        // Classify the OS build (e.g. 14393 = Server 2016) so the 2016 panel self-populates and "Install
+        // all" auto-routes. Only update when this read actually carried an OS — a partial read must never
+        // clear a build we already confirmed (an unread box stays unclassified, never mis-routed).
+        if (LcuRouting.ParseBuild(v.OperatingSystem) is { } osBuild)
+        {
+            computer.OsBuild = osBuild;
         }
 
         computer.Vitals = v;
