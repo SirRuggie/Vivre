@@ -229,11 +229,11 @@ public static class HelpContent
             Keywords = "fix repair remediate triage start service free disk space cleanup end kill process heal",
             Lines =
             [
-                "Open right-click ▸ Details… ▸ Vitals. Once you've run Check Vitals, the breakdown lets you act in place:",
+                "Open right-click ▸ Details… ▸ Vitals. If vitals haven't been read yet, click Check Vitals in the Vitals tab to read them now — or use the fleet Check Vitals button in the toolbar. The button runs health and vitals for just this machine in one pass. Once vitals are populated, the breakdown lets you act in place:",
                 "• Stopped auto-start service — click Start next to it to start it now.",
                 "• Low drive — click Free up space… to clear TEMP, the Windows Update cache, and the recycle bin (asks first; reports how much it reclaimed).",
                 "• A hog — click Load under Top processes, then End next to a runaway one (asks first).",
-                "After each action Vivre re-checks that machine's vitals, so the score and readings update on the spot.",
+                "After each action (and after Check Vitals) Vivre re-checks that machine's vitals, so the score and readings update on the spot.",
             ],
             Tip = "Free up space and End process change the machine, so they confirm first; starting a service is one-click. All actions use your session/admin credential and land in the activity log.",
         },

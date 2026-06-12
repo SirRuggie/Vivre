@@ -18,6 +18,7 @@ public partial class ComputerDetailWindow : FluentWindow
         InitializeComponent();
         Title = $"Details — {viewModel.Computer.Name}";
         DataContext = viewModel;
+        Closed += (_, _) => viewModel.StopRequeryTimer();
     }
 
     private ComputerDetailViewModel? ViewModel => DataContext as ComputerDetailViewModel;

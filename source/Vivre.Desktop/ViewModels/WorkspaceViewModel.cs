@@ -22,6 +22,7 @@ using Vivre.Core.Scripts;
 using Vivre.Core.Software;
 using Vivre.Core.Updates;
 using Vivre.Core.Remediation;
+using Vivre.Core.Threading;
 using Vivre.Core.Vitals;
 using Vivre.Core.Wug;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -104,15 +105,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Built-in machine-grid column headers the user has hidden (Name is never hideable); the
     /// view applies these to the grid. Mutated via SetColumnHidden which persists.</summary>
     public ObservableCollection<string> HiddenColumns { get; } = [];
-    // Vitals + scans are read-only remote pulls; they share ONE app-wide throttle (like the reboot probe
-    // below) so opening more tabs never multiplies concurrent WinRM connections — every tab draws from this
-    // shared budget and they interleave fairly, keeping this PC and the targets from being flooded. The
-    // per-host timeout is started AFTER a slot is acquired, so time spent queued never counts as a timeout.
-    // Sized from PatchOptions.MaxConcurrentScans on first construction (see ctor). No lock needed:
-    // WorkspaceViewModel is constructed only on the UI thread, so first-tab-wins is deterministic.
-    private static SemaphoreSlim? _remoteSweepThrottleBacking;
-    private static SemaphoreSlim _remoteSweepThrottle => _remoteSweepThrottleBacking!;
+    // Vitals + scans are read-only remote pulls; they share ONE app-wide budget (like the reboot probe
+    // below) so opening more tabs never multiplies concurrent WinRM connections — every tab draws from
+    // this shared budget and they interleave fairly, keeping this PC and the targets from being flooded.
+    // The per-host timeout is started AFTER a slot is acquired, so time spent queued never counts.
+    //
+    // The budget is split via SplitThrottle to guarantee passive custom-column fills are never starved by
+    // a saturated vitals/scan sweep (FIFO starvation: on a 319-row paste all 319 vitals tasks enqueue on
+    // a single semaphore first; the 319 column waiters land behind them and wait ~2 minutes).
+    //   • Total cap = MaxConcurrentScans (32 default) — UNCHANGED from the single-semaphore baseline.
+    //   • Active pool = total − reserve: used by all registered sweeps (vitals, health, scan, software).
+    //   • Reserved pool = Math.Min(4, total − 1): guaranteed for passive fills; active sweeps may NEVER
+    //     touch it.  Passive fills may ALSO borrow from the active pool when it has room (idle-system
+    //     column fill still runs at full width).  Worst-case in-flight = (total−reserve) + reserve = total.
+    // Sized on first construction (see ctor). No lock needed: WorkspaceViewModel is constructed only on
+    // the UI thread, so first-tab-wins is deterministic.
+    private static SplitThrottle? _remoteSweepThrottleBacking;
+    private static SplitThrottle _remoteSweepThrottle => _remoteSweepThrottleBacking!;
     private const int VitalsPerHostTimeoutSeconds = 120;
+    private const int HealthPerHostTimeoutSeconds = 60;
     private const int SoftwarePerHostTimeoutSeconds = 60;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
@@ -144,15 +155,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly SemaphoreSlim _patchThrottle;
     private CancellationTokenSource? _monitorCts;
 
-    // --- M8: sweep narration (SweepStatus) + M11: fleet band elapsed ---
-    // One Stopwatch shared by the toolbar narration (M8) and the fleet band elapsed (M11).
-    // Started in BeginOperation, stopped/reset in EndOperation when the last op finishes.
-    // Thread-safe via Interlocked: background sweep tasks call IncrementSweepCompleted from
-    // concurrent continuations; the UI-thread timer reads _sweepTotal/Completed for display only.
-    private readonly Stopwatch _sweepStopwatch = new();
-    private int _sweepTotal;       // total rows in the current sweep (set UI-thread in BeginOperation)
-    private int _sweepCompleted;   // rows completed so far (incremented via Interlocked from any thread)
-    private string? _sweepLabel;   // e.g. "Checking vitals" (set UI-thread in BeginOperation)
+    // --- Row-disjoint concurrency registry ---
+    // Each active operation registers the set of rows it holds. UI-thread-only (same invariant as
+    // _activeCts above). A row held by any registered operation cannot be targeted by a new one;
+    // it is skipped at launch and gets a persistent skip message in the appropriate column.
+    // The registry is keyed by machine name (case-insensitive); value = the holding operation record.
+    private readonly Dictionary<string, OperationRecord> _heldRows =
+        new(StringComparer.OrdinalIgnoreCase);
+
+    // Per-operation narration record (replaces the old scalar _sweepLabel/_sweepTotal/_sweepCompleted/_sweepStopwatch).
+    private sealed class OperationRecord
+    {
+        internal string Label { get; }          // e.g. "Checking vitals"
+        internal int Total { get; }             // row count at launch (after eligibility filter)
+        internal int _completed;                // rows finished (Interlocked)
+        internal int Completed => Volatile.Read(ref _completed);
+        internal readonly Stopwatch Stopwatch = Stopwatch.StartNew();
+        internal OperationRecord(string label, int total) { Label = label; Total = total; }
+    }
+    // Active operation records (parallel to _activeCts — same index).
+    private readonly List<OperationRecord> _activeOps = [];
+
     private DispatcherTimer? _sweepNarrationTimer;
 
     // 3-second hold-open latch for M11 fleet band: keeps the band visible briefly after completion.
@@ -185,6 +208,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Live selected-row count for the contextual command bar label (e.g. "3 machines selected").</summary>
     public int SelectedComputerCount => SelectedComputers.Count;
+
+    /// <summary>Enabled while at least one selected row is free (not held by any running operation).
+    /// Gates the selection-cluster Scan (N) / Install (N) buttons. The click path re-filters via the
+    /// registry, so any staleness between this re-evaluation and the click is harmless.</summary>
+    public bool CanActOnSelection => HasSelection && SelectedComputers.Any(c => !_heldRows.ContainsKey(c.Name));
 
     /// <summary>Raised by <see cref="RequestClearSelection"/> so the active <c>WorkspaceView</c> can call
     /// <c>UnselectAll()</c> on both its DataGrids. The VM itself does NOT hold a reference to the grids —
@@ -410,59 +438,95 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public partial bool IsBusy { get; set; }
 
     /// <summary>M8 + M12: one-line sweep narration shown beside the ProgressRing and in the status bar.
-    /// Format: "Checking vitals — 12/48 · 00:32", or empty when idle.
-    /// Updated by a ~5s DispatcherTimer tick while a sweep is running; cleared on EndOperation.</summary>
+    /// ONE op  → "Checking vitals — 12/48 · 00:32" (same as before).
+    /// TWO ops → "2 operations · Install 3/12 · Scan 7/40" (per-op fragments; elapsed for oldest op).
+    /// THREE+  → "3 operations · Install 3/12 · Scan 7/40 · +1 more".
+    /// Empty when idle.</summary>
     public string SweepStatus
     {
         get
         {
-            if (!IsBusy || _sweepLabel is null) return string.Empty;
-            int completed = Volatile.Read(ref _sweepCompleted);
-            int total = _sweepTotal;
-            TimeSpan elapsed = _sweepStopwatch.Elapsed;
-            string elapsedStr = elapsed.TotalHours >= 1
-                ? $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}"
-                : $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
-            return total > 0
-                ? $"{_sweepLabel} — {completed}/{total} · {elapsedStr}"
-                : $"{_sweepLabel} · {elapsedStr}";
+            if (!IsBusy || _activeOps.Count == 0) return string.Empty;
+
+            if (_activeOps.Count == 1)
+            {
+                OperationRecord op = _activeOps[0];
+                int completed = op.Completed;
+                int total = op.Total;
+                TimeSpan elapsed = op.Stopwatch.Elapsed;
+                string elapsedStr = elapsed.TotalHours >= 1
+                    ? $"{(int)elapsed.TotalHours:D2}:{elapsed.Minutes:D2}:{elapsed.Seconds:D2}"
+                    : $"{(int)elapsed.TotalMinutes:D2}:{elapsed.Seconds:D2}";
+                return total > 0
+                    ? $"{op.Label} — {completed}/{total} · {elapsedStr}"
+                    : $"{op.Label} · {elapsedStr}";
+            }
+
+            // Multiple ops: show count + per-op fragments (up to 2 named; oldest elapsed).
+            // Find the oldest (longest-running) stopwatch for the overall elapsed.
+            TimeSpan oldestElapsed = _activeOps.Max(o => o.Stopwatch.Elapsed);
+            string oldestStr = oldestElapsed.TotalHours >= 1
+                ? $"{(int)oldestElapsed.TotalHours:D2}:{oldestElapsed.Minutes:D2}:{oldestElapsed.Seconds:D2}"
+                : $"{(int)oldestElapsed.TotalMinutes:D2}:{oldestElapsed.Seconds:D2}";
+
+            var parts = new List<string> { $"{_activeOps.Count} operations" };
+            int shown = 0;
+            foreach (OperationRecord op in _activeOps)
+            {
+                if (shown >= 2) break;
+                string frag = op.Total > 0
+                    ? $"{op.Label} {op.Completed}/{op.Total}"
+                    : op.Label;
+                parts.Add(frag);
+                shown++;
+            }
+
+            if (_activeOps.Count > 2)
+            {
+                parts.Add($"+{_activeOps.Count - 2} more");
+            }
+
+            parts.Add(oldestStr);
+            return string.Join(" · ", parts);
         }
     }
 
-    /// <summary>P: true while the active sweep is the vitals check ("Checking vitals" label AND busy).
-    /// Drives the amber banner in WorkspaceView Row 1. Keyed off the same narration the status bar uses —
-    /// IsBusy ensures it clears when the sweep ends; the label check ensures it doesn't flip for
-    /// non-vitals concurrent sweeps ("Running custom columns", "Scanning for updates", etc.).</summary>
+    /// <summary>P: true while ANY active operation is labeled "Checking vitals" (AND busy).
+    /// Drives the amber banner in WorkspaceView Row 1. Redefined to support concurrency: the banner
+    /// appears whenever a vitals sweep is running, even if another op (e.g. Install) started first.</summary>
     public bool IsVitalsSweepRunning =>
-        IsBusy && string.Equals(_sweepLabel, "Checking vitals", StringComparison.Ordinal);
+        IsBusy && _activeOps.Any(op => string.Equals(op.Label, "Checking vitals", StringComparison.Ordinal));
 
     /// <summary>M11: the fleet band stays visible during a patch sweep OR during the 3-second hold-open
     /// after completion.</summary>
     public bool IsPatchOperationOrFleetHeld =>
         IsPatchOperationActive || _fleetBandHeld;
 
-    /// <summary>M11: elapsed time string for the fleet band header ("01:23").</summary>
+    /// <summary>M11: elapsed time string for the fleet band header ("01:23").
+    /// Uses the oldest (longest-running) active operation's elapsed, or zero when idle.</summary>
     public string FleetElapsed
     {
         get
         {
-            if (!_sweepStopwatch.IsRunning && _sweepStopwatch.Elapsed == TimeSpan.Zero)
-                return string.Empty;
-            TimeSpan e = _sweepStopwatch.Elapsed;
+            if (_activeOps.Count == 0) return string.Empty;
+            TimeSpan e = _activeOps.Max(op => op.Stopwatch.Elapsed);
+            if (e == TimeSpan.Zero) return string.Empty;
             return e.TotalHours >= 1
                 ? $"{(int)e.TotalHours:D2}:{e.Minutes:D2}:{e.Seconds:D2}"
                 : $"{(int)e.TotalMinutes:D2}:{e.Seconds:D2}";
         }
     }
 
-    /// <summary>M11: "N/M machines" label for the fleet band (e.g. "12/48 machines").</summary>
+    /// <summary>M11: "N/M machines" label for the fleet band (e.g. "12/48 machines").
+    /// Aggregates completed/total by SUMMING across all active operations.</summary>
     public string FleetNofM
     {
         get
         {
-            int completed = Volatile.Read(ref _sweepCompleted);
-            int total = _sweepTotal;
-            return total > 0 ? $"{completed}/{total} machines" : string.Empty;
+            if (_activeOps.Count == 0) return string.Empty;
+            int totalCompleted = _activeOps.Sum(op => op.Completed);
+            int totalRows = _activeOps.Sum(op => op.Total);
+            return totalRows > 0 ? $"{totalCompleted}/{totalRows} machines" : string.Empty;
         }
     }
 
@@ -630,7 +694,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // First tab wins: the shared read budget is set once from the singleton PatchOptions and then
         // reused by every subsequent tab. Safe without a lock because all WorkspaceViewModel instances
         // are constructed on the UI thread (ShellViewModel.NewTab dispatches to no background thread).
-        _remoteSweepThrottleBacking ??= new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentScans));
+        if (_remoteSweepThrottleBacking is null)
+        {
+            int total    = Math.Max(2, patchOptions.MaxConcurrentScans);
+            int reserved = Math.Min(4, total - 1);
+            _remoteSweepThrottleBacking = new SplitThrottle(total, reserved);
+        }
         _rebootProbe = rebootProbe;
         _vitals = vitals;
         _remediation = remediation;
@@ -948,9 +1017,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // the rows just loaded; the manual button stays for re-checks.
         if (AutoCheckOnLoadEnabled())
         {
+            // Fire both operations simultaneously: vitals registers rows in the held-rows registry
+            // (preventing conflicting ops), while the custom-column fill runs passively (no registry
+            // registration) so it never blocks and is never blocked by the vitals sweep.
             _ = RunSweepAsync(added, CheckHealthAndVitalsRowAsync, "Checking vitals");
-            // Also fill any saved custom columns — their values are runtime-only, so the restored columns
-            // would sit blank after a launch/reload without this (no-op when there are no custom columns).
             _ = RunCustomColumnsSelectedAsync(added);
         }
     }
@@ -987,36 +1057,54 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Deletes a saved list.</summary>
     public void DeleteList(string name) => _lists.Delete(name);
 
-    private bool CanStartSweep() => !IsBusy;
+    /// <summary>True when the tab has at least one row NOT currently held by the operation registry
+    /// (or when no rows exist yet — the old IsBusy gate kept all commands off until busy cleared,
+    /// but with row-disjoint concurrency the buttons enable as soon as any row is free).</summary>
+    private bool CanStartSweep() => Computers.Count == 0 || HasFreeRows();
 
     /// <summary>CanExecute for ScanTargetCommand and InstallTargetCommand: the toolbar Scan/Install all
     /// buttons must also be disabled when the tab has no machines to avoid kicking an empty sweep.</summary>
-    private bool CanScanOrInstallAll() => !IsBusy && Computers.Count > 0;
+    private bool CanScanOrInstallAll() => Computers.Count > 0 && HasFreeRows();
 
     /// <summary>Bug 1: Install all button (Click handler, not RelayCommand) uses this for IsEnabled.
     /// Mirrors the CanExecute of InstallTargetCommand so both paths stay in sync.</summary>
-    public bool CanInstallAll => !IsBusy && Computers.Count > 0;
+    public bool CanInstallAll => Computers.Count > 0 && HasFreeRows();
+
+    /// <summary>True when at least one row in the tab is not held by any active operation.</summary>
+    private bool HasFreeRows() => Computers.Any(c => !_heldRows.ContainsKey(c.Name));
+
+    /// <summary>Live tooltip for the Stop button: "Stop all — N operations running" (or singular form).</summary>
+    public string StopTooltip
+    {
+        get
+        {
+            int n = _activeCts.Count;
+            return n <= 1
+                ? "Stop — cancel all running operations in this tab."
+                : $"Stop all — {n} operations running.";
+        }
+    }
 
     private bool CanStop() => IsBusy || IsMonitoring;
 
     /// <summary>Pings every row (reachability only — no SCCM health).</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
     private Task PingAllAsync() => RunSweepAsync([.. Computers], PingRowAsync, "Pinging");
 
     /// <summary>Re-pings the rows not currently online (offline or never checked).</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
     private Task PingOfflineAsync() => RunSweepAsync([.. Computers.Where(c => c.IsOnline != true)], PingRowAsync, "Pinging offline");
 
     /// <summary>Pings and pulls SCCM client health for every row (health is attempted even if ping fails).</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
     private Task CheckAllAsync() => RunSweepAsync([.. Computers], CheckRowAsync, "Checking health");
 
     /// <summary>The single "Check Vitals" button: SCCM client health AND deep OS vitals (disk / memory /
     /// CPU / uptime / stopped services / recent errors, scored 0-100) for every row — one click does
-    /// both. Read-only, no confirm. Each row's health+vitals pass holds ONE shared <see
-    /// cref="_remoteSweepThrottle"/> slot (see <see cref="CheckHealthAndVitalsRowAsync"/>), so every open
+    /// both. Read-only, no confirm. Each row's health+vitals pass holds ONE active-pool slot from the shared
+    /// <see cref="_remoteSweepThrottle"/> (see <see cref="CheckHealthAndVitalsRowAsync"/>), so every open
     /// tab draws from one app-wide budget and they interleave fairly.</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
     private Task CheckVitalsAsync() => RunSweepAsync([.. Computers], CheckHealthAndVitalsRowAsync, "Checking vitals");
 
     /// <summary>Reads vitals for just the given rows (right-click ▸ Triage on a single row); empty ⇒ all.</summary>
@@ -1032,7 +1120,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private async Task CheckHealthAndVitalsRowAsync(Computer computer, CancellationToken token)
     {
         computer.LastStatus = "Checking…"; // immediate pending state before queueing, so a waiting row never looks idle
-        await _remoteSweepThrottle.WaitAsync(token);
+        await _remoteSweepThrottle.Active.WaitAsync(token);
         try
         {
             await CheckRowCoreAsync(computer, token);
@@ -1040,15 +1128,37 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            _remoteSweepThrottle.Release();
+            _remoteSweepThrottle.Active.Release();
         }
     }
 
+    /// <summary>Runs health + vitals for just the given rows (e.g. the single-machine "Check Vitals"
+    /// button in the detail window); empty ⇒ all rows. Uses <see cref="CheckHealthAndVitalsRowAsync"/>
+    /// so both the SCCM health half and the OS vitals half run in one throttle slot.</summary>
+    public Task CheckHealthAndVitalsSelectedAsync(IReadOnlyList<Computer> rows) =>
+        RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], CheckHealthAndVitalsRowAsync, "Checking vitals");
+
+    /// <summary>Returns true when <paramref name="c"/> is currently held by a running operation
+    /// (i.e. a sweep has it registered in the held-rows registry). Used by the detail window to
+    /// disable its "Check Vitals" button while a fleet sweep is already touching the machine.</summary>
+    internal bool IsRowBusy(Computer c) => _heldRows.ContainsKey(c.Name);
+
     /// <summary>Builds the per-machine Details view-model, wired for triage: the remediation service,
-    /// the session credential, and a refresh that re-checks just this machine's vitals after an action
-    /// (so the score/readings update in place once a service is started, space freed, or a process ended).</summary>
+    /// the session credential, a combined health+vitals refresh (used by the "Check Vitals" button in
+    /// the detail window), and a can-start delegate that gates the button while the machine is held.</summary>
     public ComputerDetailViewModel CreateDetailViewModel(Computer computer) =>
-        new(computer, _activity, _remediation, CurrentPsCredential, () => CheckVitalsSelectedAsync([computer]));
+        new(
+            computer,
+            _activity,
+            _remediation,
+            CurrentPsCredential,
+            () => CheckVitalsSelectedAsync([computer]),
+            async () =>
+            {
+                await CheckHealthAndVitalsSelectedAsync([computer]);
+                await FetchOperatingSystemAsync(computer);
+            },
+            () => !IsRowBusy(computer));
 
     // --- Software check (ad-hoc "is product X installed?" → the Software column) ---
 
@@ -1063,7 +1173,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // scan throttle with a per-host timeout so a hung box can't stall the sweep.
     private async Task CheckSoftwareRowAsync(Computer computer, string query, string? serviceName, CancellationToken token)
     {
-        await _remoteSweepThrottle.WaitAsync(token);
+        await _remoteSweepThrottle.Active.WaitAsync(token);
         try
         {
             computer.SoftwareFound = null;
@@ -1132,7 +1242,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            _remoteSweepThrottle.Release();
+            _remoteSweepThrottle.Active.Release();
         }
     }
 
@@ -1221,88 +1331,102 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>Runs every custom column's script across the given rows (empty ⇒ all) and fills each row's
-    /// values. One combined call per host (not per column). Read-only; no confirm.</summary>
+    /// values. One combined call per host (not per column). Read-only; no confirm.
+    /// Runs in passive mode: does NOT register rows in the held-rows registry, so it never blocks
+    /// and is never blocked by concurrent vitals/scan/install operations. Stop still cancels it.
+    /// Uses the shared app-wide <see cref="_remoteSweepThrottle"/> reserved-priority budget — guaranteed progress
+    /// even when the active pool is saturated by a concurrent vitals/scan sweep.</summary>
     public Task RunCustomColumnsSelectedAsync(IReadOnlyList<Computer> rows)
     {
-        if (CustomColumns.Count == 0)
+        // Custom columns are a Health-grid feature: SyncColumns targets ComputerGrid only and
+        // UpdateGrid has no custom-column rendering path, so running fills on a Patching tab
+        // wastes remote probes for columns the grid can never display.
+        // Also skip when no specs are configured — a zero-spec pass would narrate an op that
+        // does nothing ("Custom columns 0/N").
+        if (IsUpdateMode || CustomColumns.Count == 0)
         {
             return Task.CompletedTask;
         }
 
         IReadOnlyList<CustomColumnSpec> specs = [.. CustomColumns];
-        return RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, specs, ct), "Running custom columns");
+        return RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, specs, ct), "Custom columns", passive: true);
     }
 
     /// <summary>Runs a single custom column's script across the rows (empty ⇒ all) — used when a column is
-    /// added, so only the new column fills and the others' already-fetched values aren't re-run.</summary>
-    public Task RunCustomColumnAsync(IReadOnlyList<Computer> rows, CustomColumnSpec spec) =>
-        RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, [spec], ct), "Running custom columns");
+    /// added, so only the new column fills and the others' already-fetched values aren't re-run.
+    /// Runs in passive mode (see <see cref="RunCustomColumnsSelectedAsync"/>).</summary>
+    public Task RunCustomColumnAsync(IReadOnlyList<Computer> rows, CustomColumnSpec spec)
+    {
+        // Custom columns are a Health-grid feature; the Patching grid (UpdateGrid) never renders
+        // them, so skip the fill entirely on update-mode tabs.
+        if (IsUpdateMode)
+        {
+            return Task.CompletedTask;
+        }
+
+        return RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, [spec], ct), "Custom columns", passive: true);
+    }
 
     // Per-row: one combined custom-column call, bounded by the scan throttle with a per-host timeout.
+    // Uses AcquirePassiveAsync so the reserved pool guarantees prompt access even when the active pool
+    // is fully held by a saturated vitals/scan sweep.
     private async Task RunCustomColumnRowAsync(Computer computer, IReadOnlyList<CustomColumnSpec> specs, CancellationToken token)
     {
-        await _remoteSweepThrottle.WaitAsync(token);
+        using IDisposable permit = await _remoteSweepThrottle.AcquirePassiveAsync(token);
+        foreach (CustomColumnSpec spec in specs)
+        {
+            computer.CustomValues[spec.Name] = "…";
+        }
+
+        using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+        perHost.CancelAfter(TimeSpan.FromSeconds(SoftwarePerHostTimeoutSeconds));
         try
+        {
+            IReadOnlyDictionary<string, string?> values =
+                await _customColumns.RunAsync(computer.Name, specs, CurrentPsCredential(), perHost.Token);
+            foreach (CustomColumnSpec spec in specs)
+            {
+                computer.CustomValues[spec.Name] = values.TryGetValue(spec.Name, out string? v) ? v : null;
+            }
+        }
+        catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
         {
             foreach (CustomColumnSpec spec in specs)
             {
-                computer.CustomValues[spec.Name] = "…";
+                computer.CustomValues[spec.Name] = "timed out";
             }
 
-            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
-            perHost.CancelAfter(TimeSpan.FromSeconds(SoftwarePerHostTimeoutSeconds));
-            try
-            {
-                IReadOnlyDictionary<string, string?> values =
-                    await _customColumns.RunAsync(computer.Name, specs, CurrentPsCredential(), perHost.Token);
-                foreach (CustomColumnSpec spec in specs)
-                {
-                    computer.CustomValues[spec.Name] = values.TryGetValue(spec.Name, out string? v) ? v : null;
-                }
-            }
-            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
-            {
-                foreach (CustomColumnSpec spec in specs)
-                {
-                    computer.CustomValues[spec.Name] = "timed out";
-                }
-
-                _activity.Warn(computer.Name, $"Custom columns timed out after {SoftwarePerHostTimeoutSeconds}s");
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                foreach (CustomColumnSpec spec in specs)
-                {
-                    computer.CustomValues[spec.Name] = "error";
-                }
-
-                computer.LastError = ex.Message;
-                _activity.Warn(computer.Name, $"Custom columns failed — {ex.Message}");
-            }
+            _activity.Warn(computer.Name, $"Custom columns timed out after {SoftwarePerHostTimeoutSeconds}s");
         }
-        finally
+        catch (OperationCanceledException)
         {
-            _remoteSweepThrottle.Release();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            foreach (CustomColumnSpec spec in specs)
+            {
+                computer.CustomValues[spec.Name] = "error";
+            }
+
+            computer.LastError = ex.Message;
+            _activity.Warn(computer.Name, $"Custom columns failed — {ex.Message}");
         }
     }
 
     // --- Windows Update lane (scan / install) ---
 
     /// <summary>Scans every row for applicable updates from the selected source.</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
-    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle);
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
-    [RelayCommand(CanExecute = nameof(CanStartSweep))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
     private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install");
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle);
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -1471,24 +1595,26 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// from the toolbar's ScanUpdates (which sweeps every row), so the user can fill in just the
     /// machine they're looking at without re-scanning the whole tab.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanScanFocused))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanScanFocused))]
     private Task ScanFocusedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle.Active) : Task.CompletedTask;
 
-    private bool CanScanFocused() => !IsBusy && FocusedComputer is not null;
+    private bool CanScanFocused() => FocusedComputer is { } c && !_heldRows.ContainsKey(c.Name);
 
     /// <summary>Installs only the ticked updates on the focused machine (the side panel's "Install checked").</summary>
-    [RelayCommand(CanExecute = nameof(CanInstallChecked))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanInstallChecked))]
     private Task InstallCheckedAsync() =>
         FocusedComputer is { } c ? RunPatchSweepAsync([c], (c, ct) => InstallRowAsync(c, ct), "Install") : Task.CompletedTask;
 
     /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
-    /// checklist, not busy, not patching, and NOT with a reboot pending (a pending reboot means
-    /// just-installed updates still read as applicable and installing more would just be deferred by
-    /// the agent's boot-busy guard — reboot first). Re-evaluated as boxes toggle / reboot state flips.</summary>
+    /// checklist, not held by a running operation, not patching, and NOT with a reboot pending (a
+    /// pending reboot means just-installed updates still read as applicable and installing more would
+    /// just be deferred by the agent's boot-busy guard — reboot first). Re-evaluated as boxes toggle /
+    /// reboot state flips.</summary>
     public bool CanInstallChecked =>
-        !IsBusy && !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0
-        && !c.IsPatching && c.RebootRequired != true;
+        !IsInstalledMode && FocusedComputer is { } c && c.ApplicableUpdates.Count > 0
+        && !c.IsPatching && c.RebootRequired != true
+        && !_heldRows.ContainsKey(c.Name);
 
     /// <summary>Number of updates in the focused machine's Applicable list that were installed in
     /// this session (i.e. have <see cref="SelectableUpdate.InstalledThisSession"/> set). Zero when
@@ -1506,16 +1632,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// and when at least one ticked update is actually uninstallable. The confirmation dialog lives
     /// in the view's code-behind so the VM doesn't pop UI directly.
     /// </summary>
-    [RelayCommand(CanExecute = nameof(CanUninstallChecked))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanUninstallChecked))]
     public Task UninstallCheckedAsync() =>
         FocusedComputer is { } c ? RunPatchSweepAsync([c], UninstallRowAsync, "Uninstall") : Task.CompletedTask;
 
-    /// <summary>Whether "Uninstall checked" can run: Installed scope, not busy, and at least one
-    /// ticked update that's actually removable. Bound by the button's enable-state (the button uses
-    /// a Click handler for its confirm dialog) and re-evaluated live as boxes toggle, so it's
-    /// disabled before a scan and whenever nothing removable is ticked.</summary>
+    /// <summary>Whether "Uninstall checked" can run: Installed scope, the focused row not held by a
+    /// running operation, and at least one ticked update that's actually removable. Bound by the
+    /// button's enable-state (the button uses a Click handler for its confirm dialog) and re-evaluated
+    /// live as boxes toggle, so it's disabled before a scan and whenever nothing removable is ticked.</summary>
     public bool CanUninstallChecked =>
-        !IsBusy && IsInstalledMode && FocusedComputer is { } c && !c.IsPatching
+        IsInstalledMode && FocusedComputer is { } c && !c.IsPatching
+        && !_heldRows.ContainsKey(c.Name)
         && c.InstalledUpdates.Any(u => u.IsSelected && u.IsUninstallable);
 
     /// <summary>Ticks every update in the focused machine's checklist.</summary>
@@ -1639,49 +1766,54 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         IsMonitoring = false;
     }
 
-    /// <summary>Registers a new running operation: tracks its CTS (so Stop cancels it) and flips the
-    /// busy state on. IsBusy stays on until the last concurrent operation ends.</summary>
+    /// <summary>Registers a new running operation: tracks its CTS (so Stop cancels it), optionally
+    /// registers target rows in the row registry, and flips busy on. IsBusy stays on until the last
+    /// concurrent op ends.</summary>
     /// <param name="label">Short human label for the sweep, e.g. "Checking vitals" (used by <see cref="SweepStatus"/>).</param>
-    /// <param name="rowCount">Number of rows in this sweep (used for the N/M counter).</param>
-    private CancellationTokenSource BeginOperation(string? label = null, int rowCount = 0)
+    /// <param name="eligibleRows">The rows this operation will run on (already eligibility-filtered).</param>
+    /// <param name="registerRows">When false (passive mode), rows are NOT added to <see cref="_heldRows"/> —
+    /// the operation participates in narration and is Stop-cancellable, but it does not block any other op.</param>
+    private (CancellationTokenSource Cts, OperationRecord Record) BeginOperation(string? label, IReadOnlyList<Computer> eligibleRows, bool registerRows = true)
     {
         var cts = new CancellationTokenSource();
         _activeCts.Add(cts);
 
-        // Narration/elapsed: start fresh on the FIRST concurrent operation.
+        var record = new OperationRecord(label ?? string.Empty, eligibleRows.Count);
+        _activeOps.Add(record);
+
+        // Register each eligible row in the held-rows dictionary so concurrent ops can detect conflicts.
+        // Passive operations skip this — they must not block or be blocked by other sweeps.
+        if (registerRows)
+        {
+            foreach (Computer row in eligibleRows)
+            {
+                _heldRows[row.Name] = record;
+            }
+        }
+
+        // Start the narration timer on the first op; subsequent ops just join the existing tick.
         if (_activeCts.Count == 1)
         {
-            _sweepLabel = label;
-            _sweepTotal = rowCount;
-            Interlocked.Exchange(ref _sweepCompleted, 0);
-            _sweepStopwatch.Restart();
-
             // 1 s ticker: re-evaluates SweepStatus (elapsed + counter) and the fleet band elapsed, so the
-            // clock advances smoothly and the N/M counter keeps pace with completing rows (a 5 s tick made
-            // both jump in visible steps).
+            // clock advances smoothly and the N/M counter keeps pace with completing rows.
             _sweepNarrationTimer ??= new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
             _sweepNarrationTimer.Tick -= OnSweepNarrationTick;
             _sweepNarrationTimer.Tick += OnSweepNarrationTick;
             _sweepNarrationTimer.Start();
         }
-        else
-        {
-            // A second concurrent sweep joined (auto-check-on-load fires vitals AND custom columns over
-            // the same rows): one N/M can't honestly represent two overlapping operations, so drop to an
-            // indeterminate count — "label · elapsed" — rather than a wrong fraction like "96/48". The
-            // shared counter keeps incrementing but is ignored while _sweepTotal is 0.
-            _sweepTotal = 0;
-            _sweepLabel ??= label;
-        }
 
         IsBusy = true;
-        return cts;
+
+        // Notify commands that depend on free-row availability (a new op may have consumed the last free rows).
+        RaiseCanExecuteForSweepCommands();
+
+        return (cts, record);
     }
 
-    /// <summary>Increments the per-row completion counter. Call from any thread (uses Interlocked).</summary>
-    private void IncrementSweepCompleted()
+    /// <summary>Increments the per-row completion counter for the given operation record. Call from any thread (uses Interlocked).</summary>
+    private static void IncrementSweepCompleted(OperationRecord record)
     {
-        Interlocked.Increment(ref _sweepCompleted);
+        Interlocked.Increment(ref record._completed);
     }
 
     private void OnSweepNarrationTick(object? sender, EventArgs e)
@@ -1692,11 +1824,30 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(FleetNofM));
     }
 
-    /// <summary>Retires an operation; clears busy and sweep narration only when none remain.</summary>
-    private void EndOperation(CancellationTokenSource cts)
+    /// <summary>Retires an operation; releases its held rows, clears busy and sweep narration when none remain.</summary>
+    private void EndOperation(CancellationTokenSource cts, OperationRecord record)
     {
-        _activeCts.Remove(cts);
+        int idx = _activeCts.IndexOf(cts);
+        if (idx >= 0)
+        {
+            _activeCts.RemoveAt(idx);
+            _activeOps.RemoveAt(idx);
+        }
+
         cts.Dispose();
+
+        // Release every row this operation held (in finally — all exit paths call EndOperation).
+        foreach (KeyValuePair<string, OperationRecord> kv in _heldRows.ToList())
+        {
+            if (ReferenceEquals(kv.Value, record))
+            {
+                _heldRows.Remove(kv.Key);
+            }
+        }
+
+        // Notify commands that free rows are available again.
+        RaiseCanExecuteForSweepCommands();
+
         if (_activeCts.Count == 0)
         {
             // Stop narration timer and clear sweep state.
@@ -1705,11 +1856,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 st.Stop();
                 st.Tick -= OnSweepNarrationTick;
             }
-
-            _sweepStopwatch.Stop();
-            _sweepLabel = null;
-            _sweepTotal = 0;
-            Interlocked.Exchange(ref _sweepCompleted, 0);
 
             // M11: arm the 3-second hold-open so the fleet band lingers after completion.
             _fleetBandHeld = true;
@@ -1721,13 +1867,46 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             IsBusy = false;
 
-            // Refresh all narration/fleet properties now that the op ended.
+            // Refresh all narration/fleet properties now that the last op ended.
             OnPropertyChanged(nameof(SweepStatus));
             OnPropertyChanged(nameof(IsVitalsSweepRunning));
             OnPropertyChanged(nameof(FleetElapsed));
             OnPropertyChanged(nameof(FleetNofM));
             OnPropertyChanged(nameof(IsPatchOperationOrFleetHeld));
+            OnPropertyChanged(nameof(StopTooltip));
         }
+        else
+        {
+            // Still busy — refresh narration for the ops that remain.
+            OnPropertyChanged(nameof(SweepStatus));
+            OnPropertyChanged(nameof(IsVitalsSweepRunning));
+            OnPropertyChanged(nameof(FleetElapsed));
+            OnPropertyChanged(nameof(FleetNofM));
+            OnPropertyChanged(nameof(StopTooltip));
+        }
+    }
+
+    /// <summary>Raises CanExecuteChanged for every command that depends on free-row availability,
+    /// and re-evaluates the computed CanInstallAll / StopTooltip properties.</summary>
+    private void RaiseCanExecuteForSweepCommands()
+    {
+        PingAllCommand.NotifyCanExecuteChanged();
+        PingOfflineCommand.NotifyCanExecuteChanged();
+        CheckAllCommand.NotifyCanExecuteChanged();
+        CheckVitalsCommand.NotifyCanExecuteChanged();
+        ScanUpdatesCommand.NotifyCanExecuteChanged();
+        InstallUpdatesCommand.NotifyCanExecuteChanged();
+        InstallCheckedCommand.NotifyCanExecuteChanged();
+        UninstallCheckedCommand.NotifyCanExecuteChanged();
+        ScanFocusedCommand.NotifyCanExecuteChanged();
+        StopCommand.NotifyCanExecuteChanged();
+        ScanTargetCommand.NotifyCanExecuteChanged();
+        InstallTargetCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanInstallAll));
+        OnPropertyChanged(nameof(CanInstallChecked));
+        OnPropertyChanged(nameof(CanUninstallChecked));
+        OnPropertyChanged(nameof(CanActOnSelection));
+        OnPropertyChanged(nameof(StopTooltip));
     }
 
     private void OnFleetBandHoldTick(object? sender, EventArgs e)
@@ -1808,12 +1987,73 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    private async Task RunSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation, string? label = null)
+    /// <param name="passive">When true the eligibility filter and skip messages are skipped entirely —
+    /// ALL rows in <paramref name="rows"/> participate regardless of the held-rows registry — and rows
+    /// are NOT registered in <see cref="_heldRows"/> (so concurrent operations are never blocked by this
+    /// sweep). A CTS is still created (Stop cancels it) and an <see cref="OperationRecord"/> is still
+    /// registered (narration / N-of-M stays honest). Used for the custom-column fill, which is purely
+    /// read-only and must not block or be blocked by any patch/scan/vitals operation on the same rows.</param>
+    private async Task RunSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation, string? label = null, bool passive = false)
     {
-        CancellationTokenSource cts = BeginOperation(label, rows.Count);
+        // No targets at all (e.g. Ping All on an empty tab) → silent no-op, exactly as before the
+        // registry existed. The zero-ELIGIBLE message below is for "all targets busy" only.
+        if (rows.Count == 0) return;
+
+        IReadOnlyList<Computer> eligible;
+
+        if (passive)
+        {
+            // Passive mode: run on every supplied row without consulting or updating the registry.
+            eligible = rows;
+            _activity.Info(null, $"Started {label ?? "sweep"} on {eligible.Count} (passive)");
+        }
+        else
+        {
+            // Eligibility filter: exclude rows held by any currently-running operation.
+            var eligibleList = new List<Computer>();
+            var skipped = new List<(Computer Row, string BlockingLabel)>();
+            foreach (Computer row in rows)
+            {
+                if (_heldRows.TryGetValue(row.Name, out OperationRecord? holder))
+                {
+                    skipped.Add((row, holder.Label));
+                }
+                else
+                {
+                    eligibleList.Add(row);
+                }
+            }
+
+            // Write skip messages BEFORE BeginOperation so the skipped rows are not in the new op's set.
+            foreach ((Computer row, string blockingLabel) in skipped)
+            {
+                // Vitals/health/ping skip → CommandResult column.
+                row.CommandResult = $"Skipped — busy ({blockingLabel} running)";
+            }
+
+            // Nothing eligible → log and return without starting an op at all.
+            if (eligibleList.Count == 0)
+            {
+                string msg = rows.Count == 1
+                    ? $"Nothing started — the targeted machine is busy"
+                    : $"Nothing started — all {rows.Count} targeted machines are busy";
+                _activity.Warn(null, msg);
+                return;
+            }
+
+            // Log the launch line (includes skip count when some were skipped).
+            string startMsg = skipped.Count > 0
+                ? $"Started {label ?? "sweep"} on {eligibleList.Count} ({skipped.Count} skipped — busy)"
+                : $"Started {label ?? "sweep"} on {eligibleList.Count}";
+            _activity.Info(null, startMsg);
+
+            eligible = eligibleList;
+        }
+
+        (CancellationTokenSource cts, OperationRecord record) = BeginOperation(label, eligible, registerRows: !passive);
         try
         {
-            Task work = Task.WhenAll(rows.Select(row => WrapWithCompletion(operation, row, cts.Token)));
+            Task work = Task.WhenAll(eligible.Select(row => WrapWithCompletion(operation, row, record, cts.Token)));
 
             // Stop must free the UI immediately, even if a row's remote call is still unwinding
             // (e.g. a rebooting host on a WinRM connect). Race the work against cancellation
@@ -1836,13 +2076,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            EndOperation(cts);
+            EndOperation(cts, record);
         }
     }
 
     /// <summary>Wraps a per-row sweep task so the completion counter is incremented after it finishes
     /// (success or handled failure). The increment is thread-safe via <see cref="IncrementSweepCompleted"/>.</summary>
-    private async Task WrapWithCompletion(Func<Computer, CancellationToken, Task> operation, Computer row, CancellationToken token)
+    private async Task WrapWithCompletion(Func<Computer, CancellationToken, Task> operation, Computer row, OperationRecord record, CancellationToken token)
     {
         try
         {
@@ -1850,7 +2090,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            IncrementSweepCompleted();
+            IncrementSweepCompleted(record);
         }
     }
 
@@ -1883,11 +2123,52 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             _ => operationLabel,
         };
 
-        CancellationTokenSource cts = BeginOperation(narrationLabel, rows.Count);
+        // No targets at all → silent no-op (mirrors RunSweepAsync; the zero-eligible message
+        // below is reserved for "all targets busy").
+        if (rows.Count == 0) return;
+
+        // Eligibility filter: exclude rows held by any currently-running operation.
+        var eligible = new List<Computer>();
+        var skipped = new List<(Computer Row, string BlockingLabel)>();
+        foreach (Computer row in rows)
+        {
+            if (_heldRows.TryGetValue(row.Name, out OperationRecord? holder))
+            {
+                skipped.Add((row, holder.Label));
+            }
+            else
+            {
+                eligible.Add(row);
+            }
+        }
+
+        // Write skip messages to the patch-lane column (UpdateMessage) BEFORE BeginOperation.
+        foreach ((Computer row, string blockingLabel) in skipped)
+        {
+            row.UpdateMessage = $"Skipped — busy ({blockingLabel} running)";
+        }
+
+        // Nothing eligible → log and return without starting an op at all.
+        if (eligible.Count == 0)
+        {
+            string msg = rows.Count == 1
+                ? $"Nothing started — the targeted machine is busy"
+                : $"Nothing started — all {rows.Count} targeted machines are busy";
+            _activity.Warn(null, msg);
+            return;
+        }
+
+        // Log the launch line (includes skip count when some were skipped).
+        string startMsg = skipped.Count > 0
+            ? $"Started {operationLabel ?? "operation"} on {eligible.Count} ({skipped.Count} skipped — busy)"
+            : $"Started {operationLabel ?? "operation"} on {eligible.Count}";
+        _activity.Info(null, startMsg);
+
+        (CancellationTokenSource cts, OperationRecord record) = BeginOperation(narrationLabel, eligible);
         bool cancelled = false;
         try
         {
-            Task work = Task.WhenAll(rows.Select(row => RunOnePatchHostAsync(row, operation, throttle, cts.Token)));
+            Task work = Task.WhenAll(eligible.Select(row => RunOnePatchHostAsync(row, operation, throttle, record, cts.Token)));
 
             Task cancelledTask = Task.Delay(Timeout.Infinite, cts.Token);
             if (await Task.WhenAny(work, cancelledTask) == work)
@@ -1907,13 +2188,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
-            EndOperation(cts);
+            EndOperation(cts, record);
         }
 
         // One completion signal per sweep (not per row), only for a real finish.
         if (!cancelled && operationLabel is not null)
         {
-            (string summary, OperationSeverity severity) = BuildCompletionSummary(operationLabel, rows);
+            (string summary, OperationSeverity severity) = BuildCompletionSummary(operationLabel, eligible);
             OperationCompleted?.Invoke(summary, severity);
         }
     }
@@ -1979,6 +2260,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         Computer row,
         Func<Computer, CancellationToken, Task> operation,
         SemaphoreSlim throttle,
+        OperationRecord record,
         CancellationToken token)
     {
         await throttle.WaitAsync(token).ConfigureAwait(false);
@@ -2002,7 +2284,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         finally
         {
             throttle.Release();
-            IncrementSweepCompleted(); // count this host done regardless of outcome
+            IncrementSweepCompleted(record); // count this host done regardless of outcome
         }
     }
 
@@ -2653,14 +2935,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private async Task CheckRowAsync(Computer computer, CancellationToken token)
     {
         computer.LastStatus = "Checking…"; // immediate pending state before queueing, so a waiting row never looks idle
-        await _remoteSweepThrottle.WaitAsync(token);
+        await _remoteSweepThrottle.Active.WaitAsync(token);
         try
         {
             await CheckRowCoreAsync(computer, token);
         }
         finally
         {
-            _remoteSweepThrottle.Release();
+            _remoteSweepThrottle.Active.Release();
         }
     }
 
@@ -2699,9 +2981,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // Always attempt health, regardless of ping — many servers block ICMP but
         // answer WinRM. "Online" means it responded (ICMP or WinRM), using the
         // active credential.
+        using var healthPerHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+        healthPerHost.CancelAfter(TimeSpan.FromSeconds(HealthPerHostTimeoutSeconds));
         try
         {
-            SccmClientInfo health = await _configMgr.GetClientHealthAsync(computer.Name, CurrentPsCredential(), token);
+            SccmClientInfo health = await _configMgr.GetClientHealthAsync(computer.Name, CurrentPsCredential(), healthPerHost.Token);
             computer.IsOnline = true;
             computer.SiteCode = health.SiteCode;
             computer.AgentVersion = health.ClientVersion;
@@ -2712,6 +2996,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.LastBootTime = health.LastBootTime;
             computer.LastStatus = SummarizeHealth(health);
             _activity.Info(computer.Name, $"Health: {computer.LastStatus}");
+        }
+        catch (OperationCanceledException) when (healthPerHost.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            // Per-host timeout (not a user Stop): leave IsOnline as the ping result and let
+            // the combined pass proceed to the vitals half — a box with hung SCCM WMI may
+            // still answer OS vitals (which has its own 120s cap).
+            computer.IsOnline = pingOnline;
+            computer.LastError = $"Health check timed out after {HealthPerHostTimeoutSeconds}s";
+            computer.LastStatus = "Health timed out";
+            _activity.Warn(computer.Name, computer.LastError);
         }
         catch (OperationCanceledException)
         {
@@ -2744,14 +3038,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private async Task CheckVitalsRowAsync(Computer computer, CancellationToken token)
     {
         computer.LastStatus = "Checking…"; // immediate pending state before queueing, so a waiting row never looks idle
-        await _remoteSweepThrottle.WaitAsync(token);
+        await _remoteSweepThrottle.Active.WaitAsync(token);
         try
         {
             await CheckVitalsCoreAsync(computer, token);
         }
         finally
         {
-            _remoteSweepThrottle.Release();
+            _remoteSweepThrottle.Active.Release();
         }
     }
 
@@ -2912,6 +3206,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(SelectionSummary));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectedComputerCount));
+        OnPropertyChanged(nameof(CanActOnSelection));
     }
 
     // --- selection-aware toolbar (Scan/Install act on the selection, or all rows when none) ------
@@ -2926,13 +3221,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Toolbar Scan: scoped to the selection, or every row when nothing's selected.
     /// Disabled when the tab has no machines (see <see cref="CanScanOrInstallAll"/>).</summary>
-    [RelayCommand(CanExecute = nameof(CanScanOrInstallAll))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanScanOrInstallAll))]
     private Task ScanTarget() =>
         SelectedComputers.Count > 0 ? ScanSelectedAsync([.. SelectedComputers]) : ScanUpdatesAsync();
 
     /// <summary>Toolbar Install: scoped to the selection, or every row when nothing's selected.
     /// Disabled when the tab has no machines (see <see cref="CanScanOrInstallAll"/>).</summary>
-    [RelayCommand(CanExecute = nameof(CanScanOrInstallAll))]
+    [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanScanOrInstallAll))]
     private Task InstallTarget() =>
         SelectedComputers.Count > 0 ? InstallSelectedAsync([.. SelectedComputers]) : InstallUpdatesAsync();
 
