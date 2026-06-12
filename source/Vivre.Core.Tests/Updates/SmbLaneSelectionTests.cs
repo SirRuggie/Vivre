@@ -90,6 +90,18 @@ public class SmbLaneSelectionTests
             LastCall = "Uninstall";
             return Task.FromResult(SmbSentinel);
         }
+
+        public Task<HostPatchStatus> InstallFullPackageAsync(string host, string sourcePackagePath, PatchOptions options, IProgress<HostPatchStatus> progress, CancellationToken cancellationToken)
+        {
+            LastCall = "InstallFullPackage";
+            return Task.FromResult(SmbSentinel);
+        }
+
+        public Task<HostPatchStatus> RunComponentCleanupAsync(string host, PatchOptions options, IProgress<HostPatchStatus> progress, CancellationToken cancellationToken)
+        {
+            LastCall = "Cleanup";
+            return Task.FromResult(SmbSentinel);
+        }
     }
 
     /// <summary>A WinRM host that rejects Kerberos on every remote call — both the scan's RunRemoteAsync

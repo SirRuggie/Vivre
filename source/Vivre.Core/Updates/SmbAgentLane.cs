@@ -115,6 +115,47 @@ public sealed class SmbAgentLane : ISmbAgentLane
         string host, PatchOptions options, IProgress<HostPatchStatus> progress, CancellationToken cancellationToken) =>
         RunOperationAsync(host, "Uninstall", options, progress, "Starting uninstall task…", cancellationToken);
 
+    public Task<HostPatchStatus> RunComponentCleanupAsync(
+        string host, PatchOptions options, IProgress<HostPatchStatus> progress, CancellationToken cancellationToken) =>
+        RunOperationAsync(host, "Cleanup", options, progress, "Cleaning the component store…", cancellationToken);
+
+    /// <summary>
+    /// The 2016 full-package LCU path: copies the CU .msu from <paramref name="sourcePackagePath"/> (a
+    /// controller-local file, e.g. the package directory) into the target's hardened drop dir, then runs
+    /// the agent in AddPackage mode to DISM-add it as SYSTEM. The terminal status is "PendingReboot"
+    /// (staged — reboot-ready) on success, Done (already current) for a no-op, or Failed. The copied
+    /// package is deleted on teardown. Stages only — the operator commits later via a Reboot Wave.
+    /// </summary>
+    public async Task<HostPatchStatus> InstallFullPackageAsync(
+        string host, string sourcePackagePath, PatchOptions options,
+        IProgress<HostPatchStatus> progress, CancellationToken cancellationToken)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sourcePackagePath);
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        try
+        {
+            SmbRunOutcome outcome = await RunAgentAsync(
+                host, "AddPackage", scope: null, options, progress, "Staging cumulative update…",
+                cancellationToken, payload: (sourcePackagePath, Path.GetFileName(sourcePackagePath)))
+                .ConfigureAwait(false);
+            return outcome.Last;
+        }
+        catch (OperationCanceledException)
+        {
+            progress.Report(new HostPatchStatus(PatchPhase.Idle, "Cancelled"));
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var failed = HostPatchStatus.Failed($"Staging failed on {host}: {ex.Message}");
+            progress.Report(failed);
+            return failed;
+        }
+    }
+
     private async Task<HostPatchStatus> RunOperationAsync(
         string host, string mode, PatchOptions options, IProgress<HostPatchStatus> progress,
         string startingMessage, CancellationToken cancellationToken)
@@ -156,7 +197,8 @@ public sealed class SmbAgentLane : ISmbAgentLane
 
     private async Task<SmbRunOutcome> RunAgentAsync(
         string host, string mode, string? scope, PatchOptions options,
-        IProgress<HostPatchStatus>? progress, string startingMessage, CancellationToken cancellationToken)
+        IProgress<HostPatchStatus>? progress, string startingMessage, CancellationToken cancellationToken,
+        (string SourcePath, string FileName)? payload = null)
     {
         if (HostName.IsLocal(host))
         {
@@ -184,10 +226,15 @@ public sealed class SmbAgentLane : ISmbAgentLane
         string uncProgress = ToAdminShareUnc(host, localProgress);
         string uncResult = isScan ? ToAdminShareUnc(host, localResult) : null!;
 
+        // AddPackage (the 2016 LCU lane): the full CU .msu the controller copies into the drop dir for the
+        // agent to DISM-add. Kept in the same per-run drop dir and deleted on teardown like the run files.
+        string? localPackage = payload is { } pl ? $@"{DropDirLocal}\{pl.FileName}" : null;
+        string? uncPackage = localPackage is not null ? ToAdminShareUnc(host, localPackage) : null;
+
         byte[] agentBytes = _agentBytes();
         string expectedSha = Convert.ToHexString(SHA256.HashData(agentBytes));
         string configJson = WuaUpdateLane.BuildAgentConfigJson(
-            options, localProgress, mode, scope, isScan ? localResult : null);
+            options, localProgress, mode, scope, isScan ? localResult : null, localPackage);
 
         RemoteServiceController? service = null;
         try
@@ -198,6 +245,14 @@ public sealed class SmbAgentLane : ISmbAgentLane
             File.WriteAllBytes(uncExe, agentBytes);
             File.WriteAllText(uncConfig, configJson, new UTF8Encoding(false));
             VerifyDroppedExe(uncExe, expectedSha);
+
+            // 1b) AddPackage: copy the full CU .msu into the hardened dir (the big SMB copy) and confirm the
+            // bytes landed before the agent tries to DISM-add it. A short copy = a security agent or a
+            // network blip mid-transfer; surface it rather than staging a truncated package.
+            if (payload is { } pkg && uncPackage is not null)
+            {
+                CopyPackage(pkg.SourcePath, uncPackage);
+            }
 
             // 2) Create the LocalSystem service and start it. The display name is per-run too: the SCM
             // rejects a duplicate display name (not just a duplicate service name), and concurrent runs
@@ -223,6 +278,10 @@ public sealed class SmbAgentLane : ISmbAgentLane
             }
 
             DeleteRunFiles(uncExe, uncConfig, uncProgress, uncResult);
+            if (uncPackage is not null)
+            {
+                TryDelete(uncPackage); // don't leave a 1.7 GB .msu behind on the box
+            }
         }
     }
 
@@ -418,6 +477,26 @@ public sealed class SmbAgentLane : ISmbAgentLane
             try { File.Delete(uncExe); } catch { /* the launch is aborted regardless */ }
             throw new InvalidOperationException(
                 "The agent failed its integrity check on the target (the dropped EXE did not match what was shipped); aborting to avoid running a tampered binary as SYSTEM.");
+        }
+    }
+
+    /// <summary>Copies the CU package (controller-local) to the target's drop dir over SMB and confirms the
+    /// full byte count landed — a short copy means a security agent or a network blip cut it off, and a
+    /// truncated 1.7 GB .msu must never be handed to DISM.</summary>
+    private static void CopyPackage(string sourcePath, string uncDest)
+    {
+        if (!File.Exists(sourcePath))
+        {
+            throw new FileNotFoundException($"Update package not found: {sourcePath}", sourcePath);
+        }
+
+        File.Copy(sourcePath, uncDest, overwrite: true);
+
+        long src = new FileInfo(sourcePath).Length;
+        long dst = new FileInfo(uncDest).Length;
+        if (dst != src)
+        {
+            throw new IOException($"Package copy was incomplete — {dst:N0} of {src:N0} bytes reached the target.");
         }
     }
 
