@@ -653,14 +653,18 @@ public sealed class WuaUpdateLane
     /// <param name="resultPath">Where a Scan writes its JSON update array (the SMB lane reads it back);
     /// null for Install/Uninstall. Both default to null so the WinRM lane's three-arg callers and the
     /// cross-framework round-trip test are unaffected.</param>
+    /// <param name="packagePath">For <c>mode = "AddPackage"</c> (the 2016 LCU lane): the target-local path
+    /// to the full CU .msu the controller copied into the drop dir; null otherwise.</param>
     public static string BuildAgentConfigJson(
-        PatchOptions options, string progressPath, string mode, string? scope = null, string? resultPath = null)
+        PatchOptions options, string progressPath, string mode,
+        string? scope = null, string? resultPath = null, string? packagePath = null)
     {
         WuaServerSelection sel = WuaServerSelection.For(options.Source);
         var config = new
         {
             Mode = mode,
             Scope = scope,
+            PackagePath = packagePath,
             ServerSelection = sel.ServerSelection,
             ServiceId = sel.ServiceId,
             IncludeDrivers = options.IncludeDrivers,
