@@ -1036,8 +1036,6 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Scheduled task action" Binding="{Binding ScheduledAction}" Width="Auto" MinWidth="80" />
-                <DataGridTextColumn Header="Scheduled task next run time" Binding="{Binding ScheduledNextRun, StringFormat=g}" Width="Auto" MinWidth="80" />
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Pending" /><LineBreak /><Run Text="Reboot" /></TextBlock>

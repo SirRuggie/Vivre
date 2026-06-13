@@ -498,7 +498,7 @@ public static class HelpContent
                 "• Install updates… — pick a date/time to install.",
                 "• Reboot… — pick a date/time to force-reboot.",
                 "• Cancel scheduled task — clears a pending one.",
-                "The Scheduled task columns show what's queued and when; they clear once the time passes.",
+                "A scheduled task shows as a neutral 'Scheduled' status pill and a '<action> scheduled for <time>' message in the Windows update row; the Scheduled filter chip lists those machines. It clears once the time passes.",
             ],
             Tip = "Scheduling registers a one-time task that runs as SYSTEM, so it needs admin rights on the target.",
         },
