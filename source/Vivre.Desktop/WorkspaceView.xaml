@@ -441,8 +441,8 @@
                                    Appearance="Primary"
                                    Margin="0,0,4,0"
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
-                                   Command="{Binding Stage2016Command}"
-                                   ToolTip="Stage this month's CU on the selected 2016 boxes (or all 2016 if none selected). Delivers + installs but does NOT reboot — safe during business hours." />
+                                   Click="OnStage2016"
+                                   ToolTip="Stage this month's CU on the selected 2016 boxes (or all 2016 if none selected). Delivers + installs but does NOT reboot — safe during business hours. If the package isn't in the folder yet, Vivre shows you how to add it and stages nothing." />
                         <ui:Button x:Name="RebootWaveButton"
                                    Content="Reboot Wave"
                                    Icon="{ui:SymbolIcon ArrowClockwise24}"

@@ -104,6 +104,21 @@ public sealed class FullPackageLcuLane
     }
 
     /// <summary>
+    /// Read-only precheck (touches NO box): is the right CU <c>.msu</c> present + correct in
+    /// <paramref name="packageDirectory"/>? Returns the same resolution <see cref="StageAsync"/> uses, so the
+    /// UI can guide the operator to drop the file BEFORE a Stage runs. Found = ready; anything else carries a
+    /// plain reason + the catalog link.
+    /// </summary>
+    public LcuPackageResolution CheckPackage(string packageDirectory, LcuTarget target)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageDirectory);
+        ArgumentNullException.ThrowIfNull(target);
+        return _packages.Resolve(
+            packageDirectory, target.Kb, target.Arch,
+            target.ExpectedSizeBytes, target.ToleranceBytes, target.ExpectedSha256);
+    }
+
+    /// <summary>
     /// Daytime step: verify the right CU package is present in <paramref name="packageDirectory"/>, then
     /// deliver + DISM-add it on <paramref name="host"/> while the server keeps serving. Does NOT reboot.
     /// Returns the terminal status: <see cref="PatchPhase.PendingReboot"/> = staged/reboot-ready,

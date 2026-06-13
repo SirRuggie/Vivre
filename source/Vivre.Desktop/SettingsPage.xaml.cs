@@ -45,6 +45,7 @@ public partial class SettingsPage : UserControl
         PackagesFolderBox.Text = s.PackagesFolder;
         LcuKbBox.Text = s.MonthlyCu?.Kb ?? string.Empty;
         LcuUbrBox.Text = s.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
+        LcuSizeBox.Text = s.MonthlyCu?.ExpectedSizeMb.ToString() ?? string.Empty;
         LcuPackagesFolderBox.Text = s.LcuPackagesFolder;
 
         // Inline version in the Help & about expander.
@@ -169,6 +170,19 @@ public partial class SettingsPage : UserControl
         }
 
         PersistSettings(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.TargetUbr = ubr; });
+    }
+
+    private void OnLcuSizeChanged(object sender, RoutedEventArgs e)
+    {
+        string raw = LcuSizeBox.Text.Trim();
+        if (!int.TryParse(raw, out int sizeMb) || sizeMb < 0)
+        {
+            // Non-numeric / negative input: restore the current saved value so the field snaps back.
+            LcuSizeBox.Text = _settingsStore?.Load().MonthlyCu?.ExpectedSizeMb.ToString() ?? string.Empty;
+            return;
+        }
+
+        PersistSettings(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.ExpectedSizeMb = sizeMb; });
     }
 
     private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)

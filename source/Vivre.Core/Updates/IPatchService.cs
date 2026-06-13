@@ -93,4 +93,9 @@ public interface IPatchService
         string host,
         int targetUbr,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Read-only precheck (touches no host): is the configured 2016 CU <c>.msu</c> present + correct
+    /// in <paramref name="packageDirectory"/>? Lets the UI guide the operator to drop the file BEFORE a Stage
+    /// runs, so a missing package never starts a sweep. <see cref="LcuPackageStatus.Found"/> = ready.</summary>
+    LcuPackageResolution CheckLcuPackage(string packageDirectory, LcuTarget target);
 }
