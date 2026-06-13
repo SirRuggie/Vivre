@@ -210,9 +210,10 @@ namespace Vivre.UpdateAgent
                 for (int i = 0; i < cabs.Length; i++)
                 {
                     string cab = cabs[i];
-                    string label = cabs.Length > 1
-                        ? "Staging update (" + (i + 1) + "/" + cabs.Length + ")"
-                        : "Staging update";
+                    // Phase label: a servicing-stack (SSU) cab installs first and is named so the operator
+                    // sees what each step is doing; everything else is the LCU itself.
+                    bool isSsu = Path.GetFileName(cab).IndexOf("SSU", StringComparison.OrdinalIgnoreCase) >= 0;
+                    string label = isSsu ? "Installing servicing stack" : "Staging update";
                     int exit = RunDism("/online /add-package /packagepath:\"" + cab + "\" /norestart /english",
                         progress, "Staging", label);
 
@@ -242,6 +243,7 @@ namespace Vivre.UpdateAgent
 
                 // Success exits, but confirm a pending reboot was actually registered — otherwise the
                 // "apply" was a silent no-op and the box is NOT reboot-ready (do not mislabel it).
+                progress.Write("Staging", "Waiting for reboot-ready signal…", 100, 1, 0, 0, false);
                 if (!IsCbsRebootPending())
                 {
                     progress.Write("Error",
@@ -291,7 +293,7 @@ namespace Vivre.UpdateAgent
                 catch (UnauthorizedAccessException) { /* same: best-effort pre-clean */ }
             }
 
-            progress.Write("Staging", "Extracting update package…", 0, 1, 0, 0, false);
+            progress.Write("Staging", "Extracting update…", 0, 1, 0, 0, false);
 
             int exit = RunTool("expand.exe", "\"" + msuPath + "\" -F:*.cab \"" + dir + "\"");
             if (exit != 0)
