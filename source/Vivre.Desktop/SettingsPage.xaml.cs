@@ -43,6 +43,9 @@ public partial class SettingsPage : UserControl
         AutoToggle.IsChecked = s.AutoCheckOnLoad;
         WugServerBox.Text = s.WugServer;
         PackagesFolderBox.Text = s.PackagesFolder;
+        LcuKbBox.Text = s.MonthlyCu?.Kb ?? string.Empty;
+        LcuUbrBox.Text = s.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
+        LcuPackagesFolderBox.Text = s.LcuPackagesFolder;
 
         // Inline version in the Help & about expander.
         VersionText.Text = $"Vivre {AboutWindow.RunningVersion()}";
@@ -145,6 +148,51 @@ public partial class SettingsPage : UserControl
 
         PackagesFolderBox.Text = dialog.FolderName;
         PersistSettings(s => s.PackagesFolder = dialog.FolderName);
+    }
+
+    // ── Server 2016 cumulative update ──────────────────────────────────────
+
+    private void OnLcuKbChanged(object sender, RoutedEventArgs e)
+    {
+        string value = LcuKbBox.Text.Trim();
+        PersistSettings(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.Kb = value; });
+    }
+
+    private void OnLcuUbrChanged(object sender, RoutedEventArgs e)
+    {
+        string raw = LcuUbrBox.Text.Trim();
+        if (!int.TryParse(raw, out int ubr))
+        {
+            // Non-numeric input: snap the field back to the saved value rather than persisting junk.
+            LcuUbrBox.Text = _settingsStore?.Load().MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
+            return;
+        }
+
+        PersistSettings(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.TargetUbr = ubr; });
+    }
+
+    private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)
+    {
+        string value = LcuPackagesFolderBox.Text.Trim();
+        PersistSettings(s => s.LcuPackagesFolder = value);
+    }
+
+    private void OnBrowseLcuPackagesFolder(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFolderDialog { Title = "Pick the CU package folder (.msu drop location)" };
+        string? current = LcuPackagesFolderBox.Text.Trim();
+        if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+        {
+            dialog.InitialDirectory = current;
+        }
+
+        if (dialog.ShowDialog(_ownerWindow) != true)
+        {
+            return;
+        }
+
+        LcuPackagesFolderBox.Text = dialog.FolderName;
+        PersistSettings(s => s.LcuPackagesFolder = dialog.FolderName);
     }
 
     // ── Tools ──────────────────────────────────────────────────────────────

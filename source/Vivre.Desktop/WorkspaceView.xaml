@@ -257,6 +257,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- Mode chips removed: tab mode is now fixed by the Fleet section (Health = Machines view,
@@ -352,6 +353,22 @@
                     </StackPanel>
                 </ToggleButton>
 
+                <!-- Server 2016 chip: self-populating — appears (Collapsed by default) only once a vitals
+                     check has confirmed at least one 14393 box in this tab; unread boxes never count. -->
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Server2016}"
+                              Unchecked="OnFilterChipUnchecked"
+                              ToolTip="Confirmed Windows Server 2016 (build 14393) — the full-package cumulative-update lane. Run Check Vitals on a box first if it isn't here yet."
+                              Visibility="{Binding HasServer2016, Converter={StaticResource BoolToVis}}"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Server2016}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="Box24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock VerticalAlignment="Center"
+                                   Text="{Binding Server2016Count, StringFormat='Server 2016 ({0})'}" />
+                    </StackPanel>
+                </ToggleButton>
+
                 <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            Text="{Binding FilterStatus}"
@@ -363,6 +380,84 @@
                        Click="OnSelectShown"
                        ToolTip="Select every row currently shown by the filter, so you can act on just that subset (e.g. filter to Errors, Select shown, then Install)." />
             </Grid><!-- end filter sub-row Grid -->
+
+            <!-- Server 2016 action bar — inner row 2, directly under the chips. Collapsed by default;
+                 visible ONLY while the Server 2016 chip is the active filter (the Style trigger below),
+                 so it takes no height under any other chip. Deliberately hosted INSIDE the filter-bar
+                 grid: no outer-row re-indexing, no other element's Grid.Row changes. -->
+            <Border Grid.Row="2"
+                    Margin="0,0,0,4"
+                    Padding="12,8"
+                    CornerRadius="6"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
+                    BorderThickness="1">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <!-- BOTH conditions: the chip is active AND 2016 boxes still exist. The second
+                                 guards the orphan case — if the last 2016 box leaves the tab while this
+                                 filter is active, the chip collapses and the bar must vanish with it, not
+                                 float (buttons dead) over the empty grid. -->
+                            <MultiDataTrigger>
+                                <MultiDataTrigger.Conditions>
+                                    <Condition Binding="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Server2016}}" Value="True" />
+                                    <Condition Binding="{Binding HasServer2016}" Value="True" />
+                                </MultiDataTrigger.Conditions>
+                                <Setter Property="Visibility" Value="Visible" />
+                            </MultiDataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel>
+                    <!-- This month's CU + where the package goes -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <ui:SymbolIcon Symbol="Box24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"
+                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                        <TextBlock VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="This month's CU:" />
+                        <TextBlock VerticalAlignment="Center" FontSize="12" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                                   Text="{Binding MonthlyCuDisplay, Mode=OneWay}" />
+                        <TextBlock VerticalAlignment="Center" FontSize="11" Margin="12,0,0,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="{Binding LcuPackagesFolder, Mode=OneWay, StringFormat='Drop the .msu in {0}'}" />
+                    </StackPanel>
+                    <!-- Workflow caption + the four actions -->
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock VerticalAlignment="Center" FontSize="11" Margin="0,0,12,0"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   Text="Clean up (if tight on disk) → Stage today → Reboot Wave tonight → Verify." />
+                        <ui:Button Content="Clean up"
+                                   Icon="{ui:SymbolIcon Broom24}"
+                                   Margin="0,0,4,0"
+                                   IsEnabled="{Binding HasServer2016, Mode=OneWay}"
+                                   Command="{Binding CleanUp2016Command}"
+                                   ToolTip="Free component-store space on the selected 2016 boxes (or all 2016 if none selected). Safe to run any time — never reboots." />
+                        <ui:Button Content="Stage"
+                                   Icon="{ui:SymbolIcon ArrowDownload24}"
+                                   Appearance="Primary"
+                                   Margin="0,0,4,0"
+                                   IsEnabled="{Binding HasServer2016, Mode=OneWay}"
+                                   Command="{Binding Stage2016Command}"
+                                   ToolTip="Stage this month's CU on the selected 2016 boxes (or all 2016 if none selected). Delivers + installs but does NOT reboot — safe during business hours." />
+                        <ui:Button x:Name="RebootWaveButton"
+                                   Content="Reboot Wave"
+                                   Icon="{ui:SymbolIcon ArrowClockwise24}"
+                                   Margin="0,0,4,0"
+                                   IsEnabled="False"
+                                   Click="OnRebootWave2016"
+                                   ToolTip="Select the 2016 box(es) you want to reboot, then click. Reboots + commits the selected staged boxes; confirms first — run overnight. Disabled until boxes are selected." />
+                        <ui:Button Content="Verify"
+                                   Icon="{ui:SymbolIcon CheckmarkCircle24}"
+                                   IsEnabled="{Binding HasServer2016, Mode=OneWay}"
+                                   Command="{Binding Verify2016Command}"
+                                   ToolTip="Read each 2016 box's build and confirm the CU committed. Read-only — safe to run any time." />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
         </Grid><!-- end outer filter bar Grid -->
 
         <!-- P: amber "Checking vitals" banner — Row 1 (the now-empty layout band between filter and grids).
@@ -609,6 +704,11 @@
                 <DataGridTemplateColumn Header="Status" Width="Auto" MinWidth="110" SortMemberPath="PatchState">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
+                            <!-- Pill + (2016-only) STAGED tag side by side. The tag is Collapsed by default and
+                                 shows ONLY when this row is a confirmed 2016 box (OsBuild 14393) AND reboot-pending
+                                 — i.e. the CU was staged by the 2016 lane and awaits the operator's Reboot Wave.
+                                 A plain (non-2016) reboot-pending row never shows it. -->
+                            <StackPanel Orientation="Horizontal">
                             <!-- Colored pill: glanceable per-machine state.
                                  DataTriggers + DynamicResource so colors re-resolve on theme switch. -->
                             <Border CornerRadius="8" Padding="8,1" Margin="6,2" HorizontalAlignment="Left">
@@ -680,6 +780,28 @@
                                     </TextBlock.Style>
                                 </TextBlock>
                             </Border>
+                            <Border CornerRadius="4" Padding="6,1" Margin="0,2,6,2" VerticalAlignment="Center">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding PatchState}" Value="RebootPending" />
+                                                    <Condition Binding="{Binding OsBuild}" Value="14393" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="STAGED — needs Reboot Wave" FontSize="10" FontWeight="SemiBold"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+                            </Border>
+                            </StackPanel>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
