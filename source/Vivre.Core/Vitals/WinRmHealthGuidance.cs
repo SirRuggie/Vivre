@@ -40,7 +40,7 @@ public static class WinRmHealthGuidance
         ],
         WinRmHealth.WinRmUnavailable =>
         [
-            "No action required — vitals, scan and install all work over DCOM on your current login.",
+            "Vitals read over DCOM. Scan and install fall back to the on-box agent over SMB if WinRM is down (requires SMB/445 reachable on your current login).",
             "If it persists, run 'winrm quickconfig' on the host — the WinRM service is stopped or misconfigured.",
             "A one-off “remote session ended” is transient and clears on the next Check Vitals.",
         ],

@@ -79,6 +79,20 @@ public sealed class WuaUpdateLane
             // result shape; the degradation is surfaced only through Vitals, never on this result.
             return await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
         }
+        catch (RemoteSessionLostException)
+        {
+            // WinRM is down for a NON-Kerberos reason (service stopped/misconfigured, the box unreachable
+            // over WinRM, or the session dropped mid-scan). A scan is READ-ONLY, so it is always safe to
+            // retry over the SMB + SCM agent on any session loss — there is no install to double-apply.
+            // Per-attempt only: unlike the stable Kerberos condition (which RoutingPowerShellHost caches as
+            // SmbDcom), a generic WinRM drop is often transient and is deliberately NOT cached, so the host
+            // returns to the fast WinRM path automatically once WinRM recovers (mirrors VitalsProbe).
+            HostPatchStatus viaSmb = await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
+            return viaSmb.Phase == PatchPhase.Error
+                ? HostPatchStatus.Failed(
+                    $"Can't reach {host} on either transport — WinRM is down and the SMB agent fallback also failed ({viaSmb.Message}).")
+                : viaSmb;
+        }
 
         if (result.HadErrors && result.Output.Count == 0)
         {
@@ -294,11 +308,50 @@ public sealed class WuaUpdateLane
             await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
             return failed;
         }
+        catch (RemoteSessionLostException ex) when (ex.AtConnect && !progressSeen && options.RunBehavior != RunBehavior.ScheduleAt)
+        {
+            // CONNECT-TIME WinRM failure on an immediate install/uninstall: the WinRM/PSRP runspace never
+            // opened (ex.AtConnect), so the SYSTEM task was never dropped, registered, or started on the
+            // box — nothing is in flight. This is the ONLY session-loss it is safe to retry over the SMB +
+            // SCM agent for a state-changing op; a mid-run drop (ex.AtConnect == false) falls through to the
+            // no-fallback catch below, because re-running could double-apply / collide servicing
+            // transactions. !progressSeen is belt-and-suspenders (AtConnect already implies it). Per-attempt
+            // only: we do NOT cache the host as SmbDcom (a generic WinRM drop is often transient; only the
+            // stable Kerberos condition is cached, by RoutingPowerShellHost), so the box returns to the fast
+            // WinRM path once WinRM recovers. Stop the watchdog first so it can't trip during the SMB run.
+            watchdogCts.Cancel();
+            HostPatchStatus viaSmb = string.Equals(mode, "Uninstall", StringComparison.OrdinalIgnoreCase)
+                ? await _smb.UninstallAsync(host, options, progress, cancellationToken).ConfigureAwait(false)
+                : await _smb.InstallAsync(host, options, progress, cancellationToken).ConfigureAwait(false);
+            if (viaSmb.Phase == PatchPhase.Error)
+            {
+                // FIX 4: WinRM is down AND the SMB agent fallback failed (e.g. 445 blocked / box offline) —
+                // name the dual-transport failure rather than a bare SMB IO string.
+                var both = HostPatchStatus.Failed(
+                    $"Can't reach {host} on either transport — WinRM is down and the SMB agent fallback also failed ({viaSmb.Message}).");
+                progress.Report(both);
+                return both;
+            }
+
+            return viaSmb;
+        }
+        catch (RemoteSessionLostException ex) when (ex.AtConnect && options.RunBehavior == RunBehavior.ScheduleAt)
+        {
+            // CONNECT-TIME failure on a SCHEDULED install: nothing was registered (the runspace never
+            // opened), and the SMB agent lane can't schedule (it runs immediately) — so we must NOT fall
+            // back and silently lose the schedule (or turn it into an immediate run). Surface a clear
+            // message; no cleanup needed (nothing was created on the box).
+            var notScheduled = HostPatchStatus.Failed(
+                $"Couldn't reach {host} over WinRM to set up the scheduled update, and scheduling isn't available over the SMB agent fallback. Bring WinRM back to schedule it, or run the update now.");
+            progress.Report(notScheduled);
+            return notScheduled;
+        }
         catch (RemoteSessionLostException)
         {
-            // The remote session died unexpectedly (target rebooted / WinRM dropped) — distinct
-            // from a user Stop ("Cancelled") and from a genuine worker error. Don't leak the raw
-            // "The pipeline has been stopped." SDK string.
+            // A MID-RUN session drop (ex.AtConnect == false): the install task may already be running on
+            // the box, so re-running it over the SMB agent could double-apply / collide servicing
+            // transactions — do NOT fall back. (Also defensively covers the impossible AtConnect-but-
+            // progress-seen case.) Don't leak the raw "The pipeline has been stopped." SDK string.
             var lost = HostPatchStatus.Failed(
                 $"Lost connection to {host} — the remote session ended; the target may have rebooted or WinRM is unhealthy. Re-scan once it's back.");
             progress.Report(lost);

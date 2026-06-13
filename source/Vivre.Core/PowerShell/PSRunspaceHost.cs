@@ -133,8 +133,10 @@ public sealed class PSRunspaceHost : IPowerShellHost
 
             // Connect-phase failure (e.g. WinRM/PSRP shell init on a degraded target — the
             // InitialSessionState type-initializer / MaxShellsPerUser case). Translate into a
-            // typed, actionable exception instead of letting the raw SDK string propagate.
-            throw TranslateRemotingException(ex, host);
+            // typed, actionable exception instead of letting the raw SDK string propagate. atConnect:
+            // true — the runspace never opened, so nothing ran on the target (callers that fall back to
+            // another transport for a state-changing op rely on this to know it's safe to retry).
+            throw TranslateRemotingException(ex, host, atConnect: true);
         }
 
         // Connect succeeded. Ownership of the runspace transfers to RunInRunspaceAsync.
@@ -204,7 +206,8 @@ public sealed class PSRunspaceHost : IPowerShellHost
         catch (Exception ex)
         {
             runspace.Dispose();
-            throw TranslateRemotingException(ex, host);
+            // atConnect: true — see RunRemoteAsync's connect catch; the runspace never opened.
+            throw TranslateRemotingException(ex, host, atConnect: true);
         }
 
         // Connect succeeded. Ownership of the runspace transfers to RunInRunspaceAsync.
@@ -226,7 +229,7 @@ public sealed class PSRunspaceHost : IPowerShellHost
     /// don't recognise are returned <em>unchanged</em>, so the existing "Cancelled" path and
     /// genuine in-script errors are untouched.
     /// </summary>
-    internal static Exception TranslateRemotingException(Exception ex, string host)
+    internal static Exception TranslateRemotingException(Exception ex, string host, bool atConnect = false)
     {
         if (ex is OperationCanceledException)
         {
@@ -260,7 +263,7 @@ public sealed class PSRunspaceHost : IPowerShellHost
         // genuine in-script error we must not mislabel as a lost connection.
         if (ex is PSRemotingTransportException or PipelineStoppedException)
         {
-            return new RemoteSessionLostException(host, ex);
+            return new RemoteSessionLostException(host, ex, atConnect);
         }
 
         return ex;
