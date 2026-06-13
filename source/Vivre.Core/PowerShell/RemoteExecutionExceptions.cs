@@ -87,3 +87,21 @@ public sealed class KerberosWrongPrincipalException : Exception
     /// <summary>The host whose Kerberos WinRM authentication failed.</summary>
     public string Host { get; }
 }
+
+/// <summary>
+/// Classifies a remoting failure as "WinRM is unusable on this host right now" — either a Kerberos
+/// rejection (<see cref="KerberosWrongPrincipalException"/>, e.g. the Vision boxes whose http SPN is owned
+/// by a service account) or a generic connect-time/transport loss (<see cref="RemoteSessionLostException"/>,
+/// e.g. the WinRM service is down / 0x80338012). Single-call operations that have NO SMB/DCOM fallback
+/// (ConfigMgr client actions, the software/custom-column probes, Run Script) use this to gate the failure
+/// with a plain, actionable message instead of leaking raw SSPI text. Vitals and the scan/install lanes
+/// catch the typed exceptions directly and reroute, so they don't go through this.
+/// </summary>
+public static class RemoteFailureClassifier
+{
+    /// <summary>True when the exception means WinRM can't be used on this host (a Kerberos rejection or a
+    /// connect-time/transport loss). <see cref="RemoteShellInitException"/> is deliberately excluded — it
+    /// carries its own actionable "reboot the target" guidance, not a raw SSPI code.</summary>
+    public static bool IsWinRmUnavailable(this Exception ex) =>
+        ex is KerberosWrongPrincipalException or RemoteSessionLostException;
+}

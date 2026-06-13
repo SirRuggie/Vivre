@@ -258,6 +258,24 @@ public class PSRunspaceHostTests
         Assert.IsType<RemoteSessionLostException>(translated);
     }
 
+    [Fact]
+    public void IsWinRmUnavailable_true_for_kerberos_and_session_lost()
+    {
+        // The two failures the no-fallback ops gate on (Kerberos rejection + connect-time/transport loss).
+        Assert.True(new KerberosWrongPrincipalException("H", new Exception()).IsWinRmUnavailable());
+        Assert.True(new RemoteSessionLostException("H", new Exception()).IsWinRmUnavailable());
+        Assert.True(new RemoteSessionLostException("H", new Exception(), atConnect: true).IsWinRmUnavailable());
+    }
+
+    [Fact]
+    public void IsWinRmUnavailable_false_for_shell_init_and_unrelated()
+    {
+        // Shell-init carries its own "reboot the target" guidance; unrelated errors aren't WinRM-unavailable.
+        Assert.False(new RemoteShellInitException("H", new Exception()).IsWinRmUnavailable());
+        Assert.False(new InvalidOperationException("boom").IsWinRmUnavailable());
+        Assert.False(new OperationCanceledException().IsWinRmUnavailable());
+    }
+
     // --- execute-phase abandon: no unobserved task exceptions (Fix 2 regression guard) ---
 
     /// <summary>

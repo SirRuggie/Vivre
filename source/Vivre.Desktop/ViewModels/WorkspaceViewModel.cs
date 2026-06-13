@@ -1303,6 +1303,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.SoftwareCheck = "cancelled";
                 throw;
             }
+            catch (Exception ex) when (ex.IsWinRmUnavailable())
+            {
+                computer.SoftwareFound = null;
+                computer.SoftwareCheck = "WinRM unavailable";
+                computer.LastError = "WinRM is broken on this box, so the software check can't run remotely here.";
+                _activity.Warn(computer.Name, $"Software check '{query}' skipped — WinRM unavailable on this box.");
+            }
             catch (Exception ex)
             {
                 computer.SoftwareFound = null;
@@ -1472,6 +1479,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (Exception ex) when (ex.IsWinRmUnavailable())
+        {
+            foreach (CustomColumnSpec spec in specs)
+            {
+                computer.CustomValues[spec.Name] = "WinRM n/a";
+            }
+
+            computer.LastError = "WinRM is broken on this box, so custom columns can't run remotely here.";
+            _activity.Warn(computer.Name, "Custom columns skipped — WinRM unavailable on this box.");
         }
         catch (Exception ex)
         {
@@ -3677,6 +3694,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.LastError = ex.Message;
             _activity.Warn(computer.Name, $"No ConfigMgr client — {ex.Message}");
         }
+        catch (Exception ex) when (ex.IsWinRmUnavailable())
+        {
+            // WinRM is broken on this box (Kerberos/SPN or service down). The ConfigMgr health read can't
+            // run over WinRM here — keep the ping reachability and show a plain message instead of raw SSPI
+            // text. (Vitals still reads over DCOM; the detail Connection callout explains the specifics.)
+            computer.IsOnline = pingOnline;
+            computer.LastStatus = pingOnline ? "Online · WinRM unavailable" : "Offline";
+            computer.LastError = "WinRM is broken on this box, so the health check can't run remotely here.";
+            _activity.Warn(computer.Name, "Health check skipped — WinRM unavailable on this box.");
+        }
         catch (Exception ex)
         {
             // Couldn't reach it over WinRM — fall back to the ping result.
@@ -3934,6 +3961,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 computer.LastStatus = "Cancelled";
                 throw;
+            }
+            catch (Exception ex) when (ex.IsWinRmUnavailable())
+            {
+                // WinRM is broken on this box (Kerberos/SPN or service down) — the ConfigMgr action can't
+                // run over WinRM here. Show a plain message and CONTINUE the loop so one broken box doesn't
+                // abort the action on the rest. (This typed exception previously escaped the
+                // SccmQueryException-only catch and aborted the whole sweep.)
+                computer.LastStatus = "WinRM unavailable";
+                computer.LastError = $"WinRM is broken on this box, so {action.Label} can't run remotely here.";
+                _activity.Warn(computer.Name, $"{action.Label} skipped — WinRM unavailable on this box.");
             }
         }
     }
