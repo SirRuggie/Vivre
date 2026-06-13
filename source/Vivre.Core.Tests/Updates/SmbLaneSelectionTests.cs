@@ -69,6 +69,69 @@ public class SmbLaneSelectionTests
         Assert.Equal(PatchPhase.Available, result.Phase);
     }
 
+    [Fact]
+    public async Task Scan_falls_back_to_the_smb_lane_on_a_generic_session_loss()
+    {
+        // WinRM is down for a NON-Kerberos reason (RemoteSessionLostException). Scan is read-only, so it
+        // must fall back to the SMB agent on ANY session loss — even a mid-run drop (AtConnect == false).
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new SessionLostHost(atConnect: false), agentBytesProvider: () => StubAgent, smbLane: smb);
+
+        HostPatchStatus result = await lane.ScanAsync("WINRM-DOWN", new PatchOptions(), credential: null, CancellationToken.None);
+
+        Assert.Equal("Scan", smb.LastCall);
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal("ran on the SMB lane", result.Message);
+    }
+
+    [Fact]
+    public async Task Install_falls_back_to_the_smb_lane_on_a_connect_time_session_loss()
+    {
+        // The runspace never opened (AtConnect == true), so nothing was dropped/registered/started on the
+        // box — it is safe to retry the install over the SMB agent.
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new SessionLostHost(atConnect: true), agentBytesProvider: () => StubAgent, smbLane: smb);
+
+        HostPatchStatus result = await lane.InstallAsync(
+            "WINRM-DOWN", new PatchOptions(), credential: null, new SyncProgress([]), CancellationToken.None);
+
+        Assert.Equal("Install", smb.LastCall);
+        Assert.Equal("ran on the SMB lane", result.Message);
+    }
+
+    [Fact]
+    public async Task Install_does_NOT_fall_back_on_a_mid_run_session_loss()
+    {
+        // A drop AFTER the runspace opened (AtConnect == false) might leave an install already running on
+        // the box — re-running over the SMB agent could double-apply, so it must NOT fall back.
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new SessionLostHost(atConnect: false), agentBytesProvider: () => StubAgent, smbLane: smb);
+
+        HostPatchStatus result = await lane.InstallAsync(
+            "WINRM-DROPPED", new PatchOptions(), credential: null, new SyncProgress([]), CancellationToken.None);
+
+        Assert.Null(smb.LastCall);
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.Contains("Lost connection", result.Message);
+    }
+
+    [Fact]
+    public async Task A_scheduled_install_does_NOT_fall_back_even_at_connect_time()
+    {
+        // The SMB agent lane can't schedule (it runs immediately), so a scheduled install must never
+        // silently fall back and lose the schedule — even on an otherwise-safe connect-time failure.
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new SessionLostHost(atConnect: true), agentBytesProvider: () => StubAgent, smbLane: smb);
+        var options = new PatchOptions { RunBehavior = RunBehavior.ScheduleAt };
+
+        HostPatchStatus result = await lane.InstallAsync(
+            "WINRM-DOWN", options, credential: null, new SyncProgress([]), CancellationToken.None);
+
+        Assert.Null(smb.LastCall);
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.Contains("scheduling isn't available", result.Message);
+    }
+
     private sealed class RecordingSmbLane : ISmbAgentLane
     {
         public string? LastCall { get; private set; }
@@ -138,6 +201,26 @@ public class SmbLaneSelectionTests
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
             bool useSsl = false, CancellationToken cancellationToken = default) =>
             Task.FromResult(new PSExecutionResult([], [], [], HadErrors: false));
+    }
+
+    /// <summary>A WinRM host that fails every remote call with the generic (NON-Kerberos)
+    /// <see cref="RemoteSessionLostException"/> — "WinRM is down / the session dropped". <paramref name="atConnect"/>
+    /// distinguishes a connect-time failure (the runspace never opened — nothing ran on the box) from a
+    /// mid-run drop, exactly as <see cref="PSRunspaceHost"/>'s connect- vs execute-phase catches do.</summary>
+    private sealed class SessionLostHost(bool atConnect) : IPowerShellHost
+    {
+        public Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new PSExecutionResult([], [], [], HadErrors: false));
+
+        public Task<PSExecutionResult> RunRemoteAsync(
+            string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
+            CancellationToken cancellationToken = default) =>
+            throw new RemoteSessionLostException(host, new Exception("the remote session ended"), atConnect);
+
+        public Task<PSExecutionResult> RunRemoteStreamingAsync(
+            string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
+            bool useSsl = false, CancellationToken cancellationToken = default) =>
+            throw new RemoteSessionLostException(host, new Exception("the remote session ended"), atConnect);
     }
 
     private sealed class SyncProgress(List<HostPatchStatus> sink) : IProgress<HostPatchStatus>

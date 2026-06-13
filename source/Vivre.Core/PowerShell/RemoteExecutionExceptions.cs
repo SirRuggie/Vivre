@@ -9,12 +9,25 @@ namespace Vivre.Core.PowerShell;
 /// </summary>
 public sealed class RemoteSessionLostException : Exception
 {
-    public RemoteSessionLostException(string host, Exception inner)
+    public RemoteSessionLostException(string host, Exception inner, bool atConnect = false)
         : base($"Lost connection to {host} — the remote session ended (the target may have rebooted or WinRM is unhealthy).", inner)
-        => Host = host;
+    {
+        Host = host;
+        AtConnect = atConnect;
+    }
 
     /// <summary>The host whose session was lost.</summary>
     public string Host { get; }
+
+    /// <summary>
+    /// True when the failure happened at CONNECT time — the WinRM/PSRP runspace never opened, so <b>no</b>
+    /// remote script ran on the target (nothing was dropped, registered, or started). This is the only
+    /// session-loss it is safe to retry over a different transport for a state-changing op like install:
+    /// a mid-run drop (<see langword="false"/>) may have left work already in flight on the box, so
+    /// re-running it elsewhere could double-apply. Set by <see cref="PSRunspaceHost"/>'s connect-phase
+    /// catch; the execute-phase catch leaves it <see langword="false"/>. (Scan is read-only and ignores it.)
+    /// </summary>
+    public bool AtConnect { get; }
 }
 
 /// <summary>
