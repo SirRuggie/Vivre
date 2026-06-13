@@ -7,12 +7,13 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="WhatsUp Gold maintenance"
-        Height="600" Width="520"
-        MinHeight="480" MinWidth="460"
+        Height="680" Width="560"
+        MinHeight="520" MinWidth="480"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
 
     <Grid>
         <Grid.RowDefinitions>

@@ -7,7 +7,7 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Schedule install"
-        Height="280" Width="440"
+        SizeToContent="Height" Width="440" MinWidth="400" MaxWidth="640"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"

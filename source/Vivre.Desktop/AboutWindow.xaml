@@ -6,12 +6,13 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         mc:Ignorable="d"
         Title="About Vivre"
-        Height="780" Width="1180"
-        MinHeight="540" MinWidth="640"
+        Height="720" Width="860"
+        MinHeight="540" MinWidth="640" MaxWidth="1100"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="None"
         WindowCornerPreference="Round"
         WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize"
         ShowInTaskbar="False">
 
     <!-- Layered: blurred hero image, a dark gradient scrim, then the content (white text). -->
