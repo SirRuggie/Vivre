@@ -150,6 +150,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int ScanPerHostTimeoutSeconds = 300;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
+    // Caps the monitor's per-pass reachability fan-out. The monitor pings (and DCOM-probes) every row
+    // every MonitorIntervalSeconds; a 300-box list would otherwise launch 300 concurrent probes at once,
+    // and N open tabs would multiply that. Shared across tabs (like _rebootProbeThrottle) so the whole app
+    // stays bounded; 32 is wide enough that a single tab still sweeps quickly. The reboot-pending probe
+    // keeps its own separate, smaller cap above.
+    private static readonly SemaphoreSlim _monitorThrottle = new(32);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
     // MaxShellsPerUser). Value = the next time we'll RE-TEST it: we back off from probing every 20s
     // (hammering a degraded box makes it worse) but still retry every few minutes so we notice when
@@ -2015,6 +2021,32 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             fbt.Tick -= OnFleetBandHoldTick;
             _fleetBandHoldTimer = null;
         }
+
+        // Defensive: drop the collection, per-row, focus, and checklist subscriptions wired up in the
+        // constructor and as rows/focus change. These are tab-local cycles the GC can already reclaim once
+        // the tab is unreferenced, so they aren't a live leak — but unhooking them here is the same hygiene
+        // as the view/timer unsubscribes above, and mirrors RetrackChecklist's own teardown.
+        Computers.CollectionChanged -= OnComputersChanged;
+        foreach (Computer c in Computers)
+        {
+            c.PropertyChanged -= OnComputerStateChanged;
+        }
+
+        if (FocusedComputer is { } focused)
+        {
+            focused.PropertyChanged -= OnFocusedComputerPropertyChanged;
+        }
+
+        if (_trackedChecklist is not null)
+        {
+            _trackedChecklist.CollectionChanged -= OnChecklistCollectionChanged;
+            foreach (SelectableUpdate u in _trackedChecklist)
+            {
+                u.PropertyChanged -= OnChecklistItemChanged;
+            }
+
+            _trackedChecklist = null;
+        }
     }
 
     /// <summary>Drops the offline rows from the grid.</summary>
@@ -3277,7 +3309,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
 
         bool? previous = computer.IsOnline;
-        (bool online, string? error) = await ProbeReachabilityAsync(computer, token);
+        // Throttle the reachability fan-out so a full list doesn't launch one ping/DCOM probe per row at
+        // once every pass (the manual Ping All path is separate). The reboot-pending probe further down
+        // holds its own throttle, so releasing here first keeps the two caps independent.
+        bool online;
+        string? error;
+        await _monitorThrottle.WaitAsync(token);
+        try
+        {
+            (online, error) = await ProbeReachabilityAsync(computer, token);
+        }
+        finally
+        {
+            _monitorThrottle.Release();
+        }
 
         computer.IsOnline = online;
         computer.LastError = online ? null : error;
@@ -3299,7 +3344,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // the brief post-boot recheck window. A degraded host is backed off (re-tested only every
         // DegradedRetryInterval) but DOES get retried so we notice it recovered.
         bool degraded = _degradedHosts.TryGetValue(computer.Name, out DateTime retryAt);
-        bool backoffActive = degraded && DateTime.Now < retryAt;
+        bool backoffActive = degraded && DateTime.UtcNow < retryAt;
         bool degradedRetryDue = degraded && !backoffActive;
         // A Kerberos-rejected box can never answer a WinRM probe (its SPN is broken by design) — don't
         // probe it at all, or it spams "Reboot probe failing" every cycle. Its reboot state comes from
@@ -3318,8 +3363,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 if (recheck)
                 {
                     // Stop the post-boot rechecks once we get a clean (not-pending) read; otherwise
-                    // spend down the budget so a stuck-pending box doesn't get probed forever.
-                    if (computer.RebootRequired == false)
+                    // spend down the budget so a stuck-pending box doesn't get probed forever. When the
+                    // last recheck is spent (budget would hit 0), drop the entry rather than leaving a
+                    // stale zero in the map — a genuine reboot reopens the window via the offline→online
+                    // reset above.
+                    if (computer.RebootRequired == false || budget <= 1)
                     {
                         _rebootRecheckBudget.TryRemove(computer.Name, out _);
                     }
@@ -3470,7 +3518,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // diagnosable instead of silently dark. The actionable reboot-pending case gets a specific
             // row message; other failures just get the back-off + a single activity-log line.
             bool firstTime = !_degradedHosts.ContainsKey(computer.Name);
-            _degradedHosts[computer.Name] = DateTime.Now + DegradedRetryInterval;
+            _degradedHosts[computer.Name] = DateTime.UtcNow + DegradedRetryInterval;
             if (firstTime)
             {
                 if (ex is RemoteShellInitException)

@@ -108,6 +108,10 @@ public sealed class AppSettingsStore
     // toggle) is visible to the next Load() without another disk read.
     private static AppSettings? _cache;
 
+    // Serializes the background disk writes so two near-simultaneous Save() calls can't interleave and
+    // corrupt settings.json. The last writer wins (its serialized snapshot is what lands on disk).
+    private static readonly object _writeLock = new();
+
     public AppSettingsStore()
     {
         string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vivre");
@@ -124,7 +128,28 @@ public sealed class AppSettingsStore
 
     public void Save(AppSettings settings)
     {
-        File.WriteAllText(_path, JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true }));
+        // Serialize and re-seat the cache synchronously (on the calling/UI thread) so the next Load()
+        // sees the new value immediately and the JSON is taken from a stable snapshot — only the disk
+        // write is pushed off the UI thread so saving a setting never blocks the UI on file I/O.
+        string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
         _cache = settings;
+        string path = _path;
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                lock (_writeLock)
+                {
+                    File.WriteAllText(path, json);
+                }
+            }
+            catch (Exception ex)
+            {
+                // No logger here (this is below the activity log); the in-memory cache still holds the
+                // change, so a failed write only means it isn't persisted across restart. Surface it to
+                // the debugger output rather than swallowing silently.
+                System.Diagnostics.Debug.WriteLine($"AppSettingsStore.Save: failed to write {path}: {ex.Message}");
+            }
+        });
     }
 }

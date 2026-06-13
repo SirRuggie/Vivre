@@ -723,15 +723,24 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        try
+        // Build the CSV on the UI thread (it reads data-bound row/VM state), then push the disk write off
+        // the UI thread so a large report never freezes the grid. The activity log is the progress
+        // indicator: an "Exporting…" line now, the result when it finishes (it marshals to the UI itself).
+        string csv = vm.BuildSoftwareReportCsv();
+        string fileName = dialog.FileName;
+        vm.Activity.Info(null, $"Exporting software report to {fileName}…");
+        _ = Task.Run(() =>
         {
-            File.WriteAllText(dialog.FileName, vm.BuildSoftwareReportCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            vm.Activity.Info(null, $"Exported software report to {dialog.FileName}");
-        }
-        catch (Exception ex)
-        {
-            vm.Activity.Error(null, $"Software report export failed: {ex.Message}");
-        }
+            try
+            {
+                File.WriteAllText(fileName, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                vm.Activity.Info(null, $"Exported software report to {fileName}");
+            }
+            catch (Exception ex)
+            {
+                vm.Activity.Error(null, $"Software report export failed: {ex.Message}");
+            }
+        });
     }
 
     /// <summary>Saves the rows currently shown in the grid (respecting the filter) with all visible + custom
@@ -764,15 +773,25 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        try
+        // Build the CSV on the UI thread (it reads data-bound row/VM state), then push the disk write off
+        // the UI thread so a large export never freezes the grid. The activity log is the progress
+        // indicator: an "Exporting…" line now, the result when it finishes (it marshals to the UI itself).
+        string csv = vm.BuildReportCsv();
+        string fileName = dialog.FileName;
+        int rowCount = vm.VisibleRowCount;
+        vm.Activity.Info(null, $"Exporting {rowCount} row(s) to {fileName}…");
+        _ = Task.Run(() =>
         {
-            File.WriteAllText(dialog.FileName, vm.BuildReportCsv(), new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
-            vm.Activity.Info(null, $"Exported {vm.VisibleRowCount} row(s) to {dialog.FileName}");
-        }
-        catch (Exception ex)
-        {
-            vm.Activity.Error(null, $"Export failed: {ex.Message}");
-        }
+            try
+            {
+                File.WriteAllText(fileName, csv, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true));
+                vm.Activity.Info(null, $"Exported {rowCount} row(s) to {fileName}");
+            }
+            catch (Exception ex)
+            {
+                vm.Activity.Error(null, $"Export failed: {ex.Message}");
+            }
+        });
     }
 
     /// <summary>Opens the Columns manager for the machine grid (hide built-ins, add predefined/custom
