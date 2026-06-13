@@ -2489,7 +2489,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         if (LcuRouting.Is2016(computer.OsBuild))
         {
-            await StageLcuRowAsync(computer, scheduleAt, token).ConfigureAwait(false);
+            // No ConfigureAwait(false): keep the UI context for StageLcuRowAsync's data-bound writes.
+            await StageLcuRowAsync(computer, scheduleAt, token);
             return;
         }
 
@@ -2750,9 +2751,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         var progress = new Progress<HostPatchStatus>(s => ApplyLcuStageStatus(computer, s, target.Kb));
         try
         {
+            // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
+            // (live-filtered properties), so the continuation must resume on the captured (UI) context.
             HostPatchStatus final = await _patch
-                .StageLcuAsync(computer.Name, settings.LcuPackagesFolder, target, _patchOptions, progress, token)
-                .ConfigureAwait(false);
+                .StageLcuAsync(computer.Name, settings.LcuPackagesFolder, target, _patchOptions, progress, token);
             ApplyLcuStageStatus(computer, final, target.Kb);
 
             switch (final.Phase)
@@ -2836,9 +2838,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
         try
         {
+            // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
+            // (live-filtered properties), so the continuation must resume on the captured (UI) context.
             HostPatchStatus final = await _patch
-                .ComponentCleanupLcuAsync(computer.Name, _patchOptions, progress, token)
-                .ConfigureAwait(false);
+                .ComponentCleanupLcuAsync(computer.Name, _patchOptions, progress, token);
             ApplyStatus(computer, final);
             if (final.Phase == PatchPhase.Done)
             {
@@ -2882,9 +2885,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
         try
         {
+            // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
+            // (live-filtered properties), so the continuation must resume on the captured (UI) context.
             HostPatchStatus final = await _patch
-                .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token)
-                .ConfigureAwait(false);
+                .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token);
             ApplyStatus(computer, final);
             if (final.Phase == PatchPhase.Done)
             {
@@ -2925,7 +2929,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdateMessage = "Verifying build…";
         try
         {
-            LcuVerifyResult result = await _patch.VerifyLcuAsync(computer.Name, targetUbr, token).ConfigureAwait(false);
+            // No ConfigureAwait(false): the result writes below mutate data-bound Computer state
+            // (live-filtered properties), so the continuation must resume on the captured (UI) context.
+            LcuVerifyResult result = await _patch.VerifyLcuAsync(computer.Name, targetUbr, token);
             switch (result.Outcome)
             {
                 case LcuVerifyOutcome.Verified:
