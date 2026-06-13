@@ -15,6 +15,7 @@ using Vivre.Core.Columns;
 using Vivre.Core.Models;
 using Vivre.Core.Sccm;
 using Vivre.Core.Scripts;
+using Vivre.Core.Updates;
 using Vivre.Desktop.ViewModels;
 using MenuItem = System.Windows.Controls.MenuItem;
 using MessageBox = Wpf.Ui.Controls.MessageBox;
@@ -892,6 +893,11 @@ public partial class WorkspaceView : UserControl
         {
             vm.SetSelection(grid.SelectedItems.OfType<Computer>());
 
+            // The Reboot Wave button is physically un-clickable until the operator has explicitly
+            // selected at least one confirmed 2016 box — a production reboot must never be one stray
+            // click away. (The command also acts only on the selection; this is the enable gate.)
+            RebootWaveButton.IsEnabled = vm.SelectedComputers.Any(c => LcuRouting.Is2016(c.OsBuild));
+
             // Drive the Windows Update side panel from the primary (focused) machine row.
             if (grid.SelectedItem is Computer focused)
             {
@@ -907,6 +913,52 @@ public partial class WorkspaceView : UserControl
         DataGrid grid = ViewModel?.IsUpdateMode == true ? UpdateGrid : ComputerGrid;
         grid.Focus();
         grid.SelectAll();
+    }
+
+    /// <summary>
+    /// Server 2016 action bar — Reboot Wave. Production reboot, so the button is never bound straight
+    /// to the command: this handler names the explicitly selected 2016 boxes, confirms, and only invokes
+    /// <c>RebootWave2016Command</c> on the primary result. The command itself also acts only on the
+    /// selection (never "all 2016"), and the button is enabled only while ≥1 2016 row is selected.
+    /// </summary>
+    private async void OnRebootWave2016(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        var selected = vm.SelectedComputers.Where(c => LcuRouting.Is2016(c.OsBuild)).ToList();
+        if (selected.Count == 0)
+        {
+            return; // gate should prevent this; never reboot without an explicit selection
+        }
+
+        // Name every box the operator chose (up to 10 inline, then a count).
+        const int MaxInline = 10;
+        string names = string.Join(", ", selected.Take(MaxInline).Select(c => c.Name));
+        if (selected.Count > MaxInline)
+        {
+            names += $", +{selected.Count - MaxInline} more";
+        }
+
+        var confirm = new MessageBox
+        {
+            Title = "Reboot the selected 2016 servers?",
+            Content = $"This will reboot {selected.Count} Server 2016 machine(s) now:\n\n{names}\n\n"
+                      + "Each box is rebooted gracefully; if one won't go down within 8 minutes it is "
+                      + "forced, to complete the reboot you just ordered. Vivre then tracks each box "
+                      + "until its build confirms the update committed.\n\n"
+                      + "Run this when the boxes are safe to restart (typically overnight).",
+            PrimaryButtonText = "Reboot & commit",
+            CloseButtonText = "Cancel",
+        };
+
+        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary
+            && vm.RebootWave2016Command.CanExecute(null))
+        {
+            vm.RebootWave2016Command.Execute(null);
+        }
     }
 
     private void OnGridRightClick(object sender, MouseButtonEventArgs e)

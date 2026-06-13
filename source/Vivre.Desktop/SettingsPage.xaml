@@ -181,6 +181,57 @@
                 </StackPanel>
             </ui:CardExpander>
 
+            <!-- ── Server 2016 cumulative update (collapsed expander) ──────── -->
+            <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
+                             Icon="{ui:SymbolIcon Box24}"
+                             Header="Server 2016 cumulative update">
+                <StackPanel Margin="0,8,0,0">
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                                  Text="The month's CU the Server 2016 panel stages and verifies. Update the KB and target UBR each cycle; the package itself is a .msu you download from the Microsoft Update Catalog into the folder below." />
+
+                    <!-- KB number -->
+                    <ui:TextBlock Text="KB number" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="LcuKbBox"
+                                PlaceholderText="e.g. KB5094122"
+                                LostFocus="OnLcuKbChanged"
+                                Margin="0,0,0,4" />
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                                  Text="The CU article number, e.g. KB5094122. Used to find the .msu in the package folder and shown in the 2016 panel." />
+
+                    <!-- Target UBR -->
+                    <ui:TextBlock Text="Target UBR (build revision)" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="LcuUbrBox"
+                                PlaceholderText="e.g. 9234"
+                                LostFocus="OnLcuUbrChanged"
+                                Margin="0,0,0,4" />
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                                  Text="The update build revision the box should report after the CU commits, e.g. 9234 → 14393.9234. The Reboot Wave and Verify use this as the pass/fail check." />
+
+                    <!-- Architecture (fixed) -->
+                    <ui:TextBlock Text="Architecture" Margin="0,0,0,4" />
+                    <ui:TextBlock Text="x64" Margin="0,0,0,12"
+                                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+
+                    <!-- CU package folder -->
+                    <ui:TextBlock Text="CU package folder" Margin="0,0,0,4" />
+                    <Grid Margin="0,0,0,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox Grid.Column="0" x:Name="LcuPackagesFolderBox"
+                                    PlaceholderText="e.g. C:\Vivre\VivrePackages"
+                                    LostFocus="OnLcuPackagesFolderChanged"
+                                    Margin="0,0,8,0" />
+                        <ui:Button Grid.Column="1" Content="Browse…"
+                                   Click="OnBrowseLcuPackagesFolder"
+                                   ToolTip="Pick the folder you drop the monthly .msu into." />
+                    </Grid>
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                                  Text="Where you drop the monthly cumulative-update .msu downloaded from the Microsoft Update Catalog. Default: C:\Vivre\VivrePackages. Vivre only reads from here — it never downloads the file itself." />
+                </StackPanel>
+            </ui:CardExpander>
+
             <!-- ── Help &amp; about (collapsed expander) ─────────────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Info24}"

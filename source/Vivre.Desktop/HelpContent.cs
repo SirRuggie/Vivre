@@ -513,6 +513,21 @@ public static class HelpContent
                 "When an operation finishes while you're watching, a banner summarises how many succeeded / failed.",
             ],
         },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Box24, Title = "Patch a Windows Server 2016 box",
+            Keywords = "2016 14393 cumulative cu lcu stage reboot wave verify kb msu catalog",
+            Lines =
+            [
+                "Server 2016 boxes get their monthly OS update through their own lane (regular Windows Update chronically fails on them). Vivre finds them for you:",
+                "1. Check Vitals on your machines — any confirmed 2016 box makes a \"Server 2016 (N)\" filter chip appear.",
+                "2. Click the chip: the grid filters to those boxes and the 2016 action bar shows the month's CU (e.g. KB5094122 / 9234).",
+                "3. Stage (daytime, safe): delivers + installs the CU but does NOT reboot. The row turns amber with \"STAGED — needs Reboot Wave\".",
+                "4. Reboot Wave (night): select the staged boxes, click, and confirm. Each reboots and is tracked until its build confirms the update took.",
+                "5. Verify (any time): re-checks a box's build — use it on anything that came back late.",
+            ],
+            Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update, and drop the Catalog .msu in the CU package folder before staging.",
+        },
 
         // ---------------- Tips & shortcuts ----------------
         new HelpTopic
