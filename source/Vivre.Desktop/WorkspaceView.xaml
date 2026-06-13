@@ -429,13 +429,13 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock VerticalAlignment="Center" FontSize="11" Margin="0,0,12,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                   Text="Clean up (if tight on disk) → Stage today → Reboot Wave tonight → Verify." />
+                                   Text="Clean up → Stage today → Reboot Wave tonight → Verify." />
                         <ui:Button Content="Clean up"
                                    Icon="{ui:SymbolIcon Broom24}"
                                    Margin="0,0,4,0"
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
                                    Command="{Binding CleanUp2016Command}"
-                                   ToolTip="Free component-store space on the selected 2016 boxes (or all 2016 if none selected). Safe to run any time — never reboots." />
+                                   ToolTip="Clears the Windows update backlog (required for 2016 boxes before staging). Never reboots." />
                         <ui:Button Content="Stage"
                                    Icon="{ui:SymbolIcon ArrowDownload24}"
                                    Appearance="Primary"

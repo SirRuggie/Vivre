@@ -525,6 +525,7 @@ public static class HelpContent
                 "3. Stage (daytime, safe): delivers + installs the CU but does NOT reboot. The row turns amber with \"STAGED — needs Reboot Wave\".",
                 "4. Reboot Wave (night): select the staged boxes, click, and confirm. Each reboots and is tracked until its build confirms the update took.",
                 "5. Verify (any time): re-checks a box's build — use it on anything that came back late.",
+                "Why Clean up? Windows Server 2016 accumulates old update pieces in a hidden store over time. Running Clean up tells Windows to clear that backlog before you stage the new CU — without it, staging can stall or hang. It never reboots the box and is safe to run any time.",
             ],
             Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update, and drop the Catalog .msu in the CU package folder before staging.",
         },
