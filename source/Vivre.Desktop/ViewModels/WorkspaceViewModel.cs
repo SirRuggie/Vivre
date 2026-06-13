@@ -1604,6 +1604,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.ScheduledAction = "Reboot";
                     computer.ScheduledNextRun = at;
                     computer.LastStatus = $"Reboot scheduled for {at:g}";
+                    computer.UpdateMessage = FormatScheduledMessage("Reboot", at);
                     _scheduledTasks[computer.Name] = at;
                     _activity.Info(computer.Name, $"Reboot scheduled for {at:g}");
                 }
@@ -2657,12 +2658,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             HostPatchStatus final = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, token);
             ApplyStatus(computer, final);
 
-            // Scheduled (not run now): surface it on the Scheduled-task columns + a clear message.
+            // Scheduled (not run now): record the schedule and surface it as the row message.
             if (scheduleAt is { } when && final.Phase != PatchPhase.Error)
             {
                 computer.ScheduledAction = "Install updates";
                 computer.ScheduledNextRun = when;
-                computer.UpdateMessage = $"Scheduled for {when:g}";
+                computer.UpdateMessage = FormatScheduledMessage(computer.ScheduledAction, when);
                 _scheduledTasks[computer.Name] = when;
             }
 
@@ -3111,6 +3112,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
+    private static string FormatScheduledMessage(string? action, DateTime when)
+    {
+        string verb = action switch
+        {
+            "Reboot" => "Reboot",
+            "Install updates" => "Install",
+            _ => "Task",
+        };
+        return $"{verb} scheduled for {when:g}";
+    }
+
     /// <summary>Writes a <see cref="HostPatchStatus"/> snapshot onto a row, logging phase transitions only.
     /// <paramref name="scopeForScan"/> is set by <see cref="ScanRowAsync"/> so the scan result lands in the
     /// right per-scope cache on <see cref="Computer"/>; null (the Progress&lt;T&gt; callback path) uses the
@@ -3135,6 +3147,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdatePhase = phase;
         computer.UpdateMessage = message;
         computer.UpdateProgress = status.Percent;
+
+        // A scheduled box shows its schedule as the salient fact (matches the "Scheduled" pill). This wins
+        // over the scan/idle message; cleared automatically once the monitor clears ScheduledNextRun.
+        if (computer.ScheduledNextRun is { } schedWhen)
+        {
+            computer.UpdateMessage = FormatScheduledMessage(computer.ScheduledAction, schedWhen);
+        }
 
         if (status.Phase == PatchPhase.Available)
         {
