@@ -239,20 +239,29 @@ public sealed class SmbAgentLane : ISmbAgentLane
         RemoteServiceController? service = null;
         try
         {
-            // 1) Drop into the hardened dir and verify the EXE on the wire matches what we shipped.
-            EnsureHardenedDir(uncDir);
-            CleanStaleRunFiles(uncProgress, uncResult);
-            File.WriteAllBytes(uncExe, agentBytes);
-            File.WriteAllText(uncConfig, configJson, new UTF8Encoding(false));
-            VerifyDroppedExe(uncExe, expectedSha);
-
-            // 1b) AddPackage: copy the full CU .msu into the hardened dir (the big SMB copy) and confirm the
-            // bytes landed before the agent tries to DISM-add it. A short copy = a security agent or a
-            // network blip mid-transfer; surface it rather than staging a truncated package.
-            if (payload is { } pkg && uncPackage is not null)
+            // 1) Drop + verify the agent, and (for AddPackage) copy the CU .msu. This is heavy synchronous
+            // SMB I/O — a 1.7 GB CU copy can take ~90s — so run it on a background thread. Doing it inline
+            // would block whatever thread started the sweep; when a free throttle slot lets the chain run
+            // synchronously that thread is the UI thread, and the app freezes for the whole copy. (Progress
+            // reports still marshal back via IProgress; ConfigureAwait(false) is fine here — the result
+            // writes the caller binds to happen in its own continuation, which keeps the UI context.)
+            await Task.Run(() =>
             {
-                CopyPackage(pkg.SourcePath, uncPackage);
-            }
+                EnsureHardenedDir(uncDir);
+                CleanStaleRunFiles(uncProgress, uncResult);
+                File.WriteAllBytes(uncExe, agentBytes);
+                File.WriteAllText(uncConfig, configJson, new UTF8Encoding(false));
+                VerifyDroppedExe(uncExe, expectedSha);
+
+                // 1b) AddPackage: copy the full CU .msu into the hardened dir (the big SMB copy) and confirm
+                // the bytes landed before the agent DISM-adds it. A short copy = a security agent or a
+                // network blip mid-transfer; surface it rather than staging a truncated package.
+                if (payload is { } pkg && uncPackage is not null)
+                {
+                    progress?.Report(new HostPatchStatus(PatchPhase.Scanning, "Copying package to host…"));
+                    CopyPackage(pkg.SourcePath, uncPackage);
+                }
+            }, cancellationToken).ConfigureAwait(false);
 
             // 2) Create the LocalSystem service and start it. The display name is per-run too: the SCM
             // rejects a duplicate display name (not just a duplicate service name), and concurrent runs

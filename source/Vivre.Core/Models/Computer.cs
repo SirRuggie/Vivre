@@ -202,6 +202,13 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial int? OsBuild { get; set; }
 
+    /// <summary>True once the 2016 full-package lane has successfully STAGED this box this session (set at
+    /// reboot-ready; cleared on a verified commit). It's the signal Verify uses to tell a genuine rollback
+    /// from a box that was simply never staged — <see cref="RebootRequired"/> can't, because the health
+    /// refresh, the reboot-pending probe, and any reboot-required scan all set it for unrelated reboots.
+    /// Code-only (not data-bound), so a plain property rather than an observable one.</summary>
+    public bool StagedThisSession { get; set; }
+
     /// <summary>The full vitals snapshot behind the score, kept off the observable surface for the
     /// triage panel's per-drive / per-event breakdown. Null until vitals are read.</summary>
     public MachineVitals? Vitals { get; set; }

@@ -2797,6 +2797,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             case PatchPhase.PendingReboot:
                 computer.RebootRequired = true; // → amber RebootPending (the staged / action-needed state)
+                computer.StagedThisSession = true; // Verify uses this (not RebootRequired) to tell rollback from never-staged
                 computer.UpdatePhase = PatchPhase.PendingReboot.ToString();
                 computer.UpdateProgress = 100;
                 computer.UpdateError = null;
@@ -2893,6 +2894,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (final.Phase == PatchPhase.Done)
             {
                 computer.RebootRequired = false; // committed — clear the staged/reboot-pending flag (→ green)
+                computer.StagedThisSession = false; // committed — no longer a pending stage
                 _activity.Info(computer.Name, final.Message);
             }
             else if (final.Phase == PatchPhase.Error)
@@ -2936,15 +2938,37 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 case LcuVerifyOutcome.Verified:
                     computer.RebootRequired = false;
+                    computer.StagedThisSession = false; // committed — no longer a pending stage
                     computer.UpdatePhase = PatchPhase.Done.ToString();
                     computer.UpdateMessage = result.Message;
                     break;
                 case LcuVerifyOutcome.WrongBuild:
+                {
+                    // Distinguish "never staged, just unpatched" from "staged + rebooted but rolled back".
+                    // Use StagedThisSession, NOT RebootRequired: the latter is also set by the health refresh,
+                    // the reboot-pending probe, and any reboot-required scan, so it's true for unrelated
+                    // pending reboots and would mislabel a never-staged box as "rolled back".
+                    bool wasStaged = computer.StagedThisSession;
+                    string at = result.CurrentBuild is { } b && result.Ubr is { } u
+                        ? $"{b}.{u}"
+                        : "an unexpected build";
+                    string message = wasStaged
+                        ? $"Rolled back — {computer.Name} returned at {at}, expected .{targetUbr}."
+                        : $"Not yet patched — {computer.Name} is at {at}, expected .{targetUbr}. Run Stage first.";
                     computer.UpdatePhase = PatchPhase.Error.ToString();
-                    computer.UpdateError = result.Message;
-                    computer.UpdateMessage = result.Message;
-                    _activity.Error(computer.Name, result.Message);
+                    computer.UpdateError = message;
+                    computer.UpdateMessage = message;
+                    if (wasStaged)
+                    {
+                        _activity.Error(computer.Name, message);
+                    }
+                    else
+                    {
+                        _activity.Warn(computer.Name, message); // unpatched isn't a failure — it's "stage it"
+                    }
+
                     break;
+                }
                 case LcuVerifyOutcome.Unreachable:
                     // Pingable-but-still-coming-up, or unreachable — a retry, not a failure. Leave the row's
                     // existing state (it may still be staged/amber) and just surface the re-check hint.
