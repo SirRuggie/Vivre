@@ -15,6 +15,10 @@ public class ComputerPatchStateTests
     [InlineData(null, null, PatchState.Idle)]
     [InlineData("Idle", null, PatchState.Idle)]
     [InlineData("Scanning", null, PatchState.Scanning)]
+    // Staging (2016 DISM add-package) and Cleaning (DISM /StartComponentCleanup) get their own chip LABELS
+    // but reduce to the Scanning display-state so the working/colour/Stop/tally logic treats them like a scan.
+    [InlineData("Staging", null, PatchState.Scanning)]
+    [InlineData("Cleaning", null, PatchState.Scanning)]
     [InlineData("Available", null, PatchState.Available)]
     [InlineData("Downloading", null, PatchState.Downloading)]
     [InlineData("Installing", null, PatchState.Installing)]

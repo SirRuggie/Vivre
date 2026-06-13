@@ -275,9 +275,10 @@ public partial class Computer : ObservableObject
         {
             PatchPhase.Error => PatchState.Error,
             PatchPhase.Scanning => PatchState.Scanning,
-            // The 2016 stage (DISM add-package) is its own phase shown as a "Staging" chip label, but
-            // reduces to the same Scanning display-state so colour/tally/Stop "working" logic is unchanged.
-            PatchPhase.Staging => PatchState.Scanning,
+            // The 2016 stage (DISM add-package) and component cleanup (DISM /StartComponentCleanup) are their
+            // own phases shown as distinct chip labels ("Staging"/"Cleaning up"), but reduce to the same
+            // Scanning display-state so colour/tally/Stop "working" logic is unchanged.
+            PatchPhase.Staging or PatchPhase.Cleaning => PatchState.Scanning,
             PatchPhase.Downloading => PatchState.Downloading,
             PatchPhase.Installing => PatchState.Installing,
             PatchPhase.Uninstalling => PatchState.Uninstalling,

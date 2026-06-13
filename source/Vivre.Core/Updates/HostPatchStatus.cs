@@ -27,6 +27,11 @@ public enum PatchPhase
     /// differs).</summary>
     Staging,
 
+    /// <summary>The component store is being cleaned (DISM <c>/StartComponentCleanup</c>, the 2016 "Clean up"
+    /// action). Shown to the operator as "Cleaning up"; like <see cref="Staging"/> it reduces to
+    /// <see cref="PatchState.Scanning"/> for the display-state, so only the chip label differs from a scan.</summary>
+    Cleaning,
+
     /// <summary>Install finished and the box needs a reboot.</summary>
     PendingReboot,
 

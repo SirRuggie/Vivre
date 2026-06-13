@@ -763,6 +763,11 @@
                                                 <DataTrigger Binding="{Binding UpdatePhase}" Value="Staging">
                                                     <Setter Property="Text" Value="Staging" />
                                                 </DataTrigger>
+                                                <!-- Component cleanup also runs as PatchState.Scanning (working/blue);
+                                                     a row mid-cleanup sets UpdatePhase="Cleaning" — show that label. -->
+                                                <DataTrigger Binding="{Binding UpdatePhase}" Value="Cleaning">
+                                                    <Setter Property="Text" Value="Cleaning up" />
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
                                                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                                 </DataTrigger>
