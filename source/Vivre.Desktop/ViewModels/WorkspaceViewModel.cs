@@ -788,6 +788,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(CanInstallAll));
         OnPropertyChanged(nameof(Server2016Count));
         OnPropertyChanged(nameof(HasServer2016));
+        // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
+        if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
         RaiseFleetChanged();
     }
 
@@ -811,6 +813,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             case nameof(Computer.OsBuild):
                 OnPropertyChanged(nameof(Server2016Count));
                 OnPropertyChanged(nameof(HasServer2016));
+                // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
+                if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
                 break;
         }
     }
