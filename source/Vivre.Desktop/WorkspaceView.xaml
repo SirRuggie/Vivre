@@ -502,6 +502,10 @@
              scroll; the overlay is the last sibling (ZIndex 5) so it paints on top, and its panels are
              IsHitTestVisible=False where they have no buttons. -->
         <ui:DataGrid x:Name="ComputerGrid"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     ScrollViewer.CanContentScroll="True"
                      Grid.Row="2"
                      Visibility="{Binding ShowMachineGrid, Converter={StaticResource BoolToVis}}"
                      ItemsSource="{Binding Computers}"
@@ -665,6 +669,10 @@
                 </StackPanel>
             </Border>
             <ui:DataGrid x:Name="UpdateGrid"
+                     VirtualizingPanel.IsVirtualizing="True"
+                     VirtualizingPanel.VirtualizationMode="Recycling"
+                     VirtualizingPanel.ScrollUnit="Pixel"
+                     ScrollViewer.CanContentScroll="True"
                      ItemsSource="{Binding Computers}"
                      AutoGenerateColumns="False"
                      IsReadOnly="True"
