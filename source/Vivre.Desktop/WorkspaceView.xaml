@@ -279,7 +279,80 @@
                             PlaceholderText="Filter by name…"
                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
 
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center">
+            <!-- Health (machine mode) chip bar — hidden in Patching mode. No Updates chip, no Server 2016 chip. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+                        Visibility="{Binding IsMachineMode, Converter={StaticResource BoolToVis}}">
+                <ToggleButton Style="{StaticResource FilterChip}" Margin="0"
+                              Tag="{x:Static vm:RowFilter.All}"
+                              Unchecked="OnFilterChipUnchecked"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="SelectAllOn24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="All" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.RebootPending}"
+                              Unchecked="OnFilterChipUnchecked"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ArrowClockwise24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Reboot pending" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Errors}"
+                              Unchecked="OnFilterChipUnchecked"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="ErrorCircle24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Errors" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Offline}"
+                              Unchecked="OnFilterChipUnchecked"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="PlugDisconnected24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Offline" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Done}"
+                              Unchecked="OnFilterChipUnchecked"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="CheckmarkCircle24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Done" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+                <ToggleButton Style="{StaticResource FilterChip}"
+                              Tag="{x:Static vm:RowFilter.Unhealthy}"
+                              Unchecked="OnFilterChipUnchecked"
+                              ToolTip="Machines whose vitality is Warning, Critical, or Offline (run Check Vitals first)"
+                              IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}">
+                    <StackPanel Orientation="Horizontal">
+                        <ui:SymbolIcon Symbol="HeartPulse24" FontSize="14" Margin="0,0,5,0"
+                                       Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=ToggleButton}}" />
+                        <TextBlock Text="Unhealthy" VerticalAlignment="Center" />
+                    </StackPanel>
+                </ToggleButton>
+
+                <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="{Binding FilterStatus}"
+                           Visibility="{Binding FilterStatus, Converter={StaticResource StringToVis}}" />
+            </StackPanel>
+
+            <!-- Patching (update mode) chip bar — hidden in Health mode. Includes Updates + Server 2016 chips. -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+                        Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
                 <ToggleButton Style="{StaticResource FilterChip}" Margin="0"
                               Tag="{x:Static vm:RowFilter.All}"
                               Unchecked="OnFilterChipUnchecked"
@@ -404,6 +477,7 @@
                                 <MultiDataTrigger.Conditions>
                                     <Condition Binding="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Server2016}}" Value="True" />
                                     <Condition Binding="{Binding HasServer2016}" Value="True" />
+                                    <Condition Binding="{Binding IsUpdateMode}" Value="True" />
                                 </MultiDataTrigger.Conditions>
                                 <Setter Property="Visibility" Value="Visible" />
                             </MultiDataTrigger>
