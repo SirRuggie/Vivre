@@ -994,6 +994,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(ShowUpdateFirstRunHint));
         OnPropertyChanged(nameof(IsPatchOperationActive));
 
+        // Entering Health (machine mode): the patch-only filters have no chip in the Health bar to clear
+        // them, so don't leave the grid silently filtered — fall back to All. (Distinct trigger from the
+        // Server2016 orphan-reset that fires when 2016 boxes leave a tab; both converge on ActiveFilter=All.)
+        if (!value && ActiveFilter is RowFilter.UpdatesAvailable or RowFilter.Server2016)
+        {
+            ActiveFilter = RowFilter.All;
+        }
+
         if (value && IsMonitoring && _monitorCts is { } cts && Computers.Count > 0)
         {
             _ = MonitorRowsAsync([.. Computers], cts.Token);
