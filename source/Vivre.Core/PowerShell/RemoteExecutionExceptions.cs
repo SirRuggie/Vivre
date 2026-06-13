@@ -10,11 +10,19 @@ namespace Vivre.Core.PowerShell;
 public sealed class RemoteSessionLostException : Exception
 {
     public RemoteSessionLostException(string host, Exception inner, bool atConnect = false)
-        : base($"Lost connection to {host} — the remote session ended (the target may have rebooted or WinRM is unhealthy).", inner)
+        : base(BuildMessage(host, atConnect), inner)
     {
         Host = host;
         AtConnect = atConnect;
     }
+
+    // The message is accurate to WHEN the session was lost: a connect-time failure ("couldn't connect at
+    // all") must NOT read like a mid-operation drop ("the target may have rebooted"). Branching here means
+    // every caller that surfaces this exception's Message (vitals, ConfigMgr actions, the software/column
+    // probes, the reboot probe, …) gets the right wording with no per-site change.
+    private static string BuildMessage(string host, bool atConnect) => atConnect
+        ? $"Couldn't reach {host} over WinRM — the WinRM service may be down or unreachable (vitals/scan/install fall back to the SMB agent if 445 is reachable)."
+        : $"Lost connection to {host} — the remote session ended (the target may have rebooted or WinRM is unhealthy).";
 
     /// <summary>The host whose session was lost.</summary>
     public string Host { get; }
