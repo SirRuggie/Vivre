@@ -70,6 +70,12 @@ public enum RowFilter
     /// <summary>Confirmed Server 2016 (build 14393) rows — the self-populating view that drives the
     /// full-package CU lane. Unread boxes (no OS build yet) are excluded until a vitals check confirms them.</summary>
     Server2016,
+
+    /// <summary>Rows that have not yet been scanned in this session — <see cref="Computer.UpdatePhase"/> is null.</summary>
+    NotScanned,
+
+    /// <summary>Rows with a scheduled update run queued — <see cref="Computer.ScheduledNextRun"/> is set.</summary>
+    Scheduled,
 }
 
 /// <summary>
@@ -357,6 +363,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             RowFilter.Done => c.PatchState == PatchState.Done,
             RowFilter.Unhealthy => c.VitalityBand is VitalityBand.Warning or VitalityBand.Critical or VitalityBand.Offline,
             RowFilter.Server2016 => LcuRouting.Is2016(c.OsBuild),
+            RowFilter.NotScanned => c.UpdatePhase == null,
+            RowFilter.Scheduled => c.ScheduledNextRun is not null,
             _ => true,
         };
     }
@@ -760,7 +768,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 [nameof(Computer.Name), nameof(Computer.IsOnline), nameof(Computer.PatchState),
                  nameof(Computer.RebootRequired), nameof(Computer.LastError), nameof(Computer.UpdateError),
                  nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates), nameof(Computer.VitalityBand),
-                 nameof(Computer.OsBuild)])
+                 nameof(Computer.OsBuild), nameof(Computer.UpdatePhase), nameof(Computer.ScheduledNextRun)])
             {
                 live.LiveFilteringProperties.Add(prop);
             }
@@ -2903,7 +2911,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.UpdatePhase = PatchPhase.PendingReboot.ToString();
                 computer.UpdateProgress = 100;
                 computer.UpdateError = null;
-                computer.UpdateMessage = $"Staged {kb} — run Reboot Wave to commit";
+                computer.UpdateMessage = $"Staged {kb} · run Reboot Wave to commit";
                 break;
             case PatchPhase.Done:
                 computer.UpdatePhase = PatchPhase.Done.ToString();
@@ -2948,6 +2956,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             ApplyStatus(computer, final);
             if (final.Phase == PatchPhase.Done)
             {
+                computer.UpdatePhase = PatchPhase.Cleaned.ToString();
                 computer.UpdateMessage = "Component store cleaned";
             }
         }
@@ -3048,7 +3057,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.RebootRequired = false;
                     computer.StagedThisSession = false; // committed — no longer a pending stage
                     computer.UpdatePhase = PatchPhase.Done.ToString();
-                    computer.UpdateMessage = result.Message;
+                    computer.UpdateMessage = result.CurrentBuild is { } vBuild && result.Ubr is { } vUbr
+                        ? $"Verified · now at {vBuild}.{vUbr}"
+                        : result.Message;
                     break;
                 case LcuVerifyOutcome.WrongBuild:
                 {
@@ -3061,8 +3072,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                         ? $"{b}.{u}"
                         : "an unexpected build";
                     string message = wasStaged
-                        ? $"Rolled back — {computer.Name} returned at {at}, expected .{targetUbr}."
-                        : $"Not yet patched — {computer.Name} is at {at}, expected .{targetUbr}. Run Stage first.";
+                        ? $"Rolled back — at {at}, expected .{targetUbr}"
+                        : $"Not patched — at {at}, expected .{targetUbr} · run Stage first";
                     computer.UpdatePhase = PatchPhase.Error.ToString();
                     computer.UpdateError = message;
                     computer.UpdateMessage = message;

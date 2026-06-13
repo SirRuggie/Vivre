@@ -90,7 +90,7 @@ public sealed class WuaUpdateLane
             HostPatchStatus viaSmb = await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
             return viaSmb.Phase == PatchPhase.Error
                 ? HostPatchStatus.Failed(
-                    $"Can't reach {host} on either transport — WinRM is down and the SMB agent fallback also failed ({viaSmb.Message}).")
+                    $"Can't reach over WinRM or SMB — not manageable right now ({viaSmb.Message}).")
                 : viaSmb;
         }
 
@@ -104,8 +104,8 @@ public sealed class WuaUpdateLane
         updates = ApplyExclude(updates, options.ExcludeNameContains);
 
         string message = options.Scope == UpdateScope.Installed
-            ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update(s)")
-            : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update(s) available");
+            ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update{(updates.Count == 1 ? "" : "s")}")
+            : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update{(updates.Count == 1 ? "" : "s")} available");
 
         return new HostPatchStatus(PatchPhase.Available, message, AvailableCount: updates.Count)
         {
@@ -325,10 +325,10 @@ public sealed class WuaUpdateLane
                 : await _smb.InstallAsync(host, options, progress, cancellationToken).ConfigureAwait(false);
             if (viaSmb.Phase == PatchPhase.Error)
             {
-                // FIX 4: WinRM is down AND the SMB agent fallback failed (e.g. 445 blocked / box offline) —
+                // WinRM is down AND the SMB agent fallback failed (e.g. 445 blocked / box offline) —
                 // name the dual-transport failure rather than a bare SMB IO string.
                 var both = HostPatchStatus.Failed(
-                    $"Can't reach {host} on either transport — WinRM is down and the SMB agent fallback also failed ({viaSmb.Message}).");
+                    $"Can't reach over WinRM or SMB — not manageable right now ({viaSmb.Message}).");
                 progress.Report(both);
                 return both;
             }

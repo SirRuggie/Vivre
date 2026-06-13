@@ -304,8 +304,9 @@ public class VitalsProbeTests
         Assert.False(v.IsEmpty);
 
         // The actual WinRM error is captured (the "what" the Connection callout shows).
+        // The message no longer names the host (the grid row does); check the actionable wording.
         Assert.NotNull(v.WinRmFailureDetail);
-        Assert.Contains("remote session ended", v.WinRmFailureDetail);
+        Assert.Contains("may have rebooted", v.WinRmFailureDetail);
 
         VitalityResult r = VitalityScorer.Score(v, isOnline: true);
         Assert.True(r.NeedsAttention);

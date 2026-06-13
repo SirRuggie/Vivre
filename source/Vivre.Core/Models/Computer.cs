@@ -279,6 +279,9 @@ public partial class Computer : ObservableObject
             // own phases shown as distinct chip labels ("Staging"/"Cleaning up"), but reduce to the same
             // Scanning display-state so colour/tally/Stop "working" logic is unchanged.
             PatchPhase.Staging or PatchPhase.Cleaning => PatchState.Scanning,
+            // Cleaned: cleanup finished — green like Done, but with the distinct "Cleaned" chip label so it
+            // doesn't falsely read "Up to date" (a cleanup does not prove update currency).
+            PatchPhase.Cleaned => pending ? PatchState.RebootPending : PatchState.Done,
             PatchPhase.Downloading => PatchState.Downloading,
             PatchPhase.Installing => PatchState.Installing,
             PatchPhase.Uninstalling => PatchState.Uninstalling,
@@ -313,7 +316,12 @@ public partial class Computer : ObservableObject
 
     /// <summary>Next run time of the queued scheduled task for its column (Phase 2).</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsScheduled))]
     public partial DateTime? ScheduledNextRun { get; set; }
+
+    /// <summary>True when a scheduled run has been queued for this row (<see cref="ScheduledNextRun"/> is set).
+    /// Single source of truth for the Scheduled pill and chip so they always agree.</summary>
+    public bool IsScheduled => ScheduledNextRun is not null;
 
     /// <summary>
     /// Applicable updates found by the last "Applicable"-scope scan, each with a keep/skip
