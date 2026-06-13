@@ -143,9 +143,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int HealthPerHostTimeoutSeconds = 60;
     private const int SoftwarePerHostTimeoutSeconds = 60;
-    // A WUA scan is a read-only WUA search; if a box hasn't answered in 90s it's hung/unreachable — fail it
-    // and release its slot rather than leaving it stuck in "Scanning" forever (mirrors the reboot-wave ceiling).
-    private const int ScanPerHostTimeoutSeconds = 90;
+    // A WUA scan is a read-only WUA search; 5 minutes is the hard wall-clock cap before we call a box
+    // hung/unreachable, fail it, and release its slot (rather than leaving it stuck in "Scanning"). Sized
+    // generously because a search on a badly-behind box (or over a slow link) legitimately takes minutes —
+    // 90s was false-timing-out real scans. It only bounds a genuinely stuck host; healthy scans finish well under it.
+    private const int ScanPerHostTimeoutSeconds = 300;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
