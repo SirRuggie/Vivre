@@ -415,9 +415,9 @@ namespace Vivre.UpdateAgent
         /// </summary>
         private static bool RunComponentCleanup(ProgressWriter progress)
         {
-            progress.Write("Scanning", "Cleaning the component store (DISM /StartComponentCleanup)…", 0, 1, 0, 0, false);
+            progress.Write("Cleaning", "Cleaning the component store (DISM /StartComponentCleanup)…", 0, 1, 0, 0, false);
             int exit = RunDism("/online /cleanup-image /startcomponentcleanup /english",
-                progress, "Scanning", "Cleaning component store");
+                progress, "Cleaning", "Cleaning component store");
 
             const int ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
             if (exit == 0)

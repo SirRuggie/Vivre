@@ -567,6 +567,7 @@ public sealed class WuaUpdateLane
     {
         "searching" or "scanning" => PatchPhase.Scanning,
         "staging" => PatchPhase.Staging,
+        "cleaning" => PatchPhase.Cleaning,
         "downloading" => PatchPhase.Downloading,
         "installing" => PatchPhase.Installing,
         "uninstalling" => PatchPhase.Uninstalling,

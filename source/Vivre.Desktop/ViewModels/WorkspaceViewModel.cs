@@ -2927,7 +2927,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.IsPatching = true;
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
-        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdatePhase = PatchPhase.Cleaning.ToString();
         computer.UpdateMessage = "Cleaning the component store…";
 
         var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
@@ -3098,16 +3098,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// shared options' current scope, which only matters for the Phase.Available branch.</summary>
     private void ApplyStatus(Computer computer, HostPatchStatus status, UpdateScope? scopeForScan = null)
     {
-        string phase = status.Phase.ToString();
+        UpdateScope scope = scopeForScan ?? _patchOptions.Scope;
+
+        // A scan that finds zero APPLICABLE updates means the box is up to date — show the green "Done"
+        // state (which the Done filter includes), not "Available" (which implies updates exist and would
+        // wrongly exclude a current box). Applicable scope only — an Installed-scope scan with no rows means
+        // "nothing installed", a different thing. The Available bookkeeping below still runs, so the
+        // (now-empty) update list, count, and scan timestamp are refreshed for the row.
+        bool upToDate = status.Phase == PatchPhase.Available
+            && status.AvailableCount == 0
+            && scope == UpdateScope.Applicable;
+
+        string phase = (upToDate ? PatchPhase.Done : status.Phase).ToString();
+        string message = upToDate ? "Up to date" : status.Message;
         bool phaseChanged = !string.Equals(computer.UpdatePhase, phase, StringComparison.Ordinal);
 
         computer.UpdatePhase = phase;
-        computer.UpdateMessage = status.Message;
+        computer.UpdateMessage = message;
         computer.UpdateProgress = status.Percent;
 
         if (status.Phase == PatchPhase.Available)
         {
-            UpdateScope scope = scopeForScan ?? _patchOptions.Scope;
             computer.UpdatesAvailable = status.AvailableCount;
             ReplaceUpdatesForScope(computer, scope, status.Updates);
             // Cache per-scope so toggling between Applicable / Installed preserves the data.
@@ -3147,7 +3158,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
             else
             {
-                _activity.Info(computer.Name, $"{phase}: {status.Message}");
+                _activity.Info(computer.Name, $"{phase}: {message}");
             }
         }
     }
