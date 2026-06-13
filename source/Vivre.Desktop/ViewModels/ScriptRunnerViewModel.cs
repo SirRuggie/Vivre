@@ -148,6 +148,14 @@ public partial class ScriptRunnerViewModel : ObservableObject
                     machineOutput = $"FAILED (WinRM shell init): {ex.Message}";
                     _activity.Error(target.Name, $"Script failed — WinRM shell init: {ex.Message}");
                 }
+                catch (Exception ex) when (ex.IsWinRmUnavailable())
+                {
+                    // WinRM is broken on this box (Kerberos/SPN, or the service is down). Scripts run over
+                    // WinRM and there is no remote alternative here, so name the honest one (RDP) instead of
+                    // dumping the raw SSPI text. No new execution channel is introduced.
+                    machineOutput = "WinRM is broken on this box (Kerberos/SPN), so scripts can't run here remotely — RDP into the box to run them. (For a reboot, use the Reboot Wave.)";
+                    _activity.Warn(target.Name, "Script skipped — WinRM unavailable (RDP to run scripts on this box).");
+                }
                 catch (Exception ex)
                 {
                     machineOutput = $"FAILED: {ex.Message}";
