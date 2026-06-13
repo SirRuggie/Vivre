@@ -143,6 +143,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int HealthPerHostTimeoutSeconds = 60;
     private const int SoftwarePerHostTimeoutSeconds = 60;
+    // A WUA scan is a read-only WUA search; if a box hasn't answered in 90s it's hung/unreachable — fail it
+    // and release its slot rather than leaving it stuck in "Scanning" forever (mirrors the reboot-wave ceiling).
+    private const int ScanPerHostTimeoutSeconds = 90;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
@@ -152,6 +155,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // _rebootProbeThrottle-wide.
     private readonly ConcurrentDictionary<string, DateTime> _degradedHosts = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan DegradedRetryInterval = TimeSpan.FromMinutes(5);
+    // Hosts whose WinRM reboot probe is permanently unsupported this session because they reject Kerberos
+    // (0x80090322 — the http SPN belongs to the SSRS service account by design, never recovers). Unlike
+    // _degradedHosts these are NOT retried: re-probing only spams the log every cycle, and their reboot
+    // state is handled by the 2016 lane's DCOM Verify. (Value byte is unused — it's a concurrent set.)
+    private readonly ConcurrentDictionary<string, byte> _winRmRebootProbeUnsupported = new(StringComparer.OrdinalIgnoreCase);
     // After a host comes back online we re-probe its reboot state a few times: a just-booted box
     // transiently still reports reboot-pending, so a single probe could catch that and strand the
     // amber dot forever (once RebootRequired is true we otherwise stop probing).
@@ -1117,7 +1125,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    private bool CanStop() => IsBusy || IsMonitoring;
+    // Stop is available whenever ANY work is in progress — a running sweep (IsBusy), the background monitor,
+    // OR any row left in a transient working state (Scanning/Downloading/Installing/Uninstalling). The last
+    // clause is the escape hatch: even if a sweep faulted and cleared IsBusy while rows are stranded, Stop
+    // stays clickable so the operator can recover them without restarting Vivre.
+    private bool CanStop() => IsBusy || IsMonitoring || AnyRowWorking();
+
+    private bool AnyRowWorking() =>
+        Computers.Any(c => c.PatchState is PatchState.Scanning or PatchState.Downloading or PatchState.Installing or PatchState.Uninstalling);
 
     /// <summary>Pings every row (reachability only — no SCCM health).</summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
@@ -1450,7 +1465,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Scans every row for applicable updates from the selected source.</summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
-    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active, TimeSpan.FromSeconds(ScanPerHostTimeoutSeconds));
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
@@ -1458,7 +1473,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active, TimeSpan.FromSeconds(ScanPerHostTimeoutSeconds));
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -1629,7 +1644,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanScanFocused))]
     private Task ScanFocusedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle.Active) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle.Active, TimeSpan.FromSeconds(ScanPerHostTimeoutSeconds)) : Task.CompletedTask;
 
     private bool CanScanFocused() => FocusedComputer is { } c && !_heldRows.ContainsKey(c.Name);
 
@@ -1796,6 +1811,23 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
 
         IsMonitoring = false;
+
+        // Recover any ORPHANED in-flight rows — a transient working state with no live operation holding
+        // them (e.g. stranded by a prior fault). Rows a running op still holds are left to that op's own
+        // cancellation (it sets "Cancelled"); these stragglers would otherwise sit in "Scanning" forever,
+        // making restart the only escape. This is what makes Stop a genuine recovery, not just a cancel.
+        foreach (Computer c in Computers)
+        {
+            if (!_heldRows.ContainsKey(c.Name) &&
+                c.PatchState is PatchState.Scanning or PatchState.Downloading or PatchState.Installing or PatchState.Uninstalling)
+            {
+                c.UpdatePhase = PatchPhase.Idle.ToString();
+                c.UpdateMessage = "Stopped";
+                c.IsPatching = false; // clear the independent latch too, or the row stays locked out of scan/install
+            }
+        }
+
+        StopCommand.NotifyCanExecuteChanged();
     }
 
     /// <summary>Registers a new running operation: tracks its CTS (so Stop cancels it), optionally
@@ -2337,22 +2369,38 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         TimeSpan hostTimeout,
         CancellationToken token)
     {
-        await throttle.WaitAsync(token).ConfigureAwait(false);
+        // No ConfigureAwait(false): the per-row operation writes data-bound Computer state (PatchState is a
+        // live-filtering grid property), so its continuations MUST resume on the captured UI context.
+        // Stripping the SynchronizationContext here — as ConfigureAwait(false) did — made ApplyStatus run on
+        // a thread-pool thread under throttle contention (a large fleet), which threw "the calling thread
+        // cannot access this object" on the live CollectionView and orphaned the rest of the sweep.
+        await throttle.WaitAsync(token);
         try
         {
             using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
             perHost.CancelAfter(hostTimeout);
             try
             {
-                await operation(row, perHost.Token).ConfigureAwait(false);
+                await operation(row, perHost.Token);
             }
             catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
             {
-                // Per-host timeout (not a user Stop): surface it and let the rest of the sweep continue.
-                row.UpdateError = $"Timed out after {hostTimeout.TotalHours:N0}h";
+                // Per-host timeout (not a user Stop): surface it, release the slot, and let the rest of the
+                // sweep continue — a box never stays stuck in its transient (e.g. Scanning) state.
+                row.UpdateError = $"Timed out after {FormatDownDuration(hostTimeout)}";
                 row.UpdateMessage = "Timed out";
                 row.UpdatePhase = PatchPhase.Error.ToString();
                 _activity.Error(row.Name, row.UpdateError);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                // A per-row operation threw unexpectedly (transport/threading fault, a crashing callback).
+                // NEVER let it fault the whole Task.WhenAll or strand this box in a transient state: mark it
+                // failed and move on, so one bad box can't orphan the other 100+ in the sweep.
+                row.UpdateError = ex.Message;
+                row.UpdateMessage = "Failed";
+                row.UpdatePhase = PatchPhase.Error.ToString();
+                _activity.Error(row.Name, $"{(string.IsNullOrEmpty(record.Label) ? "Operation" : record.Label)} failed on {row.Name} — {ex.Message}");
             }
         }
         finally
@@ -2386,6 +2434,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -2450,6 +2501,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -2595,6 +2649,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -2772,6 +2829,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -2851,6 +2911,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -2904,6 +2967,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -2978,6 +3044,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
         }
@@ -3230,7 +3299,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         bool degraded = _degradedHosts.TryGetValue(computer.Name, out DateTime retryAt);
         bool backoffActive = degraded && DateTime.Now < retryAt;
         bool degradedRetryDue = degraded && !backoffActive;
-        if (online && IsUpdateMode && !backoffActive)
+        // A Kerberos-rejected box can never answer a WinRM probe (its SPN is broken by design) — don't
+        // probe it at all, or it spams "Reboot probe failing" every cycle. Its reboot state comes from
+        // the 2016 lane's DCOM Verify instead.
+        bool winRmUnsupported = _winRmRebootProbeUnsupported.ContainsKey(computer.Name);
+        if (online && IsUpdateMode && !backoffActive && !winRmUnsupported)
         {
             bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
             // A degraded-retry probes regardless of the reboot-pending skip — its job is to re-test WinRM.
@@ -3374,6 +3447,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (KerberosWrongPrincipalException)
+        {
+            // 0x80090322 — this box rejects Kerberos by design (its http SPN is the SSRS service account),
+            // so a WinRM reboot probe will NEVER succeed. Mark it unsupported and stop probing it this
+            // session (logged once); the 2016 lane's DCOM Verify covers its reboot state. This is what
+            // ends the "Reboot probe failing every 5 min" spam on the Vision boxes.
+            if (_winRmRebootProbeUnsupported.TryAdd(computer.Name, 0))
+            {
+                _activity.Info(computer.Name, "WinRM reboot probe not supported here (Kerberos) — using the 2016 lane's Verify instead; stopping reboot probes for this host.");
+            }
         }
         catch (Exception ex)
         {
@@ -3676,6 +3760,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _degradedHosts.TryRemove(name, out _);
         _rebootRecheckBudget.TryRemove(name, out _);
         _scheduledTasks.TryRemove(name, out _);
+        _winRmRebootProbeUnsupported.TryRemove(name, out _);
     }
 
     /// <summary>Mirrors the grid's selection into <see cref="SelectedComputers"/> (called from code-behind).</summary>
