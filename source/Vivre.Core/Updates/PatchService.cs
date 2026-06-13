@@ -227,6 +227,15 @@ public sealed class PatchService : IPatchService
         return _lcu.VerifyAsync(host, targetUbr, cancellationToken);
     }
 
+    public LcuPackageResolution CheckLcuPackage(string packageDirectory, LcuTarget target)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(packageDirectory);
+        ArgumentNullException.ThrowIfNull(target);
+
+        // Pure local directory read — no host involved, so no _inFlight claim.
+        return _lcu.CheckPackage(packageDirectory, target);
+    }
+
     // host is validated non-null/whitespace at each public entry point.
     private bool TryClaim(string host) => _inFlight.TryAdd(host, 0);
 

@@ -73,6 +73,20 @@ public enum RowFilter
 }
 
 /// <summary>
+/// What the Stage flow shows the operator when this month's 2016 CU <c>.msu</c> isn't ready in the package
+/// folder — the guided "here's what's missing and how to fix it" payload for the package-needed dialog.
+/// </summary>
+/// <param name="Ready">True when the correct package is present (Stage can proceed).</param>
+/// <param name="Kb">The KB to download, e.g. "KB5094122".</param>
+/// <param name="Arch">Architecture token, e.g. "x64".</param>
+/// <param name="SizeMb">Approximate size to expect, MB (sanity-check hint only).</param>
+/// <param name="Folder">The full folder path the .msu must go in (openable / copy-pasteable).</param>
+/// <param name="CatalogUrl">Microsoft Update Catalog search URL pre-filled to the KB.</param>
+/// <param name="Problem">Plain-language reason the package isn't ready (missing / wrong / ambiguous).</param>
+public sealed record LcuStageReadiness(
+    bool Ready, string Kb, string Arch, int SizeMb, string Folder, string CatalogUrl, string Problem);
+
+/// <summary>
 /// One independent workspace = one tab: its own computer list, selection, and
 /// operations (which can run concurrently with other tabs). Owns the grid and the
 /// Ping/Check sweeps. Remote operations use the credential from <see cref="Credentials"/>
@@ -2622,6 +2636,40 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     private static LcuTarget BuildLcuTarget(AppSettings s) =>
         new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
+
+    /// <summary>Read-only precheck for the panel's Stage button: is this month's CU <c>.msu</c> present +
+    /// correct in the package folder? The View calls this BEFORE staging — when not Ready it shows the guided
+    /// "drop the file here" prompt instead of touching any box. (No host is contacted.)</summary>
+    public LcuStageReadiness CheckLcuStageReadiness()
+    {
+        AppSettings s = _appSettings.Load();
+        string kb = s.MonthlyCu?.Kb?.Trim() ?? string.Empty;
+
+        // No KB configured yet — guide to Settings instead of resolving (the resolver requires a KB). This is
+        // the first thing a fresh hand-off will hit if they haven't set the month's CU.
+        if (kb.Length == 0)
+        {
+            return new LcuStageReadiness(
+                Ready: false,
+                Kb: "(not set)",
+                Arch: s.MonthlyCu?.Arch ?? "x64",
+                SizeMb: s.MonthlyCu?.ExpectedSizeMb ?? 0,
+                Folder: s.LcuPackagesFolder,
+                CatalogUrl: "https://www.catalog.update.microsoft.com",
+                Problem: "This month's CU isn't set yet. Open Settings ▸ \"Server 2016 cumulative update\" and enter the KB (e.g. KB5094122) and target UBR first.");
+        }
+
+        LcuTarget target = BuildLcuTarget(s);
+        LcuPackageResolution r = _patch.CheckLcuPackage(s.LcuPackagesFolder, target);
+        return new LcuStageReadiness(
+            Ready: r.Status == LcuPackageStatus.Found,
+            Kb: kb,
+            Arch: s.MonthlyCu?.Arch ?? "x64",
+            SizeMb: s.MonthlyCu?.ExpectedSizeMb ?? 0,
+            Folder: s.LcuPackagesFolder,
+            CatalogUrl: r.CatalogUrl,
+            Problem: r.Message);
+    }
 
     /// <summary>Panel button: free component-store space on the targeted 2016 boxes (DISM cleanup as SYSTEM),
     /// so a tight box has room for the CU. Safe to run any time — the agent refuses if a reboot is pending.</summary>

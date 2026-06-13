@@ -915,6 +915,39 @@ public partial class WorkspaceView : UserControl
         grid.SelectAll();
     }
 
+    /// <summary>Server 2016 action bar — Stage. Before touching any box, re-check the package folder: if
+    /// this month's CU <c>.msu</c> isn't there (or is wrong/ambiguous), show the guided "add the package"
+    /// prompt and stage nothing. "Stage now" in that prompt loops back here to re-check, so the operator
+    /// can drop the file and proceed without hunting for the button again.</summary>
+    private void OnStage2016(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        while (true)
+        {
+            LcuStageReadiness readiness = vm.CheckLcuStageReadiness();
+            if (readiness.Ready)
+            {
+                if (vm.Stage2016Command.CanExecute(null))
+                {
+                    vm.Stage2016Command.Execute(null);
+                }
+
+                return;
+            }
+
+            var dialog = new LcuPackageNeededDialog(readiness) { Owner = Window.GetWindow(this) };
+            if (dialog.ShowDialog() != true)
+            {
+                return; // Cancel / closed — nothing staged, no box touched
+            }
+            // "Stage now": loop and re-check the folder (the operator just dropped the file in).
+        }
+    }
+
     /// <summary>
     /// Server 2016 action bar — Reboot Wave. Production reboot, so the button is never bound straight
     /// to the command: this handler names the explicitly selected 2016 boxes, confirms, and only invokes
