@@ -32,6 +32,10 @@ public enum PatchPhase
     /// <see cref="PatchState.Scanning"/> for the display-state, so only the chip label differs from a scan.</summary>
     Cleaning,
 
+    /// <summary>Component cleanup FINISHED (green); distinct label so it does not falsely read 'Up to date'
+    /// — a cleanup does not prove update currency. Maps to <see cref="PatchState.Done"/>.</summary>
+    Cleaned,
+
     /// <summary>Install finished and the box needs a reboot.</summary>
     PendingReboot,
 

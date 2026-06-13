@@ -473,7 +473,7 @@ namespace Vivre.UpdateAgent
                 return false;
             }
 
-            progress.Write("Searching", total + " update(s) matched — starting downloads…", 5, total, 0, 0, false);
+            progress.Write("Searching", total + " update" + (total == 1 ? "" : "s") + " matched — starting downloads…", 5, total, 0, 0, false);
 
             var coll = new UpdateCollection();
             foreach (IUpdate u in applicable)
@@ -640,11 +640,11 @@ namespace Vivre.UpdateAgent
 
             string summary = failed > 0
                 ? string.Format(CultureInfo.InvariantCulture, "Uninstalled {0}, {1} could not be removed", removed, failed) + reasons
-                : string.Format(CultureInfo.InvariantCulture, "Uninstalled {0} update(s)", removed);
+                : string.Format(CultureInfo.InvariantCulture, "Uninstalled {0} update" + (removed == 1 ? "" : "s"), removed);
 
             if (rebootPending)
             {
-                progress.Write("PendingReboot", summary + ", reboot required", 100, total, removed, failed, true);
+                progress.Write("PendingReboot", summary + " · reboot required", 100, total, removed, failed, true);
             }
             else
             {
@@ -787,8 +787,8 @@ namespace Vivre.UpdateAgent
             WriteScanResult(config.ResultPath, rows);
 
             string message = installedScope
-                ? (rows.Count == 0 ? "No installed updates" : rows.Count + " installed update(s)")
-                : (rows.Count == 0 ? "Up to date" : rows.Count + " update(s) available");
+                ? (rows.Count == 0 ? "No installed updates" : rows.Count + " installed update" + (rows.Count == 1 ? "" : "s"))
+                : (rows.Count == 0 ? "Up to date" : rows.Count + " update" + (rows.Count == 1 ? "" : "s") + " available");
             progress.Write("Done", message, 100, rows.Count, 0, 0, false);
             return false;
         }
@@ -996,11 +996,11 @@ namespace Vivre.UpdateAgent
             bool rebootPending = result.RebootRequired;
             string summary = failed > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} {1}, {2} failed", verb, installed, failed)
-                : string.Format(CultureInfo.InvariantCulture, "{0} {1} update(s)", verb, installed);
+                : string.Format(CultureInfo.InvariantCulture, "{0} {1} update" + (installed == 1 ? "" : "s"), verb, installed);
 
             if (rebootPending)
             {
-                progress.Write("PendingReboot", summary + ", reboot required", 100, total, installed, failed, true);
+                progress.Write("PendingReboot", summary + " · reboot required", 100, total, installed, failed, true);
             }
             else
             {

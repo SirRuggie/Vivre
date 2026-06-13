@@ -19,6 +19,8 @@ public class ComputerPatchStateTests
     // but reduce to the Scanning display-state so the working/colour/Stop/tally logic treats them like a scan.
     [InlineData("Staging", null, PatchState.Scanning)]
     [InlineData("Cleaning", null, PatchState.Scanning)]
+    // Cleaned: cleanup finished — maps to Done (green), same as Done phase.
+    [InlineData("Cleaned", null, PatchState.Done)]
     [InlineData("Available", null, PatchState.Available)]
     [InlineData("Downloading", null, PatchState.Downloading)]
     [InlineData("Installing", null, PatchState.Installing)]

@@ -96,7 +96,9 @@ public class PSRunspaceHostTests
 
         RemoteSessionLostException lost = Assert.IsType<RemoteSessionLostException>(translated);
         Assert.Equal("DCVCOLUMBUS", lost.Host);
-        Assert.Contains("DCVCOLUMBUS", lost.Message);
+        // The message no longer includes the host name (the grid row already names the machine);
+        // verify it contains the actionable mid-run-drop wording instead.
+        Assert.Contains("may have rebooted", lost.Message);
     }
 
     [Fact]

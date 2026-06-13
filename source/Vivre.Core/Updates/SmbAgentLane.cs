@@ -89,8 +89,8 @@ public sealed class SmbAgentLane : ISmbAgentLane
             updates = WuaUpdateLane.ApplyExclude(updates, options.ExcludeNameContains);
 
             string message = installedScope
-                ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update(s)")
-                : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update(s) available");
+                ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update{(updates.Count == 1 ? "" : "s")}")
+                : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update{(updates.Count == 1 ? "" : "s")} available");
 
             return new HostPatchStatus(PatchPhase.Available, message, AvailableCount: updates.Count)
             {
