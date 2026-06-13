@@ -174,46 +174,175 @@ namespace Vivre.UpdateAgent
                 // Can't read free space — let DISM surface any real disk error rather than blocking.
             }
 
-            progress.Write("Staging", "Adding cumulative update via DISM…", 0, 1, 0, 0, false);
-            int exit = RunDism("/online /add-package /packagepath:\"" + pkg + "\" /norestart /english",
-                progress, "Staging", "Staging update");
+            // 14393's online DISM rejects .msu payloads (0x80070032 "DISM does not support installing MSU
+            // files online") — extract the installable .cab(s) with expand.exe and add those instead. A
+            // combined SSU+LCU .msu yields a servicing-stack cab AND the LCU cab (plus WSUSSCAN.cab, which
+            // is scan metadata and never installable); the SSU must be added before the LCU.
+            string[] cabs;
+            bool extracted = false;
+            if (pkg.EndsWith(".msu", StringComparison.OrdinalIgnoreCase))
+            {
+                cabs = ExtractInstallableCabs(pkg, progress);
+                if (cabs == null)
+                {
+                    return false; // extraction failed — already reported as an Error line
+                }
+
+                extracted = true;
+            }
+            else
+            {
+                cabs = new[] { pkg }; // already a .cab — add it directly
+            }
 
             // DISM/CBS success codes: 0 = applied, 3010 = applied (reboot required), 1641 = reboot
             // initiated. 0x800f081e (CBS_E_NOT_APPLICABLE) = already installed / superseded — that's a
-            // green no-op, not a failure.
+            // green no-op for that piece, not a failure.
             const int ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
             const int ERROR_SUCCESS_REBOOT_INITIATED = 1641;
             const int CBS_E_NOT_APPLICABLE = unchecked((int)0x800F081E);
 
-            if (exit == CBS_E_NOT_APPLICABLE)
+            try
             {
-                progress.Write("Done", "Already installed — this CU is not applicable (no change).", 100, 1, 1, 0, false);
-                return false;
+                progress.Write("Staging", "Adding cumulative update via DISM…", 0, 1, 0, 0, false);
+
+                int applied = 0;
+                for (int i = 0; i < cabs.Length; i++)
+                {
+                    string cab = cabs[i];
+                    string label = cabs.Length > 1
+                        ? "Staging update (" + (i + 1) + "/" + cabs.Length + ")"
+                        : "Staging update";
+                    int exit = RunDism("/online /add-package /packagepath:\"" + cab + "\" /norestart /english",
+                        progress, "Staging", label);
+
+                    if (exit == CBS_E_NOT_APPLICABLE)
+                    {
+                        continue; // this piece is already installed/superseded — carry on with the rest
+                    }
+
+                    bool ok = exit == 0 || exit == ERROR_SUCCESS_REBOOT_REQUIRED || exit == ERROR_SUCCESS_REBOOT_INITIATED;
+                    if (!ok)
+                    {
+                        progress.Write("Error",
+                            "DISM add-package failed on '" + Path.GetFileName(cab) + "' (exit 0x" + exit.ToString("X8")
+                            + "). See %WINDIR%\\Logs\\DISM\\dism.log and CBS.log on the host.",
+                            100, 1, 0, 1, false);
+                        return false;
+                    }
+
+                    applied++;
+                }
+
+                if (applied == 0)
+                {
+                    progress.Write("Done", "Already installed — this CU is not applicable (no change).", 100, 1, 1, 0, false);
+                    return false;
+                }
+
+                // Success exits, but confirm a pending reboot was actually registered — otherwise the
+                // "apply" was a silent no-op and the box is NOT reboot-ready (do not mislabel it).
+                if (!IsCbsRebootPending())
+                {
+                    progress.Write("Error",
+                        "DISM reported success but no pending reboot was registered — the update did not stage. Re-check the package and component store.",
+                        100, 1, 0, 1, false);
+                    return false;
+                }
+
+                progress.Write("PendingReboot",
+                    "Staged — reboot-ready. Run a Reboot Wave to commit the update.",
+                    100, 1, 1, 0, true);
+                return false; // staging never auto-reboots; the operator's Reboot Wave commits it
+            }
+            finally
+            {
+                // Don't leave ~1.6 GB of extracted cabs behind; the controller deletes the .msu itself.
+                if (extracted)
+                {
+                    foreach (string cab in cabs)
+                    {
+                        try { File.Delete(cab); }
+                        catch (IOException) { /* locked leftover — the next run's pre-clean reaps it */ }
+                        catch (UnauthorizedAccessException) { /* same: best-effort, reaped next run */ }
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Extracts the installable .cab payload(s) from <paramref name="msuPath"/> into the same directory
+        /// with <c>expand.exe</c> and returns them in install order — any servicing-stack (SSU) cab first
+        /// (a combined SSU+LCU package's stack update must apply before the LCU), then largest-first.
+        /// WSUSSCAN.cab (scan metadata, never installable) is excluded. Pre-deletes stale .cab files so a
+        /// crashed prior run can't leak the wrong package into the glob. Returns null (after writing an
+        /// Error line) when extraction fails or yields nothing installable.
+        /// </summary>
+        private static string[] ExtractInstallableCabs(string msuPath, ProgressWriter progress)
+        {
+            string dir = Path.GetDirectoryName(msuPath);
+
+            // Pre-clean: any .cab here is a leftover from a crashed prior run (the per-host CBS guard means
+            // no concurrent AddPackage on this box, and scans never produce cabs).
+            foreach (string stale in Directory.GetFiles(dir, "*.cab"))
+            {
+                try { File.Delete(stale); }
+                catch (IOException) { /* locked — KB-specific names keep a stale file from masking this run's cab */ }
+                catch (UnauthorizedAccessException) { /* same: best-effort pre-clean */ }
             }
 
-            bool ok = exit == 0 || exit == ERROR_SUCCESS_REBOOT_REQUIRED || exit == ERROR_SUCCESS_REBOOT_INITIATED;
-            if (!ok)
+            progress.Write("Staging", "Extracting update package…", 0, 1, 0, 0, false);
+
+            int exit = RunTool("expand.exe", "\"" + msuPath + "\" -F:*.cab \"" + dir + "\"");
+            if (exit != 0)
             {
                 progress.Write("Error",
-                    "DISM add-package failed (exit 0x" + exit.ToString("X8") + "). See %WINDIR%\\Logs\\DISM\\dism.log and CBS.log on the host.",
+                    "expand.exe failed to extract the update package (exit " + exit + "). The .msu may be corrupt — re-download it from the Catalog.",
                     100, 1, 0, 1, false);
-                return false;
+                return null;
             }
 
-            // Success exit, but confirm a pending reboot was actually registered — otherwise the "apply"
-            // was a silent no-op and the box is NOT reboot-ready (do not mislabel it).
-            if (!IsCbsRebootPending())
+            string[] cabs = Directory.GetFiles(dir, "*.cab")
+                .Where(f => !string.Equals(Path.GetFileName(f), "WSUSSCAN.cab", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (cabs.Length == 0)
             {
                 progress.Write("Error",
-                    "DISM reported success but no pending reboot was registered — the update did not stage. Re-check the package and component store.",
+                    "No installable .cab was found inside the .msu after extraction. Re-download it from the Catalog.",
                     100, 1, 0, 1, false);
-                return false;
+                return null;
             }
 
-            progress.Write("PendingReboot",
-                "Staged — reboot-ready. Run a Reboot Wave to commit the update.",
-                100, 1, 1, 0, true);
-            return false; // staging never auto-reboots; the operator's Reboot Wave commits it
+            return cabs
+                .OrderBy(f => Path.GetFileName(f).IndexOf("SSU", StringComparison.OrdinalIgnoreCase) >= 0 ? 0 : 1)
+                .ThenByDescending(f => new FileInfo(f).Length)
+                .ToArray();
+        }
+
+        /// <summary>Runs a console tool silently, draining both pipes so neither can fill and deadlock, and
+        /// returns its exit code. (RunDism stays separate — it live-parses DISM's percent redraws.)</summary>
+        private static int RunTool(string fileName, string arguments)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            using (var p = new System.Diagnostics.Process { StartInfo = psi })
+            {
+                p.OutputDataReceived += (s, e) => { /* drain stdout so the pipe can't fill and deadlock */ };
+                p.ErrorDataReceived += (s, e) => { /* drain stderr so the pipe can't fill and deadlock */ };
+                p.Start();
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
+                p.WaitForExit();
+                return p.ExitCode;
+            }
         }
 
         /// <summary>
