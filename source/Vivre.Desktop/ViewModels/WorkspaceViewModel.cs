@@ -2834,7 +2834,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.IsPatching = true;
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
-        computer.UpdatePhase = PatchPhase.Scanning.ToString();
+        computer.UpdatePhase = PatchPhase.Staging.ToString();
         computer.UpdateMessage = "Checking the update package…";
 
         // Same mapping on every progress tick AND on the terminal return, so a late progress post can't

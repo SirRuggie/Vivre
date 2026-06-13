@@ -752,12 +752,17 @@
                                         </Style.Triggers>
                                     </Style>
                                 </Border.Style>
-                                <TextBlock Text="{Binding PatchState, Converter={StaticResource PhaseLabel}}"
-                                           FontSize="11" FontWeight="SemiBold">
+                                <TextBlock FontSize="11" FontWeight="SemiBold">
                                     <TextBlock.Style>
                                         <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="{Binding PatchState, Converter={StaticResource PhaseLabel}}" />
                                             <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
                                             <Style.Triggers>
+                                                <!-- The 2016 stage runs as PatchState.Scanning (working/blue) but a row
+                                                     mid-stage sets UpdatePhase="Staging" — show that accurate label. -->
+                                                <DataTrigger Binding="{Binding UpdatePhase}" Value="Staging">
+                                                    <Setter Property="Text" Value="Staging" />
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
                                                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                                 </DataTrigger>

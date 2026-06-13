@@ -21,6 +21,12 @@ public enum PatchPhase
     /// <summary>The SYSTEM task is uninstalling.</summary>
     Uninstalling,
 
+    /// <summary>The Server 2016 full-package lane is staging the cumulative update via DISM (an agent
+    /// AddPackage run). Shown to the operator as "Staging"; it reduces to <see cref="PatchState.Scanning"/>
+    /// for the display-state (so the colour/tally/Stop "working" logic is unchanged — only the chip label
+    /// differs).</summary>
+    Staging,
+
     /// <summary>Install finished and the box needs a reboot.</summary>
     PendingReboot,
 

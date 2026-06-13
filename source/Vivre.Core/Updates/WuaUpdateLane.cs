@@ -566,6 +566,7 @@ public sealed class WuaUpdateLane
     private static PatchPhase MapPhase(string? phase) => phase?.ToLowerInvariant() switch
     {
         "searching" or "scanning" => PatchPhase.Scanning,
+        "staging" => PatchPhase.Staging,
         "downloading" => PatchPhase.Downloading,
         "installing" => PatchPhase.Installing,
         "uninstalling" => PatchPhase.Uninstalling,
