@@ -7,12 +7,13 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Stage software"
-        Height="560" Width="540"
-        MinHeight="460" MinWidth="480"
+        Height="640" Width="580"
+        MinHeight="520" MinWidth="500"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
 
     <Grid>
         <Grid.RowDefinitions>

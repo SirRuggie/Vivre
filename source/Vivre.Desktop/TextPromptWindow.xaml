@@ -6,7 +6,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         mc:Ignorable="d"
         Title="Vivre"
-        Height="190" Width="400"
+        SizeToContent="WidthAndHeight" MinWidth="400" MaxWidth="640"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"

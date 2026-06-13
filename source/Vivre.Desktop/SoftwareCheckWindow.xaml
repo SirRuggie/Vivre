@@ -7,12 +7,13 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Check software"
-        Height="460" Width="470"
-        MinHeight="420" MinWidth="410"
+        SizeToContent="Height" Width="500"
+        MinHeight="420" MinWidth="440" MaxHeight="900"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
 
     <Grid>
         <Grid.RowDefinitions>
@@ -23,7 +24,8 @@
 
         <ui:TitleBar Grid.Row="0" Title="Check software" Icon="{ui:SymbolIcon Search24}" />
 
-        <StackPanel Grid.Row="1" Margin="24,8,24,0">
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,8,24,0">
+        <StackPanel>
             <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
 
             <ui:TextBlock Text="Product name" FontTypography="BodyStrong" Margin="0,0,0,4" />
@@ -53,6 +55,7 @@
             <ui:TextBlock x:Name="StatusText" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
                           TextWrapping="Wrap" Margin="0,12,0,0" Visibility="Collapsed" />
         </StackPanel>
+        </ScrollViewer>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
             <ui:Button x:Name="CheckButton" Appearance="Primary" Icon="{ui:SymbolIcon Search24}"

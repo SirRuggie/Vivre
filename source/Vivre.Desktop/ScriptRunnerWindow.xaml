@@ -8,10 +8,12 @@
         mc:Ignorable="d"
         Title="Run Script"
         Height="660" Width="940"
+        MinHeight="500" MinWidth="700"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="CanResize">
 
     <ui:FluentWindow.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />

@@ -7,7 +7,7 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Settings"
-        Height="420" Width="520"
+        SizeToContent="Height" Width="520" MinWidth="480"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
