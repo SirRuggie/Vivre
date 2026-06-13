@@ -536,7 +536,7 @@
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="Vitals" Width="Auto" MinWidth="64" SortMemberPath="VitalityScore"
                                         CellTemplate="{StaticResource VitalsPillCellTemplate}" />
-                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
+                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -630,7 +630,7 @@
                 <!-- M10: per-row error glyph — shown only when LastError is set; moved left of "Last status"
                      so it's visible at 1360px wide. DismissCircle in SystemFillColorCriticalBrush (red)
                      keeps color+shape consistent with the other status-symbol columns. -->
-                <DataGridTemplateColumn Header="Last error" Width="Auto" MinWidth="180" MaxWidth="480" SortMemberPath="LastError">
+                <DataGridTemplateColumn Header="Last error" Width="Auto" MinWidth="180" SortMemberPath="LastError">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <StackPanel Orientation="Horizontal"
@@ -640,13 +640,12 @@
                                                Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                                 <TextBlock Text="{Binding LastError}" FontSize="12"
                                            VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
-                                           MaxWidth="400"
                                            ToolTip="{Binding LastError}" />
                             </StackPanel>
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="Auto" MinWidth="160" MaxWidth="400" />
+                <DataGridTextColumn Header="Last status" Binding="{Binding LastStatus}" Width="Auto" MinWidth="160" />
             </ui:DataGrid.Columns>
         </ui:DataGrid>
 
@@ -805,7 +804,7 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="Auto" MinWidth="100" MaxWidth="350">
+                <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="Auto" MinWidth="100">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -815,7 +814,7 @@
                         </Style>
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
-                <DataGridTextColumn Header="Windows update message" Binding="{Binding UpdateMessage}" Width="Auto" MinWidth="180" MaxWidth="500">
+                <DataGridTextColumn Header="Windows update message" Binding="{Binding UpdateMessage}" Width="Auto" MinWidth="180">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
@@ -913,7 +912,7 @@
                 </DataGridTemplateColumn>
                 <!-- Command result (e.g. output of a Run Script / "Restart - force now") — shown here too,
                      since scripts are commonly run from the Patching (Windows Update) section. -->
-                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="500">
+                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
