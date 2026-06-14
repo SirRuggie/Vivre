@@ -15,14 +15,30 @@ maintainability over enterprise hardening. It's a dense power tool, not a consum
 
 ## Start here
 
-This file is the architecture + conventions reference. Three companions:
+This file is the architecture + conventions reference. Two companions:
 - **[UPDATE_PLAN.md](UPDATE_PLAN.md)** — the Windows Update (WUA) lane deep-dive and its
   **load-bearing reliability constraints — read it before touching the update or remoting code.**
-- **[NAVIGATION_PLAN.md](NAVIGATION_PLAN.md)** — the phased shell → `ui:NavigationView` refactor, its locked
-  decisions, and the **`TabControlEx` keep-alive constraint — read it before touching the shell/tab hosting.**
 - **[README.md](README.md)** — the human-facing overview + roadmap.
 
-Keep this file, UPDATE_PLAN, and NAVIGATION_PLAN current when a decision changes or a feature lands.
+Keep this file, UPDATE_PLAN, and README current when a decision changes or a feature lands.
+
+### Shell / tab hosting (as-built — the `ui:NavigationView` refactor is COMPLETE)
+The phased shell→NavigationView plan is done and retired (history in git + CHANGELOG). The shell is a
+WPF-UI `ui:NavigationView` (LeftCompact pane: **Fleet ▸ Health / Patching · Scripts · Cross-Domain
+RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:**
+- **`TabControlEx` keep-alive is mandatory.** Tab content stays in the visual tree
+  (`Visibility`-toggled, never rebuilt) so the Cross-Domain RDP tab's embedded MSTSC ActiveX control +
+  live RDP sessions survive tab/section switches. `NavigationView`'s default `Frame` navigation
+  destroys pages — so use NavigationView for the **pane only** and host section content in the
+  keep-alive container.
+- **The bottom dock is window-level/global** (Activity + per-machine Updates), not per-tab.
+- **Mode is fixed by Fleet section, not a per-tab toggle** — Health tabs are health mode, Patching
+  tabs are patching mode (the old on-canvas mode chips were removed).
+
+## Reference docs (read on demand; don't re-derive)
+- docs/key-file-path-map.md — load-bearing file locations
+- docs/2016-LCU-lane-spec.md, docs/LCU_PANEL_WORKER_SPEC.md, docs/2016-LCU-red-team-review.md — read before touching the 2016 patch lane
+- docs/vivre-backlog.md — current priorities + what's done
 
 ## Layout
 
@@ -30,8 +46,8 @@ Keep this file, UPDATE_PLAN, and NAVIGATION_PLAN current when a decision changes
   - **`Vivre.Core`** (net10.0) — non-UI logic: `Models`, `Net` (ping), `PowerShell`
     (`PSRunspaceHost` — the one WinRM choke point, wrapped by `RoutingPowerShellHost`: on a Kerberos
     `0x80090322` rejection it flips the host to the SMB/DCOM path via the session-scoped
-    `HostTransportCache`, and Vitals scores the degradation — see **OVERNIGHT_KERBEROS_STATUS.md** at the
-    workspace root), `Sccm` (`ConfigMgrClient`, client actions),
+    `HostTransportCache`, and Vitals scores the degradation — see UPDATE_PLAN.md ▸ "Kerberos-broken
+    hosts"), `Sccm` (`ConfigMgrClient`, client actions),
     `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
     store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md),
     `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score),
