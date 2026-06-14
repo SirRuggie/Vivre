@@ -13,8 +13,8 @@ deployment required** (an SCCM-deployment lane would only install updates an adm
 this environment deploys none, so it would install nothing). The **Update Source** choice (Windows
 Update / Microsoft Update / Managed-WSUS) and the **exclude-by-name** list live here.
 
-In a tab, switch to **View ▸ Windows Update** to get the update grid + patch actions over the same
-machine list. The Machines-view features (SCCM health, client actions, Run Script) are untouched.
+Open **Fleet ▸ Patching** in the left nav to get the update grid + patch actions over the same machine
+list. The **Fleet ▸ Health** features (SCCM health, client actions, Run Script) are untouched.
 
 ---
 
@@ -104,7 +104,7 @@ the controller tails.
   - **Install updates…** — `RunBehavior.ScheduleAt`; registers the agent task with a one-time trigger.
   - **Reboot…** — registers a `Vivre_Reboot` task that runs `shutdown /r /f` (no agent needed).
   - **Cancel scheduled task** — unregisters any pending `Vivre_*` task on the host.
-  The two **Scheduled task** columns show what's queued + when; they clear once the trigger time has
+  What's queued and when now reads inline in the update message; it clears once the trigger time has
   passed (client-side — no per-tick polling of the target).
 
 ---
@@ -147,18 +147,19 @@ These mechanisms exist because of real production failures. Don't undo them with
 ## UI surfaces
 
 - **Windows Update grid** — Name · Ping · **Status chip** · Reboot message · Windows-update message ·
-  **Progress** · Scheduled-task action · next run time · Pending reboot · Command messages.
+  **Progress** · Pending reboot · Command messages (what's scheduled now reads inline in the update
+  message — the dedicated Scheduled-task columns were retired).
 - **Unified bottom dock** (shared, full width) — one tabbed panel with a **Close** button that hands
   the height back to the grid. Tabs:
   - **Activity** (always present) — the searchable activity log (right-click a line to Copy / Copy all).
-  - **Updates** (focused machine; shown only in Windows Update mode with a row focused) — **Applicable |
+  - **Updates** (focused machine; shown only in Patching with a row focused) — **Applicable |
     Installed** sub-tabs (each grid carries only its relevant columns: Applicable shows download Size,
     Installed shows the install date), a KB/title **filter box**, All/None, a "scanned HH:mm" freshness
     stamp, and Install / Uninstall buttons.
-  Opening: View ▸ Activity log lands on Activity; clicking a machine in Update view opens + lands on
-  Updates. Resizable via the splitter.
-- **Command bar** (Update mode) — Scan and Install, labelled for the current target ("…selected (N)"
-  vs "…all"). Source / Include-drivers / Exclude live under the **Updates** menu.
+  Opening: the status-bar Activity-log toggle lands on Activity; clicking a machine in Patching opens +
+  lands on Updates. Resizable via the splitter.
+- **Command bar** (Patching) — Scan and Install, labelled for the current target ("…selected (N)" vs
+  "…all"). Source / Include-drivers / Exclude live under the **Update options ▾** toolbar button.
 - **Right-click** — Scan / Install selected · **Reboot (force now)** · **Schedule ▸** (Install
   updates / Reboot / Cancel) · **Details…** · **Show messages** · Run script… · Client actions ▸ ·
   Enable WinRM.
