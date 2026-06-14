@@ -39,11 +39,7 @@ public sealed class PatchService : IPatchService
     {
         _wua = new WuaUpdateLane(powerShell);
         _lcu = new FullPackageLcuLane(_wua.Smb);
-        _wave = new RebootWave(
-            new DcomRebootTrigger(),
-            new DcomRebootReadinessProbe(),
-            new TcpReachabilityProbe(),
-            new DcomLcuBuildReader());
+        _wave = new RebootWave(new DcomRebootTrigger(), new TcpReachabilityProbe());
     }
 
     public async Task<HostPatchStatus> ScanAsync(
@@ -207,7 +203,9 @@ public sealed class PatchService : IPatchService
 
         try
         {
-            return await _wave.RebootAndCommitAsync(host, targetUbr, waveOptions, progress, cancellationToken).ConfigureAwait(false);
+            var readiness = new DcomRebootReadinessProbe();
+            var confirmation = new UbrConfirmation(new DcomLcuBuildReader(), targetUbr);
+            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken).ConfigureAwait(false);
         }
         finally
         {

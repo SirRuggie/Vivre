@@ -14,48 +14,49 @@ namespace Vivre.Core.Updates;
 ///   ordered on a specific box — never the tool deciding on its own to reboot or force anything.</item>
 ///   <item>While offline, the clock only ever FLAGS "Overdue — check console" past the ceiling; it never
 ///   stops watching and never fails the box.</item>
-///   <item>When the box returns, Verify — and a "can't read the build yet" (pingable but still coming up)
-///   is a retry, never a failure. Only the UBR decides pass/fail. A late return still gets verified.</item>
+///   <item>When the box returns, confirm via the injected <see cref="IPostRebootConfirmation"/> — a
+///   NotReady is a retry, never a failure. Only the confirmation strategy decides pass/fail. A late
+///   return still gets confirmed.</item>
 /// </list>
 /// The standalone Verify action is the durable net beyond this live loop, so no box is ever abandoned by
 /// a timer. The caller (PatchService) serialises this against Stage/Cleanup on the same host.
+///
+/// <para>The readiness probe and post-reboot confirmation are passed per-call so the wave is reusable
+/// across box types: 2016 boxes get <see cref="DcomRebootReadinessProbe"/> + <see cref="UbrConfirmation"/>;
+/// other boxes get <see cref="BasicReachabilityReadinessProbe"/> + <see cref="ReadyConfirmation"/>.</para>
 /// </summary>
 public sealed class RebootWave
 {
     private readonly IRebootTrigger _reboot;
-    private readonly IRebootReadinessProbe _readiness;
     private readonly IReachabilityProbe _reach;
-    private readonly ILcuBuildReader _builds;
 
-    public RebootWave(
-        IRebootTrigger reboot,
-        IRebootReadinessProbe readiness,
-        IReachabilityProbe reachability,
-        ILcuBuildReader buildReader)
+    public RebootWave(IRebootTrigger reboot, IReachabilityProbe reachability)
     {
         _reboot = reboot ?? throw new ArgumentNullException(nameof(reboot));
-        _readiness = readiness ?? throw new ArgumentNullException(nameof(readiness));
         _reach = reachability ?? throw new ArgumentNullException(nameof(reachability));
-        _builds = buildReader ?? throw new ArgumentNullException(nameof(buildReader));
     }
 
-    /// <summary>Reboots <paramref name="host"/> and tracks the commit until the UBR confirms success
+    /// <summary>Reboots <paramref name="host"/> and tracks the commit until the
+    /// <paramref name="confirmation"/> strategy confirms success
     /// (<see cref="PatchPhase.Done"/>), a rollback/no-take is detected, the reboot won't take, or the
     /// box stays offline past the hard cap (red — use Verify when it returns).</summary>
     public async Task<HostPatchStatus> RebootAndCommitAsync(
         string host,
-        int targetUbr,
         RebootWaveOptions options,
+        IRebootReadinessProbe readiness,
+        IPostRebootConfirmation confirmation,
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(readiness);
+        ArgumentNullException.ThrowIfNull(confirmation);
         ArgumentNullException.ThrowIfNull(progress);
 
         // 1) Re-check readiness right now — TI must already be stopped, or we'd reboot into the hang.
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Checking reboot-readiness…"));
-        RebootReadiness ready = await _readiness.CheckAsync(host, cancellationToken).ConfigureAwait(false);
+        RebootReadiness ready = await readiness.CheckAsync(host, cancellationToken).ConfigureAwait(false);
         if (!ready.IsReady)
         {
             return Fail(progress, $"{host} isn't reboot-ready — {ready.Reason}. Stage it (and let it finish) first.");
@@ -84,7 +85,7 @@ public sealed class RebootWave
             progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Escalated to a forced reboot."));
         }
 
-        // 4) Offline → committing. Poll for return; the clock only FLAGS overdue, the UBR decides pass/fail.
+        // 4) Offline → committing. Poll for return; the clock only FLAGS overdue, the confirmation strategy decides pass/fail.
         var offline = Stopwatch.StartNew();
         bool flaggedOverdue = false;
 
@@ -114,11 +115,10 @@ public sealed class RebootWave
                 continue;
             }
 
-            // Back on the network — verify. A "can't read it yet" is a retry, never a failure.
-            (int? build, int? ubr) = await _builds.ReadAsync(host, cancellationToken).ConfigureAwait(false);
-            LcuVerifyResult verdict = FullPackageLcuLane.Decide(host, build, ubr, targetUbr);
+            // Back on the network — ask the confirmation strategy. NotReady = retry, never a failure.
+            RebootConfirmationResult verdict = await confirmation.ConfirmAsync(host, cancellationToken).ConfigureAwait(false);
 
-            if (verdict.Outcome == LcuVerifyOutcome.Verified)
+            if (verdict.Outcome == RebootConfirmationOutcome.Confirmed)
             {
                 var done = new HostPatchStatus(PatchPhase.Done,
                     $"{verdict.Message} (committed in ~{offline.Elapsed.TotalMinutes:N0} min)");
@@ -126,7 +126,7 @@ public sealed class RebootWave
                 return done;
             }
 
-            if (verdict.Outcome == LcuVerifyOutcome.WrongBuild)
+            if (verdict.Outcome == RebootConfirmationOutcome.Failed)
             {
                 return Fail(progress, verdict.Message);
             }
