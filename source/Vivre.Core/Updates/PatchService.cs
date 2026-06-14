@@ -213,6 +213,34 @@ public sealed class PatchService : IPatchService
         }
     }
 
+    public async Task<HostPatchStatus> RebootWaveWuaAsync(
+        string host,
+        RebootWaveOptions waveOptions,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentNullException.ThrowIfNull(waveOptions);
+        ArgumentNullException.ThrowIfNull(progress);
+
+        if (!TryClaim(host))
+        {
+            progress.Report(AlreadyInProgress);
+            return AlreadyInProgress;
+        }
+
+        try
+        {
+            var readiness = new BasicReachabilityReadinessProbe();
+            var confirmation = new ReadyConfirmation();
+            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            Release(host);
+        }
+    }
+
     public Task<LcuVerifyResult> VerifyLcuAsync(
         string host,
         int targetUbr,

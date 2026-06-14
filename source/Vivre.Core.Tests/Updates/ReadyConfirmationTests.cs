@@ -34,20 +34,15 @@ public class ReadyConfirmationTests
     [Fact]
     public async Task Os_query_throws_returns_NotReady_never_Failed()
     {
-        // A faulting delegate simulates DCOM blowing up mid-query — must NOT propagate or return Failed.
-        var sut = new ReadyConfirmation(osQuery: (_, _) => Task.FromException<bool>(new InvalidOperationException("CIM bang")));
+        // An actually-throwing delegate simulates DCOM blowing up mid-query.
+        // ConfirmAsync must catch the exception, NOT propagate it, and return NotReady.
+        var sut = new ReadyConfirmation(
+            osQuery: (_, _) => throw new InvalidOperationException("DCOM blew up"));
 
-        // The delegate throws, but ReadyConfirmation internally catches non-cancel exceptions.
-        // However our seam passes the raw delegate — so we let the implementation decide.
-        // The production path catches inside TryQueryOs; the seam path propagates. We test the
-        // semantic contract here: if reachable=false (simulated via returning false), outcome is NotReady.
-        // This test verifies the contract via a non-throwing false return, which is equivalent to
-        // the catch block returning false in production.
-        var safeSut = new ReadyConfirmation(osQuery: (_, _) => Task.FromResult(false));
-        RebootConfirmationResult result = await safeSut.ConfirmAsync("BOX", CancellationToken.None);
+        RebootConfirmationResult result = await sut.ConfirmAsync("BOX", CancellationToken.None);
 
-        Assert.NotEqual(RebootConfirmationOutcome.Failed, result.Outcome);
         Assert.Equal(RebootConfirmationOutcome.NotReady, result.Outcome);
+        Assert.False(string.IsNullOrWhiteSpace(result.Message));
     }
 
     [Fact]

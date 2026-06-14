@@ -32,4 +32,13 @@ public class LcuRoutingTests
     [InlineData(null, false)]   // unread → deliberately NOT 2016 (fail-safe)
     public void Is2016_is_true_only_for_a_confirmed_14393_build(int? build, bool expected) =>
         Assert.Equal(expected, LcuRouting.Is2016(build));
+
+    [Theory]
+    [InlineData(14393, RebootVerifyLane.Lcu2016)]   // Server 2016 → UBR-confirmed lane
+    [InlineData(17763, RebootVerifyLane.Wua)]        // Server 2019 → WUA lane
+    [InlineData(20348, RebootVerifyLane.Wua)]        // Server 2022 → WUA lane
+    [InlineData(0,     RebootVerifyLane.Wua)]        // zero build → WUA (fail-safe)
+    [InlineData(null,  RebootVerifyLane.Wua)]        // unread → WUA (fail-safe)
+    public void RebootVerifyLaneFor_routes_14393_to_Lcu2016_everything_else_to_Wua(int? build, RebootVerifyLane expected) =>
+        Assert.Equal(expected, LcuRouting.RebootVerifyLaneFor(build));
 }

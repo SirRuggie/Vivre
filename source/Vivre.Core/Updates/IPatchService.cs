@@ -86,6 +86,23 @@ public interface IPatchService
         IProgress<HostPatchStatus> progress,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Reboot-and-verify for non-2016 boxes (Server 2019, 2022, Windows 10/11, etc.) after a WUA
+    /// install. Reboots the host, waits for it to come back online, then confirms the OS management
+    /// stack is responsive (<see cref="ReadyConfirmation"/>). Unlike the 2016 lane, success is
+    /// declared when the OS answers — whether updates "took" is validated by the caller's WUA rescan.
+    ///
+    /// <para>Uses the same per-host <c>_inFlight</c> claim as <see cref="RebootWaveLcuAsync"/> so a
+    /// reboot wave can never collide with an install or another wave on the same host.</para>
+    ///
+    /// <para>Nothing calls this yet — commit 5 wires it from the VM.</para>
+    /// </summary>
+    Task<HostPatchStatus> RebootWaveWuaAsync(
+        string host,
+        RebootWaveOptions waveOptions,
+        IProgress<HostPatchStatus> progress,
+        CancellationToken cancellationToken = default);
+
     /// <summary>The durable net: read the host's build/UBR and decide whether the staged CU committed.
     /// Read-only (no CBS/DISM), so it is never serialized — an operator can check any box, any time. A box
     /// that can't be read yet is <see cref="LcuVerifyOutcome.Unreachable"/> (retry), never a failure.</summary>
