@@ -83,11 +83,6 @@ public sealed class MonthlyCu
     /// reads 14393.9234. Verify and the Reboot Wave use this as the pass/fail check.</summary>
     public int TargetUbr { get; set; } = 9234;
 
-    /// <summary>Approximate package size in MB, shown in the "drop the file here" guidance so the operator can
-    /// sanity-check their download (e.g. ~1744 for KB5094122). Display-only — the package is matched by
-    /// KB + architecture in the filename, not by size, so an off-by-a-little value never rejects a good file.</summary>
-    public int ExpectedSizeMb { get; set; } = 1744;
-
     /// <summary>The display Vivre shows in the 2016 panel, e.g. "KB5094122 / 9234".</summary>
     public string Display => $"{Kb} / {TargetUbr}";
 }

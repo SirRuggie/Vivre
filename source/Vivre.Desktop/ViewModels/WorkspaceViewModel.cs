@@ -85,12 +85,11 @@ public enum RowFilter
 /// <param name="Ready">True when the correct package is present (Stage can proceed).</param>
 /// <param name="Kb">The KB to download, e.g. "KB5094122".</param>
 /// <param name="Arch">Architecture token, e.g. "x64".</param>
-/// <param name="SizeMb">Approximate size to expect, MB (sanity-check hint only).</param>
 /// <param name="Folder">The full folder path the .msu must go in (openable / copy-pasteable).</param>
 /// <param name="CatalogUrl">Microsoft Update Catalog search URL pre-filled to the KB.</param>
 /// <param name="Problem">Plain-language reason the package isn't ready (missing / wrong / ambiguous).</param>
 public sealed record LcuStageReadiness(
-    bool Ready, string Kb, string Arch, int SizeMb, string Folder, string CatalogUrl, string Problem);
+    bool Ready, string Kb, string Arch, string Folder, string CatalogUrl, string Problem);
 
 /// <summary>
 /// One independent workspace = one tab: its own computer list, selection, and
@@ -2798,7 +2797,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 Ready: false,
                 Kb: "(not set)",
                 Arch: s.MonthlyCu?.Arch ?? "x64",
-                SizeMb: s.MonthlyCu?.ExpectedSizeMb ?? 0,
                 Folder: s.LcuPackagesFolder,
                 CatalogUrl: "https://www.catalog.update.microsoft.com",
                 Problem: "This month's CU isn't set yet. Open Settings ▸ \"Server 2016 cumulative update\" and enter the KB (e.g. KB5094122) and target UBR first.");
@@ -2810,7 +2808,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             Ready: r.Status == LcuPackageStatus.Found,
             Kb: kb,
             Arch: s.MonthlyCu?.Arch ?? "x64",
-            SizeMb: s.MonthlyCu?.ExpectedSizeMb ?? 0,
             Folder: s.LcuPackagesFolder,
             CatalogUrl: r.CatalogUrl,
             Problem: r.Message);

@@ -207,15 +207,6 @@
                     <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="The update build revision the box should report after the CU commits, e.g. 9234 → 14393.9234. The Reboot Wave and Verify use this as the pass/fail check." />
 
-                    <!-- Approx. package size (MB) -->
-                    <ui:TextBlock Text="Approx. package size (MB)" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="LcuSizeBox"
-                                PlaceholderText="e.g. 1744"
-                                LostFocus="OnLcuSizeChanged"
-                                Margin="0,0,0,4" />
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="Roughly how big the .msu should be — shown in the &quot;add the package&quot; guidance as a sanity-check. Display only: the file is matched by KB + architecture in its name, not by size." />
-
                     <!-- Architecture (fixed) -->
                     <ui:TextBlock Text="Architecture" Margin="0,0,0,4" />
                     <ui:TextBlock Text="x64" Margin="0,0,0,12"
