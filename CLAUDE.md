@@ -93,6 +93,19 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
 - All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see UPDATE_PLAN.md).
+- **Shelling out to Windows PowerShell 5.1** (the WUG lane in `Wug/WugMaintenance.cs`, and any
+  out-of-process `powershell.exe` launch) has two traps `dotnet build` can't catch — a compiled-in PS
+  string only fails at *runtime*:
+  - **Write the temp `.ps1` as UTF-8 *with* BOM** (use `WugMaintenance.WritePs51ScriptAsync`). 5.1
+    reads a BOM-less script as the system ANSI code page, so one non-ASCII char (e.g. an em-dash in a
+    message) corrupts and the **whole script fails to parse — it runs nothing and emits nothing**. A
+    regression test locks the BOM in. Validate compiled-in PS by running it under **real** 5.1; don't
+    "verify" by writing the file with `Set-Content -Encoding UTF8`, which silently adds a BOM and hides this.
+  - **Strip the inherited `PSModulePath`** (`psi.Environment.Remove("PSModulePath")`) before launch.
+    Vivre's in-process PS7 runspace rewrites this process's `PSModulePath` to PS7 folders; a child
+    launched with `UseShellExecute=false` inherits it, so a 5.1 child can't find 5.1 modules.
+  - Never flatten a launch/parse/timeout failure into a false negative (e.g. "module missing") — surface
+    the real error.
 - Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
   changes or a feature lands — they're the human-readable source of truth.
 - **After every commit, verify the in-app how-to guide** (`HelpContent.cs`, surfaced as **Help ▸ How
