@@ -148,12 +148,13 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   path, but useful when a deploy looks off.
 
 ## Desktop / UI
-- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `HasSelectedServer2016` (selection-gate for the Reboot Wave button), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
+- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
   - `RebootWaveRowAsync` — per-box reboot-and-verify step (routes by `LcuRouting.RebootVerifyLaneFor`; calls `RebootWaveLcuAsync` or `RebootWaveWuaAsync`; post-wave calls `ReportPostRebootOutcomeAsync`).
   - `ReportPostRebootOutcomeAsync` — post-reboot rescan: read-only `ScanAsync` + reboot-pending probe → `RebootOutcomeSelector.Select` → outcome string. Never triggers Install/Uninstall/Reboot.
-  - `_waveThrottle` — static `SemaphoreSlim(256)`; concurrency width for the per-box offline-watch loops. Effectively unbounded so all selected boxes watch in parallel.
+  - `_waveThrottle` — static `SemaphoreSlim(256)`; concurrency width for the per-box offline-watch loops. Effectively unbounded so all selected boxes watch in parallel — the reboot-and-verify wave uses this (NOT the install/stage `_patchThrottle`), so a slow box's long commit never blocks a fast box's verify/report.
   - `_rebootTriggerThrottle` — static `SemaphoreSlim(12)`; caps simultaneous reboot *issuance* across the fleet. Shared across tabs to protect DCs/DNS/auth from a burst of simultaneous drops.
 - `ViewModels/RebootTriggerGate.cs` — `IRebootGate` impl wrapping `_rebootTriggerThrottle` with optional jitter. Released the instant the reboot is issued, never held through the watch.
+- **Fleet-wide reboot-and-verify entry point:** the grid right-click **Reboot & verify…** item (`WorkspaceView.xaml.cs` `OnRebootAndVerify` → confirm dialog → `RebootAndVerifyCommand`) is **Patching-mode-only** (gated by `vm.IsUpdateMode`, like the Scan/Install shortcuts). The 2016 LCU action-bar **Reboot Wave** button re-points to the same `OnRebootAndVerify` handler; it now enables on any selection (`RebootWaveButton.IsEnabled = SelectedComputers.Count > 0`), no longer 2016-only.
 - `ViewModels/ShellViewModel.cs` — `CloseTab` and tab/list management.
 - `WorkspaceView.xaml`(.cs) — ONE view, mode-swapped by `IsUpdateMode` (Health = `IsMachineMode`; Patching = `IsUpdateMode`), with two DataGrids that swap by visibility. The filter chips live in **two separate mode-gated StackPanels** (Health bar = 6 chips; Patching bar = full set incl. Updates, Server 2016, Not scanned, Scheduled). The LCU action bar (Border) is gated to Patching via a 3-condition MultiDataTrigger (ActiveFilter==Server2016 AND HasServer2016 AND IsUpdateMode). Status-pill label renames are **DataTrigger overrides in the Patching Status column only** — never edit the shared `PhaseChipLabelConverter` (it's also used by `ComputerDetailWindow.xaml`, so editing it leaks renames into the detail window / Health context).
 - `MainWindow.xaml`(.cs) — `DockMaxOpenFraction`, dock-height clamp. **Now hosts the completed `ui:NavigationView` shell** (LeftCompact pane + hamburger; Fleet → Health/Patching sub-items; Scripts; Cross-Domain RDP; Settings pinned bottom; mode chips + menu bar removed). The NavigationView refactor incl. Phase 4 is DONE — TODO: capture the as-built shell layout here in detail next time this file is touched.
@@ -162,18 +163,20 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - `App.xaml`(.cs) — composition root.
 - Converters: `EnumEqualsConverter.cs`, `UxConverters.cs`, `PhaseChipConverter.cs` (class `PhaseChipLabelConverter`; SHARED — Patching Status column + ComputerDetailWindow; do NOT edit for Patching-only label changes). Help text: `HelpContent.cs`.
 - **Dialog sizing standard** (audit `fe4d68e`): modals use `CenterOwner`; fixed-content forms use `SizeToContent` + Min/Max (NoResize OK); content-heavy/list dialogs use `CanResize` + a ScrollViewer with the action buttons in their OWN row OUTSIDE the ScrollViewer (so they're always visible). `SoftwareCheckWindow` uses `SizeToContent="Height"` + `MaxHeight` so it opens fully visible and only scrolls on a too-short screen. Sizing attributes only — **never bind `Run.Text`** (the a0cb80a render-break class).
-- `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`.
+- `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`. Also `LastInstallInstalledCount` / `LastInstallFailedCount` — runtime-only, non-observable counts written by `InstallRowAsync` and read by `ReportPostRebootOutcomeAsync` for the post-reboot outcome message.
 
 ## Settings / data
 - `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved).
 - `source/Vivre.Core/Computers/ComputerListStore.cs` — the computer list store.
-- `RebootOutcomeMessages.cs` (Vivre.Core) — the 6 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", etc.). **Now wired** via `RebootOutcomeSelector.Select` → `WorkspaceViewModel.ReportPostRebootOutcomeAsync`.
+- `RebootOutcomeMessages.cs` (Vivre.Core) — the 7 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", "… N remaining", "… N failed", and `BackOnlineRescanFailed()` → "Back online · couldn't rescan — re-check"). **Now wired** (no longer defined-but-unused) via the pure, truthfulness-first `RebootOutcomeSelector.Select` → `WorkspaceViewModel.ReportPostRebootOutcomeAsync` — a scan failure or failed updates never read as a clean "up to date".
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **344 green** as of the WUG resolution (was 339 at the WUG pre-flight
-  build, 328 at the Part B naming pass, 313 at the panel rebuild). Includes the wave behavior tests
-  (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red),
-  the LCU classifier tests, the phase→state mapping tests, the `RebootOutcomeMessages` tests, the
+- `source/Vivre.Core.Tests/...` — **367 green** (344 at the WUG resolution; 360 after the pluggable-wave
+  refactor; +7 across the reboot-and-verify build). Includes the wave behavior tests
+  (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red,
+  **per-box independence**, **reboot-gate enter/release**), the LCU classifier + `RebootVerifyLaneFor`
+  routing tests, the `RebootOutcomeSelector` + `ReadyConfirmation` tests, the phase→state mapping tests,
+  the `RebootOutcomeMessages` tests, the
   `ParsePreflight` result-classification tests (now incl. the safe-default contract + `__WUGRESULT__`
   marker extraction — failure cases must NOT claim the module is missing), and the
   **`WritePs51Script_writes_utf8_with_bom`** BOM regression guard (`Vivre.Core.Tests/Wug/`).
@@ -197,3 +200,9 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   `PSModulePath` + BOM-less script encoding on the 5.1 shell-outs (`756fa9d`)** — closes
   the WUG saga; covers the pre-flight feature, Gotcha-1 strip, Gotcha-2 BOM helper + regression test,
   and the truthful-connect-error parse contract.
+- **Fleet-wide reboot-and-verify (`473585d`→`7e4c1dd`; Patching-only gating fix `300ee4e`)** — generalized
+  the 2016 Reboot Wave to ALL boxes: pluggable verify/readiness (`IPostRebootConfirmation` —
+  `UbrConfirmation` for 2016 / `ReadyConfirmation` for others — + `BasicReachabilityReadinessProbe`),
+  post-reboot WUA rescan wired to `RebootOutcomeMessages` via `RebootOutcomeSelector`, unbounded per-box
+  watch (`_waveThrottle`) + reboot-trigger gate (`IRebootGate`/`RebootTriggerGate`/`_rebootTriggerThrottle`),
+  right-click **Reboot & verify…** (Patching-only). 367 tests; merged to master.

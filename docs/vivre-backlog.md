@@ -3,24 +3,15 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: OneDrive relocation DONE (repo now `C:\src\Vivre`); WUG saga +
-> dialog audit closed; NavigationView refactor (incl. Phase 4) corrected to DONE.
+> not a mandate). Last refreshed: **fleet-wide reboot-and-verify shipped + merged to master (367
+> tests)**; OneDrive relocation DONE (repo now `C:\src\Vivre`); WUG saga + dialog audit closed;
+> NavigationView refactor (incl. Phase 4) DONE.
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-### 1. Smart reboot-and-verify flow (building blocks proven, wording ready)
-The most-ready high-value feature win — generalize the 2016 lane's CU-commit verify to ALL reboots,
-fleet-wide:
-- On reboot, watch the box go down, then wait until it's *genuinely fully up* — not just pingable
-  (ping answers mid-boot). Use a real "ready" signal (services started / WinRM-or-agent responsive).
-- When truly up, auto-rescan and report a plain outcome using the already-written
-  `RebootOutcomeMessages.cs` strings ("Back online · installed X · up to date", etc. — defined, not
-  yet wired).
-- Building blocks confirmed live: AZRADMANPLUS install-over-agent (KB2267602 via SMB → "Up to date").
-
-### 2. Smart scan flow (design settled)
+### 1. Smart scan flow (design settled)
 - Scan gates Stage (Stage unavailable until a scan has run on the box).
 - Scan auto-populates KB / target UBR (read from scan result) — no manual entry.
 - Pre-stage checks: already-current (UBR == target → "Already current", skip) and already-staged
@@ -85,6 +76,22 @@ fleet-wide:
 
 ## DONE (committed) — recent
 
+- **Fleet-wide reboot-and-verify** (`473585d` · `a7f456f` · `18c7eaf` · `7323a8d` · `a9922f7` ·
+  `c96a265` · `50e1a87` · `7e4c1dd`; Patching-only gating fix `300ee4e`). Generalized the 2016 Reboot
+  Wave to ALL boxes — after an operator-confirmed reboot, each box is watched offline → genuinely-ready
+  (TCP-445 then a per-box confirm strategy) → auto-rescanned → a plain outcome reported.
+  - **Verify by OS:** 2016 = UBR check in-wave first (a rolled-back box is caught as failed), then a WUA
+    rescan appended as a "what's still needed" note; everything else = WUA rescan only (0 applicable = up
+    to date). `IPostRebootConfirmation` (`UbrConfirmation` / `ReadyConfirmation`) + `BasicReachabilityReadinessProbe`,
+    routed per box by `LcuRouting.RebootVerifyLaneFor`.
+  - **Outcomes wired:** `RebootOutcomeMessages` (now incl. `BackOnlineRescanFailed`) via the pure
+    truthfulness-first `RebootOutcomeSelector`; install counts carried on `Computer.LastInstall*`.
+  - **140-box scale:** unbounded per-box watch (`_waveThrottle` 256) so a slow 2016 commit never blocks a
+    fast box; reboot *issuance* capped (`_rebootTriggerThrottle` 12 + jitter via `IRebootGate`) to protect
+    DCs/DNS/auth.
+  - **Entry:** right-click **Reboot & verify…** (Patching-mode only); 2016 panel button re-points to it.
+    Operator-confirmed only; the rescan/outcome path is read-only (no autonomous reboot; agent untouched).
+    **367 tests green; visual-checked; merged to master.**
 - **Relocate repo + publish output out of OneDrive → `C:\src\Vivre`.** Killed the stale-binary class
   (OneDrive placeholder copies launching old code), the `.git/worktrees` lock, and the LF/CRLF churn.
   `.gitattributes` `* text=auto` in place; signing cert confirmed still found. (The path map's
@@ -133,7 +140,7 @@ Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`,
 `2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
 `first-run-beta-checklist.md` were removed as stale/spent.)
 - `key-file-path-map.md` — **refreshed this pass** (OneDrive trap → resolved/relocated; nav → done;
-  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; 344 tests).
+  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; 367 tests).
   TODO: capture the as-built NavigationView shell layout next time MainWindow
   is touched.
 - `vivre-backlog.md` — **this file, refreshed this pass.**
