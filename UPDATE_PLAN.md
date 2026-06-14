@@ -168,6 +168,103 @@ These mechanisms exist because of real production failures. Don't undo them with
 
 ---
 
+## Reboot-and-verify
+
+A fleet-wide reboot-with-confirmation flow accessible from the right-click menu as **Reboot & verify…**.
+
+### Entry point and confirm gate
+
+`WorkspaceViewModel.RebootAndVerifyAsync` (the `[RelayCommand]`) acts only on the
+operator-selected rows. The UI shows a confirm dialog naming each machine before any reboot is
+issued — nothing fires autonomously. Cancelling the dialog is a no-op.
+
+### Per-box wave (`RebootWaveRowAsync` → `PatchService.RebootWaveLcuAsync` / `RebootWaveWuaAsync`)
+
+Routing is by `LcuRouting.RebootVerifyLaneFor(computer.OsBuild)`:
+
+- **Server 2016 (build 14393)** → `RebootWaveLcuAsync` → `DcomRebootReadinessProbe` +
+  `UbrConfirmation`. Pre-reboot guard checks TrustedInstaller-stopped + CBS RebootPending to
+  avoid rebooting into the 2-hour Stopping hang. Post-reboot UBR is read via `DcomLcuBuildReader`
+  and compared to the operator's target UBR; a rolled-back build is caught as Failed (red).
+- **All other boxes** → `RebootWaveWuaAsync` → `BasicReachabilityReadinessProbe` +
+  `ReadyConfirmation`. Pre-reboot gate is unconditionally ready (no 2016-specific signals to
+  check). Post-reboot confirmation queries `Win32_OperatingSystem` over DCOM/CIM — Confirmed when
+  the OS stack answers, NotReady (retry) when it can't be reached yet. It never returns Failed;
+  whether updates took is determined by the WUA rescan below.
+
+### Reboot execution (`RebootWave.RebootAndCommitAsync`)
+
+`DcomRebootTrigger` is the **sole reboot primitive** — its only call path is
+`RebootWave.RebootAndCommitAsync`. No other code calls Win32Shutdown, `shutdown.exe`,
+`Restart-Computer`, or any reboot API.
+
+Flow per box:
+1. Pre-reboot readiness check (fails fast with a clear message if not ready).
+2. Graceful reboot issued.
+3. Wait up to the go-offline window (default 8 min) for the box to drop off TCP-445.
+   If it doesn't drop: **escalate to a forced reboot** (completion of the operator-ordered
+   reboot, not an autonomous decision). If it still won't drop: red (check it directly).
+4. Unbounded offline watch — `OfflineCeiling` only flags "Overdue — check console/iLO" once;
+   the clock never stops watching and never fails a box just for being slow.
+5. When TCP-445 comes back: confirmation strategy runs. `NotReady` → retry (still coming up);
+   `Confirmed` → green (Done); `Failed` → red (e.g. rolled-back UBR).
+6. `HardCap` (default 4 h): if the box hasn't returned by then, the live loop exits red with
+   "no longer tracking it live — use Verify once it's back up". The standalone Verify action
+   is the durable net past the live wave.
+
+### Scale model — two throttles, one gate per wave
+
+`_waveThrottle` (static `SemaphoreSlim(256)`) is the concurrency width for the per-box watch
+loops. It is effectively unbounded so ALL selected boxes start their offline watch simultaneously
+— a slow Server 2016 commit (45 min typical) never blocks a fast box from completing and
+reporting.
+
+`_rebootTriggerThrottle` (static `SemaphoreSlim(12)`) caps the burst rate of simultaneous reboot
+*issuance* to protect DCs/DNS/auth services from too many boxes dropping off the network at the
+same instant. Both throttles are shared across tabs (static fields on the VM) so a multi-tab
+fleet scenario doesn't multiply the burst.
+
+`RebootTriggerGate` wraps the trigger throttle semaphore and adds an optional jitter delay
+(500 ms default) spread across slots to further stagger reboot commands when many boxes become
+eligible at once. The gate is acquired only around the reboot call and released immediately
+after — never held through the offline watch — so it never serializes the per-box verify step.
+
+### Post-reboot rescan (read-only)
+
+After `RebootWave.RebootAndCommitAsync` returns `Done`, `ReportPostRebootOutcomeAsync` runs:
+
+1. **Applicable rescan** — `PatchService.ScanAsync(scope=Applicable)` only. This is
+   **strictly read-only**: no Install, no Uninstall, no further Reboot is ever called here.
+2. **Reboot-still-pending probe** — `IRebootPendingProbe.IsRebootPendingAsync` (best-effort;
+   failure → treat as "don't know", never as pending).
+3. **Outcome selection** — `RebootOutcomeSelector.Select(installed, failed, remaining,
+   rebootStillPending, scanFailed)` → one of the `RebootOutcomeMessages` format strings
+   (now fully wired — see below).
+
+For non-2016 boxes the outcome string replaces `UpdateMessage` as the primary result.
+For 2016 boxes the wave's UBR Done message is kept as primary; the rescan appends a
+supplementary note (e.g. "· up to date" or "· N update(s) still applicable — run a WUA pass").
+
+### Readiness vs offline-detection distinction
+
+- **Readiness probe** (`IRebootReadinessProbe`) — PRE-reboot question: "may we reboot this box
+  right now?" For 2016 this guards against rebooting with TrustedInstaller still stopping. For
+  other boxes (`BasicReachabilityReadinessProbe`) it always answers Ready — the 2016-specific
+  signals don't apply and the reboot was operator-ordered.
+- **Offline detection** (`IReachabilityProbe` / `TcpReachabilityProbe`) — POST-reboot question:
+  "has the box dropped off the network yet?" Entirely separate from readiness; drives the
+  `WaitForOfflineAsync` loop and the online-watch loop in `RebootAndCommitAsync`.
+
+### `RebootOutcomeMessages` — now wired
+
+`RebootOutcomeMessages.cs` defines six format methods (BackOnlineUpToDate, BackOnlineRemaining,
+BackOnlineFailed, InstalledNoReboot, RebootStillPending, BackOnlineRescanFailed, StillRebooting).
+`RebootOutcomeSelector.Select` calls five of them (InstalledNoReboot and StillRebooting are
+excluded — wrong semantic context). The selector is called from `ReportPostRebootOutcomeAsync`
+in `WorkspaceViewModel`, closing the full reboot-and-verify loop.
+
+---
+
 ## Status
 
 **Done:** scan; install with live progress; uninstall (WUA + DISM, with the cumulative-update reason
