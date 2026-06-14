@@ -130,14 +130,14 @@ fleet-wide:
 
 ## KNOWLEDGE DOCS — current set + refresh status
 Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
-`2016-LCU-red-team-review.md`, `2016-lcu-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
+`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
 `first-run-beta-checklist.md` were removed as stale/spent.)
 - `key-file-path-map.md` — **refreshed this pass** (OneDrive trap → resolved/relocated; nav → done;
-  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; 344 tests). Drop the
+  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; 344 tests).
   TODO: capture the as-built NavigationView shell layout next time MainWindow
   is touched.
 - `vivre-backlog.md` — **this file, refreshed this pass.**
-- `2016-lcu-panel-spec.md` — minor: shows "313 tests" as the historical as-built count (fine as a
+- `2016-LCU-panel-spec.md` — minor: shows "313 tests" as the historical as-built count (fine as a
   point-in-time record); could note cab-extraction + SSU/LCU ordering + StagedThisSession when next edited.
 - `2016-LCU-lane-spec.md` / `2016-LCU-red-team-review.md` — substantively accurate; cycle-specific
   KB/UBR (KB5094122 / 9234) is "this cycle" by design.

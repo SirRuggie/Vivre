@@ -167,7 +167,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 
 ## Docs in repo
 - **Root:** `UPDATE_PLAN.md` (the WUA lane), `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
-- **`docs/`:** `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-lcu-panel-spec.md`, `2016-LCU-red-team-review.md`.
+- **`docs/`:** `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`.
 - Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / UPDATE_PLAN.md / this file.
 
 ## Recent commits (restore points, newest last)
