@@ -84,7 +84,8 @@ public interface IPatchService
         int targetUbr,
         RebootWaveOptions waveOptions,
         IProgress<HostPatchStatus> progress,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IRebootGate? rebootGate = null);
 
     /// <summary>
     /// Reboot-and-verify for non-2016 boxes (Server 2019, 2022, Windows 10/11, etc.) after a WUA
@@ -101,7 +102,8 @@ public interface IPatchService
         string host,
         RebootWaveOptions waveOptions,
         IProgress<HostPatchStatus> progress,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IRebootGate? rebootGate = null);
 
     /// <summary>The durable net: read the host's build/UBR and decide whether the staged CU committed.
     /// Read-only (no CBS/DISM), so it is never serialized — an operator can check any box, any time. A box

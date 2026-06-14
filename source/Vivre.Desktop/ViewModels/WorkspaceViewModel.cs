@@ -193,6 +193,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly List<CancellationTokenSource> _activeCts = [];
     // Install/uninstall throttle (heavy SYSTEM-task operations — kept low; per-tab).
     private readonly SemaphoreSlim _patchThrottle;
+
+    // Reboot-and-verify wave throttles. Two separate concerns:
+    //   _waveThrottle: concurrency width for the watch loop itself — effectively unbounded (256)
+    //     so ALL selected boxes start their offline watch simultaneously; a slow box (e.g. 45-min
+    //     Server 2016 commit) NEVER blocks a fast box from completing its verify/report.
+    //   _rebootTriggerThrottle: concurrency width only around the instant the reboot is ISSUED —
+    //     a small burst cap that staggers reboot commands to protect DCs/DNS/auth services from
+    //     having too many boxes drop off the network at exactly the same moment.
+    // Shared across tabs (static) so a multi-tab fleet scenario doesn't multiply the burst.
+    private static readonly SemaphoreSlim _waveThrottle = new(256);
+    private const int MaxConcurrentRebootIssue = 12;
+    private static readonly SemaphoreSlim _rebootTriggerThrottle = new(MaxConcurrentRebootIssue);
+
     private CancellationTokenSource? _monitorCts;
 
     // --- Row-disjoint concurrency registry ---
@@ -2825,7 +2838,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return Task.CompletedTask;
         }
 
-        return RunPatchSweepAsync(selected, RebootWaveRowAsync, "Reboot & verify", _patchThrottle,
+        // One shared gate per wave invocation: limits how many reboots are ISSUED simultaneously
+        // (burst protection for DCs/DNS/auth), but never holds a slot through the offline watch —
+        // so all boxes watch + verify in parallel, independent of each other.
+        var gate = new RebootTriggerGate(_rebootTriggerThrottle, jitterMs: 500);
+
+        return RunPatchSweepAsync(selected, (c, ct) => RebootWaveRowAsync(c, gate, ct), "Reboot & verify", _waveThrottle,
             // The wave self-bounds at its own hard cap; give the per-host watchdog a margin beyond it so it
             // never cuts a legitimately-still-committing box short. Standalone Verify is the net past this.
             RebootWaveOptions.Default.HardCap + TimeSpan.FromMinutes(15));
@@ -3010,7 +3028,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     ///   and OS-queryable; the actual verify comes from the post-reboot Applicable rescan.</description></item>
     /// </list>
     /// </summary>
-    private async Task RebootWaveRowAsync(Computer computer, CancellationToken token)
+    private async Task RebootWaveRowAsync(Computer computer, IRebootGate gate, CancellationToken token)
     {
         if (computer.IsPatching)
         {
@@ -3034,12 +3052,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
                 final = await _patch
-                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token);
+                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token, gate);
             }
             else
             {
                 final = await _patch
-                    .RebootWaveWuaAsync(computer.Name, RebootWaveOptions.Default, progress, token);
+                    .RebootWaveWuaAsync(computer.Name, RebootWaveOptions.Default, progress, token, gate);
             }
 
             ApplyStatus(computer, final);

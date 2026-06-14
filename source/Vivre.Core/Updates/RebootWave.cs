@@ -40,19 +40,36 @@ public sealed class RebootWave
     /// <paramref name="confirmation"/> strategy confirms success
     /// (<see cref="PatchPhase.Done"/>), a rollback/no-take is detected, the reboot won't take, or the
     /// box stays offline past the hard cap (red — use Verify when it returns).</summary>
+    /// <param name="rebootGate">Optional rate-limiter for reboot issuance. Acquired only around the
+    /// actual reboot trigger and released immediately after — never held through the offline watch.</param>
     public async Task<HostPatchStatus> RebootAndCommitAsync(
         string host,
         RebootWaveOptions options,
         IRebootReadinessProbe readiness,
         IPostRebootConfirmation confirmation,
         IProgress<HostPatchStatus> progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IRebootGate? rebootGate = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(readiness);
         ArgumentNullException.ThrowIfNull(confirmation);
         ArgumentNullException.ThrowIfNull(progress);
+
+        // Issues the reboot, acquiring the gate (if any) only around this call and releasing it
+        // immediately after — never held through the offline watch so it never serializes per-box verify.
+        async Task IssueRebootAsync(bool forced)
+        {
+            if (rebootGate is null)
+            {
+                await _reboot.RebootAsync(host, forced, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
+            using IDisposable _ = await rebootGate.EnterAsync(cancellationToken).ConfigureAwait(false);
+            await _reboot.RebootAsync(host, forced, cancellationToken).ConfigureAwait(false);
+        }
 
         // 1) Re-check readiness right now — TI must already be stopped, or we'd reboot into the hang.
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Checking reboot-readiness…"));
@@ -67,7 +84,7 @@ public sealed class RebootWave
         // tool never gets here on its own. So the escalation below is the *completion* of a reboot the
         // operator ordered on a box they selected, never an independent decision to reboot or force anything.
         progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Rebooting (graceful)…"));
-        await _reboot.RebootAsync(host, forced: false, cancellationToken).ConfigureAwait(false);
+        await IssueRebootAsync(forced: false).ConfigureAwait(false);
 
         // 3) Wait for it to drop off the network; if the graceful reboot the operator ordered won't take
         // within the window, escalate to a forced reboot to make THAT ordered reboot actually complete.
@@ -75,7 +92,7 @@ public sealed class RebootWave
         {
             progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
                 $"Still up after {options.GoOfflineWindow.TotalMinutes:N0} min — escalating to a forced reboot to complete it…"));
-            await _reboot.RebootAsync(host, forced: true, cancellationToken).ConfigureAwait(false);
+            await IssueRebootAsync(forced: true).ConfigureAwait(false);
 
             if (!await WaitForOfflineAsync(host, options.GoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
             {

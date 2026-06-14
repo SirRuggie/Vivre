@@ -189,7 +189,8 @@ public sealed class PatchService : IPatchService
         int targetUbr,
         RebootWaveOptions waveOptions,
         IProgress<HostPatchStatus> progress,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IRebootGate? rebootGate = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentNullException.ThrowIfNull(waveOptions);
@@ -205,7 +206,7 @@ public sealed class PatchService : IPatchService
         {
             var readiness = new DcomRebootReadinessProbe();
             var confirmation = new UbrConfirmation(new DcomLcuBuildReader(), targetUbr);
-            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken).ConfigureAwait(false);
+            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate).ConfigureAwait(false);
         }
         finally
         {
@@ -217,7 +218,8 @@ public sealed class PatchService : IPatchService
         string host,
         RebootWaveOptions waveOptions,
         IProgress<HostPatchStatus> progress,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IRebootGate? rebootGate = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentNullException.ThrowIfNull(waveOptions);
@@ -233,7 +235,7 @@ public sealed class PatchService : IPatchService
         {
             var readiness = new BasicReachabilityReadinessProbe();
             var confirmation = new ReadyConfirmation();
-            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken).ConfigureAwait(false);
+            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate).ConfigureAwait(false);
         }
         finally
         {

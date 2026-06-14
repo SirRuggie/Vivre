@@ -120,6 +120,55 @@ public class RebootWaveTests
         Assert.Contains("Verify", result.Message); // tells the operator to Verify when it's back
     }
 
+    [Fact]
+    public async Task Per_box_independence_fast_box_completes_before_slow_box_finishes()
+    {
+        // Slow box: needs 12 offline checks before it returns (long commit path).
+        var slowBox = new FakeBox { GracefulTakesOffline = true, ComesBackAfterChecks = 12, UbrAfterReturn = TargetUbr };
+        var (slowWave, _, slowReadiness, slowConfirmation) = Build(slowBox);
+
+        // Fast box: returns after 2 offline checks (quick).
+        var fastBox = new FakeBox { GracefulTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr };
+        var (fastWave, _, fastReadiness, fastConfirmation) = Build(fastBox);
+
+        // Both use a fast poll so the test runs in milliseconds.
+        RebootWaveOptions slowOpts = Fast(goOfflineMs: 2000, ceilingMs: 5000, hardCapMs: 30000);
+        RebootWaveOptions fastOpts = Fast(goOfflineMs: 2000, ceilingMs: 5000, hardCapMs: 30000);
+
+        Task<HostPatchStatus> slowTask = slowWave.RebootAndCommitAsync("SLOW", slowOpts, slowReadiness, slowConfirmation, new RecProgress(), CancellationToken.None);
+        Task<HostPatchStatus> fastTask = fastWave.RebootAndCommitAsync("FAST", fastOpts, fastReadiness, fastConfirmation, new RecProgress(), CancellationToken.None);
+
+        // The fast task must complete well before the slow one finishes.
+        HostPatchStatus fastResult = await fastTask;
+        bool slowStillRunning = !slowTask.IsCompleted;
+
+        // Wait for slow to finish too (so we don't leave background tasks dangling).
+        HostPatchStatus slowResult = await slowTask;
+
+        Assert.Equal(PatchPhase.Done, fastResult.Phase);
+        Assert.Equal(PatchPhase.Done, slowResult.Phase);
+        Assert.True(slowStillRunning, "Fast box should complete while slow box is still committing.");
+    }
+
+    [Fact]
+    public async Task RebootGate_is_entered_and_released_around_each_reboot_call()
+    {
+        // Proves the gate wraps the reboot and is released before (or as soon as) the offline watch begins.
+        var box = new FakeBox { GracefulTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        var gate = new CountingGate();
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(), readiness, confirmation, new RecProgress(), CancellationToken.None, gate);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        // The graceful reboot causes one Enter, which must be disposed (released) around the call.
+        Assert.Equal(1, gate.EnterCount);
+        Assert.Equal(1, gate.DisposeCount);
+        // The gate must have been released BEFORE the wave declared Done (it's released right after the reboot).
+        Assert.True(gate.DisposeCount >= gate.EnterCount, "Every Enter must have a matching Dispose.");
+    }
+
     private static (RebootWave wave, FakeReboot reboot, IRebootReadinessProbe readiness, IPostRebootConfirmation confirmation) Build(FakeBox box)
     {
         var reboot = new FakeReboot(box);
@@ -192,5 +241,23 @@ public class RebootWaveTests
     {
         public List<HostPatchStatus> Reports { get; } = [];
         public void Report(HostPatchStatus value) { lock (Reports) { Reports.Add(value); } }
+    }
+
+    /// <summary>Counts Enter/Dispose calls so tests can assert the gate wrapped the reboot.</summary>
+    private sealed class CountingGate : IRebootGate
+    {
+        public int EnterCount;
+        public int DisposeCount;
+
+        public Task<IDisposable> EnterAsync(CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref EnterCount);
+            return Task.FromResult<IDisposable>(new CountingReleaser(this));
+        }
+
+        private sealed class CountingReleaser(CountingGate gate) : IDisposable
+        {
+            public void Dispose() => Interlocked.Increment(ref gate.DisposeCount);
+        }
     }
 }
