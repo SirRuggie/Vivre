@@ -1,3 +1,7 @@
+using System.Collections.Generic;
+using System.Linq;
+using Vivre.Core.Models;
+
 namespace Vivre.Core.Updates;
 
 /// <summary>Pure pre-Stage decision predicates for the Server 2016 lane (no I/O), so the Stage
@@ -14,4 +18,10 @@ public static class StagePreconditions
     /// Verified verdict. WrongBuild (readable but different) and Unreachable (null/unreadable read)
     /// both return false so the caller proceeds to Stage — fail-open on an unreadable box.</summary>
     public static bool IsAlreadyCurrent(LcuVerifyOutcome outcome) => outcome == LcuVerifyOutcome.Verified;
+
+    /// <summary>The Stage targets that have NOT been scanned this session (LastScannedApplicable is null).
+    /// An empty result means every target is scanned and Stage may proceed; a non-empty result lists the
+    /// machine names the operator must scan first.</summary>
+    public static IReadOnlyList<string> UnscannedThisSession(IEnumerable<Computer> targets) =>
+        targets.Where(c => c.LastScannedApplicable is null).Select(c => c.Name).ToList();
 }

@@ -2775,6 +2775,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         return selected.Count > 0 ? selected : [.. Computers.Where(c => LcuRouting.Is2016(c.OsBuild))];
     }
 
+    /// <summary>The 2016 Stage targets not yet scanned this session — the View blocks Stage and lists these
+    /// until they're scanned. (A post-reboot rescan sets LastScannedApplicable and satisfies this gate.)</summary>
+    public IReadOnlyList<string> UnscannedStageTargets() => StagePreconditions.UnscannedThisSession(Server2016Targets());
+
     private static LcuTarget BuildLcuTarget(AppSettings s) =>
         new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
 
