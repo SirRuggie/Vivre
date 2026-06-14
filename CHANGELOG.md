@@ -72,6 +72,13 @@ it ships, then gets a dated heading.
   confirm or repair the setup up front instead of discovering a problem mid-run. Failures now name the
   real cause (unreachable server / rejected credentials / module missing) instead of a misleading
   "module not installed".
+- **Smarter Server 2016 staging** — Stage now confirms each box's current state before touching it.
+  A 2016 box must be scanned this session before it can be staged (Stage lists any boxes that still
+  need a scan and stops); a box that's already staged and waiting to reboot is skipped ("Already
+  staged — run Reboot Wave"); and a box already at the target build is skipped after a quick build
+  check ("Already current — skipped"). If that build check can't reach the box it stages anyway
+  (fail-safe). The display-only "Approx. package size (MB)" Settings field was removed (the package
+  is matched by KB + architecture, never size).
 
 ### Fixed
 - **A Kerberos auth rejection no longer masquerades as "the remote session ended"** — when a target refuses

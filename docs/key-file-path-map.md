@@ -10,6 +10,7 @@
 - `RebootWave.cs` / `IRebootWave.cs` (Vivre.Core) — the wave state machine. Graceful→8min→force escalation, scoped to operator-selected + confirmed boxes only. `RebootAndCommitAsync` takes a pluggable `IRebootReadinessProbe` and `IPostRebootConfirmation` so the wave is reusable across box types, and an optional `IRebootGate` for burst-rate limiting.
 - `DcomRebootTrigger` (Vivre.Core) — the ONLY reboot primitive in the C# codebase (wave-only, DCOM `Win32Shutdown`); SMB reboot fallback for Kerberos boxes (64337d1).
 - `DcomLcuBuildReader` (Vivre.Core) — reads the UBR over DCOM for Verify.
+- `StagePreconditions` (Vivre.Core/Updates) — pure, unit-tested pre-Stage decision predicates: `IsAlreadyStaged` (RebootRequired && StagedThisSession → skip "Already staged — run Reboot Wave"), `IsAlreadyCurrent` (VerifyLcuAsync's verdict == Verified → skip "Already current — skipped"; fail-OPEN on a null/unreadable read), `UnscannedThisSession` (targets whose `LastScannedApplicable` is null → the scan-this-session gate). Wired into `StageLcuRowAsync` (the two skips) and `OnStage2016` via `WorkspaceViewModel.UnscannedStageTargets()` (the gate, shown before the package check).
 - `DcomRebootReadinessProbe` (Vivre.Core) — pre-reboot readiness guard (3 signals, fail-safe: unreadable = not-ready). Used for Server 2016 staged boxes to prevent rebooting into the 2-hour TrustedInstaller Stopping hang.
 - `BasicReachabilityReadinessProbe` (Vivre.Core) — permissive readiness probe for non-2016 operator-ordered reboots. Always answers Ready; the 2016-specific TrustedInstaller/CBS signals do not apply.
 - `IPostRebootConfirmation` (Vivre.Core) — pluggable post-reboot confirmation strategy. Three outcomes: Confirmed (terminal green), Failed (terminal red), NotReady (retry).
@@ -148,7 +149,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   path, but useful when a deploy looks off.
 
 ## Desktop / UI
-- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
+- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), `UnscannedStageTargets()` (returns 2016 targets that haven't been scanned this session — used by the Stage scan-gate), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
   - `RebootWaveRowAsync` — per-box reboot-and-verify step (routes by `LcuRouting.RebootVerifyLaneFor`; calls `RebootWaveLcuAsync` or `RebootWaveWuaAsync`; post-wave calls `ReportPostRebootOutcomeAsync`).
   - `ReportPostRebootOutcomeAsync` — post-reboot rescan: read-only `ScanAsync` + reboot-pending probe → `RebootOutcomeSelector.Select` → outcome string. Never triggers Install/Uninstall/Reboot.
   - `_waveThrottle` — static `SemaphoreSlim(256)`; concurrency width for the per-box offline-watch loops. Effectively unbounded so all selected boxes watch in parallel — the reboot-and-verify wave uses this (NOT the install/stage `_patchThrottle`), so a slow box's long commit never blocks a fast box's verify/report.
@@ -166,20 +167,21 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`. Also `LastInstallInstalledCount` / `LastInstallFailedCount` — runtime-only, non-observable counts written by `InstallRowAsync` and read by `ReportPostRebootOutcomeAsync` for the post-reboot outcome message.
 
 ## Settings / data
-- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved).
+- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED (`0718f7a`)** — it was display-only; the package is matched by KB + architecture, never size.
 - `source/Vivre.Core/Computers/ComputerListStore.cs` — the computer list store.
 - `RebootOutcomeMessages.cs` (Vivre.Core) — the 7 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", "… N remaining", "… N failed", and `BackOnlineRescanFailed()` → "Back online · couldn't rescan — re-check"). **Now wired** (no longer defined-but-unused) via the pure, truthfulness-first `RebootOutcomeSelector.Select` → `WorkspaceViewModel.ReportPostRebootOutcomeAsync` — a scan failure or failed updates never read as a clean "up to date".
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **367 green** (344 at the WUG resolution; 360 after the pluggable-wave
-  refactor; +7 across the reboot-and-verify build). Includes the wave behavior tests
+- `source/Vivre.Core.Tests/...` — **378 green** (344 at the WUG resolution; 360 after the pluggable-wave
+  refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build). Includes the wave behavior tests
   (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red,
   **per-box independence**, **reboot-gate enter/release**), the LCU classifier + `RebootVerifyLaneFor`
   routing tests, the `RebootOutcomeSelector` + `ReadyConfirmation` tests, the phase→state mapping tests,
   the `RebootOutcomeMessages` tests, the
   `ParsePreflight` result-classification tests (now incl. the safe-default contract + `__WUGRESULT__`
-  marker extraction — failure cases must NOT claim the module is missing), and the
-  **`WritePs51Script_writes_utf8_with_bom`** BOM regression guard (`Vivre.Core.Tests/Wug/`).
+  marker extraction — failure cases must NOT claim the module is missing), the
+  **`WritePs51Script_writes_utf8_with_bom`** BOM regression guard (`Vivre.Core.Tests/Wug/`), and
+  the **`StagePreconditions`** unit tests (IsAlreadyStaged, IsAlreadyCurrent fail-open, UnscannedThisSession).
 
 ## Docs in repo
 - **Root:** `UPDATE_PLAN.md` (the WUA lane), `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
@@ -206,3 +208,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   post-reboot WUA rescan wired to `RebootOutcomeMessages` via `RebootOutcomeSelector`, unbounded per-box
   watch (`_waveThrottle`) + reboot-trigger gate (`IRebootGate`/`RebootTriggerGate`/`_rebootTriggerThrottle`),
   right-click **Reboot & verify…** (Patching-only). 367 tests; merged to master.
+- **Smart scan flow — Stage guards (`3a35292` already-staged · `ef795de` already-current · `6350957`
+  scan-gate) + `0718f7a` remove ExpectedSizeMb. 378 tests.** Pure `StagePreconditions` helper wired
+  into Stage: scan-this-session gate, already-staged skip, already-current UBR check (fail-open).
+  Removed display-only `MonthlyCu.ExpectedSizeMb` Settings field.

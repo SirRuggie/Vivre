@@ -3,22 +3,21 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **fleet-wide reboot-and-verify shipped + merged to master (367
-> tests)**; OneDrive relocation DONE (repo now `C:\src\Vivre`); WUG saga + dialog audit closed;
-> NavigationView refactor (incl. Phase 4) DONE.
+> not a mandate). Last refreshed: **smart scan flow Stage guards shipped (378 tests)**; fleet-wide
+> reboot-and-verify shipped + merged to master; OneDrive relocation DONE (repo now `C:\src\Vivre`);
+> WUG saga + dialog audit closed; NavigationView refactor (incl. Phase 4) DONE.
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-### 1. Smart scan flow (design settled)
-- Scan gates Stage (Stage unavailable until a scan has run on the box).
-- Scan auto-populates KB / target UBR (read from scan result) — no manual entry.
-- Pre-stage checks: already-current (UBR == target → "Already current", skip) and already-staged
-  (RebootPending + StagedThisSession → "Already staged", skip).
-- Guided "go get the package" prompt keeps the KB from the scan. Persisted across sessions.
-- Pairs naturally with **Settings simplification** below (scan provides KB/UBR, so those Settings
-  fields can go).
+### 1. Smart scan flow — KB auto-population (remaining; needs a red-team gate)
+The Stage gates + short-circuits shipped (see DONE). Optional remainder: a WUA scan's ArticleId
+carries the applicable CU's KB, so the cycle KB *could* be pre-filled from a scan (needs a selection
+heuristic for the OS CU). **Target UBR cannot** be auto-filled (not in any scan result) — it stays
+manual. Red-team first: the global single-value `MonthlyCu` clobbers across mixed/old-cycle fleets
+and an auto-write overwrites a deliberately-set KB; make it a deliberate "use this scan's CU" action
+gated to 2016, not an every-scan write.
 
 ---
 
@@ -30,8 +29,11 @@
   India-team boxes etc. Run the red-team pass before building.
 
 ### Settings simplification
-- Remove KB / Target UBR / Size fields from Settings (scan provides them); keep only the package folder.
-  (Do alongside or after Smart scan flow, which is what makes those fields redundant.)
+- `ExpectedSizeMb` (the display-only "Approx. package size (MB)" field) is **DONE** (`0718f7a` —
+  removed; package matched by KB + arch, never size).
+- KB and Target UBR **cannot** be removed: Target UBR is not present in any WUA scan result so it
+  can't be derived automatically, and KB must remain overridable for off-cycle patches. Keep KB,
+  Target UBR, and the package folder.
 
 ---
 
@@ -71,6 +73,8 @@
 
 ## DONE (committed) — recent
 
+- **Smart scan flow — Stage guards + Settings size-field removal** (`3a35292` · `ef795de` · `6350957` · `0718f7a`). The 2016 Stage step is now scan-gated and self-skipping: scan-this-session gate (`LastScannedApplicable != null`; a post-reboot rescan satisfies it), already-staged skip (RebootRequired && StagedThisSession), already-current skip (a pre-Stage UBR read — same call Verify makes — fails OPEN on a null read). Pure unit-tested `StagePreconditions` (Vivre.Core); removed the display-only "Approx. package size (MB)" Settings field. 378 tests green.
+  - **Descoped (not built):** KB / target-UBR auto-population from scan. The investigation found **target UBR is not present in any WUA scan result**, so auto-populating it is infeasible; KB stays a manual Settings field. The remaining (optional) KB-only auto-fill is below.
 - **Fleet-wide reboot-and-verify** (`473585d` · `a7f456f` · `18c7eaf` · `7323a8d` · `a9922f7` ·
   `c96a265` · `50e1a87` · `7e4c1dd`; Patching-only gating fix `300ee4e`). Generalized the 2016 Reboot
   Wave to ALL boxes — after an operator-confirmed reboot, each box is watched offline → genuinely-ready
@@ -139,7 +143,8 @@ Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`,
 `2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
 `first-run-beta-checklist.md` were removed as stale/spent.)
 - `key-file-path-map.md` — **refreshed this pass** (OneDrive trap → resolved/relocated; nav → done;
-  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; 367 tests).
+  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; smart scan flow
+  Stage guards + StagePreconditions + ExpectedSizeMb removal; 378 tests).
   TODO: capture the as-built NavigationView shell layout next time MainWindow
   is touched.
 - `vivre-backlog.md` — **this file, refreshed this pass.**

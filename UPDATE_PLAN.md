@@ -141,6 +141,13 @@ These mechanisms exist because of real production failures. Don't undo them with
 - **Per-host serialization** — `PatchService` refuses two CBS/DISM ops (install / uninstall /
   Installed-scope scan) on the same host at once, which also catches the cross-tab "same host in two
   tabs" case the per-row UI guard can't see.
+- **Server 2016 Stage preconditions** — the Stage step is gated by a scan-this-session check
+  (`LastScannedApplicable != null`; a post-reboot rescan satisfies it) and short-circuits boxes that
+  are already staged (RebootRequired && StagedThisSession → "Already staged — run Reboot Wave") or
+  already current (a pre-Stage UBR read — the same call Verify makes — returns Verified → "Already
+  current — skipped"). The already-current check **fails OPEN**: if the UBR can't be read the box is
+  staged anyway, so an unreachable read never silently skips a box that needs the patch. Decision
+  logic lives in the pure, unit-tested `StagePreconditions` (Vivre.Core/Updates).
 
 ---
 
