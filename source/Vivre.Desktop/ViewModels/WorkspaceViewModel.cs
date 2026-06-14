@@ -2889,6 +2889,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
+        // Already current — read the box's UBR (same call Verify makes) and skip Stage if it already
+        // matches the target. FAIL-OPEN: a null/unreadable read or any error proceeds to Stage.
+        int targetUbr = settings.MonthlyCu?.TargetUbr ?? 0;
+        try
+        {
+            LcuVerifyResult current = await _patch.VerifyLcuAsync(computer.Name, targetUbr, token);
+            if (StagePreconditions.IsAlreadyCurrent(current.Outcome))
+            {
+                computer.UpdateMessage = "Already current — skipped";
+                return;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw; // user Stop — propagate
+        }
+        catch
+        {
+            // Couldn't read the UBR — fail open, proceed to Stage (DISM will catch an already-current box).
+        }
+
         LcuTarget target = BuildLcuTarget(settings);
 
         computer.IsPatching = true;
