@@ -2865,6 +2865,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
+        // Already staged this session (staged + reboot-pending) — skip; the operator runs the Reboot Wave.
+        if (StagePreconditions.IsAlreadyStaged(computer.RebootRequired == true, computer.StagedThisSession))
+        {
+            computer.UpdateMessage = "Already staged — run Reboot Wave";
+            return;
+        }
+
         // The 2016 lane is stage-and-stop — it has no scheduled-install mode (the operator commits via the
         // Reboot Wave). Say so rather than silently staging now on a scheduled request.
         if (scheduleAt is not null)
