@@ -15,8 +15,9 @@ it ships, then gets a dated heading.
   doomed ~20s connect. **Vitals** names the problem and the fix ("WinRM/Kerberos auth failing — verify the
   host's SPN / encryption-type / re-sync the machine account") and docks the score, so the AD issue stays
   visible — while operation results stay clean (no "fell back" wording). The on-target update agent is now
-  Authenticode-signed. *(The SMB scan/install execution path for these boxes is in progress, gated on a
-  one-time on-box pilot.)*
+  Authenticode-signed. The SMB/DCOM scan + install execution path for these boxes is now live (drop a
+  signed agent over the admin share → run it as a one-shot SYSTEM service → stream progress back over
+  SMB), so a Kerberos-broken box can be scanned, patched, and rebooted like a WinRM box.
 - **Run operations on different machines at the same time** — scanning or installing on one set of
   machines no longer locks the whole tab: kick off Install on server A, then immediately Scan server B,
   from the toolbar or the per-machine panel. Rows already busy with an operation are skipped with a
@@ -41,6 +42,26 @@ it ships, then gets a dated heading.
   disk / memory / CPU / reboot-pending / uptime penalties; the 80/50 band cut-offs), that the Unhealthy
   filter includes Offline boxes, that CPU/memory are point-in-time samples a re-check clears, and which
   signals are gathered but deliberately not scored.
+- **Server 2016 cumulative updates via a full-package DISM lane** — the Server 2016 boxes that
+  chronically fail monthly CUs through Windows Update (Express-delta assembly breaks at pre-stage) now
+  get a dedicated lane that sidesteps Windows Update / Delivery Optimization / Express entirely: drop
+  the full CU package and install it with `Add-WindowsPackage`. A self-populating **Server 2016**
+  filter chip appears once a vitals check finds a 14393 box, with a four-step action bar — **Clean up →
+  Stage → Reboot Wave → Verify** — that the operator drives by hand (nothing reboots on its own). Stage
+  installs with the server still serving and stops when the box is genuinely reboot-ready; **Reboot
+  Wave** reboots only the boxes you select and confirm, escalating to a forced reboot after 8 minutes
+  if one won't go down; **Verify** confirms the post-reboot build, so a rolled-back box that returns at
+  the old build is caught as failed rather than a false green. A guided prompt walks you to the right
+  package (with the catalog link) when it's missing. Mixed-fleet **Install all** auto-routes per
+  machine: 2016 → this lane (stage-and-stop), 2019+ → the existing one-step WUA lane, unknown/unscanned
+  → skipped.
+- **WhatsUp Gold maintenance pre-flight** — *WhatsUp Gold maintenance…* now runs a connection +
+  module/credential check before it touches anything: the dialog stays open until the WUG server is
+  reachable, the `WhatsUpGoldPS` module is present, and your login is accepted, then closes and fires
+  the per-device set. **Test connection** and a hidden-until-needed **Install module** button let you
+  confirm or repair the setup up front instead of discovering a problem mid-run. Failures now name the
+  real cause (unreachable server / rejected credentials / module missing) instead of a misleading
+  "module not installed".
 
 ### Fixed
 - **A Kerberos auth rejection no longer masquerades as "the remote session ended"** — when a target refuses
@@ -124,6 +145,13 @@ it ships, then gets a dated heading.
   name read back from a target) are neutralised so a spreadsheet can't execute them on open.
 - **Cross-Domain RDP tells you when a host has no saved credentials** — connecting now shows a dialog
   pointing at the right-click ▸ Edit… login fields, instead of silently doing nothing.
+- **WhatsUp Gold no longer falsely reports its module as "not installed"** — two independent traps in
+  the Windows PowerShell 5.1 shell-out were breaking the WUG check. (1) Vivre's in-process PowerShell 7
+  runspace rewrites the process `PSModulePath` to PS7 folders, which a shelled-out 5.1 child inherited,
+  so it couldn't see 5.1 modules; the child now starts with that variable cleared. (2) The temp script
+  was written as BOM-less UTF-8, which PS 5.1 reads as ANSI — one non-ASCII character (an em-dash) made
+  the whole script fail to parse and emit nothing; temp scripts are now written UTF-8 **with** a BOM
+  (locked by a regression test). Both fixes are required; one alone doesn't fix it.
 
 ### Changed
 - **Selection actions live in the command bar** — selecting rows transforms the bar in place (the
@@ -225,6 +253,15 @@ it ships, then gets a dated heading.
   idle until the first tab's vitals had *all* completed. Activity-log and completion-toast updates are
   marshalled to the UI without blocking, so a heavy multi-tab sweep no longer stutters or freezes the
   window.
+- **The two "Scheduled task" columns were retired** — what's queued and when now reads inline in the
+  update message instead of two extra columns.
+- **Consistent dialog sizing across every popup** — modals centre on their owner, fixed forms size to
+  their content with sensible min/max, and content-heavy/list dialogs are resizable with their action
+  buttons always visible (outside the scroll region), so nothing clips on smaller screens.
+- **Repo and publish output moved out of OneDrive to `C:\src\Vivre`** *(dev/build infrastructure)* —
+  closes a class of stale-binary bugs where OneDrive's cloud-placeholder copies shipped old code while
+  it looked fresh, plus a `.git` worktree lock and CRLF/LF churn. A `.gitattributes` (`* text=auto`)
+  keeps line endings stable.
 
 ### Added
 - **Empty-state guidance + mode chips** — a fresh tab now shows a "Get started" onboarding card (paste
