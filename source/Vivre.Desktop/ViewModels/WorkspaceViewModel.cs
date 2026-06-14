@@ -2811,22 +2811,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private Task Stage2016Async() =>
         RunPatchSweepAsync(Server2016Targets(), (c, ct) => StageLcuRowAsync(c, null, ct), "Stage", _patchThrottle);
 
-    /// <summary>Panel button: reboot + commit the SELECTED staged 2016 boxes (graceful first, then forced
-    /// after the go-offline window to complete that operator-ordered reboot; the UBR decides pass/fail).
-    /// Long-running — the View must confirm first (production reboot). This is the one reboot path in Vivre,
-    /// and unlike the other 2016 actions it acts ONLY on boxes the operator explicitly selected — it never
-    /// falls back to "all 2016", so a reboot is never a whole-fleet default.</summary>
+    /// <summary>Fleet-wide reboot + verify: reboots ALL selected machines (graceful first, forced after the
+    /// go-offline window), then tracks each until it is confirmed back online. 2016 boxes verify by build/UBR;
+    /// others verify by re-scan. Long-running — the View must confirm first (production reboot). Acts ONLY on
+    /// the explicit selection; never reboots the whole fleet by default.</summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
-    private Task RebootWave2016Async()
+    private Task RebootAndVerifyAsync()
     {
-        var selected = SelectedComputers.Where(c => LcuRouting.Is2016(c.OsBuild)).ToList();
+        var selected = SelectedComputers.ToList();
         if (selected.Count == 0)
         {
-            _activity.Warn(null, "Reboot Wave: select the Server 2016 box(es) you want to reboot first — it never reboots the whole set by default.");
+            _activity.Warn(null, "Reboot & verify: select the machine(s) to reboot first.");
             return Task.CompletedTask;
         }
 
-        return RunPatchSweepAsync(selected, RebootWaveRowAsync, "Reboot Wave", _patchThrottle,
+        return RunPatchSweepAsync(selected, RebootWaveRowAsync, "Reboot & verify", _patchThrottle,
             // The wave self-bounds at its own hard cap; give the per-host watchdog a margin beyond it so it
             // never cuts a legitimately-still-committing box short. Standalone Verify is the net past this.
             RebootWaveOptions.Default.HardCap + TimeSpan.FromMinutes(15));
