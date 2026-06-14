@@ -64,6 +64,12 @@
                  Visibility="Collapsed" />
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
+            <ui:ProgressRing x:Name="Spinner" IsIndeterminate="True" Visibility="Collapsed"
+                             Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" />
+            <ui:Button x:Name="InstallButton" Content="Install module" Click="OnInstallModule"
+                       Visibility="Collapsed" Margin="0,0,8,0" />
+            <ui:Button x:Name="TestButton" Content="Test connection" Click="OnTestConnection"
+                       Margin="0,0,8,0" />
             <ui:Button x:Name="RunButton" Appearance="Primary" Content="Set maintenance" Click="OnRun" IsDefault="True" />
             <ui:Button Margin="8,0,0,0" Content="Close" Click="OnClose" IsCancel="True" />
         </StackPanel>

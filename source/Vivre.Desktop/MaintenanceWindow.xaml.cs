@@ -12,6 +12,10 @@ namespace Vivre.Desktop;
 /// Command result column + the activity log). The WUG credential is read from the
 /// <see cref="PasswordBox"/> as a <see cref="SecureString"/> and handed straight through — never
 /// stored; only the server address is remembered.
+///
+/// <para>A "Test connection" button runs a pre-flight check (module present + server reachable
+/// + credentials valid) so fixable problems are caught inside the dialog before it fires.
+/// OnRun also runs the same pre-flight gate and keeps the dialog open on failure.</para>
 /// </summary>
 public partial class MaintenanceWindow : FluentWindow
 {
@@ -40,13 +44,105 @@ public partial class MaintenanceWindow : FluentWindow
         }
     }
 
-    private void OnRun(object sender, RoutedEventArgs e)
+    // ── Testing state helpers ─────────────────────────────────────────────────────────────────────
+
+    private void SetTestingState(bool active)
+    {
+        RunButton.IsEnabled = !active;
+        TestButton.IsEnabled = !active;
+        InstallButton.IsEnabled = !active;
+        Spinner.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    // ── Test connection ───────────────────────────────────────────────────────────────────────────
+
+    private async void OnTestConnection(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            string server = ServerBox.Text.Trim();
+            string user   = UserBox.Text.Trim();
+            // Capture once — stays valid across awaits while the window is open.
+            SecureString pw = PasswordBox.SecurePassword;
+
+            if (server.Length == 0 || user.Length == 0 || pw.Length == 0)
+            {
+                ShowStatus("Enter the WhatsUp Gold server, username, and password.");
+                return;
+            }
+
+            SetTestingState(true);
+            ShowStatus("Testing connection…");
+
+            var result = await _vm.TestWugConnectionAsync(server, user, pw);
+
+            if (!result.ModulePresent)
+            {
+                ShowStatus("WhatsUpGoldPS isn't installed. Install it from the PowerShell Gallery? Needs internet/PSGallery.");
+                InstallButton.Visibility = Visibility.Visible;
+            }
+            else if (result.Connected)
+            {
+                ShowStatus($"Connected to WhatsUp Gold at {server} as {user}. ✓");
+                InstallButton.Visibility = Visibility.Collapsed;
+            }
+            else
+            {
+                ShowStatus(result.Error ?? "Connection failed (no detail available).");
+                InstallButton.Visibility = Visibility.Collapsed;
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Test failed unexpectedly: {ex.Message}");
+        }
+        finally
+        {
+            SetTestingState(false);
+        }
+    }
+
+    // ── Install module ────────────────────────────────────────────────────────────────────────────
+
+    private async void OnInstallModule(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            SetTestingState(true);
+            ShowStatus("Installing WhatsUpGoldPS from the PowerShell Gallery…");
+
+            var (ok, err) = await _vm.InstallWugModuleAsync();
+
+            if (ok)
+            {
+                InstallButton.Visibility = Visibility.Collapsed;
+                ShowStatus("Module installed. Click Test connection to verify.");
+            }
+            else
+            {
+                ShowStatus(err ?? "Installation failed (no detail available).");
+            }
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Install failed unexpectedly: {ex.Message}");
+        }
+        finally
+        {
+            SetTestingState(false);
+        }
+    }
+
+    // ── Set maintenance (pre-flight gated) ───────────────────────────────────────────────────────
+
+    private async void OnRun(object sender, RoutedEventArgs e)
     {
         string server = ServerBox.Text.Trim();
-        string user = UserBox.Text.Trim();
-        SecureString password = PasswordBox.SecurePassword;
+        string user   = UserBox.Text.Trim();
+        // Capture once — stays valid across awaits while the window is open; also safe after Close().
+        SecureString pw = PasswordBox.SecurePassword;
 
-        if (server.Length == 0 || user.Length == 0 || password.Length == 0)
+        if (server.Length == 0 || user.Length == 0 || pw.Length == 0)
         {
             ShowStatus("Enter the WhatsUp Gold server, username, and password.");
             return;
@@ -54,24 +150,59 @@ public partial class MaintenanceWindow : FluentWindow
 
         bool enable = EnterRadio.IsChecked == true;
 
-        // Remember the server for next time (never the credentials).
         try
         {
-            AppSettings s = _settings.Load();
-            s.WugServer = server;
-            _settings.Save(s);
-        }
-        catch
-        {
-            // Best-effort — remembering the server address is a convenience, not required to proceed.
-        }
+            SetTestingState(true);
+            ShowStatus("Testing connection…");
 
-        // Fire-and-forget: the VM runs it in the background and reports per-row + to the activity log,
-        // so we close immediately and the user can keep working / start another. The password is read
-        // (synchronously) before this returns, so closing the window can't invalidate it.
-        _ = _vm.SetWugMaintenanceAsync(_computers, enable, server, user, password, ReasonBox.Text.Trim());
-        Close();
+            var pre = await _vm.TestWugConnectionAsync(server, user, pw);
+
+            if (!pre.ModulePresent)
+            {
+                ShowStatus("WhatsUpGoldPS isn't installed. Install it from the PowerShell Gallery? Needs internet/PSGallery.");
+                InstallButton.Visibility = Visibility.Visible;
+                return; // keep dialog open
+            }
+
+            if (!pre.Connected)
+            {
+                ShowStatus(pre.Error ?? "Connection failed (no detail available).");
+                return; // keep dialog open
+            }
+
+            // Pre-flight passed — remember the server address (never the credentials).
+            try
+            {
+                AppSettings s = _settings.Load();
+                s.WugServer = server;
+                _settings.Save(s);
+            }
+            catch
+            {
+                // Best-effort — remembering the server address is a convenience, not required to proceed.
+            }
+
+            // Fire-and-forget: the VM runs it in the background and reports per-row + to the activity
+            // log, so we close immediately and the user can keep working / start another. The password
+            // was captured synchronously above, so closing the window can't invalidate it.
+            _ = _vm.SetWugMaintenanceAsync(_computers, enable, server, user, pw, ReasonBox.Text.Trim());
+            Close();
+        }
+        catch (Exception ex)
+        {
+            ShowStatus($"Unexpected error: {ex.Message}");
+        }
+        finally
+        {
+            // Only re-enable if we didn't close — IsLoaded is false once Close() has been called.
+            if (IsLoaded)
+            {
+                SetTestingState(false);
+            }
+        }
     }
+
+    // ── Misc ──────────────────────────────────────────────────────────────────────────────────────
 
     // Keep the action button's label in step with the chosen mode (Enter -> "Set maintenance",
     // Exit -> "Exit maintenance"). EnterRadio's initial IsChecked="True" can raise Checked during

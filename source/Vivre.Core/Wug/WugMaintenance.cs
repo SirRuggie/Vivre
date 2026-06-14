@@ -15,6 +15,12 @@ public sealed record WugMaintenanceResult(
     IReadOnlyList<string> Unmatched,
     string? Error);
 
+/// <summary>The outcome of a pre-flight connection test to the WhatsUp Gold server.</summary>
+/// <param name="ModulePresent">True when the WhatsUpGoldPS module is available.</param>
+/// <param name="Connected">True when a test connect+disconnect succeeded.</param>
+/// <param name="Error">A human-readable failure reason, or null when fully connected.</param>
+public sealed record WugPreflightResult(bool ModulePresent, bool Connected, string? Error);
+
 /// <summary>
 /// Sets WhatsUp Gold maintenance mode for a set of machines via the <c>WhatsUpGoldPS</c> module — an
 /// adaptation of the admin's standalone script, supplied the tab's machine names instead of a file.
@@ -152,6 +158,10 @@ public static class WugMaintenance
     // Prefix the on-host script puts on each live status line (see the script's Progress helper).
     private const string ProgressMarker = "__WUGP__";
 
+    // Prefix the pre-flight script's Emit puts on its single JSON result line so the host extracts
+    // EXACTLY that line regardless of any other stdout a cmdlet prints (see PreflightScript / ParsePreflight).
+    private const string PreflightResultMarker = "__WUGRESULT__";
+
     /// <summary>
     /// Runs the maintenance set under Windows PowerShell 5.1 and returns a typed result. Bounded by
     /// <paramref name="timeout"/> so it can never hang indefinitely. <paramref name="progress"/>, if
@@ -176,7 +186,7 @@ public static class WugMaintenance
         }
 
         string scriptPath = Path.Combine(Path.GetTempPath(), $"Vivre_Wug_{Guid.NewGuid():N}.ps1");
-        await File.WriteAllTextAsync(scriptPath, Script, cancellationToken).ConfigureAwait(false);
+        await WritePs51ScriptAsync(scriptPath, Script, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -194,6 +204,11 @@ public static class WugMaintenance
             psi.Environment["VIVRE_WUG_REASON"] = reason ?? string.Empty;
             psi.Environment["VIVRE_WUG_USER"] = username;
             psi.Environment["VIVRE_WUG_PASS"] = password;
+            // Strip the inherited (PS7-contaminated) PSModulePath so this 5.1 child rebuilds its NATIVE
+            // WindowsPowerShell module path and finds an already-installed WhatsUpGoldPS directly — without
+            // relying on the auto-install fallback below (which needs PSGallery/internet). Same fix as the
+            // pre-flight launcher; see RunPreflightProcessAsync for the full rationale. No-op if unset.
+            psi.Environment.Remove("PSModulePath");
 
             using var proc = new Process { StartInfo = psi };
             var stdout = new StringBuilder();
@@ -244,6 +259,318 @@ public static class WugMaintenance
         finally
         {
             try { File.Delete(scriptPath); } catch { /* temp cleanup is best-effort */ }
+        }
+    }
+
+    // ── Pre-flight: lightweight module-present + connect test ────────────────────────────────────
+
+    // Emits ONE JSON line: { modulePresent, connected, error }.
+    // Reads server/user/pass from env vars — password NEVER on the command line.
+    private const string PreflightScript = """
+        $ErrorActionPreference = 'Stop'
+        # Tag the result line with a unique marker so the host extracts EXACTLY it, immune to any
+        # banner / warning / object text a cmdlet might print to stdout (see ParsePreflight).
+        function Emit($r) { Write-Output ("__WUGRESULT__" + ($r | ConvertTo-Json -Compress -Depth 2)) }
+
+        $server = $env:VIVRE_WUG_SERVER
+        $result = [ordered]@{ modulePresent = $false; connected = $false; error = $null }
+
+        # Backstop: if anything terminates unexpectedly OUTSIDE the per-stage try/catch below, still
+        # emit a structured result carrying what we already know (modulePresent is set true once the
+        # check passes) so a downstream failure is never dropped and re-read by the host as "module
+        # missing". Reserves the "install the module" prompt for a genuine missing-module signal.
+        trap { $result.error = "Pre-flight error: $($_.Exception.Message)"; Emit $result; exit 0 }
+
+        # 1. Module check
+        if (-not (Get-Module -ListAvailable -Name WhatsUpGoldPS)) {
+            $result.error = "The WhatsUpGoldPS module isn't installed."
+            Emit $result; return
+        }
+        $result.modulePresent = $true
+
+        # 2. Import
+        try {
+            Import-Module WhatsUpGoldPS -ErrorAction Stop
+        } catch {
+            $result.error = "Couldn't load the WhatsUpGoldPS module: $($_.Exception.Message)"
+            Emit $result; return
+        }
+
+        # 3. Build credential (same pattern as the main script)
+        try {
+            $sec  = ConvertTo-SecureString $env:VIVRE_WUG_PASS -AsPlainText -Force
+            $cred = New-Object System.Management.Automation.PSCredential($env:VIVRE_WUG_USER, $sec)
+        } catch {
+            $result.error = "Couldn't build the WhatsUp Gold credential: $($_.Exception.Message)"
+            Emit $result; return
+        }
+
+        # 4. Connect test — identical flags to the real run
+        try {
+            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+            $result.connected = $true
+        } catch {
+            $msg = $_.Exception.Message
+            if ($msg -match '401|unauthorized|invalid|credential') {
+                $result.error = "The WhatsUp Gold username or password was rejected."
+            } else {
+                $result.error = "Couldn't reach WhatsUp Gold at $server — check the address, that the server is reachable, and the username/password. ($msg)"
+            }
+        }
+
+        # 5. Best-effort disconnect so the test leaves no session
+        if ($result.connected) {
+            try { Disconnect-WUGServer -ErrorAction SilentlyContinue | Out-Null } catch { }
+        }
+
+        Emit $result
+        """;
+
+    // ── Install helper: operator-consented module install ────────────────────────────────────────
+
+    // Emits ONE JSON line: { ok, error }.  No creds or server address needed.
+    private const string InstallModuleScript = """
+        $ErrorActionPreference = 'Stop'
+        function Emit($r) { $r | ConvertTo-Json -Compress -Depth 2 }
+        $result = [ordered]@{ ok = $false; error = $null }
+        try {
+            # PowerShell Gallery requires TLS 1.2; 5.1 doesn't always negotiate it by default.
+            try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
+            if (-not (Get-PackageProvider -Name NuGet -ErrorAction SilentlyContinue)) {
+                Install-PackageProvider -Name NuGet -Scope CurrentUser -Force -ErrorAction Stop | Out-Null
+            }
+            if ((Get-PSRepository -Name PSGallery -ErrorAction SilentlyContinue).InstallationPolicy -ne 'Trusted') {
+                Set-PSRepository -Name PSGallery -InstallationPolicy Trusted -ErrorAction SilentlyContinue
+            }
+            Install-Module -Name WhatsUpGoldPS -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+            $result.ok = $true
+        } catch {
+            $result.error = $_.Exception.Message
+        }
+        Emit $result
+        """;
+
+    // ── Shared process-launch helper (used by TestConnectionAsync + InstallModuleAsync only) ────
+
+    /// <summary>
+    /// Writes a PowerShell script to <paramref name="path"/> for Windows PowerShell 5.1 to run.
+    /// MUST be UTF-8 WITH BOM: 5.1 reads a BOM-less .ps1 as the system ANSI code page, which corrupts
+    /// any non-ASCII character (e.g. the em-dash in our error messages) so the whole script fails to
+    /// parse before a line runs and emits nothing. The BOM marks the file UTF-8. Internal so a test
+    /// can lock the BOM in (a missing BOM is invisible to the build and broke the WUG pre-flight once).
+    /// </summary>
+    internal static Task WritePs51ScriptAsync(string path, string script, CancellationToken ct)
+        => File.WriteAllTextAsync(path, script, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: true), ct);
+
+    /// <summary>
+    /// Writes <paramref name="script"/> to a temp .ps1, launches it under Windows PowerShell 5.1
+    /// with the supplied environment variables, waits up to <paramref name="timeout"/>, kills on
+    /// timeout, cleans up the temp file.  Returns (stdout, stderr).
+    /// </summary>
+    private static async Task<(string Stdout, string Stderr)> RunPreflightProcessAsync(
+        string script,
+        IReadOnlyDictionary<string, string> env,
+        TimeSpan timeout,
+        CancellationToken ct)
+    {
+        string psExe = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
+        if (!File.Exists(psExe))
+        {
+            throw new InvalidOperationException($"Windows PowerShell wasn't found at {psExe}.");
+        }
+
+        string scriptPath = Path.Combine(Path.GetTempPath(), $"Vivre_WugPre_{Guid.NewGuid():N}.ps1");
+        await WritePs51ScriptAsync(scriptPath, script, ct).ConfigureAwait(false);
+
+        try
+        {
+            var psi = new ProcessStartInfo(psExe, $"-NoProfile -NonInteractive -ExecutionPolicy Bypass -File \"{scriptPath}\"")
+            {
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            foreach (var kv in env)
+            {
+                psi.Environment[kv.Key] = kv.Value;
+            }
+
+            // CRITICAL (the false "module not installed" fix): strip the inherited PSModulePath so the
+            // shelled-out Windows PowerShell 5.1 rebuilds its NATIVE module path — the CurrentUser + AllUsers
+            // WindowsPowerShell\Modules folders where WhatsUpGoldPS actually lives — exactly like a plain 5.1
+            // shell (which finds the module fine). Vivre hosts an IN-PROCESS PowerShell 7 runspace whose
+            // initialization rewrites THIS process's PSModulePath to PS7's module paths; a child launched
+            // with UseShellExecute=false inherits that, so the 5.1 child would otherwise look only at the
+            // PS7 module folders and falsely report the module missing. Remove is a harmless no-op if unset.
+            psi.Environment.Remove("PSModulePath");
+
+            using var proc = new Process { StartInfo = psi };
+            var stdout = new StringBuilder();
+            var stderr = new StringBuilder();
+            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) { stdout.AppendLine(e.Data); } };
+            proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) { stderr.AppendLine(e.Data); } };
+
+            if (!proc.Start())
+            {
+                throw new InvalidOperationException("Couldn't start Windows PowerShell (powershell.exe).");
+            }
+
+            proc.BeginOutputReadLine();
+            proc.BeginErrorReadLine();
+
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(timeout);
+            try
+            {
+                await proc.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                throw new TimeoutException($"Timed out after {timeout.TotalSeconds:N0}s.");
+            }
+
+            return (stdout.ToString(), stderr.ToString());
+        }
+        finally
+        {
+            try { File.Delete(scriptPath); } catch { /* temp cleanup is best-effort */ }
+        }
+    }
+
+    // ── Public preflight API ─────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Tests that the WhatsUpGoldPS module is present and that the supplied credentials can reach
+    /// the WUG server, without touching any managed device.  Bounded by <paramref name="timeout"/>.
+    /// The <paramref name="password"/> is passed to the child process via <c>VIVRE_WUG_PASS</c>
+    /// environment variable only — never on the command line, never written to disk.
+    /// </summary>
+    public static async Task<WugPreflightResult> TestConnectionAsync(
+        string server,
+        string username,
+        string password,
+        TimeSpan timeout,
+        CancellationToken ct = default)
+    {
+        var env = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["VIVRE_WUG_SERVER"] = server,
+            ["VIVRE_WUG_USER"]   = username,
+            ["VIVRE_WUG_PASS"]   = password,   // password reaches the child via env var ONLY
+        };
+
+        try
+        {
+            var (stdout, stderr) = await RunPreflightProcessAsync(PreflightScript, env, timeout, ct).ConfigureAwait(false);
+            return ParsePreflight(stdout, stderr);
+        }
+        catch (Exception ex)
+        {
+            // A timeout or launch failure says nothing about whether the module is present — never
+            // render it as "module not installed" (which would wrongly prompt to reinstall a present
+            // module). Report it as a connection-stage failure carrying the real reason.
+            return new WugPreflightResult(true, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Installs the WhatsUpGoldPS module from the PowerShell Gallery for the current user.
+    /// This is operator-consented; the silent auto-install inside <see cref="RunAsync"/> is separate.
+    /// </summary>
+    public static async Task<(bool Ok, string? Error)> InstallModuleAsync(
+        TimeSpan timeout,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var (stdout, stderr) = await RunPreflightProcessAsync(
+                InstallModuleScript,
+                new Dictionary<string, string>(0, StringComparer.Ordinal),
+                timeout,
+                ct).ConfigureAwait(false);
+
+            // Parse { ok, error }
+            string? json = stdout
+                .Split('\n')
+                .Select(s => s.Trim())
+                .LastOrDefault(s => s.Contains('{') && s.Contains('}'));
+
+            if (json is null)
+            {
+                string detail = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : "No output from installer.";
+                return (false, detail);
+            }
+
+            int start = json.IndexOf('{');
+            int end = json.LastIndexOf('}');
+            using JsonDocument doc = JsonDocument.Parse(json[start..(end + 1)]);
+            JsonElement root = doc.RootElement;
+
+            bool ok = root.TryGetProperty("ok", out JsonElement okEl) && okEl.ValueKind == JsonValueKind.True;
+            string? error = root.TryGetProperty("error", out JsonElement eEl) && eEl.ValueKind == JsonValueKind.String
+                ? eEl.GetString()
+                : null;
+            return (ok, error);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    // ── Parse helpers ────────────────────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Parses the single-line JSON the pre-flight script emits.  On no JSON or malformed output,
+    /// returns a failed result with <paramref name="stderr"/> as the error.
+    /// </summary>
+    internal static WugPreflightResult ParsePreflight(string stdout, string stderr)
+    {
+        // Prefer the marker-tagged result line (Emit prefixes __WUGRESULT__); fall back to the last
+        // braced line for safety / marker-less input. The marker makes extraction immune to any other
+        // stdout a cmdlet might print before the result.
+        string[] lines = stdout.Split('\n').Select(s => s.Trim()).ToArray();
+        string? marked = lines.LastOrDefault(s => s.StartsWith(PreflightResultMarker, StringComparison.Ordinal));
+        string? json = marked is not null
+            ? marked[PreflightResultMarker.Length..]
+            : lines.LastOrDefault(s => s.Contains('{') && s.Contains('}'));
+
+        // No result line at all (the process was killed on timeout before emitting, or produced no
+        // output). This is NOT evidence the module is missing — report it as a connection-stage failure
+        // carrying the real detail, never as "module not installed" (which would wrongly prompt to
+        // reinstall a module that is actually present).
+        if (json is null)
+        {
+            string detail = !string.IsNullOrWhiteSpace(stderr)
+                ? stderr.Trim()
+                : "Windows PowerShell returned no result (the pre-flight may have timed out).";
+            return new WugPreflightResult(ModulePresent: true, Connected: false, Error: detail);
+        }
+
+        try
+        {
+            int start = json.IndexOf('{');
+            int end = json.LastIndexOf('}');
+            using JsonDocument doc = JsonDocument.Parse(json[start..(end + 1)]);
+            JsonElement root = doc.RootElement;
+
+            // Treat the module as present UNLESS the script explicitly reported it missing. The canned
+            // "module isn't installed" prompt must fire only on that definite signal — a parse oddity or
+            // a connect/credential failure has to surface the real error, not a reinstall prompt.
+            bool modulePresent = !(root.TryGetProperty("modulePresent", out JsonElement mpEl) && mpEl.ValueKind == JsonValueKind.False);
+            bool connected     = root.TryGetProperty("connected", out JsonElement cnEl) && cnEl.ValueKind == JsonValueKind.True;
+            string? error      = root.TryGetProperty("error", out JsonElement eEl) && eEl.ValueKind == JsonValueKind.String
+                ? eEl.GetString()
+                : null;
+
+            return new WugPreflightResult(modulePresent, connected, error);
+        }
+        catch (JsonException)
+        {
+            string detail = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : "Couldn't parse the pre-flight result: " + json;
+            return new WugPreflightResult(ModulePresent: true, Connected: false, Error: detail);
         }
     }
 
