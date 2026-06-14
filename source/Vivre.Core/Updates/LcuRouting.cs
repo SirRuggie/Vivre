@@ -3,6 +3,18 @@ using System.Text.RegularExpressions;
 namespace Vivre.Core.Updates;
 
 /// <summary>
+/// Which reboot-and-verify lane a host belongs to.
+/// </summary>
+public enum RebootVerifyLane
+{
+    /// <summary>Server 2016 (build 14393): UBR-confirmed full-package CU lane.</summary>
+    Lcu2016,
+
+    /// <summary>All other builds: WUA-based reboot-and-verify lane.</summary>
+    Wua,
+}
+
+/// <summary>
 /// The one place that decides whether a machine belongs to the Server 2016 full-package lane. Vivre
 /// encodes "which box is special" here so an operator never has to know: the self-populating 2016 panel
 /// and the mixed "Install all" both ask <see cref="Is2016"/>. A build we haven't read yet is
@@ -17,6 +29,13 @@ public static partial class LcuRouting
     /// <summary>True only when the build is confirmed to be 2016 (14393). Null/unknown is deliberately
     /// false — an unread box is never treated as 2016.</summary>
     public static bool Is2016(int? osBuild) => osBuild == Server2016Build;
+
+    /// <summary>
+    /// Returns the reboot-and-verify lane for a given OS build. 14393 → <see cref="RebootVerifyLane.Lcu2016"/>;
+    /// everything else (including null/unknown) → <see cref="RebootVerifyLane.Wua"/>.
+    /// </summary>
+    public static RebootVerifyLane RebootVerifyLaneFor(int? osBuild) =>
+        Is2016(osBuild) ? RebootVerifyLane.Lcu2016 : RebootVerifyLane.Wua;
 
     /// <summary>
     /// Pulls the OS build number out of the OS string Vivre already captures (caption + version, e.g.

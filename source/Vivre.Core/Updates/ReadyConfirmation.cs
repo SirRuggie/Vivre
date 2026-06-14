@@ -31,7 +31,22 @@ public sealed class ReadyConfirmation : IPostRebootConfirmation
     /// <inheritdoc/>
     public async Task<RebootConfirmationResult> ConfirmAsync(string host, CancellationToken cancellationToken)
     {
-        bool reachable = await _queryOs(host, cancellationToken).ConfigureAwait(false);
+        bool reachable;
+        try
+        {
+            reachable = await _queryOs(host, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // DCOM/CIM blew up mid-query — treat as not yet up; the wave loop retries.
+            return new RebootConfirmationResult(RebootConfirmationOutcome.NotReady,
+                "Back online — waiting for it to finish coming up…");
+        }
+
         return reachable
             ? new RebootConfirmationResult(RebootConfirmationOutcome.Confirmed, "Back online.")
             : new RebootConfirmationResult(RebootConfirmationOutcome.NotReady,
