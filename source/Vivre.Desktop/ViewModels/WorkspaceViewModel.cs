@@ -2826,7 +2826,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return Task.CompletedTask;
         }
 
-        return RunPatchSweepAsync(selected, RebootWaveLcuRowAsync, "Reboot Wave", _patchThrottle,
+        return RunPatchSweepAsync(selected, RebootWaveRowAsync, "Reboot Wave", _patchThrottle,
             // The wave self-bounds at its own hard cap; give the per-host watchdog a margin beyond it so it
             // never cuts a legitimately-still-committing box short. Standalone Verify is the net past this.
             RebootWaveOptions.Default.HardCap + TimeSpan.FromMinutes(15));
@@ -3001,16 +3001,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    /// <summary>Per-host Reboot Wave: reboot a staged box and track the commit until the UBR confirms (green),
-    /// a rollback is detected (red), or it stays offline past the hard cap (red — use Verify when it returns).</summary>
-    private async Task RebootWaveLcuRowAsync(Computer computer, CancellationToken token)
+    /// <summary>
+    /// Per-host Reboot Wave: routes to the 2016 or WUA lane based on the host's OS build, then runs
+    /// a shared post-reboot rescan to confirm the outcome and set the row's final message.
+    /// <list type="bullet">
+    ///   <item><description><see cref="RebootVerifyLane.Lcu2016"/>: UBR-confirmed full-package CU lane —
+    ///   the wave itself declares success; the rescan supplements the UBR Done message.</description></item>
+    ///   <item><description><see cref="RebootVerifyLane.Wua"/>: WUA lane — "Done" means the box is back
+    ///   and OS-queryable; the actual verify comes from the post-reboot Applicable rescan.</description></item>
+    /// </list>
+    /// </summary>
+    private async Task RebootWaveRowAsync(Computer computer, CancellationToken token)
     {
         if (computer.IsPatching)
         {
             return;
         }
 
-        int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+        RebootVerifyLane lane = LcuRouting.RebootVerifyLaneFor(computer.OsBuild);
 
         computer.IsPatching = true;
         computer.UpdateError = null;
@@ -3022,14 +3030,29 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
             // (live-filtered properties), so the continuation must resume on the captured (UI) context.
-            HostPatchStatus final = await _patch
-                .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token);
+            HostPatchStatus final;
+            if (lane == RebootVerifyLane.Lcu2016)
+            {
+                int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+                final = await _patch
+                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token);
+            }
+            else
+            {
+                final = await _patch
+                    .RebootWaveWuaAsync(computer.Name, RebootWaveOptions.Default, progress, token);
+            }
+
             ApplyStatus(computer, final);
             if (final.Phase == PatchPhase.Done)
             {
                 computer.RebootRequired = false; // committed — clear the staged/reboot-pending flag (→ green)
                 computer.StagedThisSession = false; // committed — no longer a pending stage
                 _activity.Info(computer.Name, final.Message);
+
+                // Post-reboot rescan runs AFTER the wave returns Done — ORDERING GUARANTEE.
+                // For 2016 the UBR check always precedes this; for WUA this is the primary verify.
+                await ReportPostRebootOutcomeAsync(computer, is2016: lane == RebootVerifyLane.Lcu2016, token);
             }
             else if (final.Phase == PatchPhase.Error)
             {
@@ -3054,6 +3077,97 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         finally
         {
             computer.IsPatching = false;
+        }
+    }
+
+    /// <summary>
+    /// Shared post-reboot outcome step: runs an Applicable rescan, probes for a lingering reboot,
+    /// then writes a final outcome string to <see cref="Computer.UpdateMessage"/>.
+    /// <para>
+    /// For the WUA lane this is the primary verify (the wave only confirms the box is responsive).
+    /// For the 2016 lane the UBR Done message is kept as the primary; this appends a supplementary note.
+    /// A rescan or probe failure is surfaced honestly — it never produces a false "up to date" result.
+    /// This method is pure outcome-reporting: it never triggers a reboot, install, or uninstall.
+    /// </para>
+    /// </summary>
+    private async Task ReportPostRebootOutcomeAsync(Computer computer, bool is2016, CancellationToken token)
+    {
+        string name = computer.Name;
+
+        // ── a) Applicable rescan (read-only: ScanAsync only, never Install/Uninstall/Reboot) ──────
+        bool scanFailed = false;
+        try
+        {
+            PatchOptions applicableOptions = _patchOptions.Clone();
+            applicableOptions.Scope = UpdateScope.Applicable;
+            HostPatchStatus status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, token);
+            ApplyStatus(computer, status, UpdateScope.Applicable);
+        }
+        catch (OperationCanceledException)
+        {
+            // Propagate cancellation — don't swallow it.
+            throw;
+        }
+        catch
+        {
+            scanFailed = true;
+        }
+
+        // ── b) remaining after rescan ─────────────────────────────────────────────────────────────
+        int remaining = computer.ApplicableCount ?? 0;
+
+        // ── c) reboot-still-pending probe (best-effort; never PendingFileRenameOperations) ───────
+        bool rebootStillPending = false;
+        try
+        {
+            bool? p = await _rebootProbe.IsRebootPendingAsync(name, CurrentPsCredential(), token);
+            rebootStillPending = p == true;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // Kerberos, WinRM, or any other probe failure → treat as "don't know", not pending.
+            rebootStillPending = false;
+        }
+
+        // ── d) install counts from the last install pass ──────────────────────────────────────────
+        int installed = computer.LastInstallInstalledCount;
+        int failed    = computer.LastInstallFailedCount;
+
+        // ── e/f) write outcome ────────────────────────────────────────────────────────────────────
+        if (!is2016)
+        {
+            // WUA lane: outcome string IS the primary UpdateMessage.
+            string outcome = RebootOutcomeSelector.Select(installed, failed, remaining, rebootStillPending, scanFailed);
+            computer.UpdateMessage = outcome;
+            computer.RebootRequired = rebootStillPending;
+            _activity.Info(name, outcome);
+        }
+        else
+        {
+            // 2016 lane: keep the wave's UBR Done message as primary — do NOT overwrite it with WUA
+            // "installed N" strings. Append only a supplementary note.
+            string supplement;
+            if (scanFailed)
+            {
+                supplement = "couldn't rescan — re-check";
+            }
+            else if (remaining > 0)
+            {
+                supplement = $"{remaining} update(s) still applicable — run a WUA pass";
+            }
+            else
+            {
+                supplement = "up to date";
+            }
+
+            // Preserve the UBR Done message; append the supplement with a mid-dot separator.
+            string baseMessage = computer.UpdateMessage ?? string.Empty;
+            computer.UpdateMessage = $"{baseMessage} · {supplement}";
+            _activity.Info(name, $"{name}: {supplement}");
         }
     }
 

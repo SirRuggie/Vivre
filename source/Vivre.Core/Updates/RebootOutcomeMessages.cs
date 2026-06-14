@@ -2,9 +2,9 @@ namespace Vivre.Core.Updates;
 
 /// <summary>
 /// Ready-to-use format methods for the post-reboot verify flow outcome strings.
-/// These methods are defined now but are NOT called anywhere yet — a future post-reboot rescan
-/// will call them once that flow is implemented (see UPDATE_PLAN.md Phase 2). Do not wire them
-/// up until then.
+/// These methods are called by <c>WorkspaceViewModel.ReportPostRebootOutcomeAsync</c> (via
+/// <see cref="RebootOutcomeSelector.Select"/>) as part of the post-reboot rescan flow that runs
+/// after <c>RebootWaveRowAsync</c> returns Done. See UPDATE_PLAN.md for the full flow description.
 /// </summary>
 public static class RebootOutcomeMessages
 {
