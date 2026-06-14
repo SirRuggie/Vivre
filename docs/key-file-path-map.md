@@ -147,12 +147,12 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - `AdaptiveLayoutController.cs` — layout controller.
 - `SettingsPage.xaml`(.cs) — Integrations, Help & about. The LCU package folder + "This month's CU" (KB / target UBR) fields live here.
 - `App.xaml`(.cs) — composition root.
-- Converters: `EnumEqualsConverter.cs`, `UxConverters.cs`, `PhaseChipLabelConverter.cs` (SHARED — Patching Status column + ComputerDetailWindow; do NOT edit for Patching-only label changes). Help text: `HelpContent.cs`.
+- Converters: `EnumEqualsConverter.cs`, `UxConverters.cs`, `PhaseChipConverter.cs` (class `PhaseChipLabelConverter`; SHARED — Patching Status column + ComputerDetailWindow; do NOT edit for Patching-only label changes). Help text: `HelpContent.cs`.
 - **Dialog sizing standard** (audit `fe4d68e`): modals use `CenterOwner`; fixed-content forms use `SizeToContent` + Min/Max (NoResize OK); content-heavy/list dialogs use `CanResize` + a ScrollViewer with the action buttons in their OWN row OUTSIDE the ScrollViewer (so they're always visible). `SoftwareCheckWindow` uses `SizeToContent="Height"` + `MaxHeight` so it opens fully visible and only scrolls on a too-short screen. Sizing attributes only — **never bind `Run.Text`** (the a0cb80a render-break class).
 - `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`.
 
 ## Settings / data
-- `AppSettings` (Vivre.Core) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved).
+- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved).
 - `source/Vivre.Core/Computers/ComputerListStore.cs` — the computer list store.
 - `RebootOutcomeMessages.cs` (Vivre.Core) — the 6 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", etc.). Defined but **NOT wired** — the queued Smart reboot-and-verify flow will call them.
 
@@ -166,7 +166,9 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   **`WritePs51Script_writes_utf8_with_bom`** BOM regression guard (`Vivre.Core.Tests/Wug/`).
 
 ## Docs in repo
-- `OVERNIGHT_KERBEROS_STATUS.md`, `UPDATE_PLAN.md`, `NAVIGATION_PLAN.md`, `CHANGELOG`, `LCU_PANEL_WORKER_SPEC.md`.
+- **Root:** `UPDATE_PLAN.md` (the WUA lane), `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
+- **`docs/`:** `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-lcu-panel-spec.md`, `2016-LCU-red-team-review.md`.
+- Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / UPDATE_PLAN.md / this file.
 
 ## Recent commits (restore points, newest last)
 - LCU routing + wiring (`b078014`); self-populating 2016 panel rebuilt clean (`5631a61`) — NOTE the
@@ -179,6 +181,6 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - plain WinRM-unavailable guidance on no-fallback ops + RoutingPowerShellHost comment fix
 - consistent dialog sizing across all popups (`fe4d68e`)
 - **WUG maintenance pre-flight (Test connection + module/creds check); fix PS7-contaminated
-  `PSModulePath` + BOM-less script encoding on the 5.1 shell-outs (`<add WUG commit hash>`)** — closes
+  `PSModulePath` + BOM-less script encoding on the 5.1 shell-outs (`756fa9d`)** — closes
   the WUG saga; covers the pre-flight feature, Gotcha-1 strip, Gotcha-2 BOM helper + regression test,
   and the truthful-connect-error parse contract.
