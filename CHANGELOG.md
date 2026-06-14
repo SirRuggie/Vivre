@@ -55,6 +55,16 @@ it ships, then gets a dated heading.
   package (with the catalog link) when it's missing. Mixed-fleet **Install all** auto-routes per
   machine: 2016 → this lane (stage-and-stop), 2019+ → the existing one-step WUA lane, unknown/unscanned
   → skipped.
+- **Fleet-wide reboot-and-verify** — right-click ▸ **Reboot & verify…** on any selection reboots
+  each machine (gracefully; forced after 8 minutes if it won't go down), then watches until it's
+  genuinely back and auto-rescans. Server 2016 boxes verify by build/UBR and catch a rolled-back
+  update as failed; all other boxes re-scan Windows Update and show what's still applicable.
+  Outcomes read "Back online · installed N · up to date / N remaining / couldn't rescan" directly
+  in the row. The unbounded offline watch (`_waveThrottle` = 256) means a slow 45-minute Server
+  2016 commit never blocks a fast box from completing; simultaneous reboot issuance is capped
+  (`_rebootTriggerThrottle` = 12) to protect DCs/DNS/auth from a simultaneous drop. Nothing
+  reboots without your explicit confirm — the post-reboot rescan is read-only (scan only, never
+  install or further reboot).
 - **WhatsUp Gold maintenance pre-flight** — *WhatsUp Gold maintenance…* now runs a connection +
   module/credential check before it touches anything: the dialog stays open until the WUG server is
   reachable, the `WhatsUpGoldPS` module is present, and your login is accepted, then closes and fires

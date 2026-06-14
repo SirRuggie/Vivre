@@ -515,6 +515,30 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Updates, Icon = SymbolRegular.ArrowClockwiseDashes24, Title = "Reboot and verify after patching",
+            Keywords = "reboot verify wave confirm rescan ubr build 2016 wua outcome back online remaining up to date installed",
+            Lines =
+            [
+                "After installing updates, right-click the machine(s) and choose Reboot & verify…, then confirm the list — nothing reboots without your confirm.",
+                "1. Select the machines you want to reboot.",
+                "2. Right-click ▸ Reboot & verify…",
+                "3. Review the list and click Reboot & verify to start.",
+                "Each box is rebooted gracefully (lets SQL/services flush). If it doesn't go down within 8 minutes Vivre escalates to a forced reboot to complete the one you ordered.",
+                "While offline, Vivre keeps watching — the row shows how long it's been down. There's no timeout that abandons a box; the clock only flags \"Overdue\" past a ceiling to prompt a console check.",
+                "When a box comes back online:",
+                "• Server 2016 boxes: the build number (UBR) is read over DCOM and compared to the expected value. If it matches, the update committed — the row turns green. A rolled-back UBR is caught and shown as failed (red).",
+                "• All other boxes: Vivre re-scans Windows Update (read-only — no installs, no further reboots). The outcome reads \"Back online · installed N · up to date\" (green), \"N remaining\" (if more updates apply), or \"couldn't rescan\" if the scan didn't complete.",
+                "Outcomes at a glance:",
+                "  Back online · installed N · up to date — fully patched.",
+                "  Back online · installed N · N remaining — more updates still apply; run Install again.",
+                "  Back online · reboot still pending — another reboot is needed; run again when ready.",
+                "  Back online · couldn't rescan — the re-scan didn't complete; use Scan to re-check.",
+                "If a box doesn't return during the live wave, use right-click ▸ Verify (2016) or Scan (other boxes) once it's back up — the wave never marks a box failed just for being slow.",
+            ],
+            Tip = "Reboot & verify reboots ONLY the machines you select and confirm. It never touches the rest of the fleet. To reboot without a post-reboot rescan, use right-click ▸ Reboot (force now).",
+        },
+        new HelpTopic
+        {
             Category = Updates, Icon = SymbolRegular.Box24, Title = "Patch a Windows Server 2016 box",
             Keywords = "2016 14393 cumulative cu lcu stage reboot wave verify kb msu catalog",
             Lines =
