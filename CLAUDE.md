@@ -37,7 +37,7 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
 
 ## Reference docs (read on demand; don't re-derive)
 - docs/key-file-path-map.md — load-bearing file locations
-- docs/2016-LCU-lane-spec.md, docs/2016-lcu-panel-spec.md, docs/2016-LCU-red-team-review.md — read before touching the 2016 patch lane
+- docs/2016-LCU-lane-spec.md, docs/2016-LCU-panel-spec.md, docs/2016-LCU-red-team-review.md — read before touching the 2016 patch lane
 - docs/vivre-backlog.md — current priorities + what's done
 
 ## Layout
