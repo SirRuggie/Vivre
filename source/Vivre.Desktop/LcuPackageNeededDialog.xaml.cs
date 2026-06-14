@@ -26,9 +26,7 @@ public partial class LcuPackageNeededDialog : FluentWindow
         _catalogUrl = readiness.CatalogUrl;
 
         ProblemBar.Message = readiness.Problem;
-        NeedsText.Text = readiness.SizeMb > 0
-            ? $"{readiness.Kb}   ·   {readiness.Arch}   ·   about {readiness.SizeMb:N0} MB"
-            : $"{readiness.Kb}   ·   {readiness.Arch}";
+        NeedsText.Text = $"{readiness.Kb}   ·   {readiness.Arch}";
         CatalogLinkText.Text = readiness.CatalogUrl;
         FolderBox.Text = readiness.Folder;
     }
