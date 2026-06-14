@@ -129,6 +129,28 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   workflow — likely needs a matching how-to topic. Update it in the same commit (or an immediate
   follow-up) so the guide never describes UI that no longer exists.
 
+## PM Verification Standard (non-negotiable, applies to every task)
+
+Worker agent output is a starting point, not a conclusion. The PM must
+independently verify all load-bearing findings and commit work.
+Specifically:
+
+- After agents return investigation findings, the PM re-reads every
+  file cited and confirms every factual claim against the actual code.
+  If a claim cannot be confirmed from the code directly, say so
+  explicitly — never forward an agent summary as verified fact.
+- After agents complete a build commit, the PM independently re-runs
+  both builds and all tests, re-reads every new and modified file, and
+  diffs any changed tests to confirm no assertion was weakened or
+  removed to make tests pass.
+- "Workers said it's green" is never sufficient. The PM's sign-off
+  means the PM read it and confirmed it personally.
+- If an agent finding and the actual code disagree, the code wins.
+  Flag the discrepancy explicitly in the report.
+
+This standard applies to investigations, red-team passes, build commits,
+and checkpoint reviews — every task without exception.
+
 ## Commit messages
 
 Follow **[Conventional Commits](https://www.conventionalcommits.org/)** — `type: imperative summary`:
