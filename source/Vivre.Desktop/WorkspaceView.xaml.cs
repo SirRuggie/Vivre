@@ -462,10 +462,15 @@ public partial class WorkspaceView : UserControl
         rebootForce.Click += OnRebootForce;
         _gridMenu.Items.Add(rebootForce);
 
-        // Reboot & verify — graceful reboot with post-reboot rescan/UBR verify; fleet-wide entry point.
-        var rebootVerify = WithIcon(new MenuItem { Header = "Reboot & verify…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwiseDashes24);
-        rebootVerify.Click += OnRebootAndVerify;
-        _gridMenu.Items.Add(rebootVerify);
+        // Reboot & verify — Patching-only (the post-reboot verify is a Windows Update concept): graceful
+        // reboot with post-reboot rescan/UBR verify; fleet-wide entry point. Gated like the Scan/Install
+        // shortcuts above so it never appears in Health mode.
+        if (vm.IsUpdateMode)
+        {
+            var rebootVerify = WithIcon(new MenuItem { Header = "Reboot & verify…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwiseDashes24);
+            rebootVerify.Click += OnRebootAndVerify;
+            _gridMenu.Items.Add(rebootVerify);
+        }
 
         // Timed actions: a one-time SYSTEM task that runs at a chosen time (works in either mode).
         var schedule = WithIcon(new MenuItem { Header = "Schedule", IsEnabled = hasSelection }, SymbolRegular.CalendarClock24);
