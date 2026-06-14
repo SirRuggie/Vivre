@@ -41,4 +41,8 @@ public static class RebootOutcomeMessages
     /// <summary>The box is in the process of rebooting; waiting for it to return.</summary>
     public static string StillRebooting() =>
         "Rebooting · waiting for it to come back…";
+
+    /// <summary>The box came back online but the post-reboot rescan could not run — reported honestly, never a clean result.</summary>
+    public static string BackOnlineRescanFailed() =>
+        "Back online · couldn't rescan — re-check";
 }
