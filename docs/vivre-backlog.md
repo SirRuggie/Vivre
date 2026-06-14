@@ -90,7 +90,7 @@ fleet-wide:
   `.gitattributes` `* text=auto` in place; signing cert confirmed still found. (The path map's
   build/deploy section is updated to reflect the new location.)
 - **NavigationView shell refactor — COMPLETE, including Phase 4** (landed ~early June 2026;
-  `<add nav commit hash(es)>`). MainWindow restructured around `ui:NavigationView`: LeftCompact pane +
+  the shell series — `90cb524` (Fleet Health/Patching split + menu-bar removal), `eebfd10` (adaptive/frameless shell), `aa3790d` (in-command-bar selection bar); Phases 1–4 in the preceding 1.8.x commits). MainWindow restructured around `ui:NavigationView`: LeftCompact pane +
   hamburger (collapsed by default); **Fleet** parent → Health / Patching sub-items (each its own tab
   strip + keep-alive state); Scripts; Cross-Domain RDP; Settings pinned bottom. The Machines/Windows
   Update **mode chips were removed entirely** (replaced by nav sub-items); the menu bar was removed,
@@ -100,7 +100,7 @@ fleet-wide:
 - `fe4d68e` — consistent dialog sizing across all 16 popups (no clipping, sensible min/max). Modals
   CenterOwner; fixed forms SizeToContent+Min/Max; content-heavy CanResize+ScrollViewer w/ buttons
   outside it; SoftwareCheckWindow SizeToContent=Height+MaxHeight (opens fully visible). Visual-checked.
-- **`<WUG commit hash>` — WUG maintenance pre-flight + the two-gotcha fix (the saga's end).** Window-
+- **`756fa9d` — WUG maintenance pre-flight + the two-gotcha fix (the saga's end).** Window-
   level pre-flight (Test connection + module/creds check; dialog stays open until module-present +
   reachable + creds-valid, then closes + fires the real per-device set). Fixed the false "module not
   installed" via: (1) Gotcha-1 `PSModulePath` strip so the 5.1 child sees installed modules; (2)
@@ -130,14 +130,14 @@ fleet-wide:
 
 ## KNOWLEDGE DOCS — current set + refresh status
 Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
-`2016-LCU-red-team-review.md`, `LCU_PANEL_WORKER_SPEC.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
+`2016-LCU-red-team-review.md`, `2016-lcu-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
 `first-run-beta-checklist.md` were removed as stale/spent.)
 - `key-file-path-map.md` — **refreshed this pass** (OneDrive trap → resolved/relocated; nav → done;
   the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; 344 tests). Drop the
-  WUG + nav commit hashes in. TODO: capture the as-built NavigationView shell layout next time MainWindow
+  TODO: capture the as-built NavigationView shell layout next time MainWindow
   is touched.
 - `vivre-backlog.md` — **this file, refreshed this pass.**
-- `LCU_PANEL_WORKER_SPEC.md` — minor: shows "313 tests" as the historical as-built count (fine as a
+- `2016-lcu-panel-spec.md` — minor: shows "313 tests" as the historical as-built count (fine as a
   point-in-time record); could note cab-extraction + SSU/LCU ordering + StagedThisSession when next edited.
 - `2016-LCU-lane-spec.md` / `2016-LCU-red-team-review.md` — substantively accurate; cycle-specific
   KB/UBR (KB5094122 / 9234) is "this cycle" by design.
