@@ -24,11 +24,6 @@
 
 ## OPEN — patching features (design mostly settled, build pending)
 
-### "What's still needed" WUA indicator (replaces the rejected fused Full-Patch button)
-- Red team killed the fused WUA+Stage button (CBS won't allow it; would need an unauthorized reboot
-  between the two ops). Instead: after a box's CU is committed (Verify green), show a WUA scan count so
-  the operator knows to run a WUA pass next — not a button pretending two reboot-separated ops are one.
-
 ### 2016 DISM routing toggle (red-team prompt drafted, not yet run)
 - Small toggle in the 2016 action bar, visible when 2016 boxes present.
 - OFF (default) = all 2016 boxes → DISM lane. ON = decide per box (DISM / WUA / skip), for excluding
@@ -92,6 +87,10 @@
   - **Entry:** right-click **Reboot & verify…** (Patching-mode only); 2016 panel button re-points to it.
     Operator-confirmed only; the rescan/outcome path is read-only (no autonomous reboot; agent untouched).
     **367 tests green; visual-checked; merged to master.**
+- **"What's still needed" WUA indicator — delivered with fleet-wide reboot-and-verify.** After a 2016
+  box's CU commits (UBR verified green), the post-reboot rescan appends the remaining WUA-applicable count
+  ("N update(s) still applicable — run a WUA pass" / "up to date"), so the operator knows to run a WUA
+  pass next — no fused button needed.
 - **Relocate repo + publish output out of OneDrive → `C:\src\Vivre`.** Killed the stale-binary class
   (OneDrive placeholder copies launching old code), the `.git/worktrees` lock, and the LF/CRLF churn.
   `.gitattributes` `* text=auto` in place; signing cert confirmed still found. (The path map's
