@@ -42,3 +42,37 @@ public class StagePreconditionsTests
         Assert.False(result);
     }
 }
+
+/// <summary>
+/// Tests for <see cref="StagePreconditions.IsAlreadyCurrent"/> — true ONLY on a definitive
+/// Verified verdict; WrongBuild and Unreachable both fail-open (proceed to Stage).
+/// </summary>
+public class StagePreconditions_IsAlreadyCurrent_Tests
+{
+    [Fact]
+    public void Verified_returns_true()
+    {
+        // Definitive match — skip Stage.
+        bool result = StagePreconditions.IsAlreadyCurrent(LcuVerifyOutcome.Verified);
+
+        Assert.True(result);
+    }
+
+    [Fact]
+    public void WrongBuild_returns_false()
+    {
+        // UBR readable but differs — different build, proceed to Stage.
+        bool result = StagePreconditions.IsAlreadyCurrent(LcuVerifyOutcome.WrongBuild);
+
+        Assert.False(result);
+    }
+
+    [Fact]
+    public void Unreachable_returns_false()
+    {
+        // Null/failed read — fail-open, proceed to Stage (DISM will catch an already-current box).
+        bool result = StagePreconditions.IsAlreadyCurrent(LcuVerifyOutcome.Unreachable);
+
+        Assert.False(result);
+    }
+}
