@@ -2674,6 +2674,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             HostPatchStatus final = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, token);
             ApplyStatus(computer, final);
+            computer.LastInstallInstalledCount = final.InstalledCount;
+            computer.LastInstallFailedCount = final.FailedCount;
 
             // Scheduled (not run now): record the schedule and surface it as the row message.
             if (scheduleAt is { } when && final.Phase != PatchPhase.Error)

@@ -209,6 +209,14 @@ public partial class Computer : ObservableObject
     /// Code-only (not data-bound), so a plain property rather than an observable one.</summary>
     public bool StagedThisSession { get; set; }
 
+    /// <summary>Installed-update count from the most recent install attempt this session (0 if none).
+    /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
+    public int LastInstallInstalledCount { get; set; }
+
+    /// <summary>Failed-update count from the most recent install attempt this session (0 if none).
+    /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
+    public int LastInstallFailedCount { get; set; }
+
     /// <summary>The full vitals snapshot behind the score, kept off the observable surface for the
     /// triage panel's per-drive / per-event breakdown. Null until vitals are read.</summary>
     public MachineVitals? Vitals { get; set; }
