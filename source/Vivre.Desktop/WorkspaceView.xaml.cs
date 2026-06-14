@@ -948,10 +948,29 @@ public partial class WorkspaceView : UserControl
     /// this month's CU <c>.msu</c> isn't there (or is wrong/ambiguous), show the guided "add the package"
     /// prompt and stage nothing. "Stage now" in that prompt loops back here to re-check, so the operator
     /// can drop the file and proceed without hunting for the button again.</summary>
-    private void OnStage2016(object sender, RoutedEventArgs e)
+    private async void OnStage2016(object sender, RoutedEventArgs e)
     {
         if (ViewModel is not { } vm)
         {
+            return;
+        }
+
+        // Scan-this-session gate: every 2016 Stage target must have been scanned this session first.
+        // (Read-only; no box is touched. A post-reboot rescan also satisfies this.)
+        IReadOnlyList<string> unscanned = vm.UnscannedStageTargets();
+        if (unscanned.Count > 0)
+        {
+            string names = string.Join("\n", unscanned.Take(10))
+                + (unscanned.Count > 10 ? $"\n+{unscanned.Count - 10} more" : string.Empty);
+            var gate = new MessageBox
+            {
+                Title = "Scan before staging",
+                Content = $"These Server 2016 machine(s) haven't been scanned this session:\n\n{names}\n\n"
+                        + "Run Check for updates (Scan) on them first — Stage uses the scan to confirm the "
+                        + "box's current state before patching. No machine was touched.",
+                CloseButtonText = "OK",
+            };
+            await gate.ShowDialogAsync();
             return;
         }
 
