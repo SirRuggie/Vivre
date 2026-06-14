@@ -4132,6 +4132,45 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>
+    /// Tests whether the WhatsUpGoldPS module is installed and whether the supplied credentials can
+    /// reach <paramref name="server"/>.  The <paramref name="password"/> is converted to plaintext
+    /// only via <see cref="System.Net.NetworkCredential"/> and passed to the child process via the
+    /// <c>VIVRE_WUG_PASS</c> environment variable — never on a command line, never stored.
+    /// </summary>
+    public async Task<Vivre.Core.Wug.WugPreflightResult> TestWugConnectionAsync(
+        string server,
+        string username,
+        System.Security.SecureString password,
+        CancellationToken token = default)
+    {
+        try
+        {
+            string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
+            return await Vivre.Core.Wug.WugMaintenance.TestConnectionAsync(server, username, plain, TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new Vivre.Core.Wug.WugPreflightResult(false, false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Installs the WhatsUpGoldPS module from the PowerShell Gallery for the current user.
+    /// Operator-consented; the silent auto-install inside <c>SetWugMaintenanceAsync</c> is separate.
+    /// </summary>
+    public async Task<(bool Ok, string? Error)> InstallWugModuleAsync(CancellationToken token = default)
+    {
+        try
+        {
+            return await Vivre.Core.Wug.WugMaintenance.InstallModuleAsync(TimeSpan.FromMinutes(3), token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Reads the OS caption + build for one machine on demand (e.g. when its detail window opens),
     /// if not already known. Best-effort — a single quick WinRM query; leaves <see
     /// cref="Computer.OperatingSystem"/> as-is on failure.
