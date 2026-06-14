@@ -209,6 +209,6 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   watch (`_waveThrottle`) + reboot-trigger gate (`IRebootGate`/`RebootTriggerGate`/`_rebootTriggerThrottle`),
   right-click **Reboot & verify…** (Patching-only). 367 tests; merged to master.
 - **Smart scan flow — Stage guards (`3a35292` already-staged · `ef795de` already-current · `6350957`
-  scan-gate) + `0718f7a` remove ExpectedSizeMb. 378 tests.** Pure `StagePreconditions` helper wired
+  scan-gate) + `0718f7a` remove ExpectedSizeMb. 378 tests; merged to master.** Pure `StagePreconditions` helper wired
   into Stage: scan-this-session gate, already-staged skip, already-current UBR check (fail-open).
   Removed display-only `MonthlyCu.ExpectedSizeMb` Settings field.
