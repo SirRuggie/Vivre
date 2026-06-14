@@ -544,7 +544,7 @@
                                    Icon="{ui:SymbolIcon ArrowClockwise24}"
                                    Margin="0,0,4,0"
                                    IsEnabled="False"
-                                   Click="OnRebootWave2016"
+                                   Click="OnRebootAndVerify"
                                    ToolTip="Select the 2016 box(es) you want to reboot, then click. Reboots + commits the selected staged boxes; confirms first — run overnight. Disabled until boxes are selected." />
                         <ui:Button Content="Verify"
                                    Icon="{ui:SymbolIcon CheckmarkCircle24}"

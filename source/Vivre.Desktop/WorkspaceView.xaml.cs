@@ -462,6 +462,11 @@ public partial class WorkspaceView : UserControl
         rebootForce.Click += OnRebootForce;
         _gridMenu.Items.Add(rebootForce);
 
+        // Reboot & verify — graceful reboot with post-reboot rescan/UBR verify; fleet-wide entry point.
+        var rebootVerify = WithIcon(new MenuItem { Header = "Reboot & verify…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwiseDashes24);
+        rebootVerify.Click += OnRebootAndVerify;
+        _gridMenu.Items.Add(rebootVerify);
+
         // Timed actions: a one-time SYSTEM task that runs at a chosen time (works in either mode).
         var schedule = WithIcon(new MenuItem { Header = "Schedule", IsEnabled = hasSelection }, SymbolRegular.CalendarClock24);
         var schedInstall = new MenuItem { Header = "Install updates…" };
@@ -913,9 +918,9 @@ public partial class WorkspaceView : UserControl
             vm.SetSelection(grid.SelectedItems.OfType<Computer>());
 
             // The Reboot Wave button is physically un-clickable until the operator has explicitly
-            // selected at least one confirmed 2016 box — a production reboot must never be one stray
-            // click away. (The command also acts only on the selection; this is the enable gate.)
-            RebootWaveButton.IsEnabled = vm.SelectedComputers.Any(c => LcuRouting.Is2016(c.OsBuild));
+            // selected at least one machine — a production reboot must never be one stray click away.
+            // (The command also acts only on the selection; this is the enable gate.)
+            RebootWaveButton.IsEnabled = vm.SelectedComputers.Count > 0;
 
             // Drive the Windows Update side panel from the primary (focused) machine row.
             if (grid.SelectedItem is Computer focused)
@@ -968,19 +973,18 @@ public partial class WorkspaceView : UserControl
     }
 
     /// <summary>
-    /// Server 2016 action bar — Reboot Wave. Production reboot, so the button is never bound straight
-    /// to the command: this handler names the explicitly selected 2016 boxes, confirms, and only invokes
-    /// <c>RebootWave2016Command</c> on the primary result. The command itself also acts only on the
-    /// selection (never "all 2016"), and the button is enabled only while ≥1 2016 row is selected.
+    /// Fleet-wide Reboot &amp; verify entry point (2016 action bar and grid right-click).
+    /// Production reboot — names the explicitly selected machines, confirms, and only invokes
+    /// <c>RebootAndVerifyCommand</c> on confirmation. The command acts only on the selection.
     /// </summary>
-    private async void OnRebootWave2016(object sender, RoutedEventArgs e)
+    private async void OnRebootAndVerify(object sender, RoutedEventArgs e)
     {
         if (ViewModel is not { } vm)
         {
             return;
         }
 
-        var selected = vm.SelectedComputers.Where(c => LcuRouting.Is2016(c.OsBuild)).ToList();
+        var selected = vm.SelectedComputers.ToList();
         if (selected.Count == 0)
         {
             return; // gate should prevent this; never reboot without an explicit selection
@@ -996,20 +1000,21 @@ public partial class WorkspaceView : UserControl
 
         var confirm = new MessageBox
         {
-            Title = "Reboot the selected 2016 servers?",
-            Content = $"This will reboot {selected.Count} Server 2016 machine(s) now:\n\n{names}\n\n"
-                      + "Each box is rebooted gracefully; if one won't go down within 8 minutes it is "
-                      + "forced, to complete the reboot you just ordered. Vivre then tracks each box "
-                      + "until its build confirms the update committed.\n\n"
+            Title = "Reboot & verify",
+            Content = $"This will reboot {selected.Count} machine(s):\n\n{names}\n\n"
+                      + "Each reboots gracefully; if one won't go down within 8 minutes it is "
+                      + "forced, to complete the reboot you ordered. Vivre then tracks each box "
+                      + "until it is verified back online (2016 boxes verify by build/UBR; others "
+                      + "by re-scan).\n\n"
                       + "Run this when the boxes are safe to restart (typically overnight).",
-            PrimaryButtonText = "Reboot & commit",
+            PrimaryButtonText = "Reboot & verify",
             CloseButtonText = "Cancel",
         };
 
         if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary
-            && vm.RebootWave2016Command.CanExecute(null))
+            && vm.RebootAndVerifyCommand.CanExecute(null))
         {
-            vm.RebootWave2016Command.Execute(null);
+            vm.RebootAndVerifyCommand.Execute(null);
         }
     }
 
