@@ -5,8 +5,9 @@ namespace Vivre.Core.Tests.Updates;
 
 /// <summary>
 /// Smoke tests for <see cref="RebootOutcomeMessages"/> format methods.
-/// These strings are defined now but not yet wired to any flow — these tests assert their exact
-/// shape so a future refactor can't silently change wording that the PM has signed off on.
+/// These strings are wired from <c>WorkspaceViewModel.ReportPostRebootOutcomeAsync</c> via
+/// <see cref="RebootOutcomeSelector"/>. These tests assert their exact shape so a refactor
+/// can't silently change wording.
 /// </summary>
 public class RebootOutcomeMessagesTests
 {
