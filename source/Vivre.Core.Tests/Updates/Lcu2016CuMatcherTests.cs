@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using Vivre.Core.Updates;
 using Xunit;
 
@@ -100,4 +101,45 @@ public class Lcu2016CuMatcherTests
     [InlineData("  KB5094122  ", "5094122")]
     public void NormalizeKb_strips_the_prefix(string input, string expected) =>
         Assert.Equal(expected, Lcu2016CuMatcher.NormalizeKb(input));
+
+    // --- CuKbs: the conservative "exclude every CU-titled update" set used by minor-only install ---
+
+    [Fact]
+    public void CuKbs_returns_all_distinct_cu_kbs_even_when_ambiguous()
+    {
+        // FindCuKb returns null here (ambiguous), but CuKbs must return BOTH so neither slips through WUA.
+        (string, string?)[] scan =
+        [
+            ("2026-05 Cumulative Update for Windows Server 2016 (KB5090000)", "5090000"),
+            ("2026-06 Cumulative Update for Windows Server 2016 (KB5094122)", "5094122"),
+            ("Security Intelligence Update for Microsoft Defender Antivirus", "2267602"),
+        ];
+
+        Assert.Null(Lcu2016CuMatcher.FindCuKb(scan)); // ambiguous → no single guess
+        Assert.Equal(new HashSet<string> { "5090000", "5094122" }, Lcu2016CuMatcher.CuKbs(scan));
+    }
+
+    [Fact]
+    public void CuKbs_excludes_dotnet_and_non_cu_updates()
+    {
+        (string, string?)[] scan =
+        [
+            ("2026-06 Cumulative Update for Windows Server 2016 (KB5094122)", "5094122"),
+            ("2026-06 Cumulative Update for .NET Framework 4.8 for Windows Server 2016 (KB5099999)", "5099999"),
+            ("Update for Windows Server 2016 (KB5000000)", "5000000"),
+        ];
+
+        Assert.Equal(new HashSet<string> { "5094122" }, Lcu2016CuMatcher.CuKbs(scan));
+    }
+
+    [Fact]
+    public void CuKbs_is_empty_when_no_cu_present()
+    {
+        (string, string?)[] scan = [("Security Intelligence Update", "2267602")];
+
+        Assert.Empty(Lcu2016CuMatcher.CuKbs(scan));
+    }
+
+    [Fact]
+    public void CuKbs_is_empty_for_null_input() => Assert.Empty(Lcu2016CuMatcher.CuKbs(null!));
 }

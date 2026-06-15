@@ -2675,10 +2675,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 return;
             }
 
+            // SAFETY: the OS CU must never reach WUA on a flagged box. Require this month's CU to be set in
+            // Settings (the same gate the Stage lane uses) so cuExclude always has the operator-declared KB as a
+            // floor, then ALSO exclude EVERY CU-titled update the scan shows (CuKbs — not the single-confident
+            // FindCuKb) so an ambiguous scan listing two CU KBs can't let one slip through.
             string? settingsCu = _appSettings.Load().MonthlyCu?.Kb;
-            if (!string.IsNullOrWhiteSpace(settingsCu)) { cuExclude.Add(Lcu2016CuMatcher.NormalizeKb(settingsCu)); }
-            string? scanCu = Lcu2016CuMatcher.FindCuKb(computer.ApplicableUpdates.Select(u => (u.Title, u.Kb)));
-            if (scanCu is not null) { cuExclude.Add(scanCu); }
+            if (string.IsNullOrWhiteSpace(settingsCu))
+            {
+                computer.UpdatePhase = PatchPhase.Idle.ToString();
+                computer.UpdateMessage = "Set this month's CU (KB) in Settings before installing minor updates only.";
+                return;
+            }
+
+            cuExclude.Add(Lcu2016CuMatcher.NormalizeKb(settingsCu));
+            cuExclude.UnionWith(Lcu2016CuMatcher.CuKbs(computer.ApplicableUpdates.Select(u => (u.Title, u.Kb))));
         }
 
         // Honor the per-machine checklist. Clone the shared options (concurrent hosts read it) and
