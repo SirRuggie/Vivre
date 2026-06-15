@@ -85,7 +85,8 @@ public class WuaUpdateLaneStreamingTests
         HostPatchStatus final = await lane.InstallAsync("NYC-SRV1", new PatchOptions(), credential: null, Sink([]), CancellationToken.None);
 
         Assert.Equal(PatchPhase.Error, final.Phase);
-        Assert.Contains("Reboot the target", final.Message);
+        Assert.Contains("temporarily unavailable", final.Message);
+        Assert.DoesNotContain("Reboot the target", final.Message); // no needless reboot advice — transient hiccup
         Assert.True(host.CleanupCalls >= 1);
     }
 

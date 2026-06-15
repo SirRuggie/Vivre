@@ -43,15 +43,17 @@ public sealed class RemoteSessionLostException : Exception
 /// <summary>
 /// The target's WinRM/PSRP shell failed to initialise — classically the
 /// "The type initializer for 'System.Management.Automation.Runspaces.InitialSessionState' threw an
-/// exception" error. On a real box that means a pending reboot has corrupted the servicing/WSMan
-/// stack, or too many WinRM shells are open (<c>MaxShellsPerUser</c>, default 30). Both clear only
-/// by rebooting the target; until then <em>every</em> remote op against the host fails the same way,
-/// so the caller should stop hammering it and tell the user to reboot it.
+/// exception" error. This is most often <em>transient</em>: the box is momentarily busy, or too many
+/// WinRM shells are open (<c>MaxShellsPerUser</c>, default 30) — it typically clears on its own once
+/// load eases (a single retry usually succeeds). Occasionally a genuinely reboot-pending box has
+/// corrupted its servicing/WSMan stack and fails this way persistently. Either way the caller should
+/// back off and retry rather than hammer the host — and must <b>not</b> assume a pending reboot or tell
+/// the user to reboot: the box's known <c>RebootRequired</c> flag is the only authority on that.
 /// </summary>
 public sealed class RemoteShellInitException : Exception
 {
     public RemoteShellInitException(string host, Exception inner)
-        : base($"WinRM/PSRP shell init failed on {host} — the target is likely reboot-pending or has too many open WinRM shells (MaxShellsPerUser). Reboot the target to clear it.", inner)
+        : base($"WinRM is temporarily unavailable on {host} — a shell couldn't start (a transient hiccup under load, or too many open WinRM shells / MaxShellsPerUser). It usually clears on its own; try again shortly.", inner)
         => Host = host;
 
     /// <summary>The host whose shell init failed.</summary>
@@ -100,8 +102,8 @@ public sealed class KerberosWrongPrincipalException : Exception
 public static class RemoteFailureClassifier
 {
     /// <summary>True when the exception means WinRM can't be used on this host (a Kerberos rejection or a
-    /// connect-time/transport loss). <see cref="RemoteShellInitException"/> is deliberately excluded — it
-    /// carries its own actionable "reboot the target" guidance, not a raw SSPI code.</summary>
+    /// connect-time/transport loss). <see cref="RemoteShellInitException"/> is deliberately excluded — it's
+    /// a transient shell-init failure with its own calm, retry-oriented message, not a raw SSPI code.</summary>
     public static bool IsWinRmUnavailable(this Exception ex) =>
         ex is KerberosWrongPrincipalException or RemoteSessionLostException;
 }

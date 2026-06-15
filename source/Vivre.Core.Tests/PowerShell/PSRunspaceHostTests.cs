@@ -120,7 +120,8 @@ public class PSRunspaceHostTests
 
         RemoteShellInitException shell = Assert.IsType<RemoteShellInitException>(translated);
         Assert.Equal("DCVCOLUMBUS", shell.Host);
-        Assert.Contains("Reboot the target", shell.Message);
+        Assert.Contains("temporarily unavailable", shell.Message);
+        Assert.DoesNotContain("Reboot the target", shell.Message); // no needless reboot advice — transient hiccup
     }
 
     [Fact]
@@ -270,7 +271,7 @@ public class PSRunspaceHostTests
     [Fact]
     public void IsWinRmUnavailable_false_for_shell_init_and_unrelated()
     {
-        // Shell-init carries its own "reboot the target" guidance; unrelated errors aren't WinRM-unavailable.
+        // Shell-init carries its own calm, retry-oriented message; unrelated errors aren't WinRM-unavailable.
         Assert.False(new RemoteShellInitException("H", new Exception()).IsWinRmUnavailable());
         Assert.False(new InvalidOperationException("boom").IsWinRmUnavailable());
         Assert.False(new OperationCanceledException().IsWinRmUnavailable());

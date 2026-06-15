@@ -312,8 +312,9 @@ public sealed class WuaUpdateLane
         }
         catch (RemoteShellInitException ex)
         {
-            // The target's WinRM/PSRP shell init is failing (pending reboot / shell exhaustion).
-            // The exception message is already actionable ("reboot the target"); surface it as-is.
+            // The target's WinRM/PSRP shell init is failing — usually a transient WinRM hiccup (a busy
+            // box / too many open shells), not necessarily a pending reboot. The exception's own message
+            // says so calmly without prescribing a reboot; surface it as-is.
             var failed = HostPatchStatus.Failed(ex.Message);
             progress.Report(failed);
             await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);

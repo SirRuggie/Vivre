@@ -624,12 +624,12 @@ public static class HelpContent
         },
         new HelpTopic
         {
-            Category = Trouble, Icon = SymbolRegular.PlugDisconnected24, Title = "\"WinRM unhealthy — reboot the target\"",
-            Keywords = "winrm unhealthy reboot pending stuck initialsessionstate",
+            Category = Trouble, Icon = SymbolRegular.PlugDisconnected24, Title = "\"WinRM temporarily unavailable\"",
+            Keywords = "winrm unhealthy temporarily unavailable reboot pending stuck initialsessionstate shells maxshellsperuser",
             Lines =
             [
-                "A pending reboot has jammed that machine's remoting (a known Windows issue). Reboot the box to clear it.",
-                "Vivre stops hammering it, re-tests every few minutes, and clears the message once it recovers.",
+                "A WinRM shell couldn't start on that machine. This is usually transient — the box was momentarily busy, or too many remoting shells were open at once — and it clears on its own; Vivre backs off and retries automatically.",
+                "Vivre won't tell you to reboot a healthy box. If the machine genuinely is reboot-pending, the row already shows the \"Reboot pending\" pill (and offers Reboot & verify) — that's the only case a reboot is the fix.",
             ],
         },
         new HelpTopic

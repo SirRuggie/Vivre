@@ -4099,11 +4099,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token, background: true);
 
             // We got here with no shell-init failure → WinRM is healthy. If this host was flagged
-            // degraded, it has recovered: clear the flag + the stale "WinRM unhealthy" message so the
-            // user sees it's working again (this is the path that self-heals after a real reboot).
+            // degraded, it has recovered: clear the flag + the stale "WinRM temporarily unavailable"
+            // message so the user sees it's working again (this is the path that self-heals once the
+            // probe starts answering again).
             if (_degradedHosts.TryRemove(computer.Name, out _))
             {
-                if (computer.RebootMessage is { } stale && stale.StartsWith("WinRM unhealthy", StringComparison.Ordinal))
+                if (computer.RebootMessage is { } stale && stale.StartsWith("WinRM temporarily unavailable", StringComparison.Ordinal))
                 {
                     computer.RebootMessage = null;
                 }
@@ -4163,7 +4164,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 if (ex is RemoteShellInitException)
                 {
-                    computer.RebootMessage = $"WinRM unhealthy on {computer.Name} — likely reboot-pending; reboot the target to clear it.";
+                    // A shell-init failure is usually a transient WinRM hiccup (a busy box / too many open
+                    // shells under load), NOT proof of a pending reboot — so we never tell the user to
+                    // "reboot the target" (the old message did, even on healthy boxes — that was the noise).
+                    // Consult the KNOWN reboot state only to note an already-pending box; neither branch
+                    // prescribes a reboot. Both start with "WinRM temporarily unavailable" so the recovery
+                    // path above clears whichever was set.
+                    computer.RebootMessage = computer.RebootRequired == true
+                        ? $"WinRM temporarily unavailable on {computer.Name} (reboot still pending) — backing off."
+                        : $"WinRM temporarily unavailable on {computer.Name} — backing off, will retry.";
                 }
 
                 _activity.Warn(computer.Name, $"Reboot probe failing — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min). {ex.Message}");
