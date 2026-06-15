@@ -66,10 +66,10 @@
     <RootNamespace>Vivre.Desktop</RootNamespace>
     <Product>Vivre</Product>
     <AssemblyTitle>Vivre</AssemblyTitle>
-    <!-- Version: bump VersionPrefix by hand for real releases (e.g. 1.6.0). Every build auto-stamps its
-         build date/time into the informational version (shown in Help ▸ About), so any zip is
-         identifiable without changing the human version number. -->
-    <VersionPrefix>1.10.1</VersionPrefix>
+    <!-- Version: bump VersionPrefix per shipped change — minor for a new feature, patch for a fix / small
+         UX tweak (see CLAUDE.md ▸ Conventions). Every build also auto-stamps its build date/time + commit
+         into the informational version (shown in Help ▸ About), so any zip is identifiable. -->
+    <VersionPrefix>1.11.0</VersionPrefix>
     <InformationalVersion>$(VersionPrefix)+build.$([System.DateTime]::Now.ToString('yyyyMMddHHmm'))</InformationalVersion>
     <!-- Icon shown on the .exe itself (Explorer / pinned taskbar). -->
     <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
