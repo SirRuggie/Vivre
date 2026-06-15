@@ -838,6 +838,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(CanInstallAll));
         OnPropertyChanged(nameof(Server2016Count));
         OnPropertyChanged(nameof(HasServer2016));
+        OnPropertyChanged(nameof(HasStagedServer2016));
         // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
         if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
         RaiseFleetChanged();
@@ -863,8 +864,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             case nameof(Computer.OsBuild):
                 OnPropertyChanged(nameof(Server2016Count));
                 OnPropertyChanged(nameof(HasServer2016));
+                OnPropertyChanged(nameof(HasStagedServer2016));
                 // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
                 if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
+                break;
+            // The operator marked/unmarked a box for staged patching — re-tally so the Staged column appears
+            // (first flag) or disappears (last flag cleared) without waiting for a row add/remove.
+            case nameof(Computer.RequiresStagedPatching):
+                OnPropertyChanged(nameof(HasStagedServer2016));
                 break;
         }
     }
@@ -2816,6 +2823,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>True when this tab has at least one confirmed 2016 box (the panel/buttons are meaningful).</summary>
     public bool HasServer2016 => Server2016Count > 0;
+
+    /// <summary>True when at least one 2016 box in this tab is flagged for staged patching — drives the grid's
+    /// "Staged" pill column visibility (the whole column hides when nothing is flagged).</summary>
+    public bool HasStagedServer2016 => Computers.Any(c => LcuRouting.Is2016(c.OsBuild) && c.RequiresStagedPatching);
 
     /// <summary>The rows the panel's Stage / Clean up / Verify act on: the selected FLAGGED 2016 rows, or every
     /// flagged 2016 row when none are selected. A non-flagged 2016 box patches via Windows Update, so the DISM

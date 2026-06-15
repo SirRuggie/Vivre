@@ -946,6 +946,39 @@
                         </DataTemplate>
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
+                <!-- Staged flag pill: shown only on confirmed 2016 rows the operator marked for the DISM staging
+                     lane (RequiresStagedPatching). Neutral look — this is a configuration flag, distinct from the
+                     amber "STAGED — needs Reboot Wave" action tag in the Status cell. The WHOLE column's
+                     Visibility is driven from code-behind by HasStagedServer2016 (hidden when nothing is flagged). -->
+                <DataGridTemplateColumn x:Name="StagedColumn" Header="Staged" Width="Auto" MinWidth="64"
+                                        SortMemberPath="RequiresStagedPatching">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border CornerRadius="4" Padding="6,1" Margin="6,2" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                                        <Setter Property="BorderBrush" Value="{DynamicResource SystemFillColorNeutralBrush}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Style.Triggers>
+                                            <MultiDataTrigger>
+                                                <MultiDataTrigger.Conditions>
+                                                    <Condition Binding="{Binding OsBuild}" Value="14393" />
+                                                    <Condition Binding="{Binding RequiresStagedPatching}" Value="True" />
+                                                </MultiDataTrigger.Conditions>
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </MultiDataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="Staged" FontSize="10" FontWeight="SemiBold" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                           ToolTip="Flagged for the Server 2016 DISM staging lane (right-click a row to change)." />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
                 <DataGridTextColumn Header="Reboot message" Binding="{Binding RebootMessage}" Width="Auto" MinWidth="100">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
