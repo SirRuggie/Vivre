@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using Vivre.Core.Columns;
+using Vivre.Core.Updates;
 
 namespace Vivre.Desktop;
 
@@ -64,6 +65,11 @@ public sealed class AppSettings
     /// height will open at the clamped height rather than this raw value until the user resizes
     /// further. Default 170.</summary>
     public double BottomDockHeight { get; set; } = 170;
+
+    /// <summary>The persisted set of host names the operator has flagged as needing staged (DISM) patching;
+    /// OrdinalIgnoreCase; the source of truth behind <see cref="Vivre.Core.Models.Computer.RequiresStagedPatching"/>.
+    /// Always normalize after deserialization — a JSON round-trip resets the set's comparer to ordinal.</summary>
+    public HashSet<string> StagedHosts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
 }
 
 /// <summary>
@@ -116,10 +122,16 @@ public sealed class AppSettingsStore
 
     public AppSettings Load() => _cache ??= ReadFromDisk();
 
-    private AppSettings ReadFromDisk() =>
-        File.Exists(_path)
+    private AppSettings ReadFromDisk()
+    {
+        AppSettings settings = File.Exists(_path)
             ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
             : new AppSettings();
+        // A JSON round-trip resets HashSet/Dictionary comparers to ordinal — rebuild with
+        // OrdinalIgnoreCase so case-insensitive lookups always work after deserialization.
+        settings.StagedHosts = StagedHostMatching.Normalize(settings.StagedHosts);
+        return settings;
+    }
 
     public void Save(AppSettings settings)
     {
