@@ -47,6 +47,15 @@ public enum PatchPhase
 
     /// <summary>Something failed — see <see cref="HostPatchStatus.Message"/>.</summary>
     Error,
+
+    /// <summary>
+    /// Couldn't reach Windows Update after the transient-retry budget was exhausted — a network
+    /// reach failure (e.g. the SLS service-locator call timed out), NOT a real install failure and
+    /// NOT a clean "up to date". Reduces to <see cref="PatchState.Error"/> (red — never green) but
+    /// carries its own chip label + honest message so the operator can tell "blip, re-run it" from a
+    /// genuine install failure. See <see cref="TransientWuaError"/>.
+    /// </summary>
+    Unreachable,
 }
 
 /// <summary>
@@ -110,4 +119,9 @@ public sealed record HostPatchStatus(
 
     /// <summary>An error status with no counts.</summary>
     public static HostPatchStatus Failed(string message) => new(PatchPhase.Error, message);
+
+    /// <summary>An honest "couldn't reach Windows Update" status (the transient-retry budget ran out).
+    /// Distinct from <see cref="Failed"/> so the UI shows a reach-failure chip, never a false "up to
+    /// date" / zero-applicable.</summary>
+    public static HostPatchStatus Unreachable(string message) => new(PatchPhase.Unreachable, message);
 }

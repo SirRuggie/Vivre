@@ -193,6 +193,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // Install/uninstall throttle (heavy SYSTEM-task operations — kept low; per-tab).
     private readonly SemaphoreSlim _patchThrottle;
 
+    // Silent transient-retry budget for a WUA scan/install (see TransientRetryRunner + TransientWuaError).
+    // 3 retries × ~60s: each failing WUA attempt already burns ~2.5 min on Windows' own internal retries,
+    // so 3 attempts + the 60s pauses ≈ 9-10 min of coverage — comfortably past a typical transient blip
+    // (the proven one was 2m38s), while the 60s pause also spaces out codes that fail fast. Modest on
+    // purpose: re-running a box is cheap, so a longer outage surfaces honestly rather than waiting forever.
+    private const int MaxTransientRetries = 3;
+    private static readonly TimeSpan TransientRetryBackoff = TimeSpan.FromSeconds(60);
+
     // Reboot-and-verify wave throttles. Two separate concerns:
     //   _waveThrottle: concurrency width for the watch loop itself — effectively unbounded (256)
     //     so ALL selected boxes start their offline watch simultaneously; a slow box (e.g. 45-min
@@ -2501,6 +2509,26 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
+    /// <summary>The calm "retrying" row state shown between transient WU reach retries — deliberately a
+    /// quiet working state, NOT an error, so the operator sees nothing alarming while the silent
+    /// re-dispatch runs. (<see cref="TransientRetryRunner"/> calls this before each backoff pause.)</summary>
+    private static void SetTransientRetryingState(Computer computer, int retryNumber)
+    {
+        computer.UpdateError = null;
+        computer.UpdateProgress = null;
+        computer.UpdatePhase = PatchPhase.Scanning.ToString(); // blue "working" — never the red Error pill
+        computer.UpdateMessage = $"Couldn't reach Windows Update — retrying ({retryNumber}/{MaxTransientRetries})…";
+    }
+
+    /// <summary>The honest, actionable message for an exhausted transient reach failure: names the HRESULT
+    /// and the try count, never a bare code, and NEVER reads as "up to date".</summary>
+    private static string BuildUnreachableMessage(string lastTransientMessage)
+    {
+        string code = TransientWuaError.FirstTransientToken(lastTransientMessage) ?? "transient network error";
+        int tries = MaxTransientRetries + 1;
+        return $"Couldn't reach Windows Update ({code}) after {tries} tries — likely a transient network issue, try again.";
+    }
+
     private async Task ScanRowAsync(Computer computer, CancellationToken token)
     {
         // Never scan a row that's mid-install/uninstall — a scan would overwrite its live phase,
@@ -2520,7 +2548,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         UpdateScope scopeAtScan = _patchOptions.Scope;
         try
         {
-            HostPatchStatus status = await _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, token);
+            // A transient WU reach hiccup (the proven SLS 0x80072EE2 timeout) re-runs the whole scan
+            // silently, up to the retry budget; an exhausted reach failure resolves to an honest
+            // "couldn't reach WU" state (never a false "up to date"), and a terminal error surfaces at once.
+            HostPatchStatus status = await TransientRetryRunner.RunAsync(
+                attempt: ct => _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, ct),
+                maxRetries: MaxTransientRetries,
+                delay: (_, ct) => Task.Delay(TransientRetryBackoff, ct),
+                onRetrying: n => SetTransientRetryingState(computer, n),
+                buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
+                token);
             ApplyStatus(computer, status, scopeAtScan);
         }
         catch (OperationCanceledException)
@@ -2749,16 +2786,37 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         // Progress<T> marshals callbacks to the captured (UI) context; WPF also auto-marshals
         // the scalar property updates, so the grid stays current as the SYSTEM task reports in.
-        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        // Suppress a TRANSIENT reach error mid-stream so the row never flashes red — the runner will
+        // retry it silently. Normal progress (Scanning/Downloading/Installing) still applies live.
+        var progress = new Progress<HostPatchStatus>(s =>
+        {
+            if (s.Phase == PatchPhase.Error && TransientWuaError.IsTransient(s.Message))
+            {
+                return;
+            }
+
+            ApplyStatus(computer, s);
+        });
         try
         {
-            HostPatchStatus final = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, token);
+            // Wrap the WHOLE install (service-registration → search → download → install): a transient
+            // WU reach hiccup re-dispatches the entire operation silently, up to the retry budget; an
+            // exhausted reach failure resolves to an honest "couldn't reach WU" state (never a false
+            // "installed"/"up to date"), and a real install failure surfaces at once with no retry.
+            HostPatchStatus final = await TransientRetryRunner.RunAsync(
+                attempt: ct => _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, ct),
+                maxRetries: MaxTransientRetries,
+                delay: (_, ct) => Task.Delay(TransientRetryBackoff, ct),
+                onRetrying: n => SetTransientRetryingState(computer, n),
+                buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
+                token);
             ApplyStatus(computer, final);
             computer.LastInstallInstalledCount = final.InstalledCount;
             computer.LastInstallFailedCount = final.FailedCount;
 
-            // Scheduled (not run now): record the schedule and surface it as the row message.
-            if (scheduleAt is { } when && final.Phase != PatchPhase.Error)
+            // Scheduled (not run now): record the schedule and surface it as the row message. An exhausted
+            // reach failure (Unreachable) is NOT a successful schedule — exclude it alongside Error.
+            if (scheduleAt is { } when && final.Phase is not (PatchPhase.Error or PatchPhase.Unreachable))
             {
                 computer.ScheduledAction = "Install updates";
                 computer.ScheduledNextRun = when;
@@ -3562,14 +3620,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.RebootRequired = true;
         }
 
-        if (status.Phase == PatchPhase.Error)
+        // Unreachable (transient retries exhausted) is a failure too — record it as the row error and log
+        // it as an error, same as a hard Error, so the Errors filter and error column reflect it.
+        if (status.Phase is PatchPhase.Error or PatchPhase.Unreachable)
         {
             computer.UpdateError = status.Message;
         }
 
         if (phaseChanged && status.Phase != PatchPhase.Idle)
         {
-            if (status.Phase == PatchPhase.Error)
+            if (status.Phase is PatchPhase.Error or PatchPhase.Unreachable)
             {
                 _activity.Error(computer.Name, status.Message);
             }

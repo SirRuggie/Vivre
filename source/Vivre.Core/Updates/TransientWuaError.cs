@@ -87,4 +87,28 @@ public static class TransientWuaError
 
         return false;
     }
+
+    /// <summary>
+    /// The first transient HRESULT token (e.g. <c>"0x80072EE2"</c>) in <paramref name="message"/>, or
+    /// <c>null</c> when none — used to name the code in the honest "couldn't reach Windows Update
+    /// (0x…) after N tries" message after the retries are exhausted.
+    /// </summary>
+    public static string? FirstTransientToken(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        foreach (Match m in HresultToken.Matches(message))
+        {
+            if (uint.TryParse(m.Value.AsSpan(2), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out uint code)
+                && Transient.Contains(unchecked((int)code)))
+            {
+                return m.Value;
+            }
+        }
+
+        return null;
+    }
 }

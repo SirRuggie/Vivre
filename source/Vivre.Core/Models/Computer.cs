@@ -300,6 +300,11 @@ public partial class Computer : ObservableObject
         return parsed switch
         {
             PatchPhase.Error => PatchState.Error,
+            // Couldn't reach Windows Update (transient retries exhausted): a failure, so it reduces to
+            // the red Error display-state (never green / "up to date") and is counted/filtered as a
+            // failure everywhere. The distinct "Can't reach WU" chip label comes from the UpdatePhase
+            // string in the grid template, mirroring how Staging/Cleaning carry their own labels.
+            PatchPhase.Unreachable => PatchState.Error,
             PatchPhase.Scanning => PatchState.Scanning,
             // The 2016 stage (DISM add-package) and component cleanup (DISM /StartComponentCleanup) are their
             // own phases shown as distinct chip labels ("Staging"/"Cleaning up"), but reduce to the same

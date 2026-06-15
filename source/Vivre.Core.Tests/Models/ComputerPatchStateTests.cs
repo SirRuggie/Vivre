@@ -29,6 +29,9 @@ public class ComputerPatchStateTests
     [InlineData("Rebooting", true, PatchState.RebootPending)]
     [InlineData("Done", false, PatchState.Done)]
     [InlineData("Error", null, PatchState.Error)]
+    // Unreachable (transient WU retries exhausted) reduces to the red Error display-state — never green —
+    // so a box that couldn't be scanned is counted/coloured as a failure and NEVER reads "up to date".
+    [InlineData("Unreachable", null, PatchState.Error)]
     public void Derives_expected_state(string? phase, bool? rebootRequired, PatchState expected)
     {
         var c = new Computer("HOST") { UpdatePhase = phase, RebootRequired = rebootRequired };

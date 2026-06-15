@@ -885,6 +885,13 @@
                                                 <DataTrigger Binding="{Binding UpdatePhase}" Value="Cleaned">
                                                     <Setter Property="Text" Value="Cleaned" />
                                                 </DataTrigger>
+                                                <!-- Couldn't reach Windows Update (transient retries exhausted): a distinct
+                                                     honest label that shares the red Error color (PatchPhase.Unreachable
+                                                     maps to PatchState.Error) so it never reads as a clean "Up to date"
+                                                     box, yet is plainly NOT a hard install failure. -->
+                                                <DataTrigger Binding="{Binding UpdatePhase}" Value="Unreachable">
+                                                    <Setter Property="Text" Value="Can't reach WU" />
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
                                                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                                 </DataTrigger>
