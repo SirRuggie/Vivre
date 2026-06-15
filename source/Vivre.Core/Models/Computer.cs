@@ -206,8 +206,11 @@ public partial class Computer : ObservableObject
     /// reboot-ready; cleared on a verified commit). It's the signal Verify uses to tell a genuine rollback
     /// from a box that was simply never staged — <see cref="RebootRequired"/> can't, because the health
     /// refresh, the reboot-pending probe, and any reboot-required scan all set it for unrelated reboots.
-    /// Code-only (not data-bound), so a plain property rather than an observable one.</summary>
-    public bool StagedThisSession { get; set; }
+    /// Observable + data-bound: the "STAGED — needs Reboot Wave" tag (WorkspaceView.xaml) requires this
+    /// true, so a box whose wave verified green (flag cleared) never re-shows the tag when a later
+    /// Windows self-reboot re-lights <see cref="RebootRequired"/> via the monitor's reboot-pending probe.</summary>
+    [ObservableProperty]
+    public partial bool StagedThisSession { get; set; }
 
     /// <summary>Installed-update count from the most recent install attempt this session (0 if none).
     /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
