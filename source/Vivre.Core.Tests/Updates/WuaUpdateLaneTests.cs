@@ -210,6 +210,69 @@ public class WuaUpdateLaneTests
         Assert.Contains("0x80240438", status.Message);
     }
 
+    // --- the SECOND face: a search that returns without throwing but did not cleanly succeed ---
+
+    [Fact]
+    public async Task ScanAsync_clean_success_with_zero_updates_reads_up_to_date()
+    {
+        // orcSucceeded (2) + no updates → the box is genuinely up to date.
+        var result = new PSExecutionResult([SearchStatusRow(2)], [], [], HadErrors: false);
+        var service = new PatchService(new FakeHost(result));
+
+        HostPatchStatus status = await service.ScanAsync("NYC-SRV1", new PatchOptions(), credential: null);
+
+        Assert.Equal(PatchPhase.Available, status.Phase);
+        Assert.Equal(0, status.AvailableCount);
+        Assert.Contains("up to date", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScanAsync_succeeded_with_errors_and_zero_updates_is_transient_not_up_to_date()
+    {
+        // orcSucceededWithErrors (3) + 0 updates: the list is INCOMPLETE, so it must be a transient reach
+        // failure (the lane retries it), NEVER a false "up to date". This is the BatchPatch bug we fix.
+        var result = new PSExecutionResult([SearchStatusRow(3)], [], [], HadErrors: false);
+        var service = new PatchService(new FakeHost(result));
+
+        HostPatchStatus status = await service.ScanAsync("NYC-SRV1", new PatchOptions(), credential: null);
+
+        Assert.Equal(PatchPhase.Error, status.Phase);
+        Assert.True(TransientWuaError.IsTransient(status.Message));
+        Assert.DoesNotContain("up to date", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ScanAsync_non_clean_search_ignores_any_partial_updates_it_returned()
+    {
+        // Even when a non-clean search returned some rows, the result is incomplete and untrustworthy —
+        // surface the reach failure, not a misleadingly-short "N updates available" list.
+        var result = new PSExecutionResult(
+            [SearchStatusRow(3), ScanRow("Cumulative Update", "5037782", false, 100)], [], [], HadErrors: false);
+        var service = new PatchService(new FakeHost(result));
+
+        HostPatchStatus status = await service.ScanAsync("NYC-SRV1", new PatchOptions(), credential: null);
+
+        Assert.Equal(PatchPhase.Error, status.Phase);
+        Assert.True(TransientWuaError.IsTransient(status.Message));
+    }
+
+    [Theory]
+    [InlineData(2, false)]  // orcSucceeded — clean, complete
+    [InlineData(3, true)]   // orcSucceededWithErrors
+    [InlineData(4, true)]   // orcFailed
+    [InlineData(5, true)]   // orcAborted
+    [InlineData(0, true)]   // orcNotStarted
+    public void SearchDidNotCleanlySucceed_is_true_for_anything_but_orcSucceeded(int rc, bool expected) =>
+        Assert.Equal(expected, WuaUpdateLane.SearchDidNotCleanlySucceed(rc));
+
+    [Fact]
+    public void BuildSearchIncompleteMessage_is_transient_and_never_says_up_to_date()
+    {
+        string msg = WuaUpdateLane.BuildSearchIncompleteMessage(3);
+        Assert.True(TransientWuaError.IsTransient(msg));
+        Assert.DoesNotContain("up to date", msg, StringComparison.OrdinalIgnoreCase);
+    }
+
     // --- PatchOptions defaults ---
 
     [Fact]
@@ -325,6 +388,15 @@ public class WuaUpdateLaneTests
         o.Properties.Add(new PSNoteProperty("KB", kb));
         o.Properties.Add(new PSNoteProperty("IsDownloaded", downloaded));
         o.Properties.Add(new PSNoteProperty("SizeMb", sizeMb));
+        return o;
+    }
+
+    // The search-outcome status row the scan script emits ahead of the update rows (no Title, so ParseScan
+    // skips it; only ScanAsync's result-code check reads it). resultCode 2 = orcSucceeded (clean).
+    private static PSObject SearchStatusRow(int resultCode)
+    {
+        var o = new PSObject();
+        o.Properties.Add(new PSNoteProperty("SearchResultCode", resultCode));
         return o;
     }
 

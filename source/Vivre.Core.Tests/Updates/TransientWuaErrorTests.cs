@@ -27,6 +27,7 @@ public class TransientWuaErrorTests
     [InlineData(unchecked((int)0x80244022))] // 503 service unavailable
     [InlineData(unchecked((int)0x80244023))] // 504 gateway timeout
     [InlineData(unchecked((int)0x8024402C))] // WinHTTP name not resolved
+    [InlineData(unchecked((int)0x80240438))] // search did not complete / source not fully reached (face 2)
     public void IsTransient_int_is_true_for_the_transient_family(int hresult) =>
         Assert.True(TransientWuaError.IsTransient(hresult));
 
@@ -51,6 +52,7 @@ public class TransientWuaErrorTests
     [InlineData("0x80072ee2")]                 // case-insensitive
     [InlineData("server busy 0x80244022")]     // 503 surfaced mid-message
     [InlineData("Exception from HRESULT: 0x8024402C")]
+    [InlineData("Windows Update search didn't complete cleanly (result code 3, HRESULT 0x80240438)")] // face 2
     public void IsTransient_message_is_true_when_a_transient_code_is_present(string message) =>
         Assert.True(TransientWuaError.IsTransient(message));
 

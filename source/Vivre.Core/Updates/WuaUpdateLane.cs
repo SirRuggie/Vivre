@@ -100,6 +100,17 @@ public sealed class WuaUpdateLane
             return HostPatchStatus.Failed($"Scan failed: {detail}");
         }
 
+        // The SECOND face of the transient failure: the search returned WITHOUT throwing (no PS error)
+        // but its ResultCode is not orcSucceeded — SucceededWithErrors / Failed / Aborted. Its update list
+        // is then INCOMPLETE, so it must NEVER render as "up to date" (the BatchPatch fake-green). Surface
+        // it as a transient reach failure (anchored on 0x80240438) so the lane-level retry re-runs it and,
+        // if it persists, it resolves to the honest "couldn't reach WU" state — never zero-applicable.
+        if (TryGetSearchResultCode(result.Output, out int searchResultCode)
+            && SearchDidNotCleanlySucceed(searchResultCode))
+        {
+            return HostPatchStatus.Failed(BuildSearchIncompleteMessage(searchResultCode));
+        }
+
         IReadOnlyList<SoftwareUpdate> updates = ParseScan(result.Output);
         updates = ApplyExclude(updates, options.ExcludeNameContains);
 
@@ -450,6 +461,52 @@ public sealed class WuaUpdateLane
         }
     }
 
+    // --- search-outcome interpretation (static, unit-tested host-free) ----
+
+    /// <summary>The WUA <c>OperationResultCode.orcSucceeded</c> value — a clean, complete search.</summary>
+    public const int OrcSucceeded = 2;
+
+    /// <summary>
+    /// True when a search returned WITHOUT throwing yet did not cleanly succeed (anything other than
+    /// <see cref="OrcSucceeded"/>: SucceededWithErrors / Failed / Aborted). Its update list is then
+    /// INCOMPLETE, so a "0 updates" result must NOT be rendered as "up to date" — it's a reach failure.
+    /// </summary>
+    public static bool SearchDidNotCleanlySucceed(int resultCode) => resultCode != OrcSucceeded;
+
+    /// <summary>The honest message for a non-clean search: names the result code and anchors on the
+    /// transient <c>0x80240438</c> (so the lane-level retry treats it as a reach hiccup, then resolves to
+    /// the honest "couldn't reach WU" state if it persists), and never says "up to date".</summary>
+    public static string BuildSearchIncompleteMessage(int resultCode) =>
+        $"Windows Update search didn't complete cleanly (result code {resultCode}, HRESULT 0x80240438) — the update source wasn't fully reached.";
+
+    /// <summary>Reads the <c>SearchResultCode</c> status row the scan script emits (the WUA
+    /// <c>ISearchResult.ResultCode</c>). Returns false when absent (older / synthetic output) so callers
+    /// fall back to the prior behaviour rather than mis-flagging a scan.</summary>
+    private static bool TryGetSearchResultCode(IReadOnlyList<PSObject> rows, out int resultCode)
+    {
+        resultCode = 0;
+        foreach (PSObject row in rows)
+        {
+            object? value = row?.Properties["SearchResultCode"]?.Value;
+            if (value is null)
+            {
+                continue;
+            }
+
+            try
+            {
+                resultCode = Convert.ToInt32(value, CultureInfo.InvariantCulture);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return false;
+    }
+
     // --- parsing (static, unit-tested host-free) --------------------------
 
     /// <summary>Turns the scan script's <c>PSCustomObject</c> rows into typed updates.</summary>
@@ -661,6 +718,11 @@ public sealed class WuaUpdateLane
             {{historyBlock}}
             {{dismBlock}}
             $result = $searcher.Search("{{installedFilter}} and IsHidden=0{{typeFilter}}")
+            # Surface the search OUTCOME first so the controller can tell a CLEAN "up to date" (ResultCode
+            # 2 = orcSucceeded, 0 updates) from a search that did NOT cleanly succeed (SucceededWithErrors /
+            # Failed / Aborted) — the latter returns an incomplete list and must never read as "up to date".
+            # No Title ⇒ ParseScan skips this row; only ScanAsync's result-code check reads it.
+            [PSCustomObject]@{ SearchResultCode = [int]$result.ResultCode }
             foreach ($u in $result.Updates) {
                 # Wrap the whole iteration so a single weird update (stale COM proxy, missing
                 # property, unusual subtype) just gets skipped instead of killing the scan.

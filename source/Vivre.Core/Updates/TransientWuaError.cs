@@ -47,6 +47,11 @@ public static class TransientWuaError
         unchecked((int)0x80244022), // WU_E_PT_HTTP_STATUS_SERVICE_UNAVAIL  (503)
         unchecked((int)0x80244023), // WU_E_PT_HTTP_STATUS_GATEWAY_TIMEOUT  (504)
         unchecked((int)0x8024402C), // WU_E_PT_WINHTTP_NAME_NOT_RESOLVED — DNS via WinHTTP
+
+        // --- the "second face": search returned WITHOUT throwing but did not cleanly succeed ---
+        unchecked((int)0x80240438), // WU search did not complete / source not fully reached — the
+                                    // SucceededWithErrors masquerade that BatchPatch fake-greens as
+                                    // "no updates". A live capture proved it; treat it as transient.
     ];
 
     // Matches an "0x"-prefixed 8-hex HRESULT token — the exact form .NET produces in
