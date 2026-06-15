@@ -2604,7 +2604,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    private async Task InstallRowAsync(Computer computer, CancellationToken token, DateTime? scheduleAt = null)
+    /// <param name="minorOnly">True for the decision dialog's "Install minor updates only" branch: a flagged 2016
+    /// box installs its non-CU updates via WUA, with the cumulative update KB explicitly excluded so the broken
+    /// Express-delta CU is never pushed through WUA. Requires a scan (to know what to exclude).</param>
+    private async Task InstallRowAsync(Computer computer, CancellationToken token, DateTime? scheduleAt = null, bool minorOnly = false)
     {
         // Don't start a second operation on a row already installing/uninstalling.
         if (computer.IsPatching)
@@ -2627,9 +2630,48 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         if (LcuRouting.Is2016(computer.OsBuild))
         {
-            // No ConfigureAwait(false): keep the UI context for StageLcuRowAsync's data-bound writes.
-            await StageLcuRowAsync(computer, scheduleAt, token);
-            return;
+            // The full-package DISM lane is only for boxes the operator has FLAGGED for staged patching (WUA's
+            // Express-delta CU fails them). A NON-flagged 2016 box patches via normal Windows Update like a
+            // 2019/2022 box, so it falls through to the WUA path below.
+            if (computer.RequiresStagedPatching && !minorOnly)
+            {
+                // Flagged box: never auto-stage and never WUA-install the OS CU from here — the decision dialog,
+                // shown up front by the View, owns that choice. Resolve the two no-prompt cases; otherwise skip
+                // with guidance so a path that reaches this row directly can't silently do the wrong thing.
+                if (StagePreconditions.IsAlreadyStaged(computer.RebootRequired == true, computer.StagedThisSession))
+                {
+                    computer.UpdateMessage = "CU staged — run Reboot Wave before installing other updates.";
+                    return;
+                }
+
+                if (!computer.LcuVerifiedThisSession)
+                {
+                    computer.UpdatePhase = PatchPhase.Idle.ToString();
+                    computer.UpdateMessage = "Needs CU staging — use Install to choose Stage or minor-only.";
+                    return;
+                }
+                // else: CU already verified/committed this session → its remaining minor updates go via WUA below.
+            }
+            // minorOnly (operator chose "Install minor updates only") falls through to WUA with the CU excluded.
+        }
+
+        // "Install minor updates only" (decision dialog): exclude the OS cumulative update so the broken
+        // Express-delta CU is never pushed through WUA. Needs a scan to know what to exclude — without one we
+        // can't safely separate the CU from the rest, so skip rather than risk WUA-installing the CU.
+        var cuExclude = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        if (minorOnly)
+        {
+            if (computer.ApplicableUpdates.Count == 0)
+            {
+                computer.UpdatePhase = PatchPhase.Idle.ToString();
+                computer.UpdateMessage = "Scan first — minor-only install needs the scan to exclude the cumulative update.";
+                return;
+            }
+
+            string? settingsCu = _appSettings.Load().MonthlyCu?.Kb;
+            if (!string.IsNullOrWhiteSpace(settingsCu)) { cuExclude.Add(Lcu2016CuMatcher.NormalizeKb(settingsCu)); }
+            string? scanCu = Lcu2016CuMatcher.FindCuKb(computer.ApplicableUpdates.Select(u => (u.Title, u.Kb)));
+            if (scanCu is not null) { cuExclude.Add(scanCu); }
         }
 
         // Honor the per-machine checklist. Clone the shared options (concurrent hosts read it) and
@@ -2644,11 +2686,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         // Snapshot the target set now (before IsPatching is set) so we know which rows to mark
         // after a zero-failure install.  Must mirror the IncludeKbArticleIds computation below
-        // EXACTLY (ticked AND has a KB id) — a ticked KB-less update is silently not targeted by
-        // the agent, so marking it "Installed" would lie.  If no checklist exists (never scanned)
-        // the snapshot is empty — no rows to mark, but the partial-failure banner still applies.
+        // EXACTLY (ticked AND has a KB id, minus the excluded CU in minor-only mode) — a ticked
+        // KB-less update is silently not targeted by the agent, so marking it "Installed" would lie.
+        // If no checklist exists (never scanned) the snapshot is empty — no rows to mark, but the
+        // partial-failure banner still applies.
+        bool IsTarget(SelectableUpdate u) =>
+            u.IsSelected && !string.IsNullOrWhiteSpace(u.Kb)
+            && (!minorOnly || !cuExclude.Contains(Lcu2016CuMatcher.NormalizeKb(u.Kb!)));
+
         SelectableUpdate[] targetSnapshot = computer.ApplicableUpdates.Count > 0
-            ? [.. computer.ApplicableUpdates.Where(u => u.IsSelected && !string.IsNullOrWhiteSpace(u.Kb))]
+            ? [.. computer.ApplicableUpdates.Where(IsTarget)]
             : [];
 
         if (computer.ApplicableUpdates.Count > 0)
@@ -2662,15 +2709,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 return;
             }
 
-            string[] selectedKbs = [.. computer.ApplicableUpdates
-                .Where(u => u.IsSelected && !string.IsNullOrWhiteSpace(u.Kb))
-                .Select(u => u.Kb!)];
+            string[] selectedKbs = [.. computer.ApplicableUpdates.Where(IsTarget).Select(u => u.Kb!)];
             if (selectedKbs.Length == 0)
             {
                 computer.UpdateError = null;
                 computer.UpdateProgress = null;
                 computer.UpdatePhase = PatchPhase.Idle.ToString();
-                computer.UpdateMessage = "Selected updates have no KB id to target";
+                computer.UpdateMessage = minorOnly
+                    ? "No minor updates to install — only the cumulative update is pending. Use Stage CU first."
+                    : "Selected updates have no KB id to target";
                 return;
             }
 
@@ -2770,17 +2817,50 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>True when this tab has at least one confirmed 2016 box (the panel/buttons are meaningful).</summary>
     public bool HasServer2016 => Server2016Count > 0;
 
-    /// <summary>The 2016 rows the panel acts on: the selected 2016 rows, or every 2016 row when none are
-    /// selected. (Non-2016 selections are ignored — the panel only ever surfaces 2016 boxes.)</summary>
+    /// <summary>The rows the panel's Stage / Clean up / Verify act on: the selected FLAGGED 2016 rows, or every
+    /// flagged 2016 row when none are selected. A non-flagged 2016 box patches via Windows Update, so the DISM
+    /// lane never touches it; non-2016 selections are ignored.</summary>
     private IReadOnlyList<Computer> Server2016Targets()
     {
-        var selected = SelectedComputers.Where(c => LcuRouting.Is2016(c.OsBuild)).ToList();
-        return selected.Count > 0 ? selected : [.. Computers.Where(c => LcuRouting.Is2016(c.OsBuild))];
+        // Staged patching is opt-in per box: the panel's Stage / Clean up / Verify act ONLY on flagged 2016
+        // boxes. A non-flagged 2016 box patches via Windows Update and is never touched by the DISM lane.
+        static bool IsStageTarget(Computer c) => LcuRouting.Is2016(c.OsBuild) && c.RequiresStagedPatching;
+        var selected = SelectedComputers.Where(IsStageTarget).ToList();
+        return selected.Count > 0 ? selected : [.. Computers.Where(IsStageTarget)];
     }
 
     /// <summary>The 2016 Stage targets not yet scanned this session — the View blocks Stage and lists these
     /// until they're scanned. (A post-reboot rescan sets LastScannedApplicable and satisfies this gate.)</summary>
     public IReadOnlyList<string> UnscannedStageTargets() => StagePreconditions.UnscannedThisSession(Server2016Targets());
+
+    // --- Staged-patching decision (the "Server 2016 staged update required" dialog) ---
+
+    /// <summary>Public accessor for the panel's Stage / Clean up / Verify target set (flagged 2016 boxes), so the
+    /// View's stage workflow can scope to exactly the boxes the panel buttons act on.</summary>
+    public IReadOnlyList<Computer> Server2016ActionTargets() => Server2016Targets();
+
+    /// <summary>Box-scoped variant of <see cref="UnscannedStageTargets"/>: the given Stage targets not yet scanned
+    /// this session. Used by the decision dialog's "Stage CU first" branch (which acts on a specific set).</summary>
+    public IReadOnlyList<string> UnscannedStageTargetsFor(IReadOnlyList<Computer> boxes) =>
+        StagePreconditions.UnscannedThisSession(boxes);
+
+    /// <summary>The staged-patching decision plan for an Install / Install-all target set: which flagged 2016 boxes
+    /// still need their CU staged (the dialog set) versus which proceed via the normal install, plus any
+    /// Settings-vs-scan CU KB mismatches. Pure — no host is contacted.</summary>
+    public StagedInstallPlan PlanStagedInstall(IReadOnlyList<Computer> targets) =>
+        StagedInstallPlanner.Plan(targets, _appSettings.Load().MonthlyCu?.Kb);
+
+    /// <summary>Stage this month's CU on the given flagged 2016 boxes (decision dialog "Stage CU first"). Same
+    /// per-host stage as the panel button, scoped to a specific set.</summary>
+    public Task StageLcuForAsync(IReadOnlyList<Computer> boxes) =>
+        RunPatchSweepAsync(boxes, (c, ct) => StageLcuRowAsync(c, null, ct), "Stage", _patchThrottle);
+
+    /// <summary>Install only the NON-cumulative updates on the given flagged 2016 boxes via WUA (decision dialog
+    /// "Install minor updates only"). <see cref="InstallRowAsync"/> excludes the OS CU per row, so the broken
+    /// Express-delta CU is never pushed through WUA; a box with no scan — or whose only pending update IS the CU —
+    /// is skipped with a per-row note.</summary>
+    public Task InstallMinorOnlyAsync(IReadOnlyList<Computer> boxes) =>
+        RunPatchSweepAsync(boxes, (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true), "Install");
 
     private static LcuTarget BuildLcuTarget(AppSettings s) =>
         new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
@@ -2823,11 +2903,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private Task CleanUp2016Async() =>
         RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", _patchThrottle);
 
-    /// <summary>Panel button: stage this month's CU on the targeted 2016 boxes (deliver + DISM-add while they
-    /// keep serving). Stops at "staged — reboot-ready"; the Reboot Wave commits it later.</summary>
-    [RelayCommand(AllowConcurrentExecutions = true)]
-    private Task Stage2016Async() =>
-        RunPatchSweepAsync(Server2016Targets(), (c, ct) => StageLcuRowAsync(c, null, ct), "Stage", _patchThrottle);
+    // Panel button "Stage" routes through the View's RunStageWorkflowAsync (scan-gate + package-readiness loop)
+    // and StageLcuForAsync — the same shared workflow the decision dialog's "Stage CU first" uses.
 
     /// <summary>Fleet-wide reboot + verify: reboots ALL selected machines (graceful first, forced after the
     /// go-offline window), then tracks each until it is confirmed back online. 2016 boxes verify by build/UBR;
@@ -2867,6 +2944,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         if (computer.IsPatching)
         {
+            return;
+        }
+
+        // Defense-in-depth: the 2016 DISM lane is only for FLAGGED boxes. A non-flagged 2016 box patches via
+        // Windows Update — never stage it. (The panel's targets are already flagged-only; this guards any direct
+        // call, e.g. a future code path, from staging a box the operator chose to keep on the WUA lane.)
+        if (LcuRouting.Is2016(computer.OsBuild) && !computer.RequiresStagedPatching)
+        {
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "Not a staged box — patches via Windows Update. Mark it for staged patching first.";
             return;
         }
 
@@ -2978,6 +3065,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             case PatchPhase.PendingReboot:
                 computer.RebootRequired = true; // → amber RebootPending (the staged / action-needed state)
                 computer.StagedThisSession = true; // Verify uses this (not RebootRequired) to tell rollback from never-staged
+                computer.LcuVerifiedThisSession = false; // freshly (re)staged — a new CU supersedes any prior verified state
                 computer.UpdatePhase = PatchPhase.PendingReboot.ToString();
                 computer.UpdateProgress = 100;
                 computer.UpdateError = null;
@@ -3068,7 +3156,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        RebootVerifyLane lane = LcuRouting.RebootVerifyLaneFor(computer.OsBuild);
+        // Override-aware: a non-flagged 2016 box patched via WUA verifies via the WUA lane, not UBR.
+        RebootVerifyLane lane = LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.RequiresStagedPatching);
 
         computer.IsPatching = true;
         computer.UpdateError = null;
@@ -3098,6 +3187,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 computer.RebootRequired = false; // committed — clear the staged/reboot-pending flag (→ green)
                 computer.StagedThisSession = false; // committed — no longer a pending stage
+                if (lane == RebootVerifyLane.Lcu2016)
+                {
+                    computer.LcuVerifiedThisSession = true; // 2016 CU committed → remaining minor updates go via WUA
+                }
+
                 _activity.Info(computer.Name, final.Message);
 
                 // Post-reboot rescan runs AFTER the wave returns Done — ORDERING GUARANTEE.
@@ -3240,6 +3334,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 case LcuVerifyOutcome.Verified:
                     computer.RebootRequired = false;
                     computer.StagedThisSession = false; // committed — no longer a pending stage
+                    computer.LcuVerifiedThisSession = true; // CU confirmed at target UBR → minor updates now go via WUA
                     computer.UpdatePhase = PatchPhase.Done.ToString();
                     computer.UpdateMessage = result.CurrentBuild is { } vBuild && result.Ubr is { } vUbr
                         ? $"Verified · now at {vBuild}.{vUbr}"

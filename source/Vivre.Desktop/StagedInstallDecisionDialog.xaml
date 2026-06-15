@@ -1,0 +1,88 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.StagedInstallDecisionDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        mc:Ignorable="d"
+        Title="Server 2016 staged update required"
+        Height="520" Width="600"
+        MinHeight="440" MinWidth="520"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Server 2016 staged update required">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Box24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,8,20,8">
+            <StackPanel>
+                <!-- KB mismatch warning (Settings vs scan) — only shown when there is a disagreement. -->
+                <ui:InfoBar x:Name="MismatchBar" Severity="Warning" IsOpen="False" IsClosable="False"
+                            Title="Settings may have the wrong CU" Margin="0,0,0,14" />
+
+                <TextBlock TextWrapping="Wrap" FontSize="13"
+                           Text="These Server 2016 machine(s) are marked for staged patching, and this month's cumulative update (CU) hasn't been staged on them yet. The CU is delivered to 2016 boxes in a form that normal Windows Update can't apply reliably — it must be staged with the full package first." />
+
+                <TextBlock Text="Machines waiting for the CU:" FontWeight="SemiBold" Margin="0,14,0,4" />
+                <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="12,8">
+                    <TextBlock x:Name="BoxListText" FontFamily="Consolas" FontSize="12.5" TextWrapping="Wrap" />
+                </Border>
+
+                <TextBlock x:Name="OthersNote" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" Visibility="Collapsed"
+                           Text="Other machines in this run install normally." />
+
+                <!-- Inline minor-only reboot caution — revealed when "Install minor updates only" is chosen. -->
+                <ui:InfoBar x:Name="MinorRebootBar" Severity="Warning" IsOpen="False" IsClosable="False"
+                            Margin="0,16,0,0"
+                            Title="Minor updates may require a reboot"
+                            Message="One or more minor updates may require a reboot. You'll need to reboot before staging the CU afterward. Proceed with minor updates first?" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="20,12" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <Grid>
+                <!-- Main choices. -->
+                <StackPanel x:Name="ChoiceButtons">
+                    <!-- Primary recommended action: Stage the CU first. -->
+                    <ui:Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
+                               Appearance="Primary" IsDefault="True" Click="OnStageCu" Margin="0,0,0,4"
+                               Icon="{ui:SymbolIcon Box24}" Content="Stage CU first" />
+                    <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12"
+                               Margin="2,0,0,12" TextWrapping="Wrap"
+                               Text="Large update (~1.7 GB, 30–60 min to stage). Recommended — stage before installing other updates." />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <ui:Button Content="Install minor updates only" Click="OnMinorOnly" Margin="0,0,8,0"
+                                   ToolTip="Install the non-cumulative updates now via Windows Update; the CU is staged separately." />
+                        <ui:Button Content="Cancel" IsCancel="True" Click="OnCancel" />
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Minor-only confirmation (swapped in when "Install minor updates only" is chosen). -->
+                <StackPanel x:Name="MinorConfirmButtons" Orientation="Horizontal" HorizontalAlignment="Right"
+                            Visibility="Collapsed">
+                    <ui:Button x:Name="MinorProceedButton" Content="Proceed with minor updates" Appearance="Primary"
+                               Click="OnMinorProceed" Margin="0,0,8,0" />
+                    <ui:Button Content="Back" Click="OnMinorBack" />
+                </StackPanel>
+            </Grid>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

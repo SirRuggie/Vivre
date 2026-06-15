@@ -1061,6 +1061,42 @@ public partial class MainWindow : FluentWindow
         if (count == 0 || !vm.InstallTargetCommand.CanExecute(null)) return;
 
         List<Computer> pending = [.. targets.Where(c => c.RebootRequired == true)];
+
+        // Shared tail: route through the Server 2016 staged-patching gate, then — only when no decision was
+        // needed — the usual "Install on N" confirm and the normal install command. When the gate shows its
+        // decision dialog and handles the run, the generic confirm is skipped (the decision dialog IS the confirm).
+        async Task GatedProceedAsync(bool showConfirm)
+        {
+            if (await StagedInstallInteraction.ResolveAsync(this, vm, targets) != StagedInstallOutcome.ProceedNormally)
+            {
+                return; // gate handled the run, or the operator cancelled
+            }
+
+            if (showConfirm)
+            {
+                string scope = (selectionOnly || hasSelection)
+                    ? $"the {count} selected machine(s)"
+                    : $"all {count} machine(s) in this tab";
+                var confirm = new MessageBox
+                {
+                    Title = "Install updates",
+                    Content = $"Download and install applicable updates on {scope}?\n\n"
+                              + "Each host runs a one-time SYSTEM task. A required reboot is reported, not forced.",
+                    PrimaryButtonText = $"Install on {count}",
+                    CloseButtonText = "Cancel",
+                };
+                if (await confirm.ShowDialogAsync() != MessageBoxResult.Primary)
+                {
+                    return;
+                }
+            }
+
+            if (vm.InstallTargetCommand.CanExecute(null))
+            {
+                vm.InstallTargetCommand.Execute(null);
+            }
+        }
+
         if (pending.Count > 0)
         {
             var nudge = new MessageBox
@@ -1083,31 +1119,11 @@ public partial class MainWindow : FluentWindow
 
             if (choice != MessageBoxResult.Secondary) return;
 
-            if (vm.InstallTargetCommand.CanExecute(null))
-            {
-                vm.InstallTargetCommand.Execute(null);
-            }
-
+            await GatedProceedAsync(showConfirm: false); // operator already chose "Install anyway"
             return;
         }
 
-        string scope = (selectionOnly || hasSelection)
-            ? $"the {count} selected machine(s)"
-            : $"all {count} machine(s) in this tab";
-        var confirm = new MessageBox
-        {
-            Title = "Install updates",
-            Content = $"Download and install applicable updates on {scope}?\n\n"
-                      + "Each host runs a one-time SYSTEM task. A required reboot is reported, not forced.",
-            PrimaryButtonText = $"Install on {count}",
-            CloseButtonText = "Cancel",
-        };
-
-        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary
-            && vm.InstallTargetCommand.CanExecute(null))
-        {
-            vm.InstallTargetCommand.Execute(null);
-        }
+        await GatedProceedAsync(showConfirm: true);
     }
 
     // --- keyboard accelerator handlers ---

@@ -219,6 +219,14 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial bool RequiresStagedPatching { get; set; }
 
+    /// <summary>True once this 2016 box's CU has been confirmed committed this session — set by a Verified
+    /// <c>VerifyLcu</c> result and by a successful 2016-lane Reboot Wave; cleared when the box is re-staged.
+    /// Lets the staged-patching decision dialog skip a box whose CU is already done (it just needs its remaining
+    /// minor updates via WUA, no Stage prompt). Distinct from <see cref="StagedThisSession"/> (staged-but-not-yet-
+    /// committed) and from <see cref="RebootRequired"/> (set for unrelated pending reboots). Runtime-only, not
+    /// persisted, not observable — only the install router and the planner read it.</summary>
+    public bool LcuVerifiedThisSession { get; set; }
+
     /// <summary>Installed-update count from the most recent install attempt this session (0 if none).
     /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
     public int LastInstallInstalledCount { get; set; }

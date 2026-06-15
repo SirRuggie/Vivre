@@ -394,7 +394,21 @@ public partial class WorkspaceView : UserControl
             _gridMenu.Items.Add(scan);
 
             var install = WithIcon(new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable }, SymbolRegular.ArrowDownload24);
-            install.Click += (_, _) => _ = vm.InstallSelectedAsync([.. vm.SelectedComputers]);
+            install.Click += async (_, _) =>
+            {
+                var sel = vm.SelectedComputers.ToList();
+                IReadOnlyList<Computer> targets = sel.Count > 0 ? sel : [.. vm.Computers];
+                if (targets.Count == 0)
+                {
+                    return;
+                }
+
+                // Staged-patching gate: a flagged 2016 box whose CU isn't staged routes through the decision dialog.
+                if (await StagedInstallInteraction.ResolveAsync(Window.GetWindow(this), vm, targets) == StagedInstallOutcome.ProceedNormally)
+                {
+                    _ = vm.InstallSelectedAsync(targets);
+                }
+            };
             _gridMenu.Items.Add(install);
 
             _gridMenu.Items.Add(new Separator());
@@ -955,45 +969,9 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        // Scan-this-session gate: every 2016 Stage target must have been scanned this session first.
-        // (Read-only; no box is touched. A post-reboot rescan also satisfies this.)
-        IReadOnlyList<string> unscanned = vm.UnscannedStageTargets();
-        if (unscanned.Count > 0)
-        {
-            string names = string.Join("\n", unscanned.Take(10))
-                + (unscanned.Count > 10 ? $"\n+{unscanned.Count - 10} more" : string.Empty);
-            var gate = new MessageBox
-            {
-                Title = "Scan before staging",
-                Content = $"These Server 2016 machine(s) haven't been scanned this session:\n\n{names}\n\n"
-                        + "Run Check for updates (Scan) on them first — Stage uses the scan to confirm the "
-                        + "box's current state before patching. No machine was touched.",
-                CloseButtonText = "OK",
-            };
-            await gate.ShowDialogAsync();
-            return;
-        }
-
-        while (true)
-        {
-            LcuStageReadiness readiness = vm.CheckLcuStageReadiness();
-            if (readiness.Ready)
-            {
-                if (vm.Stage2016Command.CanExecute(null))
-                {
-                    vm.Stage2016Command.Execute(null);
-                }
-
-                return;
-            }
-
-            var dialog = new LcuPackageNeededDialog(readiness) { Owner = Window.GetWindow(this) };
-            if (dialog.ShowDialog() != true)
-            {
-                return; // Cancel / closed — nothing staged, no box touched
-            }
-            // "Stage now": loop and re-check the folder (the operator just dropped the file in).
-        }
+        // Scan-this-session gate + guided package-readiness loop + stage, scoped to the panel's flagged-2016
+        // targets. Shared with the decision dialog's "Stage CU first" branch so both behave identically.
+        await StagedInstallInteraction.RunStageWorkflowAsync(Window.GetWindow(this), vm, vm.Server2016ActionTargets());
     }
 
     /// <summary>
