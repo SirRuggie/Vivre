@@ -1128,7 +1128,10 @@ public partial class MainWindow : FluentWindow
 
     /// <summary>Re-seed every loaded row's <see cref="Computer.RequiresStagedPatching"/> from the persisted
     /// StagedHosts set. Called after the Settings page edits the list so open tabs don't keep a stale flag (which
-    /// would mis-route an install). Only touches confirmed 2016 rows; others can't be staged.</summary>
+    /// would mis-route an install). Mirrors the row-add seeding: set the flag from membership on EVERY row, not
+    /// just confirmed 2016 ones — so a flag removed in Settings is also cleared on a not-yet-classified (null
+    /// OsBuild) row before its build resolves to 2016. Harmless on non-2016 rows: routing, the panel, the Staged
+    /// column and HasStagedServer2016 all additionally gate on Is2016, so the flag only ever acts on 2016 boxes.</summary>
     public void ResyncStagedPatchingFlags()
     {
         if (Settings is not { } store || Shell is not { } shell)
@@ -1141,10 +1144,7 @@ public partial class MainWindow : FluentWindow
         {
             foreach (Computer c in tab.Computers)
             {
-                if (LcuRouting.Is2016(c.OsBuild))
-                {
-                    c.RequiresStagedPatching = StagedHostMatching.IsStaged(staged, c.Name);
-                }
+                c.RequiresStagedPatching = StagedHostMatching.IsStaged(staged, c.Name);
             }
         }
     }

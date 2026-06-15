@@ -14,23 +14,28 @@ namespace Vivre.Core.Updates;
 public static class Lcu2016CuMatcher
 {
     /// <summary>The (prefix-less) KB of the single 2016 OS cumulative update in <paramref name="applicable"/>,
-    /// or null when none — or more than one distinct CU KB — is found (fail-safe: don't guess).</summary>
+    /// or null when none — or more than one distinct CU KB — is found (fail-safe: don't guess). Used for the
+    /// decision dialog's Settings-vs-scan mismatch warning, where guessing among several CUs would be wrong.</summary>
     public static string? FindCuKb(IEnumerable<(string Title, string? Kb)> applicable)
     {
-        if (applicable is null)
-        {
-            return null;
-        }
-
-        string[] kbs = applicable
-            .Where(u => IsServer2016Cu(u.Title) && !string.IsNullOrWhiteSpace(u.Kb))
-            .Select(u => NormalizeKb(u.Kb!))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
+        string[] kbs = CuKbs(applicable).ToArray();
 
         // Exactly one CU KB ⇒ confident. None ⇒ nothing to compare. Several distinct ⇒ ambiguous, don't guess.
         return kbs.Length == 1 ? kbs[0] : null;
     }
+
+    /// <summary>EVERY distinct (prefix-less) KB in <paramref name="applicable"/> whose title looks like the
+    /// Server 2016 OS cumulative update. Unlike <see cref="FindCuKb"/> this does NOT collapse to a single guess —
+    /// it returns all of them, so the "Install minor updates only" path can exclude every CU-looking update from
+    /// WUA even when the scan is ambiguous (two distinct CU KBs). Conservative by design: the OS CU must never
+    /// slip through WUA on a flagged box.</summary>
+    public static HashSet<string> CuKbs(IEnumerable<(string Title, string? Kb)> applicable) =>
+        applicable is null
+            ? new(StringComparer.OrdinalIgnoreCase)
+            : applicable
+                .Where(u => IsServer2016Cu(u.Title) && !string.IsNullOrWhiteSpace(u.Kb))
+                .Select(u => NormalizeKb(u.Kb!))
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>True when a title looks like the Server 2016 / Windows 10 1607 OS cumulative update (and is not
     /// a .NET Framework cumulative update, which is a separate WUA-installable package, not the OS LCU).</summary>
