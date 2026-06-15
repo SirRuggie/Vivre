@@ -212,6 +212,13 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial bool StagedThisSession { get; set; }
 
+    /// <summary>True when this Server 2016 box needs the DISM full-package staging lane (WUA's Express-delta
+    /// fails its monthly CU); false (default) means it patches via normal Windows Update like a 2019/2022 box.
+    /// Observable so the grid + routing react live. Seeded from the persisted AppSettings.StagedHosts set by
+    /// host name when the row is added; the operator toggles it (a later commit). Only meaningful for 2016 boxes.</summary>
+    [ObservableProperty]
+    public partial bool RequiresStagedPatching { get; set; }
+
     /// <summary>Installed-update count from the most recent install attempt this session (0 if none).
     /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
     public int LastInstallInstalledCount { get; set; }

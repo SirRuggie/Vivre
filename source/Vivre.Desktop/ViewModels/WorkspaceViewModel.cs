@@ -1066,11 +1066,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         var existing = new HashSet<string>(Computers.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
         var added = new List<Computer>();
+        // Load settings once before the loop — StagedHosts is the persisted set of host names the
+        // operator has flagged for the DISM lane; seed each new row's flag from it now.
+        HashSet<string> stagedHosts = _appSettings.Load().StagedHosts;
         foreach (string name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
         {
             if (existing.Add(name))
             {
                 var computer = new Computer(name) { LastStatus = "Not checked" };
+                computer.RequiresStagedPatching = StagedHostMatching.IsStaged(stagedHosts, name);
                 Computers.Add(computer);
                 added.Add(computer);
             }
