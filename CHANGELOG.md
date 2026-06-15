@@ -7,6 +7,20 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Patching now rides out transient Windows Update network blips instead of failing — and never
+  fake-greens a box it couldn't actually scan** — a scan or install that momentarily can't reach Windows
+  Update now **silently retries the whole operation up to 3 times** (~60s apart, with a little random
+  jitter so a fleet-wide blip doesn't retry in lockstep) before giving up. While it retries, the row shows
+  a calm *"Couldn't reach Windows Update — retrying (n/3)…"*, not an error. If every attempt fails it lands
+  on a distinct, honest **"Can't reach WU"** state (red, with the error code and a "try again" hint) —
+  **never** a false *"Up to date."* This closes a trap (the tool we're replacing falls into it) where a
+  search that came back *with errors* — zero updates plus a non-success result code — read as a clean,
+  patched box. The root cause was pinned from a real box's `WindowsUpdate.log`: the very first call Windows
+  Update makes (a service-locator lookup, **before** it even searches) timed out (`0x80072EE2`) during a
+  brief network blip and worked perfectly an hour later. Covers every path — normal (WinRM) scan and
+  install, and the SMB-agent scan and install used for Kerberos-broken boxes. A genuine install failure
+  still surfaces immediately (no pointless retry), and a box that has already started installing is never
+  re-run (so an installed count is never silently dropped). Nothing reboots as part of this.
 - **Server 2016 patching is now opt-in per box — flag only the ones that need staged (DISM) patching** —
   by default every Server 2016 box now patches through **normal Windows Update**, the same as a 2019/2022
   box. The full-package DISM staging lane is reserved for the boxes that actually need it (the ones whose

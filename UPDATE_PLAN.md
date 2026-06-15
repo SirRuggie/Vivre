@@ -109,6 +109,69 @@ the controller tails.
 
 ---
 
+## Transient WUA reach failures — silent retry + no false-green (load-bearing)
+
+**Root cause (proven, not inferred).** `0x80072EE2` (WININET/WinHTTP timeout, Win32 12002) is a
+**transient** failure of the on-box WUA's **first** network call — the **SLS (Service Locator Service)**
+lookup during *"Processing auto/pending service registrations"*, which happens **before** search,
+download, or install. Proven from `APVWUG`'s `WindowsUpdate.log`: the SLS call to
+`sls.update.microsoft.com/SLS/{9482F4B4-…}` completed with `[80072EE2]` and **http status code [0]** (no
+response at all) during the failed run, and the **identical URL** returned `[00000000]` / http `200` in
+~0.5s an hour later. Windows' own internal 3 retries (Retry Counter 0,1,2) were exhausted inside a
+~2m38s blind window. So it is a brief network blip, **idempotent to retry** — nothing was searched,
+downloaded, or installed when it fires.
+
+**The BatchPatch trap (the rule we enforce, never to be re-litigated).** BatchPatch masks this exact
+failure as a fake-green *"no applicable updates."* Vivre must not. **A non-clean search NEVER reads as
+up-to-date** — "0 updates" means *"Up to date"* **only** on a CLEAN success (WUA
+`ResultCode == orcSucceeded`). A box that couldn't be scanned must read as a reach failure, never as
+patched.
+
+**Two faces.** The transient failure surfaces two ways; the classifier triggers on the **HRESULT, not
+the phase**:
+1. the search **throws** a transient HRESULT (the `0x80072EE2` hard-fail), OR
+2. the search **returns without throwing** but did not cleanly succeed — `SucceededWithErrors` / `Failed`
+   / `Aborted`, i.e. 0 updates carrying a non-success result code (e.g. `0x80240438`).
+
+**Transient family** (`TransientWuaError` — pure, host-free, unit-tested): `0x80072EE2` + `0x80240438`
+plus the documented WININET/WinHTTP transport and WU_E_PT (HTTP protocol-talker) timeout / 5xx siblings.
+Auth/config (`0x8024401B` 407 proxy-auth, `0x80244017` 401 denied), HTTP-4xx, and real install failures
+are **deliberately excluded** so they surface immediately without a pointless retry.
+
+**Retry** (`TransientRetryRunner` — pure, unit-tested; wired at the **VM/lane level by re-dispatching the
+whole operation**, so the protected on-box agent is untouched for the retry itself):
+- Wraps the **entire** operation (service-registration → search → download → install) — the failure is at
+  service-registration, so a download-only retry would miss it.
+- **3 retries, ~60s backoff, jittered** (up to +15s via `Random.Shared.Next` — the same pattern as the
+  reboot-trigger gate) so a fleet-wide SLS outage doesn't retry in lockstep against the recovering service.
+- During retries the row shows a calm *"Couldn't reach Windows Update — retrying (n/3)…"* (a working
+  state, never an error). Exhaustion → `PatchPhase.Unreachable`, which reduces to `PatchState.Error` (red;
+  counted/filtered as a failure everywhere) with a distinct **"Can't reach WU"** chip label and an honest
+  *"(0x…) after N tries — try again"* message. Never up-to-date, never zero-applicable. Locked by tests.
+
+**(a) Fresh per-attempt timeout — load-bearing.** The scan's timeout is **per-attempt**
+(`ScanAttemptTimeoutSeconds` = 300s, applied via a linked CTS *inside* each retry attempt), **NOT** one
+budget shared across all attempts + backoffs. The shared form (the original bug) killed attempt 2 before
+attempt 3 ran. A per-attempt timeout — distinguished from a user Stop by the linked-CTS check — is itself
+treated as a transient → retry. **Worst case for a fully-stuck box ≈ 24 min** (4 × 300s + 3 × ~75s
+backoffs), showing *"retrying…"* throughout, then *"Can't reach WU."* Install is unchanged — its 3h
+per-host budget already dwarfs the retry.
+
+**(c) Install re-entry guard.** Once install has **begun** (`Installing`/`PendingReboot`/`Done` or
+`InstalledCount > 0`), a late transient does **not** re-run — a re-search would find 0 applicable, report
+a false *"up to date"*/zero, and drop the installed count + reboot-pending. It surfaces a terminal
+*"install was interrupted after it began — re-scan to confirm"* instead. Search/download transients
+(install never began) still retry.
+
+**Coverage — all four paths:** WinRM scan, WinRM install, SMB-agent scan, SMB-agent install. The WinRM
+scan emits the search `ResultCode` as a status row that `ScanAsync` checks before the up-to-date path; the
+SMB-agent `RunScan`/`RunInstall` write a terminal Error line on a non-clean `ResultCode` (a **read-only**
+check — no install/reboot behavior added), which `SmbAgentLane` surfaces as a `Failed` status the VM retry
+runner re-dispatches. So Kerberos-broken boxes (which hit this failure most) get the **same** retry as
+WinRM boxes. **No auto-reboot:** the entire feature is classify/retry/timeout/status plumbing.
+
+---
+
 ## 2016 staged patching toggle (opt-in)
 
 Server 2016 (build 14393) patching is **opt-in per box**. By default a 2016 box patches through the normal

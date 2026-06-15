@@ -3,8 +3,9 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2016 staged-patching toggle merged to master (427 tests); KB
-> auto-population closed (manual only) + ARC-8 verified already-handled**; smart scan flow Stage guards
+> not a mandate). Last refreshed: **transient WUA reach-failure retry / no-false-green built on branch
+> `feat/transient-wua-retry` (488 tests; awaiting operator merge + push)**; 2016 staged-patching toggle
+> merged to master; KB auto-population closed (manual only) + ARC-8 verified already-handled; smart scan flow Stage guards
 > shipped + merged to master; fleet-wide reboot-and-verify shipped + merged to master; OneDrive relocation
 > DONE (repo now `C:\src\Vivre`); WUG saga + dialog audit closed; NavigationView refactor (incl. Phase 4) DONE.
 
@@ -68,6 +69,26 @@ remains is the polish / standalone items further down, each "do only if it recur
 
 ## DONE (committed) — recent
 
+- **Transient WUA reach-failure retry — no false-green** (`ea1d078` · `bd490a0` · `7676980` · `ec6adfa` ·
+  `4e34f02` · `cfba5e8`; **on branch `feat/transient-wua-retry` — operator merges + pushes**). **Root cause
+  proven** from `APVWUG`'s `WindowsUpdate.log`: `0x80072EE2` is a **transient SLS (service-locator) timeout
+  at service-registration, BEFORE search** (http status `0` during the failed run, clean `200` an hour
+  later; Windows' own 3 internal retries exhausted by a ~2m38s blind window). **The BatchPatch trap it
+  fixes:** a non-clean search masquerading as fake-green "no applicable updates" — the rule is now **a
+  non-clean search NEVER reads as up-to-date** ("0 updates" = up-to-date ONLY on a clean `orcSucceeded`).
+  - **Both faces** handled, keyed on the HRESULT not the phase: (1) a thrown transient HRESULT, and (2) a
+    search returning `SucceededWithErrors` / 0-updates-with-a-non-success-HResult. Transient family
+    `0x80072EE2` + `0x80240438` (+ the WININET/WU_E_PT siblings); auth/config/4xx/install errors excluded.
+  - **All four paths:** WinRM scan, WinRM install, SMB-agent scan, SMB-agent install (the agent's read-only
+    `ResultCode` check → terminal Error line → surfaced by `SmbAgentLane` → retried by the VM runner, so
+    Kerberos-broken boxes get the same retry).
+  - **(a) Fresh per-attempt timeout** (the load-bearing fix): each scan attempt gets its OWN 300s budget
+    (NOT one shared across attempts + backoffs, which killed attempt 2 before attempt 3 ran). Worst case
+    for a fully-stuck box ≈ **24 min**, showing "retrying (n/3)…" throughout, then "Can't reach WU".
+  - **(b)** jittered backoff (60s + up to 15s) so a fleet-wide outage doesn't retry in lockstep; **(c)**
+    install re-entry guard (a transient after install began surfaces terminal, never re-runs → never drops
+    the installed count). Pure unit-tested `TransientWuaError` + `TransientRetryRunner`. **488 tests green.**
+    No reboot path introduced.
 - **ARC-8 — verified already handled (no change needed).** Last status already mirrors the vitals badge:
   `WorkspaceViewModel.ApplyVitals` sets `LastStatus = "Vitality {score} ({band})"` whenever a score exists,
   and a DCOM-up/WinRM-down box still gets a score, so it reads e.g. "Vitality 88 (Warning)" — not "WinRM n/a".

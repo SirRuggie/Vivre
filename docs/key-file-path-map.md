@@ -15,6 +15,12 @@
   - `StagedInstallPlanner` (Vivre.Core/Updates) — pure planner. `Plan` partitions an Install set into flagged-2016-not-staged (the dialog set) vs Normal, + per-box Settings-vs-scan CU KB mismatches; `NeedsStageDecision` (the per-box predicate); `PartitionByCurrency` — the pre-dialog already-current split, **fail-open**: a box is excluded only on `LcuVerifiedThisSession` OR a definitive `Verified` UBR read (Unreachable / WrongBuild / null read → stays in the dialog).
   - `Lcu2016CuMatcher` (Vivre.Core/Updates) — identifies the 2016 OS CU KB from a scan's titles. `FindCuKb` (single confident match → the dialog's mismatch warning, returns null when ambiguous) and `CuKbs` (EVERY CU-titled KB → the "Install minor updates only" exclude set, so the CU can't slip through WUA even when the scan lists two CU KBs).
   - `LcuRouting.RebootVerifyLaneFor(int?, bool)` — override-aware lane: a 2016 box verifies via the UBR (Lcu2016) lane ONLY when flagged for staging; a non-flagged 2016 box verifies via WUA. The 1-arg overload is kept for legacy callers (treats every 2016 box as the LCU lane).
+- **Transient WUA reach-failure retry (no false-green) — the `0x80072EE2` SLS timeout + the BatchPatch fake-green trap (see UPDATE_PLAN.md ▸ "Transient WUA reach failures"):**
+  - `TransientWuaError` (Vivre.Core/Updates) — pure classifier: is a WUA failure a transient reach hiccup (retry) or terminal (surface at once)? Transient family = `0x80072EE2` + `0x80240438` + the WININET/WinHTTP & WU_E_PT timeout/5xx siblings; auth/config/4xx/install errors excluded. Keys on the HRESULT, **not** the phase. `IsTransient(int)` / `IsTransient(string)` / `FirstTransientToken`.
+  - `TransientRetryRunner` (Vivre.Core/Updates) — pure retry driver (injected attempt / delay / onRetrying / buildExhausted): transient + retries-left → calm "retrying" + backoff + re-dispatch; success or terminal → return at once; exhausted → honest `Unreachable`. Wraps the WHOLE operation (service-reg → search → download → install).
+  - **Face 2 (non-clean search ≠ up-to-date):** `WuaUpdateLane.ScanAsync` reads the search `ResultCode` (the scan script emits it as a `SearchResultCode` status row) and diverts any non-`orcSucceeded` result to a transient reach failure via `SearchDidNotCleanlySucceed` / `BuildSearchIncompleteMessage` (`OrcSucceeded=2`) **before** the up-to-date path. `SmbAgentLane.BuildScanStatus` does the same for the SMB scan; `Vivre.UpdateAgent` `RunScan`/`RunInstall` write a terminal Error line on a non-clean `ResultCode` (read-only — no install/reboot added).
+  - `HostPatchStatus.Unreachable` / `PatchPhase.Unreachable` → reduces to `PatchState.Error` (never green) with the distinct **"Can't reach WU"** chip label (`WorkspaceView.xaml` `UpdatePhase=Unreachable` text trigger).
+  - **VM wiring** (`WorkspaceViewModel`): `ScanRowAsync` / `InstallRowAsync` wrap the `_patch` call in `TransientRetryRunner`. `MaxTransientRetries`=3; jittered `TransientBackoffDelayAsync` (60s + up to 15s); **fresh per-attempt** `ScanAttemptTimeoutSeconds`=300s via a linked CTS inside each scan attempt (NOT a shared budget — the (a) fix; the 3 scan dispatch sites dropped the old shared per-host 300s); install re-entry guard (`installBegan`) so a transient after install began surfaces terminal, never a re-run.
 - `DcomRebootReadinessProbe` (Vivre.Core) — pre-reboot readiness guard (3 signals, fail-safe: unreadable = not-ready). Used for Server 2016 staged boxes to prevent rebooting into the 2-hour TrustedInstaller Stopping hang.
 - `BasicReachabilityReadinessProbe` (Vivre.Core) — permissive readiness probe for non-2016 operator-ordered reboots. Always answers Ready; the 2016-specific TrustedInstaller/CBS signals do not apply.
 - `IPostRebootConfirmation` (Vivre.Core) — pluggable post-reboot confirmation strategy. Three outcomes: Confirmed (terminal green), Failed (terminal red), NotReady (retry).
@@ -182,9 +188,11 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - `RebootOutcomeMessages.cs` (Vivre.Core) — the 7 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", "… N remaining", "… N failed", and `BackOnlineRescanFailed()` → "Back online · couldn't rescan — re-check"). **Now wired** (no longer defined-but-unused) via the pure, truthfulness-first `RebootOutcomeSelector.Select` → `WorkspaceViewModel.ReportPostRebootOutcomeAsync` — a scan failure or failed updates never read as a clean "up to date".
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **427 green** (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **488 green** (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
-  staged-patching toggle). Includes the wave behavior tests
+  staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
+  `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
+  `PatchPhase.Unreachable`→Error mapping). Includes the wave behavior tests
   (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red,
   **per-box independence**, **reboot-gate enter/release**), the LCU classifier + `RebootVerifyLaneFor`
   routing tests, the `RebootOutcomeSelector` + `ReadyConfirmation` tests, the phase→state mapping tests,
@@ -235,4 +243,12 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   `AppSettings.StagedHosts`) uses the DISM staging lane. Core: `StagedInstallPlanner` (+ `PartitionByCurrency`),
   `Lcu2016CuMatcher`, override-aware `RebootVerifyLaneFor`. Desktop: `StagedInstallDecisionDialog` +
   `StagedInstallInteraction` gate, the right-click Mark/Remove toggle, the Settings management card, the
+  Staged pill column, and `ResyncStagedPatchingFlags`. (Staged-patching toggle later merged to master.)
+- **Transient WUA reach-failure retry — no false-green** (`ea1d078` classifier · `bd490a0` silent
+  lane-level retry, face 1 · `7676980` WinRM scan non-clean-search → transient, face 2 · `ec6adfa` agent +
+  SMB lane non-clean-search → transient, all paths · `4e34f02` backoff jitter + install re-entry guard ·
+  `cfba5e8` fresh per-attempt scan timeout). **488 tests; on branch `feat/transient-wua-retry`.** Root
+  cause: the `0x80072EE2` SLS timeout at service-registration (proven from `APVWUG`'s `WindowsUpdate.log`);
+  rule: a non-clean search NEVER reads as up-to-date. Core: `TransientWuaError`, `TransientRetryRunner`.
+  See UPDATE_PLAN.md ▸ "Transient WUA reach failures".
   `StagedColumn` pill. The fail-open pre-dialog UBR currency check reuses `VerifyLcuAsync` → `DcomLcuBuildReader`.

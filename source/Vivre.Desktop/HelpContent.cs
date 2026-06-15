@@ -505,12 +505,13 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.Color24, Title = "How do I read the status chips and progress?",
-            Keywords = "chip color status progress bar meaning idle scanning done error",
+            Keywords = "chip color status progress bar meaning idle scanning done error reach windows update retry transient",
             Lines =
             [
                 "The Status chip colour: grey = idle · blue = working (scanning/downloading/installing) · steel = updates available · amber = reboot pending · green = done · red = error.",
                 "During install the Progress bar fills (download is the first half, install the second).",
                 "When an operation finishes while you're watching, a banner summarises how many succeeded / failed.",
+                "\"Can't reach WU\" (red): the machine couldn't reach Windows Update — usually a brief network blip. Vivre quietly retries a few times first (you'll see \"Couldn't reach Windows Update — retrying…\"); if it still can't get through it stops and tells you, rather than wrongly showing the box as \"Up to date.\" Just run Scan/Install again once the network settles.",
             ],
         },
         new HelpTopic
