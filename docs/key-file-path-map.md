@@ -11,6 +11,10 @@
 - `DcomRebootTrigger` (Vivre.Core) — the ONLY reboot primitive in the C# codebase (wave-only, DCOM `Win32Shutdown`); SMB reboot fallback for Kerberos boxes (64337d1).
 - `DcomLcuBuildReader` (Vivre.Core) — reads the UBR over DCOM for Verify.
 - `StagePreconditions` (Vivre.Core/Updates) — pure, unit-tested pre-Stage decision predicates: `IsAlreadyStaged` (RebootRequired && StagedThisSession → skip "Already staged — run Reboot Wave"), `IsAlreadyCurrent` (VerifyLcuAsync's verdict == Verified → skip "Already current — skipped"; fail-OPEN on a null/unreadable read), `UnscannedThisSession` (targets whose `LastScannedApplicable` is null → the scan-this-session gate). Wired into `StageLcuRowAsync` (the two skips) and `OnStage2016` via `WorkspaceViewModel.UnscannedStageTargets()` (the gate, shown before the package check).
+- **Staged-patching toggle (opt-in 2016 routing) — Core pieces:**
+  - `StagedInstallPlanner` (Vivre.Core/Updates) — pure planner. `Plan` partitions an Install set into flagged-2016-not-staged (the dialog set) vs Normal, + per-box Settings-vs-scan CU KB mismatches; `NeedsStageDecision` (the per-box predicate); `PartitionByCurrency` — the pre-dialog already-current split, **fail-open**: a box is excluded only on `LcuVerifiedThisSession` OR a definitive `Verified` UBR read (Unreachable / WrongBuild / null read → stays in the dialog).
+  - `Lcu2016CuMatcher` (Vivre.Core/Updates) — identifies the 2016 OS CU KB from a scan's titles. `FindCuKb` (single confident match → the dialog's mismatch warning, returns null when ambiguous) and `CuKbs` (EVERY CU-titled KB → the "Install minor updates only" exclude set, so the CU can't slip through WUA even when the scan lists two CU KBs).
+  - `LcuRouting.RebootVerifyLaneFor(int?, bool)` — override-aware lane: a 2016 box verifies via the UBR (Lcu2016) lane ONLY when flagged for staging; a non-flagged 2016 box verifies via WUA. The 1-arg overload is kept for legacy callers (treats every 2016 box as the LCU lane).
 - `DcomRebootReadinessProbe` (Vivre.Core) — pre-reboot readiness guard (3 signals, fail-safe: unreadable = not-ready). Used for Server 2016 staged boxes to prevent rebooting into the 2-hour TrustedInstaller Stopping hang.
 - `BasicReachabilityReadinessProbe` (Vivre.Core) — permissive readiness probe for non-2016 operator-ordered reboots. Always answers Ready; the 2016-specific TrustedInstaller/CBS signals do not apply.
 - `IPostRebootConfirmation` (Vivre.Core) — pluggable post-reboot confirmation strategy. Three outcomes: Confirmed (terminal green), Failed (terminal red), NotReady (retry).
@@ -160,20 +164,27 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - `WorkspaceView.xaml`(.cs) — ONE view, mode-swapped by `IsUpdateMode` (Health = `IsMachineMode`; Patching = `IsUpdateMode`), with two DataGrids that swap by visibility. The filter chips live in **two separate mode-gated StackPanels** (Health bar = 6 chips; Patching bar = full set incl. Updates, Server 2016, Not scanned, Scheduled). The LCU action bar (Border) is gated to Patching via a 3-condition MultiDataTrigger (ActiveFilter==Server2016 AND HasServer2016 AND IsUpdateMode). Status-pill label renames are **DataTrigger overrides in the Patching Status column only** — never edit the shared `PhaseChipLabelConverter` (it's also used by `ComputerDetailWindow.xaml`, so editing it leaks renames into the detail window / Health context).
 - `MainWindow.xaml`(.cs) — `DockMaxOpenFraction`, dock-height clamp. **Now hosts the completed `ui:NavigationView` shell** (LeftCompact pane + hamburger; Fleet → Health/Patching sub-items; Scripts; Cross-Domain RDP; Settings pinned bottom; mode chips + menu bar removed). The NavigationView refactor incl. Phase 4 is DONE — TODO: capture the as-built shell layout here in detail next time this file is touched.
 - `AdaptiveLayoutController.cs` — layout controller.
-- `SettingsPage.xaml`(.cs) — Integrations, Help & about. The LCU package folder + "This month's CU" (KB / target UBR) fields live here.
+- `SettingsPage.xaml`(.cs) — Integrations, Help & about. The LCU package folder + "This month's CU" (KB / target UBR) fields live here, plus the **Staged patching machines** card (lists the flagged hosts; per-row Remove + Clear all; re-seeds on expand; a remove/clear calls `MainWindow.ResyncStagedPatchingFlags`).
 - `App.xaml`(.cs) — composition root.
 - Converters: `EnumEqualsConverter.cs`, `UxConverters.cs`, `PhaseChipConverter.cs` (class `PhaseChipLabelConverter`; SHARED — Patching Status column + ComputerDetailWindow; do NOT edit for Patching-only label changes). Help text: `HelpContent.cs`.
 - **Dialog sizing standard** (audit `fe4d68e`): modals use `CenterOwner`; fixed-content forms use `SizeToContent` + Min/Max (NoResize OK); content-heavy/list dialogs use `CanResize` + a ScrollViewer with the action buttons in their OWN row OUTSIDE the ScrollViewer (so they're always visible). `SoftwareCheckWindow` uses `SizeToContent="Height"` + `MaxHeight` so it opens fully visible and only scrolls on a too-short screen. Sizing attributes only — **never bind `Run.Text`** (the a0cb80a render-break class).
-- `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`. Also `LastInstallInstalledCount` / `LastInstallFailedCount` — runtime-only, non-observable counts written by `InstallRowAsync` and read by `ReportPostRebootOutcomeAsync` for the post-reboot outcome message.
+- `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`. Also `LastInstallInstalledCount` / `LastInstallFailedCount` — runtime-only, non-observable counts written by `InstallRowAsync` and read by `ReportPostRebootOutcomeAsync` for the post-reboot outcome message. **`RequiresStagedPatching`** (observable) — the operator's per-box opt-in for the 2016 DISM staging lane; seeded from `AppSettings.StagedHosts` on row add, drives routing + the Staged column. **`LcuVerifiedThisSession`** (runtime-only, non-observable) — set when a 2016 box's CU is confirmed at the target UBR this cycle (verify, 2016 reboot-wave commit, or the pre-dialog already-current check); cleared on re-stage. Lets the staged-update dialog skip an already-current box.
+- **Staged-patching toggle — Desktop pieces:**
+  - `StagedInstallDecisionDialog.xaml`(.cs) — the "Server 2016 staged update required" dialog: **Stage CU first** / **Install minor updates only** / **Cancel**, the Settings-vs-scan KB-mismatch warning, and the inline minor-only reboot caution (Proceed / Back). Returns a `StagedInstallChoice`.
+  - `StagedInstallInteraction.cs` — the View-layer gate **every** Install entry point routes through (`MainWindow.RunInstallFlowAsync`, the right-click *Install selected*, and — as a safe skip-with-guidance fallback — *Install checked*). `ResolveAsync` plans → runs the already-current pre-check + re-plan → shows the dialog → carries out the choice (the flagged action + the normal install on the rest, concurrently). Cancel skips ONLY the flagged boxes; the rest of the fleet still installs. Also `RunStageWorkflowAsync` (the shared chip-Stage workflow: scan-gate + package-readiness loop + stage).
+  - `WorkspaceViewModel` staged-patching methods: `PlanStagedInstall`, `ResolveAlreadyCurrentAsync` (the pre-dialog UBR currency check via `_patch.VerifyLcuAsync`, bounded by `_remoteSweepThrottle`, fail-open), `StageLcuForAsync` / `InstallMinorOnlyAsync` (the dialog's two actions), `SetStagedPatching` (toggle the flag + persist to `StagedHosts`), `Server2016Targets()` is now flagged-only, and `HasStagedServer2016` (drives the Staged column visibility, re-tallied on row add + on a `RequiresStagedPatching` change). `InstallRowAsync` has a `minorOnly` param + a flag-aware 2016 branch (non-flagged → WUA).
+  - `MainWindow.ResyncStagedPatchingFlags` — re-seeds every loaded row's `RequiresStagedPatching` from `StagedHosts` after a Settings remove/clear, so an edited list never leaves a stale flag.
+  - `WorkspaceView` `StagedColumn` — the narrow "Staged" pill column (visible only on flagged 2016 rows; neutral styling, distinct from the amber "STAGED — needs Reboot Wave" tag). A `DataGridColumn` can't bind `Visibility`, so the View drives it from code-behind via the VM's `HasStagedServer2016` (`OnVmPropertyChanged` / `UpdateStagedColumnVisibility`). `BuildContextMenu` adds the **Mark as Staged patching** / **Remove Staged flag** items (2016 + Patching only, acting on the right-clicked row).
 
 ## Settings / data
-- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED (`0718f7a`)** — it was display-only; the package is matched by KB + architecture, never size.
+- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED (`0718f7a`)** — it was display-only; the package is matched by KB + architecture, never size. **`StagedHosts`** — `HashSet<string>` (OrdinalIgnoreCase) of host names flagged for the 2016 DISM staging lane (the source of truth behind `Computer.RequiresStagedPatching`); **`ReadFromDisk` re-normalizes it via `StagedHostMatching.Normalize`** because a JSON round-trip resets the comparer to ordinal. Pure case-insensitive membership helpers live in `StagedHostMatching` (Vivre.Core/Updates).
 - `source/Vivre.Core/Computers/ComputerListStore.cs` — the computer list store.
 - `RebootOutcomeMessages.cs` (Vivre.Core) — the 7 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", "… N remaining", "… N failed", and `BackOnlineRescanFailed()` → "Back online · couldn't rescan — re-check"). **Now wired** (no longer defined-but-unused) via the pure, truthfulness-first `RebootOutcomeSelector.Select` → `WorkspaceViewModel.ReportPostRebootOutcomeAsync` — a scan failure or failed updates never read as a clean "up to date".
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **378 green** (344 at the WUG resolution; 360 after the pluggable-wave
-  refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build). Includes the wave behavior tests
+- `source/Vivre.Core.Tests/...` — **427 green** (344 at the WUG resolution; 360 after the pluggable-wave
+  refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
+  staged-patching toggle). Includes the wave behavior tests
   (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red,
   **per-box independence**, **reboot-gate enter/release**), the LCU classifier + `RebootVerifyLaneFor`
   routing tests, the `RebootOutcomeSelector` + `ReadyConfirmation` tests, the phase→state mapping tests,
@@ -181,7 +192,11 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   `ParsePreflight` result-classification tests (now incl. the safe-default contract + `__WUGRESULT__`
   marker extraction — failure cases must NOT claim the module is missing), the
   **`WritePs51Script_writes_utf8_with_bom`** BOM regression guard (`Vivre.Core.Tests/Wug/`), and
-  the **`StagePreconditions`** unit tests (IsAlreadyStaged, IsAlreadyCurrent fail-open, UnscannedThisSession).
+  the **`StagePreconditions`** unit tests (IsAlreadyStaged, IsAlreadyCurrent fail-open, UnscannedThisSession),
+  and the **staged-patching toggle** tests — `StagedHostMatching`, `Lcu2016CuMatcher` (`FindCuKb` ambiguity +
+  `CuKbs` conservative exclude + .NET exclusion), `StagedInstallPlanner` (`Plan` partition + KB mismatch +
+  `PartitionByCurrency` fail-open: all-current → none, mixed → only non-current, null/Unreachable → included),
+  and the override-aware `RebootVerifyLaneFor(osBuild, requiresStaging)` routing.
 
 ## Docs in repo
 - **Root:** `UPDATE_PLAN.md` (the WUA lane), `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
@@ -212,3 +227,12 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   scan-gate) + `0718f7a` remove ExpectedSizeMb. 378 tests; merged to master.** Pure `StagePreconditions` helper wired
   into Stage: scan-this-session gate, already-staged skip, already-current UBR check (fail-open).
   Removed display-only `MonthlyCu.ExpectedSizeMb` Settings field.
+- **Staged patching toggle — 2016 routing is now opt-in per box** (`08a9f9f` flag + persistence · `9489f74`
+  routing + decision dialog · `2876ecd` Cancel skips flagged only · `754a18d` right-click + Settings toggle ·
+  `bfb7bba` Staged pill column · `516d3fb` minor-only never WUAs the CU · `3125b0b` skip dialog for
+  already-current boxes). **427 tests; on branch `feat/staged-patching-toggle` (not yet merged).** Default is
+  now normal Windows Update for ALL 2016 boxes; only a flagged box (`Computer.RequiresStagedPatching` ⇄
+  `AppSettings.StagedHosts`) uses the DISM staging lane. Core: `StagedInstallPlanner` (+ `PartitionByCurrency`),
+  `Lcu2016CuMatcher`, override-aware `RebootVerifyLaneFor`. Desktop: `StagedInstallDecisionDialog` +
+  `StagedInstallInteraction` gate, the right-click Mark/Remove toggle, the Settings management card, the
+  `StagedColumn` pill. The fail-open pre-dialog UBR currency check reuses `VerifyLcuAsync` → `DcomLcuBuildReader`.
