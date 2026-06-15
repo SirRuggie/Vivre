@@ -108,6 +108,29 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **"Reboot & verify…" now appears for any reboot-pending box, not just one you patched this session** — the
+  right-click item is offered whenever a selected box shows the "Reboot pending" pill (it's keyed off the
+  same signal now), so a box pending from a prior session, an app reopen, a re-scan, BatchPatch, or a manual
+  patch all get it. It stays Patching-mode only, and clicking still routes through the same confirmed
+  graceful-reboot-then-verify flow.
+- **Reboot & verify no longer calls a slow reboot a failure, and only declares success on a REAL reboot** — a
+  box that commits updates slowly on the way down (Server 2016 especially) can stay reachable for 15–20+
+  minutes, which the wave used to mistake for "the reboot isn't taking". It now waits longer for
+  staged/2016 boxes (and longer still after a forced reboot), treats "a shutdown is already in progress" as
+  "it's going down — keep watching" rather than a failure, and confirms the reboot only when the box returns
+  with a NEWER last-boot time — so a brief network flicker during reboot-prep is no longer mistaken for a
+  completed reboot (which previously declared "committed in ~0 min" and then re-scanned a box that hadn't
+  actually rebooted, leaving it stuck red). A box that's momentarily unreachable as it settles is retried
+  rather than left on a stale error. Nothing auto-reboots — this only interprets a reboot you confirmed.
+- **A box that finished installing is available again immediately** — it no longer stays marked "busy" (so
+  Reboot & verify / a new scan no longer skip it) until the slowest box in the same batch finishes, and the
+  fleet's Scan/Install buttons re-enable as boxes free up instead of staying disabled behind the whole batch.
+- **A box rebooted outside Vivre clears its "Reboot pending" on its own** — if a box's pending reboot is
+  cleared out-of-band (e.g. by BatchPatch) the pill self-clears on a later monitor poll (within a few
+  minutes) instead of sticking until you manually re-scan.
+- **Switching the Applicable/Installed view keeps an errored box's failure detail** — toggling the scope
+  radio no longer blanks the "Windows update message" for a box that's showing an error (or is mid-
+  operation); the failure text is preserved.
 - **A Kerberos auth rejection no longer masquerades as "the remote session ended"** — when a target refuses
   the WinRM login with `0x80090322` (SEC_E_WRONG_PRINCIPAL), Vivre was reporting "Lost connection — the
   remote session ended (the target may have rebooted)", which is wrong (nothing dropped or rebooted — the
