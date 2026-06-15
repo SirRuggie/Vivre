@@ -411,6 +411,26 @@ public partial class WorkspaceView : UserControl
             };
             _gridMenu.Items.Add(install);
 
+            // Staged-patching toggle — Server 2016 rows only. Marks/unmarks THIS row (the right-clicked one) as
+            // needing the DISM staging lane; the choice persists and seeds future loads. Show only the applicable
+            // verb so the menu never offers "Mark" on an already-flagged box (or vice-versa).
+            if (LcuRouting.Is2016(ctx?.OsBuild))
+            {
+                Computer row2016 = ctx!;
+                if (row2016.RequiresStagedPatching)
+                {
+                    var unmark = WithIcon(new MenuItem { Header = "Remove Staged flag" }, SymbolRegular.Dismiss24);
+                    unmark.Click += (_, _) => vm.SetStagedPatching(row2016, false);
+                    _gridMenu.Items.Add(unmark);
+                }
+                else
+                {
+                    var mark = WithIcon(new MenuItem { Header = "Mark as Staged patching" }, SymbolRegular.Box24);
+                    mark.Click += (_, _) => vm.SetStagedPatching(row2016, true);
+                    _gridMenu.Items.Add(mark);
+                }
+            }
+
             _gridMenu.Items.Add(new Separator());
         }
 

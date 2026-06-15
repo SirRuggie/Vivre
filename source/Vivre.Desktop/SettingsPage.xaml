@@ -232,6 +232,46 @@
                 </StackPanel>
             </ui:CardExpander>
 
+            <!-- ── Staged patching machines (collapsed expander) ──────────── -->
+            <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
+                             Icon="{ui:SymbolIcon Box24}"
+                             Header="Staged patching machines"
+                             Expanded="OnStagedHostsExpanded">
+                <StackPanel Margin="0,8,0,0">
+                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                                  Text="Server 2016 machines you've flagged to patch through the DISM staging lane instead of normal Windows Update. Flag one by right-clicking its row in a Patching tab ▸ Mark as Staged patching. Remove a machine here to send it back to normal Windows Update." />
+
+                    <ListBox x:Name="StagedHostsList" MaxHeight="220" Margin="0,0,0,8"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ui:TextBlock Grid.Column="0" Text="{Binding}" VerticalAlignment="Center" />
+                                    <ui:Button Grid.Column="1" Content="Remove" Tag="{Binding}"
+                                               Click="OnRemoveStagedHost" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <ui:TextBlock x:Name="StagedHostsEmpty" Appearance="Secondary" FontSize="12"
+                                  Margin="0,0,0,8" Visibility="Collapsed"
+                                  Text="No machines flagged for staged patching yet." />
+
+                    <ui:Button Content="Clear all" Click="OnClearStagedHosts"
+                               ToolTip="Remove every machine from the staged-patching list." />
+                </StackPanel>
+            </ui:CardExpander>
+
             <!-- ── Help &amp; about (collapsed expander) ─────────────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Info24}"

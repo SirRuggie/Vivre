@@ -1126,6 +1126,29 @@ public partial class MainWindow : FluentWindow
         await GatedProceedAsync(showConfirm: true);
     }
 
+    /// <summary>Re-seed every loaded row's <see cref="Computer.RequiresStagedPatching"/> from the persisted
+    /// StagedHosts set. Called after the Settings page edits the list so open tabs don't keep a stale flag (which
+    /// would mis-route an install). Only touches confirmed 2016 rows; others can't be staged.</summary>
+    public void ResyncStagedPatchingFlags()
+    {
+        if (Settings is not { } store || Shell is not { } shell)
+        {
+            return;
+        }
+
+        HashSet<string> staged = store.Load().StagedHosts;
+        foreach (WorkspaceViewModel tab in shell.AllTabs.OfType<WorkspaceViewModel>())
+        {
+            foreach (Computer c in tab.Computers)
+            {
+                if (LcuRouting.Is2016(c.OsBuild))
+                {
+                    c.RequiresStagedPatching = StagedHostMatching.IsStaged(staged, c.Name);
+                }
+            }
+        }
+    }
+
     // --- keyboard accelerator handlers ---
 
     private void OnNewTabKey(object sender, ExecutedRoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);
