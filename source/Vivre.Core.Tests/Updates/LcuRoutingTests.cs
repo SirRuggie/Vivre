@@ -41,4 +41,18 @@ public class LcuRoutingTests
     [InlineData(null,  RebootVerifyLane.Wua)]        // unread → WUA (fail-safe)
     public void RebootVerifyLaneFor_routes_14393_to_Lcu2016_everything_else_to_Wua(int? build, RebootVerifyLane expected) =>
         Assert.Equal(expected, LcuRouting.RebootVerifyLaneFor(build));
+
+    [Theory]
+    [InlineData(14393, true, RebootVerifyLane.Lcu2016)]   // flagged 2016 → UBR-confirmed lane
+    [InlineData(14393, false, RebootVerifyLane.Wua)]      // non-flagged 2016 → WUA lane (patches via Windows Update)
+    [InlineData(17763, true, RebootVerifyLane.Wua)]       // 2019 is never the LCU lane, flag or not
+    [InlineData(17763, false, RebootVerifyLane.Wua)]      // 2019
+    [InlineData(null, true, RebootVerifyLane.Wua)]        // unread → WUA (fail-safe), even if somehow flagged
+    public void RebootVerifyLaneFor_is_override_aware(int? build, bool requiresStaging, RebootVerifyLane expected) =>
+        Assert.Equal(expected, LcuRouting.RebootVerifyLaneFor(build, requiresStaging));
+
+    [Fact]
+    public void RebootVerifyLaneFor_build_only_overload_treats_2016_as_lcu_lane() =>
+        // The legacy single-arg overload preserves the old behavior (every 2016 box → LCU lane).
+        Assert.Equal(RebootVerifyLane.Lcu2016, LcuRouting.RebootVerifyLaneFor(14393));
 }

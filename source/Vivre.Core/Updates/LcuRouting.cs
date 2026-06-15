@@ -31,11 +31,20 @@ public static partial class LcuRouting
     public static bool Is2016(int? osBuild) => osBuild == Server2016Build;
 
     /// <summary>
-    /// Returns the reboot-and-verify lane for a given OS build. 14393 → <see cref="RebootVerifyLane.Lcu2016"/>;
-    /// everything else (including null/unknown) → <see cref="RebootVerifyLane.Wua"/>.
+    /// Override-aware reboot-and-verify lane. A 2016 box verifies via the UBR-confirmed full-package lane
+    /// (<see cref="RebootVerifyLane.Lcu2016"/>) ONLY when it's flagged for staged patching; a non-flagged 2016
+    /// box patches through normal Windows Update, so it verifies via the WUA lane (re-scan / ready confirmation)
+    /// like a 2019/2022 box. Everything non-2016 (including null/unknown) → <see cref="RebootVerifyLane.Wua"/>.
+    /// </summary>
+    public static RebootVerifyLane RebootVerifyLaneFor(int? osBuild, bool requiresStaging) =>
+        Is2016(osBuild) && requiresStaging ? RebootVerifyLane.Lcu2016 : RebootVerifyLane.Wua;
+
+    /// <summary>
+    /// Build-only lane for callers without the staged-patching flag in hand — treats every 2016 box as the LCU
+    /// lane. Prefer <see cref="RebootVerifyLaneFor(int?, bool)"/> so a non-flagged 2016 box verifies via WUA.
     /// </summary>
     public static RebootVerifyLane RebootVerifyLaneFor(int? osBuild) =>
-        Is2016(osBuild) ? RebootVerifyLane.Lcu2016 : RebootVerifyLane.Wua;
+        RebootVerifyLaneFor(osBuild, requiresStaging: true);
 
     /// <summary>
     /// Pulls the OS build number out of the OS string Vivre already captures (caption + version, e.g.
