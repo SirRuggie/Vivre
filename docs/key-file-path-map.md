@@ -4,6 +4,8 @@
 
 ## Patch lane / 2016 LCU lane
 - `source/Vivre.Core/PowerShell/PSRunspaceHost.cs` — WSMan connect/execute; `MaxConnectionRetryCount=0` on both sites (the WSMan retry crash fix). **Also the PSModulePath contaminator — see gotcha below.**
+- `source/Vivre.Core/PowerShell/HostWinRmGate.cs` — per-host WinRM shell cap (≤4 concurrent/host; background probes capped at 2 so operator-clicked ops always have reserved slots). Acquired at the shell-open chokepoint in `PSRunspaceHost` via a `background` flag threaded through `IPowerShellHost`/`IHostRebootProbe`; the monitor's reboot-pending poll is the only `background: true` caller.
+- `source/Vivre.Core/Net/ReachabilityConfirmation.cs` — pure `ConfirmEffectiveOnline(previous, rawOnline, consecutiveFailures, threshold)`: a previously-online box needs 2 consecutive failed probes before the monitor declares it offline (kills false "went offline" blips). Wired into `WorkspaceViewModel.MonitorRowAsync`.
 - `source/Vivre.Core/Updates/WuaUpdateLane.cs` — the normal Windows Update lane; owns the agent bytes + `SmbAgentLane`. Install selector lives here (an install is multi-call).
 - `FullPackageLcuLane` (Vivre.Core/Updates) — the Server 2016 full-package CU lane. `StageAsync`, `VerifyAsync`, `ComponentCleanupAsync`.
 - `PatchService.cs` / `IPatchService` (Vivre.Core) — per-host serialization owner (the `_inFlight` guard the LCU lane reuses). The LCU lane lives INSIDE PatchService so Stage/Cleanup/Wave can't collide with a WUA install on the same box.

@@ -221,11 +221,16 @@ These mechanisms exist because of real production failures. Don't undo them with
   surfaced as silent stalls and the `InitialSessionState` type-initializer error. Don't go back to it.
 - **Don't reintroduce the Add-Type WUA COM-callback shims.** That path was tried and reverted (it
   hung `$searcher.Search()` after the managed CCW registration). The compiled agent is the answer.
-- **A reboot-pending target poisons WinRM/PSRP** — a pending reboot corrupts shell init (the
-  `InitialSessionState` error, cleared only by actually rebooting the box). So the monitor must not
-  hammer it: it **skips re-probing a known-reboot-pending host**, **backs off "degraded" hosts** (on
-  the shell-init error) and **periodically re-tests them** so they self-heal once WinRM responds —
-  never opening fresh shells every 20s against a sick box.
+- **WinRM shell churn is bounded, and a flaky shell isn't assumed reboot-pending** — a shell-init
+  failure (the `InitialSessionState` error) is usually **transient**: the box is momentarily busy, or
+  too many WinRM shells are open (`MaxShellsPerUser`); occasionally a genuinely reboot-pending box fails
+  this way persistently. So the monitor must not hammer hosts: it re-probes reboot-pending on a single
+  **~5-min cadence for every box** (the 20s loop does only the cheap ping — not a fresh shell every 20s),
+  **backs off "degraded" hosts** on the shell-init error and re-tests them so they self-heal, and a
+  **per-host shell cap** (`HostWinRmGate` — ≤4 concurrent shells/host, with slots reserved for
+  operator-initiated work over background probes) stops several ops stacking shells on one box. The
+  shell-init message says it's a temporary hiccup that's been backed off — it **never** tells the user to
+  reboot a box that isn't actually reboot-pending (the known `RebootRequired` flag is the only authority).
 - **Heartbeat watchdog** — the on-target controller heartbeats every ~15s while the session is alive.
   The client fails a session that goes **fully silent** (no progress **and** no heartbeat) for
   `PatchOptions.NoResponseTimeout` (90s) so a dead/hung session surfaces instead of freezing on stale

@@ -108,6 +108,23 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **Far fewer spurious WinRM errors, false "went offline" blips, and no more "reboot the target" on a
+  healthy box** — four changes cut the background WinRM noise on a Patching tab:
+  - The "reboot pending" check no longer opens a fresh WinRM shell on every box on every 20-second pass; it
+    runs on a single **~5-minute cadence for all boxes** (the cheap online/offline ping stays at 20s, and a
+    just-rebooted box still re-checks promptly during its post-boot window). A box you patch in Vivre still
+    reflects its pending state immediately.
+  - A new **per-host shell cap** keeps several operations on the *same* box from stacking WinRM shells and
+    tripping its `MaxShellsPerUser` limit — at most 4 at once, with slots reserved for what *you* click, so a
+    scan / install / run-script never waits behind a background probe.
+  - The monitor now **confirms a box is really gone before announcing it**: a single dropped ping under load
+    reads as a transient "probe timed out (busy)", and only two failures in a row flip a box to "offline" —
+    killing the false "Went offline → Back online" 20-50s flicker. (The Reboot & verify wave's own reboot
+    detection is separate and stays prompt.)
+  - The "WinRM shell couldn't start" message no longer guesses "reboot-pending" or tells you to reboot the
+    box — it says plainly it's a temporary hiccup that's been backed off and will retry. Vivre only mentions a
+    reboot for a box that genuinely *is* reboot-pending (which already shows the pill). Nothing here reboots
+    anything.
 - **"Reboot & verify…" now appears for any reboot-pending box, not just one you patched this session** — the
   right-click item is offered whenever a selected box shows the "Reboot pending" pill (it's keyed off the
   same signal now), so a box pending from a prior session, an app reopen, a re-scan, BatchPatch, or a manual
