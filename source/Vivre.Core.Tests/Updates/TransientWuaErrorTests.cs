@@ -53,6 +53,7 @@ public class TransientWuaErrorTests
     [InlineData("server busy 0x80244022")]     // 503 surfaced mid-message
     [InlineData("Exception from HRESULT: 0x8024402C")]
     [InlineData("Windows Update search didn't complete cleanly (result code 3, HRESULT 0x80240438)")] // face 2
+    [InlineData("Windows Update scan didn't respond within 300s (HRESULT 0x80240438) — the update source wasn't fully reached.")] // per-attempt timeout
     public void IsTransient_message_is_true_when_a_transient_code_is_present(string message) =>
         Assert.True(TransientWuaError.IsTransient(message));
 

@@ -148,11 +148,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int HealthPerHostTimeoutSeconds = 60;
     private const int SoftwarePerHostTimeoutSeconds = 60;
-    // A WUA scan is a read-only WUA search; 5 minutes is the hard wall-clock cap before we call a box
-    // hung/unreachable, fail it, and release its slot (rather than leaving it stuck in "Scanning"). Sized
-    // generously because a search on a badly-behind box (or over a slow link) legitimately takes minutes —
-    // 90s was false-timing-out real scans. It only bounds a genuinely stuck host; healthy scans finish well under it.
-    private const int ScanPerHostTimeoutSeconds = 300;
+    // A WUA scan is a read-only WUA search; this is the PER-ATTEMPT wall-clock cap (5 min). Each retry
+    // attempt inside ScanRowAsync gets its OWN fresh budget (NOT one budget shared across all attempts +
+    // backoffs — that shared form would kill attempt 2 before attempt 3 ran), so a slow attempt is bounded
+    // independently and a per-attempt timeout becomes a transient (retry), resolving to the honest "Can't
+    // reach WU" state only if EVERY attempt times out. Sized generously because a search on a badly-behind
+    // box legitimately takes minutes (90s false-timed-out real scans). The bounded retry count caps total
+    // wall-clock; the scan sweep's own per-host timeout is left at the default as a loose final backstop.
+    private const int ScanAttemptTimeoutSeconds = 300;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
     // Caps the monitor's per-pass reachability fan-out. The monitor pings (and DCOM-probes) every row
@@ -1547,7 +1550,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Scans every row for applicable updates from the selected source.</summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
-    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active, TimeSpan.FromSeconds(ScanPerHostTimeoutSeconds));
+    private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
@@ -1555,7 +1558,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active, TimeSpan.FromSeconds(ScanPerHostTimeoutSeconds));
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -1727,7 +1730,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanScanFocused))]
     private Task ScanFocusedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle.Active, TimeSpan.FromSeconds(ScanPerHostTimeoutSeconds)) : Task.CompletedTask;
+        FocusedComputer is { } c ? RunPatchSweepAsync([c], ScanRowAsync, "Scan", _remoteSweepThrottle.Active) : Task.CompletedTask;
 
     private bool CanScanFocused() => FocusedComputer is { } c && !_heldRows.ContainsKey(c.Name);
 
@@ -2562,7 +2565,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // silently, up to the retry budget; an exhausted reach failure resolves to an honest
             // "couldn't reach WU" state (never a false "up to date"), and a terminal error surfaces at once.
             HostPatchStatus status = await TransientRetryRunner.RunAsync(
-                attempt: ct => _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, ct),
+                attempt: async ct =>
+                {
+                    // Each attempt gets its OWN fresh 5-min budget (linked to the operation token), so a
+                    // slow/hung attempt is bounded independently rather than eating one shared budget across
+                    // all attempts + backoffs. A per-attempt timeout (NOT a user Stop) is a reach failure →
+                    // surface it as transient (HRESULT 0x80240438) so the runner retries; if every attempt
+                    // times out it resolves to the honest "Can't reach WU" state — never a silent give-up.
+                    using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    attemptCts.CancelAfter(TimeSpan.FromSeconds(ScanAttemptTimeoutSeconds));
+                    try
+                    {
+                        return await _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, attemptCts.Token);
+                    }
+                    catch (OperationCanceledException) when (attemptCts.IsCancellationRequested && !ct.IsCancellationRequested)
+                    {
+                        return HostPatchStatus.Failed(
+                            $"Windows Update scan didn't respond within {ScanAttemptTimeoutSeconds}s (HRESULT 0x80240438) — the update source wasn't fully reached.");
+                    }
+                },
                 maxRetries: MaxTransientRetries,
                 delay: TransientBackoffDelayAsync,
                 onRetrying: n => SetTransientRetryingState(computer, n),
