@@ -71,7 +71,8 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <ui:Button Content="Install minor updates only" Click="OnMinorOnly" Margin="0,0,8,0"
                                    ToolTip="Install the non-cumulative updates now via Windows Update; the CU is staged separately." />
-                        <ui:Button Content="Cancel" IsCancel="True" Click="OnCancel" />
+                        <ui:Button Content="Cancel" IsCancel="True" Click="OnCancel"
+                                   ToolTip="Skip these machines for now — the rest of this run still installs." />
                     </StackPanel>
                 </StackPanel>
 

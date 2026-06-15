@@ -15,27 +15,24 @@ internal enum StagedInstallOutcome
     /// <summary>No flagged-2016 box needed a decision — the caller runs its normal install as usual.</summary>
     ProceedNormally,
 
-    /// <summary>The gate already ran everything (the chosen action on the flagged boxes + the normal install
-    /// on the rest) — the caller must NOT also install, or it would double-install the normal set.</summary>
+    /// <summary>The gate already ran everything it should (the chosen action on the flagged boxes + the normal
+    /// install on the rest) — the caller must NOT also install, or it would double-install the normal set.</summary>
     Handled,
-
-    /// <summary>The operator cancelled the decision dialog — nothing runs.</summary>
-    Cancelled,
 }
 
 /// <summary>
 /// The View-layer gate for the "Server 2016 staged update required" decision. Every Install / Install-all entry
 /// point routes through <see cref="ResolveAsync"/>: when the target set has no flagged-2016 box awaiting a stage
 /// decision it returns <see cref="StagedInstallOutcome.ProceedNormally"/> and the caller installs as usual; when
-/// it does, the decision dialog is shown and the operator's choice (stage the CU, install minor-only, or cancel)
-/// is carried out here — the flagged boxes via the chosen action and the rest via the normal install, run
-/// concurrently so a 30–60 min stage never blocks the other machines.
+/// it does, the decision dialog is shown. The rest of the fleet ALWAYS installs normally — the choice only decides
+/// what happens to the flagged-not-staged boxes (stage the CU, install their minor updates, or skip them for
+/// later) — and the flagged action runs concurrently so a 30–60 min stage never blocks the other machines.
 /// </summary>
 internal static class StagedInstallInteraction
 {
     /// <summary>Runs the staged-patching gate for <paramref name="targets"/>. The View must NOT install the
-    /// targets itself when this returns <see cref="StagedInstallOutcome.Handled"/> or
-    /// <see cref="StagedInstallOutcome.Cancelled"/>.</summary>
+    /// targets itself when this returns <see cref="StagedInstallOutcome.Handled"/> — the gate already installed
+    /// the non-flagged remainder (and ran the chosen flagged-box action, if any).</summary>
     public static async Task<StagedInstallOutcome> ResolveAsync(Window owner, WorkspaceViewModel vm, IReadOnlyList<Computer> targets)
     {
         StagedInstallPlan plan = vm.PlanStagedInstall(targets);
@@ -47,6 +44,8 @@ internal static class StagedInstallInteraction
         var dialog = new StagedInstallDecisionDialog(plan) { Owner = owner };
         dialog.ShowDialog();
 
+        // The rest of the fleet installs normally regardless of the choice; the choice only governs the
+        // flagged-not-staged boxes. (Cancel = "deal with these later" — skip them, but don't stop everything.)
         switch (dialog.Choice)
         {
             case StagedInstallChoice.StageCu:
@@ -56,17 +55,20 @@ internal static class StagedInstallInteraction
                 // the two row sets are disjoint so the sweeps don't collide.
                 _ = InstallNormalAsync(vm, plan.Normal);
                 await RunStageWorkflowAsync(owner, vm, plan.FlaggedNotStaged);
-                return StagedInstallOutcome.Handled;
+                break;
 
             case StagedInstallChoice.MinorOnly:
-                // Fire both sweeps (disjoint row sets) and return — same fire-and-forget shape as a normal install.
+                // Fire both sweeps (disjoint row sets) — same fire-and-forget shape as a normal install.
                 _ = vm.InstallMinorOnlyAsync(plan.FlaggedNotStaged);
                 _ = InstallNormalAsync(vm, plan.Normal);
-                return StagedInstallOutcome.Handled;
+                break;
 
-            default:
-                return StagedInstallOutcome.Cancelled;
+            default: // Cancel — skip the flagged boxes ("deal with them later"); the rest of the run still installs.
+                _ = InstallNormalAsync(vm, plan.Normal);
+                break;
         }
+
+        return StagedInstallOutcome.Handled;
     }
 
     /// <summary>Installs the non-flagged remainder — guarded so an empty set never falls through to
