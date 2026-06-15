@@ -3,22 +3,18 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2016 staged-patching toggle built on `feat/staged-patching-toggle` (427
-> tests; held for visual check before merge)**; smart scan flow Stage guards shipped + merged to master;
-> fleet-wide reboot-and-verify shipped + merged to master; OneDrive relocation DONE (repo now `C:\src\Vivre`);
-> WUG saga + dialog audit closed; NavigationView refactor (incl. Phase 4) DONE.
+> not a mandate). Last refreshed: **2016 staged-patching toggle merged to master (427 tests); KB
+> auto-population closed (manual only) + ARC-8 verified already-handled**; smart scan flow Stage guards
+> shipped + merged to master; fleet-wide reboot-and-verify shipped + merged to master; OneDrive relocation
+> DONE (repo now `C:\src\Vivre`); WUG saga + dialog audit closed; NavigationView refactor (incl. Phase 4) DONE.
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-### 1. Smart scan flow — KB auto-population (remaining; needs a red-team gate)
-The Stage gates + short-circuits shipped (see DONE). Optional remainder: a WUA scan's ArticleId
-carries the applicable CU's KB, so the cycle KB *could* be pre-filled from a scan (needs a selection
-heuristic for the OS CU). **Target UBR cannot** be auto-filled (not in any scan result) — it stays
-manual. Red-team first: the global single-value `MonthlyCu` clobbers across mixed/old-cycle fleets
-and an auto-write overwrites a deliberately-set KB; make it a deliberate "use this scan's CU" action
-gated to 2016, not an every-scan write.
+_No feature work queued._ The 2016 staged-patching toggle shipped (see DONE), and **KB auto-population
+from a scan is closed — manual only** (decision recorded under *Settings simplification* below). What
+remains is the polish / standalone items further down, each "do only if it recurs / when a signal appears."
 
 ---
 
@@ -30,15 +26,18 @@ gated to 2016, not an every-scan write.
 - KB and Target UBR **cannot** be removed: Target UBR is not present in any WUA scan result so it
   can't be derived automatically, and KB must remain overridable for off-cycle patches. Keep KB,
   Target UBR, and the package folder.
+- **KB auto-population from a scan — CLOSED, manual only.** The strong (every-scan auto-write) version
+  is a bad idea — it clobbers the single-value `MonthlyCu` across mixed/old-cycle fleets and overwrites a
+  deliberately-set KB — and the weak ("use this scan's CU" button) version isn't worth it: UBR must be
+  set by hand every cycle anyway (not in any scan result), and the Settings **update-history URL**
+  (`e590d2e`) now makes the manual KB+UBR lookup a two-click copy. The `Lcu2016CuMatcher.FindCuKb`
+  heuristic built for the staged-patching dialog exists if this is ever revisited, but the decision is:
+  manual only.
 
 ---
 
 ## OPEN — polish / smaller standalone items
 
-- **ARC-8: Last-status should mirror the vitals badge on WinRM-broken boxes.** Today a box where DCOM
-  worked but WinRM is down can show a vitals badge (e.g. 88) while Last status reads "WinRM n/a".
-  Make Last status mirror the badge as "Vitality 88 (Warning)" and keep the WinRM note in Last error.
-  (The healthy version of this already renders — see the "Vitality 100 (Healthy)" rows.) Parked; small.
 - **Proactive gray-out of known-WinRM-broken boxes** — visually mark boxes that are known to fail WinRM
   so the operator isn't surprised, rather than only learning at action time. Design pass needed.
 - **Idle-monitor reachability throttle** — throttle added (d3b5ed0). Verify it holds at scale
@@ -69,9 +68,15 @@ gated to 2016, not an every-scan write.
 
 ## DONE (committed) — recent
 
+- **ARC-8 — verified already handled (no change needed).** Last status already mirrors the vitals badge:
+  `WorkspaceViewModel.ApplyVitals` sets `LastStatus = "Vitality {score} ({band})"` whenever a score exists,
+  and a DCOM-up/WinRM-down box still gets a score, so it reads e.g. "Vitality 88 (Warning)" — not "WinRM n/a".
+  The WinRM detail lives in the Machine Details connection callout (`WinRmStateCaption` / `WinRmDegraded`),
+  not in Last status. (The "WinRM n/a" seen on a *custom* column is correct, separate behavior —
+  `WorkspaceViewModel.cs:1510`.) The old backlog symptom was stale; closed on evidence.
 - **2016 DISM routing toggle — staged patching is now opt-in per box** (`08a9f9f` · `9489f74` · `2876ecd` ·
-  `754a18d` · `bfb7bba` · `516d3fb` · `3125b0b`; branch `feat/staged-patching-toggle`, **not yet merged —
-  held for visual check**). **The default is now normal Windows Update for ALL Server 2016 boxes** — only a
+  `754a18d` · `bfb7bba` · `516d3fb` · `3125b0b`; **merged to master**; Settings UX follow-up `e590d2e`).
+  **The default is now normal Windows Update for ALL Server 2016 boxes** — only a
   box the operator explicitly flags (right-click ▸ *Mark as Staged patching*, or *Settings ▸ Staged patching
   machines*) uses the DISM staging lane. This **inverts** the old "OFF (default) = all 2016 → DISM" design to
   opt-in, which the red-team pass settled.
