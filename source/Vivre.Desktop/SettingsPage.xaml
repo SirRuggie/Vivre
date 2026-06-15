@@ -205,7 +205,16 @@
                                 LostFocus="OnLcuUbrChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="The update build revision the box should report after the CU commits, e.g. 9234 → 14393.9234. The Reboot Wave and Verify use this as the pass/fail check." />
+                                  Text="The build revision after the CU commits. On the update history page each entry lists 'OS Build 14393.XXXX' — use the digits after the dot (e.g. 9234)." />
+
+                    <!-- Update history page — read-only, selectable label; the source for this month's KB + UBR. -->
+                    <ui:TextBlock TextWrapping="Wrap" Margin="0,0,0,4"
+                                  Text="Update history page (copy to find this month's KB and UBR):" />
+                    <TextBox Text="https://support.microsoft.com/en-us/help/4000825"
+                             IsReadOnly="True" BorderThickness="0" Background="Transparent" Padding="0"
+                             Margin="0,0,0,12"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             ToolTip="Read-only — select the text to copy the link." />
 
                     <!-- Architecture (fixed) -->
                     <ui:TextBlock Text="Architecture" Margin="0,0,0,4" />
