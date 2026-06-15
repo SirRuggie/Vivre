@@ -177,12 +177,12 @@ public class SmbLaneSelectionTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default, bool background = false) =>
             throw new KerberosWrongPrincipalException(host, new InvalidOperationException("0x80090322"));
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default) =>
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false) =>
             throw new KerberosWrongPrincipalException(host, new InvalidOperationException("0x80090322"));
     }
 
@@ -194,12 +194,12 @@ public class SmbLaneSelectionTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default, bool background = false) =>
             Task.FromResult(new PSExecutionResult([], [], [], HadErrors: false));
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default) =>
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false) =>
             Task.FromResult(new PSExecutionResult([], [], [], HadErrors: false));
     }
 
@@ -214,12 +214,12 @@ public class SmbLaneSelectionTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default, bool background = false) =>
             throw new RemoteSessionLostException(host, new Exception("the remote session ended"), atConnect);
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default) =>
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false) =>
             throw new RemoteSessionLostException(host, new Exception("the remote session ended"), atConnect);
     }
 

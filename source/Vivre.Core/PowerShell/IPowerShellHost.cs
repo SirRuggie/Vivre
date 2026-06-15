@@ -42,13 +42,18 @@ public interface IPowerShellHost
     /// </param>
     /// <param name="port">WinRM port (5985 HTTP / 5986 HTTPS).</param>
     /// <param name="useSsl">Connect over HTTPS.</param>
+    /// <param name="background">
+    /// A low-priority background probe (e.g. the monitor's reboot-pending poll); operator-initiated
+    /// ops leave it <see langword="false"/> so they take priority on the per-host shell gate.
+    /// </param>
     Task<PSExecutionResult> RunRemoteAsync(
         string host,
         string script,
         PSCredential? credential = null,
         int port = 5985,
         bool useSsl = false,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool background = false);
 
     /// <summary>
     /// Runs <paramref name="script"/> on <paramref name="host"/> over WinRM and invokes
@@ -65,6 +70,10 @@ public interface IPowerShellHost
     /// which lets any server-side <c>finally</c> block run (so the streaming controller
     /// can unregister the SYSTEM task even on a client-side cancel).
     /// </remarks>
+    /// <param name="background">
+    /// A low-priority background probe (e.g. the monitor's reboot-pending poll); operator-initiated
+    /// ops leave it <see langword="false"/> so they take priority on the per-host shell gate.
+    /// </param>
     Task<PSExecutionResult> RunRemoteStreamingAsync(
         string host,
         string script,
@@ -72,5 +81,6 @@ public interface IPowerShellHost
         PSCredential? credential = null,
         int port = 5985,
         bool useSsl = false,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool background = false);
 }

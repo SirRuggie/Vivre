@@ -30,7 +30,7 @@ public class RoutingPowerShellHostTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken ct = default)
+            CancellationToken ct = default, bool background = false)
         {
             RemoteCalls++;
             if (_kerberosHosts.Contains(host))
@@ -43,8 +43,8 @@ public class RoutingPowerShellHostTests
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken ct = default) =>
-            RunRemoteAsync(host, script, credential, port, useSsl, ct);
+            bool useSsl = false, CancellationToken ct = default, bool background = false) =>
+            RunRemoteAsync(host, script, credential, port, useSsl, ct, background);
     }
 
     [Fact]

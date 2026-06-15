@@ -114,7 +114,7 @@ public class SoftwareProbeTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default, bool background = false)
         {
             RemoteCalled = true;
             Script = script;
@@ -123,7 +123,7 @@ public class SoftwareProbeTests
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default) =>
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false) =>
             throw new NotSupportedException();
     }
 }

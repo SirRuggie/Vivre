@@ -172,7 +172,7 @@ public class PatchServiceTests
 
         public async Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default, bool background = false)
         {
             entered.Add(host);
             await gate.Task;
@@ -181,7 +181,7 @@ public class PatchServiceTests
 
         public async Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default)
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false)
         {
             entered.Add(host);
             await gate.Task;
@@ -217,10 +217,10 @@ public class PatchServiceTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default) => Task.FromResult(Handle());
+            CancellationToken cancellationToken = default, bool background = false) => Task.FromResult(Handle());
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default) => Task.FromResult(Handle());
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false) => Task.FromResult(Handle());
     }
 }

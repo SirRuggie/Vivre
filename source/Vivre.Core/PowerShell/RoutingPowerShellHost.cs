@@ -53,7 +53,8 @@ public sealed class RoutingPowerShellHost : IPowerShellHost
         PSCredential? credential = null,
         int port = 5985,
         bool useSsl = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool background = false)
     {
         if (_cache.Get(host) == HostTransport.SmbDcom)
         {
@@ -63,7 +64,7 @@ public sealed class RoutingPowerShellHost : IPowerShellHost
         try
         {
             PSExecutionResult result = await _inner
-                .RunRemoteAsync(host, script, credential, port, useSsl, cancellationToken)
+                .RunRemoteAsync(host, script, credential, port, useSsl, cancellationToken, background)
                 .ConfigureAwait(false);
             _cache.MarkWinRm(host);
             return result;
@@ -82,7 +83,8 @@ public sealed class RoutingPowerShellHost : IPowerShellHost
         PSCredential? credential = null,
         int port = 5985,
         bool useSsl = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool background = false)
     {
         if (_cache.Get(host) == HostTransport.SmbDcom)
         {
@@ -92,7 +94,7 @@ public sealed class RoutingPowerShellHost : IPowerShellHost
         try
         {
             PSExecutionResult result = await _inner
-                .RunRemoteStreamingAsync(host, script, onOutput, credential, port, useSsl, cancellationToken)
+                .RunRemoteStreamingAsync(host, script, onOutput, credential, port, useSsl, cancellationToken, background)
                 .ConfigureAwait(false);
             _cache.MarkWinRm(host);
             return result;

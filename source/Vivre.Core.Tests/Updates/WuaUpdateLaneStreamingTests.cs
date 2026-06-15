@@ -156,7 +156,7 @@ public class WuaUpdateLaneStreamingTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default, bool background = false)
         {
             // The only non-streaming remote call the controller makes is SafetyCleanupAsync's fresh call.
             Interlocked.Increment(ref _cleanupCalls);
@@ -165,7 +165,7 @@ public class WuaUpdateLaneStreamingTests
 
         public async Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default)
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false)
         {
             cancellationToken.ThrowIfCancellationRequested(); // user Stop before any line
 

@@ -70,7 +70,8 @@ public class HostRebootProbeTests
             PSCredential? credential = null,
             int port = 5985,
             bool useSsl = false,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            bool background = false) =>
             Task.FromResult(_result);
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
@@ -80,7 +81,8 @@ public class HostRebootProbeTests
             PSCredential? credential = null,
             int port = 5985,
             bool useSsl = false,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            bool background = false) =>
             throw new NotSupportedException("HostRebootProbe tests don't exercise the streaming path.");
     }
 }

@@ -147,7 +147,8 @@ public class ConfigMgrClientTests
             PSCredential? credential = null,
             int port = 5985,
             bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool background = false)
         {
             RemoteCalled = true;
             LastScript = script;
@@ -161,7 +162,8 @@ public class ConfigMgrClientTests
             PSCredential? credential = null,
             int port = 5985,
             bool useSsl = false,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            bool background = false) =>
             throw new NotSupportedException("ConfigMgr tests don't exercise the streaming path.");
     }
 }

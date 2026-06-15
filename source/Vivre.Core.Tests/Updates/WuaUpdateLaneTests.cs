@@ -420,7 +420,8 @@ public class WuaUpdateLaneTests
             PSCredential? credential = null,
             int port = 5985,
             bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool background = false)
         {
             LastScript = script;
             return Task.FromResult(_result);
@@ -433,7 +434,8 @@ public class WuaUpdateLaneTests
             PSCredential? credential = null,
             int port = 5985,
             bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool background = false)
         {
             // Replay the fake result as a synthetic stream so install/uninstall tests can
             // exercise the streaming-controller path the same way they used to for polling.

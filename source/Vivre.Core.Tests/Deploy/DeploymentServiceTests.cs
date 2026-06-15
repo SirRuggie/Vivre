@@ -248,7 +248,7 @@ public class DeploymentServiceTests
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default, bool background = false)
         {
             if (ThrowIfCalled)
             {
@@ -263,7 +263,7 @@ public class DeploymentServiceTests
 
         public Task<PSExecutionResult> RunRemoteStreamingAsync(
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
-            bool useSsl = false, CancellationToken cancellationToken = default) =>
+            bool useSsl = false, CancellationToken cancellationToken = default, bool background = false) =>
             throw new NotSupportedException("Stage tests don't exercise the streaming path.");
     }
 }

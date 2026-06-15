@@ -4070,7 +4070,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         try
         {
             bool? was = computer.RebootRequired;
-            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token);
+            // background: true — this is the monitor's low-priority reboot-pending poll, so it yields
+            // to operator actions on the per-host WinRM shell gate. The operator-triggered reboot-verify
+            // (ReportPostRebootOutcomeAsync) calls IsRebootPendingAsync directly at the default
+            // (background: false) so it keeps operator priority.
+            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token, background: true);
 
             // We got here with no shell-init failure → WinRM is healthy. If this host was flagged
             // degraded, it has recovered: clear the flag + the stale "WinRM unhealthy" message so the

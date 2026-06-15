@@ -19,13 +19,14 @@ public sealed class HostRebootProbe : IHostRebootProbe
     public async Task<bool?> IsRebootPendingAsync(
         string host,
         PSCredential? credential = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool background = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
 
         PSExecutionResult result = IsLocal(host)
             ? await _powerShell.RunLocalAsync(Script, cancellationToken).ConfigureAwait(false)
-            : await _powerShell.RunRemoteAsync(host, Script, credential, cancellationToken: cancellationToken).ConfigureAwait(false);
+            : await _powerShell.RunRemoteAsync(host, Script, credential, background: background, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (result.Output.Count == 0)
         {

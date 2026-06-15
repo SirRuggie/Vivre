@@ -15,6 +15,12 @@ public sealed class PSRunspaceHost : IPowerShellHost
     /// <summary>How long to wait for a remote WinRM connection before giving up (ms).</summary>
     private const int RemoteOpenTimeoutMs = 20_000;
 
+    /// <summary>
+    /// Caps concurrent WinRM shells per host so several ops on the same box can't stack shells, with
+    /// operator actions prioritised over background probes. See <see cref="HostWinRmGate"/>.
+    /// </summary>
+    private readonly HostWinRmGate _winRmGate = new();
+
     public async Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
@@ -55,11 +61,17 @@ public sealed class PSRunspaceHost : IPowerShellHost
         PSCredential? credential = null,
         int port = 5985,
         bool useSsl = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool background = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Cap concurrent shells on this host (operator vs background priority). A top-level using is
+        // leak-free and releases the slot when the method returns or throws on every path — on the
+        // normal path that's after the runspace is disposed by RunInRunspaceAsync.
+        using IDisposable winRmSlot = await _winRmGate.AcquireAsync(host, background, cancellationToken).ConfigureAwait(false);
 
         // null credential => connect as the current Windows identity (Negotiate/Kerberos).
         var connectionInfo = new WSManConnectionInfo(
@@ -158,12 +170,16 @@ public sealed class PSRunspaceHost : IPowerShellHost
         PSCredential? credential = null,
         int port = 5985,
         bool useSsl = false,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool background = false)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(script);
         ArgumentNullException.ThrowIfNull(onOutput);
         cancellationToken.ThrowIfCancellationRequested();
+
+        // Cap concurrent shells on this host (operator vs background priority). See RunRemoteAsync.
+        using IDisposable winRmSlot = await _winRmGate.AcquireAsync(host, background, cancellationToken).ConfigureAwait(false);
 
         var connectionInfo = new WSManConnectionInfo(
             useSsl,
