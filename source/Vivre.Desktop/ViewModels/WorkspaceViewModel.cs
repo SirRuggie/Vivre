@@ -2519,6 +2519,22 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             throttle.Release();
             IncrementSweepCompleted(record); // count this host done regardless of outcome
+
+            // Release THIS row from the held set the moment its own work finishes — don't wait for the
+            // whole sweep's EndOperation (which only fires after Task.WhenAll, i.e. behind the SLOWEST box).
+            // So a box that finishes early is immediately eligible for Reboot & verify or a new scan, and
+            // the fleet's Scan/Install commands re-enable (CanStartSweep → HasFreeRows) as rows free instead
+            // of staying disabled behind the slowest box. Safe: this finally runs on the UI thread (no
+            // ConfigureAwait(false) on the awaits above — same invariant ApplyStatus relies on), so it never
+            // races EndOperation (also UI-thread). ReferenceEquals guards against releasing a row that some
+            // LATER operation now holds (the eligibility filter prevents that today, but it keeps the release
+            // correct regardless). EndOperation's batch sweep stays as the safety-net for rows that never ran
+            // (e.g. a sweep cancelled before a queued row started).
+            if (_heldRows.TryGetValue(row.Name, out OperationRecord? holder) && ReferenceEquals(holder, record))
+            {
+                _heldRows.Remove(row.Name);
+                RaiseCanExecuteForSweepCommands();
+            }
         }
     }
 
