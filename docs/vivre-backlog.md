@@ -3,8 +3,9 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **smart scan flow Stage guards shipped + merged to master (378 tests)**; fleet-wide
-> reboot-and-verify shipped + merged to master; OneDrive relocation DONE (repo now `C:\src\Vivre`);
+> not a mandate). Last refreshed: **2016 staged-patching toggle built on `feat/staged-patching-toggle` (427
+> tests; held for visual check before merge)**; smart scan flow Stage guards shipped + merged to master;
+> fleet-wide reboot-and-verify shipped + merged to master; OneDrive relocation DONE (repo now `C:\src\Vivre`);
 > WUG saga + dialog audit closed; NavigationView refactor (incl. Phase 4) DONE.
 
 ---
@@ -22,11 +23,6 @@ gated to 2016, not an every-scan write.
 ---
 
 ## OPEN — patching features (design mostly settled, build pending)
-
-### 2016 DISM routing toggle (red-team prompt drafted, not yet run)
-- Small toggle in the 2016 action bar, visible when 2016 boxes present.
-- OFF (default) = all 2016 boxes → DISM lane. ON = decide per box (DISM / WUA / skip), for excluding
-  India-team boxes etc. Run the red-team pass before building.
 
 ### Settings simplification
 - `ExpectedSizeMb` (the display-only "Approx. package size (MB)" field) is **DONE** (`0718f7a` —
@@ -73,6 +69,23 @@ gated to 2016, not an every-scan write.
 
 ## DONE (committed) — recent
 
+- **2016 DISM routing toggle — staged patching is now opt-in per box** (`08a9f9f` · `9489f74` · `2876ecd` ·
+  `754a18d` · `bfb7bba` · `516d3fb` · `3125b0b`; branch `feat/staged-patching-toggle`, **not yet merged —
+  held for visual check**). **The default is now normal Windows Update for ALL Server 2016 boxes** — only a
+  box the operator explicitly flags (right-click ▸ *Mark as Staged patching*, or *Settings ▸ Staged patching
+  machines*) uses the DISM staging lane. This **inverts** the old "OFF (default) = all 2016 → DISM" design to
+  opt-in, which the red-team pass settled.
+  - **Routing** honors `Computer.RequiresStagedPatching` (⇄ persisted `AppSettings.StagedHosts`,
+    OrdinalIgnoreCase). Non-flagged 2016 → WUA; `Server2016Targets()` and `RebootVerifyLaneFor` are flag-aware.
+  - **Decision dialog** ("Server 2016 staged update required") on Install / Install all when a flagged box
+    isn't staged: *Stage CU first* / *Install minor updates only* / *Cancel* (Cancel skips the flagged boxes
+    only — the rest of the run still installs), with a Settings-vs-scan KB-mismatch warning. Minor-only
+    excludes **every** CU-titled KB so the broken Express-delta CU never goes via WUA.
+  - **Already-current pre-check** (fail-open) reuses `VerifyLcuAsync` → `DcomLcuBuildReader`: a box already at
+    this month's UBR skips the dialog and installs its minor updates via WUA.
+  - **Surface:** right-click Mark/Remove (2016 + Patching only), a narrow **Staged** pill column (hidden when
+    nothing flagged), and the Settings management card (list / Remove / Clear all, re-syncs loaded rows).
+  - Pure unit-tested `StagedInstallPlanner` (+ `PartitionByCurrency`) and `Lcu2016CuMatcher`. **427 tests green.**
 - **Smart scan flow — Stage guards + Settings size-field removal** (`3a35292` · `ef795de` · `6350957` · `0718f7a`). The 2016 Stage step is now scan-gated and self-skipping: scan-this-session gate (`LastScannedApplicable != null`; a post-reboot rescan satisfies it), already-staged skip (RebootRequired && StagedThisSession), already-current skip (a pre-Stage UBR read — same call Verify makes — fails OPEN on a null read). Pure unit-tested `StagePreconditions` (Vivre.Core); removed the display-only "Approx. package size (MB)" Settings field. 378 tests green; merged to master.
   - **Descoped (not built):** KB / target-UBR auto-population from scan. The investigation found **target UBR is not present in any WUA scan result**, so auto-populating it is infeasible; KB stays a manual Settings field. The remaining (optional) KB-only auto-fill is below.
 - **Fleet-wide reboot-and-verify** (`473585d` · `a7f456f` · `18c7eaf` · `7323a8d` · `a9922f7` ·
@@ -142,9 +155,10 @@ gated to 2016, not an every-scan write.
 Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
 `2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
 `first-run-beta-checklist.md` were removed as stale/spent.)
-- `key-file-path-map.md` — **refreshed this pass** (OneDrive trap → resolved/relocated; nav → done;
-  the two 5.1 shell-out gotchas incl. the BOM bug + validation-trap meta-lesson; smart scan flow
-  Stage guards + StagePreconditions + ExpectedSizeMb removal; 378 tests).
+- `key-file-path-map.md` — **refreshed this pass** (staged-patching toggle: `StagedInstallPlanner` /
+  `Lcu2016CuMatcher` / decision dialog + gate / `RequiresStagedPatching` ⇄ `StagedHosts` / Staged column;
+  427 tests. Earlier: OneDrive trap → resolved/relocated; nav → done; the two 5.1 shell-out gotchas incl.
+  the BOM bug + validation-trap meta-lesson; smart scan flow Stage guards + StagePreconditions).
   TODO: capture the as-built NavigationView shell layout next time MainWindow
   is touched.
 - `vivre-backlog.md` — **this file, refreshed this pass.**

@@ -7,6 +7,19 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Server 2016 patching is now opt-in per box — flag only the ones that need staged (DISM) patching** —
+  by default every Server 2016 box now patches through **normal Windows Update**, the same as a 2019/2022
+  box. The full-package DISM staging lane is reserved for the boxes that actually need it (the ones whose
+  monthly cumulative update chronically fails through Windows Update). **Right-click a 2016 row ▸ Mark as
+  Staged patching** to flag it (and **Remove Staged flag** to undo); flagged boxes show a small **Staged**
+  pill in the grid and are listed under **Settings ▸ Staged patching machines**, where you can remove one or
+  clear the list. When you **Install** (or **Install all**) and the run includes a flagged box whose CU
+  hasn't been staged yet, Vivre asks what to do: **Stage CU first** (recommended — stage the big cumulative
+  update now, commit it later with the Reboot Wave), **Install minor updates only** (everything except the
+  cumulative update, which is staged separately), or **Cancel** (skip just those boxes — the rest of the run
+  still installs). Boxes already at this month's build are detected up front and skipped automatically
+  ("Already current — skipped"), going straight to their minor updates. The flag is remembered between
+  sessions; non-flagged 2016 boxes are never touched by the staging lane.
 - **Boxes that reject WinRM (Kerberos) are detected and flagged instead of silently failing** — a growing
   set of servers refuse the WinRM login with a Kerberos error (`0x80090322` — their Active Directory
   identity is out of sync, classic after a VM snapshot revert; BatchPatch reaches them, Vivre couldn't).

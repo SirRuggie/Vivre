@@ -553,6 +553,24 @@ public static class HelpContent
             ],
             Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update, and drop the Catalog .msu in the CU package folder before staging.",
         },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Box24, Title = "Patch a Windows Server 2016 box — staged vs direct",
+            Keywords = "2016 14393 staged direct flag mark dism windows update decision dialog minor updates cumulative cu",
+            Lines =
+            [
+                "Most Server 2016 boxes patch fine through normal Windows Update — that's the default now, the same as a 2019 or 2022 box. Only the boxes whose monthly cumulative update keeps failing through Windows Update need the staging lane.",
+                "What the Staged flag means: a box you mark as \"Staged patching\" gets its monthly cumulative update delivered and installed with the full package (DISM) instead of through Windows Update. Flag only the boxes that need it.",
+                "1. Flag a box: right-click its row in a Patching tab ▸ Mark as Staged patching. A small \"Staged\" pill appears on the row. To undo, right-click ▸ Remove Staged flag.",
+                "2. Click Install (or Install all). If the run includes a flagged box whose cumulative update isn't staged yet, Vivre asks what to do:",
+                "   • Stage CU first (recommended) — delivers + stages this month's cumulative update on those boxes (large, ~30–60 min); you commit it later with the Reboot Wave. Other machines in the run install normally at the same time.",
+                "   • Install minor updates only — installs everything except the cumulative update now (the CU is staged separately). You'll be reminded that minor updates may need a reboot.",
+                "   • Cancel — skips just those flagged boxes for now; the rest of the run still installs.",
+                "3. A box already at this month's build is detected up front and skipped automatically (\"Already current — skipped\") — it just installs its minor updates.",
+                "Manage your flagged boxes in Settings ▸ Staged patching machines: see the whole list, remove a box (sends it back to normal Windows Update), or Clear all.",
+            ],
+            Tip = "Set this month's KB + target UBR in Settings ▸ Server 2016 cumulative update before staging or using \"Install minor updates only\" — both need to know which update is the cumulative one. Flagging is remembered between sessions.",
+        },
 
         // ---------------- Tips & shortcuts ----------------
         new HelpTopic

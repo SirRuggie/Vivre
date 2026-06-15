@@ -109,6 +109,44 @@ the controller tails.
 
 ---
 
+## 2016 staged patching toggle (opt-in)
+
+Server 2016 (build 14393) patching is **opt-in per box**. By default a 2016 box patches through the normal
+WUA lane like a 2019/2022 box; only a box the operator has **flagged** (`Computer.RequiresStagedPatching`,
+persisted in `AppSettings.StagedHosts` — OrdinalIgnoreCase, normalized after every load) routes to the
+full-package DISM lane. The lane exists for the boxes whose Express-delta CU genuinely fails through Windows
+Update, not for every 2016 box — so the operator declares which ones, instead of all 14393 boxes auto-routing.
+
+- **Routing** (`InstallRowAsync`): a non-flagged 2016 box → WUA. A flagged box that's already staged → skip
+  ("CU staged — run Reboot Wave"); already verified this session → WUA for its remaining minor updates; not
+  yet staged → the decision dialog owns it (the row is never silently auto-staged or WUA-installed — reaching
+  it directly skips with guidance). `Server2016Targets()` (the panel's Stage / Clean up / Verify) is
+  flagged-only, and `LcuRouting.RebootVerifyLaneFor(osBuild, requiresStaging)` is override-aware: a non-flagged
+  2016 box verifies via the WUA lane, not UBR.
+- **Decision dialog** (`StagedInstallDecisionDialog`, gated by the View-layer `StagedInstallInteraction`):
+  when Install / Install all hits a flagged box whose CU isn't staged, the operator chooses **Stage CU first**
+  (the chip Stage workflow, scoped to those boxes), **Install minor updates only** (WUA with **every**
+  CU-titled KB excluded so the broken Express-delta CU never goes via WUA — requires this month's CU set in
+  Settings as a floor), or **Cancel** (skip the flagged boxes; the rest of the fleet still installs). A
+  Settings-vs-scan CU KB mismatch warns at the top. The partition (`StagedInstallPlanner`) and CU-title
+  matching (`Lcu2016CuMatcher` — `FindCuKb` for the single-confident warning, `CuKbs` for the conservative
+  exclude set) are pure + unit-tested.
+- **Already-current pre-check** (`WorkspaceViewModel.ResolveAlreadyCurrentAsync` → `StagedInstallPlanner.PartitionByCurrency`):
+  before prompting, each flagged box's UBR is read over the **same** `VerifyLcuAsync` → `DcomLcuBuildReader`
+  path the Stage lane's pre-stage check uses; a box already at the target UBR (or verified this session) is
+  dropped from the dialog and installs its minor updates via WUA ("Already current — skipped"). **Fail-open** —
+  a null/unreadable read (`Unreachable`), a `WrongBuild`, or any error keeps the box in the dialog; only a
+  definitive `Verified` excludes it. All flagged boxes current → no dialog at all. Reads are bounded by the
+  shared remote throttle and the reader self-times-out (8s), so a dead box can't hang the prompt.
+- **Operator surface:** right-click a 2016 row ▸ **Mark as Staged patching** / **Remove Staged flag** (2016 +
+  Patching mode only); a narrow **Staged** pill column in the grid (`StagedColumn`, code-behind visibility
+  driven by `WorkspaceViewModel.HasStagedServer2016` — hidden entirely when nothing is flagged); **Settings ▸
+  Staged patching machines** lists / removes / clears flagged hosts, and a remove/clear re-syncs loaded rows
+  (`MainWindow.ResyncStagedPatchingFlags`) so routing never goes stale. Nothing here reboots or stages on its
+  own — every CU-committing action stays operator-driven.
+
+---
+
 ## Reliability & safety (load-bearing — don't regress)
 
 These mechanisms exist because of real production failures. Don't undo them without understanding why.
