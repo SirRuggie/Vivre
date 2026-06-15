@@ -3409,8 +3409,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (lane == RebootVerifyLane.Lcu2016)
             {
                 int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+                // 2016 staged box: it commits the CU slowly on shutdown and can hold the network up for
+                // 15–20+ min, so use the longer go-offline windows (ForSlowCommit) — the 8-min default
+                // false-failed these as "the reboot isn't taking" while they were genuinely committing.
                 final = await _patch
-                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.Default, progress, token, gate);
+                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.ForSlowCommit, progress, token, gate);
             }
             else
             {

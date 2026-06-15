@@ -27,19 +27,30 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     private const int EwxReboot = 2;
     private const int EwxForce = 4;
 
-    public Task RebootAsync(string host, bool forced, CancellationToken cancellationToken)
+    // Win32 ERROR_SHUTDOWN_IN_PROGRESS (HRESULT 0x8007045B). A reboot call that comes back with this means
+    // a shutdown is ALREADY underway — the box is going offline on its own, so it is NOT a reboot failure.
+    private const int ErrorShutdownInProgress = 1115;
+
+    public Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         return Task.Run(() => RebootSync(host, forced, cancellationToken), cancellationToken);
     }
 
-    private static void RebootSync(string host, bool forced, CancellationToken cancellationToken)
+    private static RebootDispatch RebootSync(string host, bool forced, CancellationToken cancellationToken)
     {
         // 1) Preferred path: DCOM Win32Shutdown (works on healthy, domain-correct boxes).
-        (bool ok, string dcomFailure) = TryDcomShutdown(host, forced, cancellationToken);
+        (bool ok, bool alreadyInProgress, string dcomFailure) = TryDcomShutdown(host, forced, cancellationToken);
         if (ok)
         {
-            return;
+            return RebootDispatch.Issued;
+        }
+
+        // A shutdown was ALREADY in progress (1115) — the box is going offline on its own. Report that so the
+        // wave watches the commit instead of escalating to another reboot or declaring a false failure.
+        if (alreadyInProgress)
+        {
+            return RebootDispatch.AlreadyInProgress;
         }
 
         // 2) DCOM didn't take it (e.g. 1191 / access denied on a Kerberos-broken box). Fall back to the
@@ -48,9 +59,17 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         try
         {
             RebootViaSmbScm(host, forced);
+            return RebootDispatch.Issued;
         }
         catch (Exception smbEx)
         {
+            // Even the fallback can report "a shutdown is already in progress" — treat that as going-offline,
+            // not a failure (don't turn a box that's actually rebooting into a red error).
+            if (IsShutdownInProgress(smbEx))
+            {
+                return RebootDispatch.AlreadyInProgress;
+            }
+
             // Both channels failed — surface both reasons so the wave flags the box (it never auto-forces
             // beyond the escalation it already drives).
             throw new InvalidOperationException(
@@ -58,9 +77,33 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         }
     }
 
-    /// <summary>Issues the reboot over DCOM. Returns (true, "") when the OS accepted it; (false, reason)
-    /// when it returned non-zero or the call failed (so the caller can fall back). Cancellation propagates.</summary>
-    private static (bool Ok, string Failure) TryDcomShutdown(string host, bool forced, CancellationToken cancellationToken)
+    /// <summary>True when an error indicates a shutdown is ALREADY in progress on the target (Win32 1115 /
+    /// ERROR_SHUTDOWN_IN_PROGRESS, HRESULT 0x8007045B) — i.e. the box is already going offline, so a reboot
+    /// "failure" here is really "it's already rebooting". Best-effort across the forms it can take (a typed
+    /// Win32Exception/COMException code, or the message text).</summary>
+    private static bool IsShutdownInProgress(Exception ex)
+    {
+        if (ex is Win32Exception w && w.NativeErrorCode == ErrorShutdownInProgress)
+        {
+            return true;
+        }
+
+        if (ex.HResult == unchecked((int)0x8007045B))
+        {
+            return true;
+        }
+
+        string m = ex.Message ?? string.Empty;
+        return m.Contains("shutdown is already in progress", StringComparison.OrdinalIgnoreCase)
+            || m.Contains("a system shutdown is in progress", StringComparison.OrdinalIgnoreCase)
+            || m.Contains("shutdown is in progress", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Issues the reboot over DCOM. Returns (true, false, "") when the OS accepted it; (false, true,
+    /// reason) when a shutdown is already in progress (1115 — the box is already going offline); (false,
+    /// false, reason) when it returned another non-zero code or the call failed (so the caller can fall
+    /// back). Cancellation propagates.</summary>
+    private static (bool Ok, bool AlreadyInProgress, string Failure) TryDcomShutdown(string host, bool forced, CancellationToken cancellationToken)
     {
         int flags = forced ? EwxReboot | EwxForce : EwxReboot;
         try
@@ -86,13 +129,19 @@ public sealed class DcomRebootTrigger : IRebootTrigger
                     using CimMethodResult result = session.InvokeMethod(@"root\cimv2", os, "Win32Shutdown", inParams, cimOptions);
                     object? rv = result.ReturnValue?.Value;
                     uint code = rv is null ? 0 : Convert.ToUInt32(rv);
-                    return code == 0
-                        ? (true, string.Empty)
-                        : (false, $"Win32Shutdown returned {code}");
+                    if (code == 0)
+                    {
+                        return (true, false, string.Empty);
+                    }
+
+                    // 1115 = a shutdown is already in progress → the box IS going offline; not a failure.
+                    return code == ErrorShutdownInProgress
+                        ? (false, true, "Win32Shutdown: a shutdown is already in progress (1115)")
+                        : (false, false, $"Win32Shutdown returned {code}");
                 }
             }
 
-            return (false, "Win32_OperatingSystem instance not found");
+            return (false, false, "Win32_OperatingSystem instance not found");
         }
         catch (OperationCanceledException)
         {
@@ -100,8 +149,12 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         }
         catch (Exception ex)
         {
-            // Kerberos / access rejection, unreachable, timeout — let the SMB/SCM fallback try.
-            return (false, $"{ex.GetType().Name}: {ex.Message}");
+            // A shutdown already in progress can surface as a typed/HRESULT error too — treat it as
+            // going-offline, not a fall-back-worthy failure. Otherwise (Kerberos / access / timeout) let
+            // the SMB/SCM fallback try.
+            return IsShutdownInProgress(ex)
+                ? (false, true, $"A shutdown is already in progress: {ex.Message}")
+                : (false, false, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
 

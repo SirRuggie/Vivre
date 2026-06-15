@@ -103,8 +103,23 @@ public class RebootWaveTests
         HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
 
         Assert.Equal(PatchPhase.Error, result.Phase);
-        Assert.Contains("did not go offline", result.Message);
+        Assert.Contains("hasn't gone offline", result.Message); // honest: may be slow or stuck — not "isn't taking"
         Assert.True(reboot.Forced); // we did try forcing it first (to complete the operator-ordered reboot)
+    }
+
+    [Fact]
+    public async Task A_reboot_already_in_progress_skips_escalation_and_watches_the_commit()
+    {
+        // The box reports "a shutdown is already in progress" (1115) — it's going offline on its own. The
+        // wave must NOT escalate to a forced reboot or fail it; it watches the (slow) commit and verifies.
+        var box = new FakeBox { RebootReportsAlreadyInProgress = true, GoesOfflineWhenAlreadyInProgress = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);     // watched the commit → verified green
+        Assert.True(reboot.Graceful);
+        Assert.False(reboot.Forced);                     // never escalated — it was already going offline
     }
 
     [Fact]
@@ -190,6 +205,8 @@ public class RebootWaveTests
         public int ComesBackAfterChecks = 2;      // offline reachability checks before it returns
         public int? UbrAfterReturn = TargetUbr;    // build it reports once back (target = success, old = rollback)
         public int OfflineChecks;
+        public bool RebootReportsAlreadyInProgress;     // the trigger reports 1115 (a shutdown is already underway)
+        public bool GoesOfflineWhenAlreadyInProgress;   // ...and the box then drops off the network on its own
     }
 
     private sealed class FakeReboot(FakeBox box) : IRebootTrigger
@@ -197,11 +214,20 @@ public class RebootWaveTests
         public bool Graceful { get; private set; }
         public bool Forced { get; private set; }
 
-        public Task RebootAsync(string host, bool forced, CancellationToken cancellationToken)
+        public Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken)
         {
-            if (forced) { Forced = true; if (box.ForcedTakesOffline) box.Online = false; }
-            else { Graceful = true; if (box.GracefulTakesOffline) box.Online = false; }
-            return Task.CompletedTask;
+            if (forced) { Forced = true; } else { Graceful = true; }
+
+            if (box.RebootReportsAlreadyInProgress)
+            {
+                // A shutdown is already in progress — the box goes offline on its own (no extra reboot needed).
+                if (box.GoesOfflineWhenAlreadyInProgress) { box.Online = false; }
+                return Task.FromResult(RebootDispatch.AlreadyInProgress);
+            }
+
+            if (forced) { if (box.ForcedTakesOffline) box.Online = false; }
+            else { if (box.GracefulTakesOffline) box.Online = false; }
+            return Task.FromResult(RebootDispatch.Issued);
         }
     }
 

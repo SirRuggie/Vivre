@@ -8,7 +8,22 @@ namespace Vivre.Core.Updates;
 /// pick. Locked rule: nothing reboots or forces a reboot without the operator's explicit per-box trigger.</para></summary>
 public interface IRebootTrigger
 {
-    Task RebootAsync(string host, bool forced, CancellationToken cancellationToken);
+    /// <summary>Issues the reboot and reports the outcome so the wave can tell "accepted" from "a shutdown
+    /// was ALREADY in progress" (the box is going offline on its own — watch it commit, don't re-escalate
+    /// or fail it). A genuine failure to issue the reboot still throws.</summary>
+    Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken);
+}
+
+/// <summary>The outcome of issuing a reboot.</summary>
+public enum RebootDispatch
+{
+    /// <summary>The OS accepted the reboot (over DCOM, or via the SMB/SCM fallback).</summary>
+    Issued,
+
+    /// <summary>A shutdown was ALREADY in progress on the box (Win32 1115 / ERROR_SHUTDOWN_IN_PROGRESS) —
+    /// the box is going offline on its own, so the wave should drop into the commit-watch loop rather than
+    /// escalating to a forced reboot or declaring a false "reboot isn't taking" failure.</summary>
+    AlreadyInProgress,
 }
 
 /// <summary>The pre-reboot readiness verdict: a box is safe to reboot only when its online servicing has
@@ -49,9 +64,27 @@ public sealed record RebootWaveOptions(
     TimeSpan PollInterval,
     TimeSpan HardCap)
 {
+    private readonly TimeSpan? _forcedGoOfflineWindow;
+
+    /// <summary>How long to wait for the box to drop offline after the FORCED reboot — deliberately
+    /// <b>strictly longer</b> than the graceful <see cref="GoOfflineWindow"/>: the graceful wait already
+    /// spent that long watching the box stay up, and a box mid-CBS-commit on shutdown can hold port 445
+    /// for many more minutes, so re-using the same window would false-fail it. Defaults to 2× GoOfflineWindow.</summary>
+    public TimeSpan ForcedGoOfflineWindow
+    {
+        get => _forcedGoOfflineWindow ?? TimeSpan.FromTicks(GoOfflineWindow.Ticks * 2);
+        init => _forcedGoOfflineWindow = value;
+    }
+
     public static RebootWaveOptions Default { get; } = new(
         GoOfflineWindow: TimeSpan.FromMinutes(8),
         OfflineCeiling: TimeSpan.FromMinutes(90),
         PollInterval: TimeSpan.FromSeconds(20),
         HardCap: TimeSpan.FromHours(4.5));
+
+    /// <summary>Longer go-offline windows for a box expected to commit updates SLOWLY on shutdown (Server
+    /// 2016 staged / CBS-heavy): such a box can keep port 445 answering for 15–20+ min while flushing
+    /// patches, so the 8-min default would false-fail it as "the reboot isn't taking". 20-min graceful
+    /// (⇒ 40-min forced via the 2× default); same ceiling / hard-cap / poll as Default.</summary>
+    public static RebootWaveOptions ForSlowCommit { get; } = Default with { GoOfflineWindow = TimeSpan.FromMinutes(20) };
 }
