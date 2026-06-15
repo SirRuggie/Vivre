@@ -931,6 +931,7 @@
                                                 <MultiDataTrigger.Conditions>
                                                     <Condition Binding="{Binding PatchState}" Value="RebootPending" />
                                                     <Condition Binding="{Binding OsBuild}" Value="14393" />
+                                                    <Condition Binding="{Binding StagedThisSession}" Value="True" />
                                                 </MultiDataTrigger.Conditions>
                                                 <Setter Property="Visibility" Value="Visible" />
                                             </MultiDataTrigger>
