@@ -181,6 +181,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // amber dot forever (once RebootRequired is true we otherwise stop probing).
     private readonly ConcurrentDictionary<string, int> _rebootRecheckBudget = new(StringComparer.OrdinalIgnoreCase);
     private const int PostBootRebootRechecks = 5;
+    // Last time we ran a reboot-pending probe for a host (any reason). A box KNOWN reboot-pending is NOT
+    // re-probed on every 20s poll (the shell-churn optimization), so if its pending state clears out-of-band
+    // — e.g. another tool reboots it — WITHOUT Vivre observing an offline→online transition, the amber
+    // "Reboot pending" pill would stick until a manual re-scan. Re-probe a known-pending box at most this
+    // often so a stale pending self-clears on a later poll. Read-only (a registry/SCCM marker read); no reboot.
+    private readonly ConcurrentDictionary<string, DateTime> _lastRebootProbeAt = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly TimeSpan RebootPendingRecheckInterval = TimeSpan.FromMinutes(5);
     // Machines with a pending scheduled task — install or reboot (name → trigger time). Drives the
     // "Scheduled task" columns and lets the monitor clear them once the time has passed (client-side).
     private readonly ConcurrentDictionary<string, DateTime> _scheduledTasks = new(StringComparer.OrdinalIgnoreCase);
@@ -3911,12 +3918,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (online && IsUpdateMode && !backoffActive && !winRmUnsupported)
         {
             bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
+            // A box KNOWN reboot-pending is skipped on normal polls (shell-churn optimization) — but if its
+            // pending state cleared out-of-band without Vivre seeing an offline→online transition, the amber
+            // pill would stick until a manual re-scan. So re-probe a known-pending box on a slow cadence
+            // (RebootPendingRecheckInterval) too: a stale pending self-clears on a later poll, while we still
+            // never churn shells every 20s.
+            bool stalePendingRecheckDue = computer.RebootRequired == true
+                && (!_lastRebootProbeAt.TryGetValue(computer.Name, out DateTime lastProbe)
+                    || DateTime.UtcNow - lastProbe >= RebootPendingRecheckInterval);
             // A degraded-retry probes regardless of the reboot-pending skip — its job is to re-test WinRM.
-            if (computer.RebootRequired != true || recheck || degradedRetryDue)
+            if (computer.RebootRequired != true || recheck || degradedRetryDue || stalePendingRecheckDue)
             {
                 // No ConfigureAwait(false): this method mutates data-bound Computer state after the
                 // await (and below), so keep the continuation on the captured UI context.
                 await ProbeRebootPendingAsync(computer, token);
+                _lastRebootProbeAt[computer.Name] = DateTime.UtcNow;
 
                 if (recheck)
                 {
