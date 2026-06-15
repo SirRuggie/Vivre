@@ -2883,6 +2883,60 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public Task InstallMinorOnlyAsync(IReadOnlyList<Computer> boxes) =>
         RunPatchSweepAsync(boxes, (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true), "Install");
 
+    /// <summary>Pre-dialog "already current this cycle" check for the staged-update decision. For each flagged
+    /// 2016 box not yet staged/verified, read its UBR over the SAME path the pre-stage check uses
+    /// (<see cref="IPatchService.VerifyLcuAsync"/> → DcomLcuBuildReader) and, when it's already at this month's
+    /// target UBR, mark it verified-this-session + "Already current — skipped" so the planner drops it from the
+    /// dialog and it installs its minor updates via WUA like a non-flagged box. FAIL-OPEN: a null/unreadable UBR
+    /// (Unreachable), a WrongBuild, or any error leaves the box in the dialog set — never skip a box we couldn't
+    /// confirm. Reads run concurrently bounded by the shared remote-read throttle; the reader self-times-out (8s)
+    /// so a dead box can't hang the prompt.</summary>
+    public async Task ResolveAlreadyCurrentAsync(IReadOnlyList<Computer> flaggedBoxes, CancellationToken token = default)
+    {
+        if (flaggedBoxes.Count == 0)
+        {
+            return;
+        }
+
+        int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+        var outcomes = new ConcurrentDictionary<string, LcuVerifyOutcome>(StringComparer.OrdinalIgnoreCase);
+
+        async Task ReadOneAsync(Computer box)
+        {
+            await _remoteSweepThrottle.Active.WaitAsync(token);
+            try
+            {
+                LcuVerifyResult result = await _patch.VerifyLcuAsync(box.Name, targetUbr, token);
+                outcomes[box.Name] = result.Outcome;
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                // Couldn't read the UBR — fail open: no outcome recorded ⇒ the box stays in the dialog set.
+            }
+            finally
+            {
+                _remoteSweepThrottle.Active.Release();
+            }
+        }
+
+        // A box already verified this session needs no read — PartitionByCurrency excludes it on that flag alone.
+        await Task.WhenAll(flaggedBoxes.Where(b => !b.LcuVerifiedThisSession).Select(ReadOneAsync));
+
+        (IReadOnlyList<Computer> alreadyCurrent, _) = StagedInstallPlanner.PartitionByCurrency(
+            flaggedBoxes, c => outcomes.TryGetValue(c.Name, out LcuVerifyOutcome o) ? o : null);
+
+        foreach (Computer box in alreadyCurrent)
+        {
+            box.LcuVerifiedThisSession = true; // confirmed at target UBR this cycle → drops from the dialog, WUA minor
+            box.UpdateMessage = "Already current — skipped";
+            _activity.Info(box.Name, "CU already current — skipping the staged-update prompt; minor updates install via Windows Update.");
+        }
+    }
+
     /// <summary>Marks or unmarks a Server 2016 box for staged patching: flips the live per-row flag (routing and
     /// the grid's Staged column react immediately) AND persists the host in <see cref="AppSettings.StagedHosts"/>
     /// so the choice survives restarts and seeds future row loads. No-op for a non-2016 box — the flag is only

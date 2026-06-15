@@ -93,4 +93,33 @@ public static class StagedInstallPlanner
         && c.RequiresStagedPatching
         && !StagePreconditions.IsAlreadyStaged(c.RebootRequired == true, c.StagedThisSession)
         && !c.LcuVerifiedThisSession;
+
+    /// <summary>
+    /// Pre-dialog currency split for the flagged-not-staged boxes: before prompting, decide which boxes are
+    /// ALREADY current this cycle (so they skip the dialog and just install their minor updates via WUA) versus
+    /// which still need the staging decision. A box is already current if EITHER it's been verified this session
+    /// (<see cref="Computer.LcuVerifiedThisSession"/>) OR its pre-stage UBR read came back
+    /// <see cref="LcuVerifyOutcome.Verified"/> (UBR == this month's target). <paramref name="outcomeFor"/> supplies
+    /// that read per box (null = not read / unreadable). FAIL-OPEN: anything other than a definitive Verified —
+    /// <see cref="LcuVerifyOutcome.WrongBuild"/>, <see cref="LcuVerifyOutcome.Unreachable"/>, or a null read —
+    /// leaves the box in <c>StillNeed</c>; we never skip a box we couldn't confirm.
+    /// </summary>
+    public static (IReadOnlyList<Computer> AlreadyCurrent, IReadOnlyList<Computer> StillNeed) PartitionByCurrency(
+        IEnumerable<Computer> flaggedNotStaged,
+        Func<Computer, LcuVerifyOutcome?> outcomeFor)
+    {
+        var alreadyCurrent = new List<Computer>();
+        var stillNeed = new List<Computer>();
+
+        foreach (Computer c in flaggedNotStaged ?? Enumerable.Empty<Computer>())
+        {
+            LcuVerifyOutcome? outcome = outcomeFor(c);
+            bool current = c.LcuVerifiedThisSession
+                || (outcome is { } o && StagePreconditions.IsAlreadyCurrent(o));
+
+            (current ? alreadyCurrent : stillNeed).Add(c);
+        }
+
+        return (alreadyCurrent, stillNeed);
+    }
 }
