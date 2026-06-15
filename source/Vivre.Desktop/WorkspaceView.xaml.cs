@@ -1004,7 +1004,7 @@ public partial class WorkspaceView : UserControl
     /// can drop the file and proceed without hunting for the button again.</summary>
     private async void OnStage2016(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is not { } vm)
+        if (ViewModel is not { } vm || !EnsureStageTargets(vm))
         {
             return;
         }
@@ -1012,6 +1012,45 @@ public partial class WorkspaceView : UserControl
         // Scan-this-session gate + guided package-readiness loop + stage, scoped to the panel's flagged-2016
         // targets. Shared with the decision dialog's "Stage CU first" branch so both behave identically.
         await StagedInstallInteraction.RunStageWorkflowAsync(Window.GetWindow(this), vm, vm.Server2016ActionTargets());
+    }
+
+    /// <summary>Clean up (panel button): free component-store space on the flagged 2016 boxes. Gated by
+    /// <see cref="EnsureStageTargets"/> so an empty flagged set shows the guidance dialog instead of no-opping.</summary>
+    private void OnCleanUp2016(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || !EnsureStageTargets(vm))
+        {
+            return;
+        }
+
+        vm.CleanUp2016Command.Execute(null);
+    }
+
+    /// <summary>Verify (panel button): read each flagged 2016 box's build and confirm the CU committed. Gated by
+    /// <see cref="EnsureStageTargets"/> so an empty flagged set shows the guidance dialog instead of no-opping.</summary>
+    private void OnVerify2016(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm || !EnsureStageTargets(vm))
+        {
+            return;
+        }
+
+        vm.Verify2016Command.Execute(null);
+    }
+
+    /// <summary>Guards the panel's flagged-2016 actions (Clean up / Stage / Verify): when no box is marked for
+    /// staged patching there is nothing for them to act on, so show the guidance dialog BEFORE any box is
+    /// touched and return false. Returns true when at least one flagged 2016 box exists. This is the
+    /// "doesn't work when nothing's marked" feedback — the buttons used to silently no-op on an empty set.</summary>
+    private bool EnsureStageTargets(WorkspaceViewModel vm)
+    {
+        if (StagePreconditions.HasAnyStageTarget(vm.Server2016ActionTargets()))
+        {
+            return true;
+        }
+
+        new StagedPatchingNeededDialog { Owner = Window.GetWindow(this) }.ShowDialog();
+        return false;
     }
 
     /// <summary>

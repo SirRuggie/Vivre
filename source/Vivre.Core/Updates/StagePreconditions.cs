@@ -24,4 +24,15 @@ public static class StagePreconditions
     /// machine names the operator must scan first.</summary>
     public static IReadOnlyList<string> UnscannedThisSession(IEnumerable<Computer> targets) =>
         targets.Where(c => c.LastScannedApplicable is null).Select(c => c.Name).ToList();
+
+    /// <summary>The 2016-staged-patching rule the panel's Stage / Clean up / Verify act on: a Server 2016
+    /// box the operator has explicitly flagged for staged patching. A non-flagged 2016 box patches via
+    /// Windows Update, so the DISM lane never touches it.</summary>
+    public static bool IsStageTarget(Computer c) => LcuRouting.Is2016(c.OsBuild) && c.RequiresStagedPatching;
+
+    /// <summary>True when <paramref name="boxes"/> contains at least one flagged Server 2016 box — i.e. the
+    /// panel's Stage / Clean up / Verify have something to act on. When false those buttons would silently
+    /// no-op, so the View shows the "mark a box for staged patching first" guidance instead of touching
+    /// anything.</summary>
+    public static bool HasAnyStageTarget(IEnumerable<Computer> boxes) => boxes.Any(IsStageTarget);
 }

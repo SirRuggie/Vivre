@@ -139,3 +139,81 @@ public class StagePreconditions_UnscannedThisSession_Tests
         Assert.Empty(result);
     }
 }
+
+/// <summary>
+/// Tests for <see cref="StagePreconditions.IsStageTarget"/> / <see cref="StagePreconditions.HasAnyStageTarget"/>
+/// — the "flagged Server 2016 box" rule the panel's Clean up / Stage / Verify act on. When no box qualifies the
+/// View shows the "mark a box for staged patching first" guidance instead of silently no-opping.
+/// </summary>
+public class StagePreconditions_StageTarget_Tests
+{
+    private const int Server2016 = 14393; // LcuRouting.Server2016Build
+    private const int Server2019 = 17763;
+
+    [Fact]
+    public void Flagged_2016_box_is_a_stage_target()
+    {
+        var box = new Computer("BOX") { OsBuild = Server2016, RequiresStagedPatching = true };
+
+        Assert.True(StagePreconditions.IsStageTarget(box));
+    }
+
+    [Fact]
+    public void Unflagged_2016_box_is_not_a_stage_target()
+    {
+        // A 2016 box the operator hasn't marked patches via Windows Update — not the DISM lane.
+        var box = new Computer("BOX") { OsBuild = Server2016, RequiresStagedPatching = false };
+
+        Assert.False(StagePreconditions.IsStageTarget(box));
+    }
+
+    [Fact]
+    public void Flagged_non_2016_box_is_not_a_stage_target()
+    {
+        // The staged flag only routes 2016 boxes; a flagged 2019 box is still a normal-WUA box.
+        var box = new Computer("BOX") { OsBuild = Server2019, RequiresStagedPatching = true };
+
+        Assert.False(StagePreconditions.IsStageTarget(box));
+    }
+
+    [Fact]
+    public void Box_with_unknown_build_is_not_a_stage_target()
+    {
+        // An unscanned box (null OsBuild) can't be a 2016 stage target.
+        var box = new Computer("BOX") { OsBuild = null, RequiresStagedPatching = true };
+
+        Assert.False(StagePreconditions.IsStageTarget(box));
+    }
+
+    [Fact]
+    public void HasAnyStageTarget_true_when_one_flagged_2016_present()
+    {
+        var boxes = new List<Computer>
+        {
+            new("A") { OsBuild = Server2019, RequiresStagedPatching = true },
+            new("B") { OsBuild = Server2016, RequiresStagedPatching = false },
+            new("C") { OsBuild = Server2016, RequiresStagedPatching = true },
+        };
+
+        Assert.True(StagePreconditions.HasAnyStageTarget(boxes));
+    }
+
+    [Fact]
+    public void HasAnyStageTarget_false_when_no_flagged_2016()
+    {
+        // 2016 boxes exist but none are flagged (the gap the guidance dialog covers), plus a flagged 2019 box.
+        var boxes = new List<Computer>
+        {
+            new("A") { OsBuild = Server2016, RequiresStagedPatching = false },
+            new("B") { OsBuild = Server2019, RequiresStagedPatching = true },
+        };
+
+        Assert.False(StagePreconditions.HasAnyStageTarget(boxes));
+    }
+
+    [Fact]
+    public void HasAnyStageTarget_false_for_empty()
+    {
+        Assert.False(StagePreconditions.HasAnyStageTarget([]));
+    }
+}

@@ -1,0 +1,55 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.StagedPatchingNeededDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        mc:Ignorable="d"
+        Title="Mark the server for staged patching first"
+        Height="400" Width="540"
+        MinHeight="340" MinWidth="480"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Mark the server for staged patching first">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Box24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,8,20,8">
+            <StackPanel>
+                <!-- What's wrong, in plain terms. No box was touched. (Static text only — no Run.Text binding.) -->
+                <ui:InfoBar Severity="Informational" IsOpen="True" IsClosable="False"
+                            Title="None of these Server 2016 boxes are marked for staged patching"
+                            Message="Clean up, Stage, and Verify only act on Server 2016 boxes you've marked for staged patching — so right now they have nothing to do. No machine was touched."
+                            Margin="0,0,0,16" />
+
+                <TextBlock Text="How to fix it" FontWeight="SemiBold" Margin="0,0,0,4" />
+                <TextBlock TextWrapping="Wrap" Margin="14,0,0,6"
+                           Text="Right-click a Server 2016 row, choose &quot;Mark as Staged patching,&quot; then try the action again." />
+
+                <TextBlock TextWrapping="Wrap" Margin="14,0,0,0" FontSize="12"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="Unmarked Server 2016 boxes patch through normal Windows Update — they don't need this lane." />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="20,12" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="Got it" Appearance="Primary" IsDefault="True" IsCancel="True" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

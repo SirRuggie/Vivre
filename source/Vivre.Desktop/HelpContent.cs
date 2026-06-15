@@ -547,6 +547,7 @@ public static class HelpContent
                 "Server 2016 boxes get their monthly OS update through their own lane (regular Windows Update chronically fails on them). Vivre finds them for you:",
                 "1. Check Vitals on your machines — any confirmed 2016 box makes a \"Server 2016 (N)\" filter chip appear.",
                 "2. Click the chip: the grid filters to those boxes and the 2016 action bar shows the month's CU (e.g. KB5094122 / 9234).",
+                "   Clean up, Stage, and Verify act only on boxes you've marked for staged patching (right-click a row ▸ Mark as Staged patching — see \"staged vs direct\" below). If none are marked, the button shows a reminder instead of doing nothing.",
                 "3. Stage (daytime, safe): delivers + installs the CU but does NOT reboot. The row turns amber with \"STAGED — needs Reboot Wave\".",
                 "4. Reboot Wave (night): select the staged boxes, click, and confirm. Each reboots and is tracked until its build confirms the update took.",
                 "5. Verify (any time): re-checks a box's build — use it on anything that came back late.",

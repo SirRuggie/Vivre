@@ -530,7 +530,7 @@
                                    Icon="{ui:SymbolIcon Broom24}"
                                    Margin="0,0,4,0"
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
-                                   Command="{Binding CleanUp2016Command}"
+                                   Click="OnCleanUp2016"
                                    ToolTip="Clears the Windows update backlog (required for 2016 boxes before staging). Never reboots." />
                         <ui:Button Content="Stage"
                                    Icon="{ui:SymbolIcon ArrowDownload24}"
@@ -549,7 +549,7 @@
                         <ui:Button Content="Verify"
                                    Icon="{ui:SymbolIcon CheckmarkCircle24}"
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
-                                   Command="{Binding Verify2016Command}"
+                                   Click="OnVerify2016"
                                    ToolTip="Read each 2016 box's build and confirm the CU committed. Read-only — safe to run any time." />
                     </StackPanel>
                 </StackPanel>

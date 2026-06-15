@@ -2993,7 +2993,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>True when at least one 2016 box in this tab is flagged for staged patching — drives the grid's
     /// "Staged" pill column visibility (the whole column hides when nothing is flagged).</summary>
-    public bool HasStagedServer2016 => Computers.Any(c => LcuRouting.Is2016(c.OsBuild) && c.RequiresStagedPatching);
+    public bool HasStagedServer2016 => StagePreconditions.HasAnyStageTarget(Computers);
 
     /// <summary>The rows the panel's Stage / Clean up / Verify act on: the selected FLAGGED 2016 rows, or every
     /// flagged 2016 row when none are selected. A non-flagged 2016 box patches via Windows Update, so the DISM
@@ -3001,10 +3001,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private IReadOnlyList<Computer> Server2016Targets()
     {
         // Staged patching is opt-in per box: the panel's Stage / Clean up / Verify act ONLY on flagged 2016
-        // boxes. A non-flagged 2016 box patches via Windows Update and is never touched by the DISM lane.
-        static bool IsStageTarget(Computer c) => LcuRouting.Is2016(c.OsBuild) && c.RequiresStagedPatching;
-        var selected = SelectedComputers.Where(IsStageTarget).ToList();
-        return selected.Count > 0 ? selected : [.. Computers.Where(IsStageTarget)];
+        // boxes (StagePreconditions.IsStageTarget). A non-flagged 2016 box patches via Windows Update and is
+        // never touched by the DISM lane.
+        var selected = SelectedComputers.Where(StagePreconditions.IsStageTarget).ToList();
+        return selected.Count > 0 ? selected : [.. Computers.Where(StagePreconditions.IsStageTarget)];
     }
 
     /// <summary>The 2016 Stage targets not yet scanned this session — the View blocks Stage and lists these

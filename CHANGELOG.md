@@ -108,6 +108,12 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **The Server 2016 panel buttons explain themselves instead of silently doing nothing** — Clean up, Stage,
+  and Verify only act on Server 2016 boxes you've marked for staged patching. When none are marked (the
+  common "the 2016 buttons don't do anything" case), clicking one now opens a short dialog telling you to
+  right-click a Server 2016 row ▸ **Mark as Staged patching** and try again — instead of quietly no-opping.
+  The check runs before any box is touched. Reboot Wave is unchanged (it reboots the boxes you select and
+  stays disabled until you select some).
 - **Far fewer spurious WinRM errors, false "went offline" blips, and no more "reboot the target" on a
   healthy box** — four changes cut the background WinRM noise on a Patching tab:
   - The "reboot pending" check no longer opens a fresh WinRM shell on every box on every 20-second pass; it
