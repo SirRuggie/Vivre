@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
@@ -193,6 +195,75 @@ public partial class SettingsPage : UserControl
 
         LcuPackagesFolderBox.Text = dialog.FolderName;
         PersistSettings(s => s.LcuPackagesFolder = dialog.FolderName);
+    }
+
+    // ── Staged patching machines ───────────────────────────────────────────
+
+    // Bound to the staged-hosts ListBox. Re-seeded from the persisted set each time the card is expanded so it
+    // reflects flags added/removed elsewhere (e.g. via the grid right-click) since the page was first shown.
+    private readonly ObservableCollection<string> _stagedHosts = [];
+
+    private void OnStagedHostsExpanded(object sender, RoutedEventArgs e) => ReseedStagedHosts();
+
+    private void ReseedStagedHosts()
+    {
+        if (_settingsStore is null)
+        {
+            return;
+        }
+
+        _stagedHosts.Clear();
+        foreach (string host in _settingsStore.Load().StagedHosts.OrderBy(h => h, StringComparer.OrdinalIgnoreCase))
+        {
+            _stagedHosts.Add(host);
+        }
+
+        StagedHostsList.ItemsSource = _stagedHosts;
+        UpdateStagedHostsEmptyState();
+    }
+
+    private void UpdateStagedHostsEmptyState() =>
+        StagedHostsEmpty.Visibility = _stagedHosts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    private void OnRemoveStagedHost(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: string host })
+        {
+            return;
+        }
+
+        _stagedHosts.Remove(host);
+        PersistSettings(s => s.StagedHosts.Remove(host));
+        UpdateStagedHostsEmptyState();
+
+        // Keep any loaded rows in step so a removed flag doesn't linger and mis-route a later install.
+        (_ownerWindow as MainWindow)?.ResyncStagedPatchingFlags();
+    }
+
+    private async void OnClearStagedHosts(object sender, RoutedEventArgs e)
+    {
+        if (_stagedHosts.Count == 0)
+        {
+            return;
+        }
+
+        var confirm = new MessageBox
+        {
+            Title = "Clear staged patching list",
+            Content = $"Remove all {_stagedHosts.Count} machine(s) from the staged-patching list? "
+                      + "They'll patch via normal Windows Update.",
+            PrimaryButtonText = "Clear all",
+            CloseButtonText = "Cancel",
+        };
+        if (await confirm.ShowDialogAsync() != MessageBoxResult.Primary)
+        {
+            return;
+        }
+
+        _stagedHosts.Clear();
+        PersistSettings(s => s.StagedHosts.Clear());
+        UpdateStagedHostsEmptyState();
+        (_ownerWindow as MainWindow)?.ResyncStagedPatchingFlags();
     }
 
     // ── Tools ──────────────────────────────────────────────────────────────

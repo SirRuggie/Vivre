@@ -2862,6 +2862,32 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public Task InstallMinorOnlyAsync(IReadOnlyList<Computer> boxes) =>
         RunPatchSweepAsync(boxes, (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true), "Install");
 
+    /// <summary>Marks or unmarks a Server 2016 box for staged patching: flips the live per-row flag (routing and
+    /// the grid's Staged column react immediately) AND persists the host in <see cref="AppSettings.StagedHosts"/>
+    /// so the choice survives restarts and seeds future row loads. No-op for a non-2016 box — the flag is only
+    /// meaningful there.</summary>
+    public void SetStagedPatching(Computer computer, bool staged)
+    {
+        if (computer is null || !LcuRouting.Is2016(computer.OsBuild))
+        {
+            return;
+        }
+
+        computer.RequiresStagedPatching = staged;
+
+        AppSettings settings = _appSettings.Load();
+        if (staged)
+        {
+            settings.StagedHosts.Add(computer.Name);
+        }
+        else
+        {
+            settings.StagedHosts.Remove(computer.Name);
+        }
+
+        _appSettings.Save(settings);
+    }
+
     private static LcuTarget BuildLcuTarget(AppSettings s) =>
         new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
 
