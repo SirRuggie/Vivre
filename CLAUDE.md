@@ -124,6 +124,12 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
     the real error.
 - Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
   changes or a feature lands — they're the human-readable source of truth.
+- **Bump the app version when you ship a user-facing change.** `<VersionPrefix>` in
+  `source/Vivre.Desktop/Vivre.Desktop.csproj` is the single source of truth (the build stamp and the
+  **Help ▸ About** box both derive from it via `AboutWindow.RunningVersion()`). Bump it **in the same
+  commit** as the change: **minor** (`1.11.0 → 1.12.0`) for a new feature, **patch** (`1.11.0 → 1.11.1`)
+  for a fix or small UX tweak. Don't let it drift — every shipped feature/fix should move it. (It stalled
+  at 1.10.1 across three features once; that's the failure mode this rule prevents.)
 - **After every commit, verify the in-app how-to guide** (`HelpContent.cs`, surfaced as **Help ▸ How
   to use Vivre**). Any user-facing change — a new/renamed action, moved or restyled UI, or a changed
   workflow — likely needs a matching how-to topic. Update it in the same commit (or an immediate
