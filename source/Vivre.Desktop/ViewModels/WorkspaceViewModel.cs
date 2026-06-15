@@ -1030,7 +1030,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         foreach (Computer c in Computers)
         {
-            c.UpdateMessage = value ? c.InstalledMessage : c.ApplicableMessage;
+            // Don't clobber the message of a row that's showing a FAILURE (PatchState.Error — incl. the
+            // "Can't reach WU" Unreachable state) or is mid-operation (IsPatching): its UpdateMessage is the
+            // error/progress detail, NOT a scope-scoped scan result, and the target scope's cached message is
+            // null for it (those are only set on a successful scan), so swapping would silently blank the
+            // failure detail. The per-scope counts still track; only the message is preserved for these rows.
+            if (c.PatchState != PatchState.Error && !c.IsPatching)
+            {
+                c.UpdateMessage = value ? c.InstalledMessage : c.ApplicableMessage;
+            }
+
             c.UpdatesAvailable = value ? c.InstalledCount : c.ApplicableCount;
         }
 
