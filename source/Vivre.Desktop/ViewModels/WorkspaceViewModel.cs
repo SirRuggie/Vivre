@@ -191,6 +191,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // A box known reboot-pending self-clears its amber pill on a later poll if it rebooted out-of-band; a
     // not-pending box notices a newly-pending state — both at this slow rate, never every 20s.
     private static readonly TimeSpan RebootPendingRecheckInterval = TimeSpan.FromMinutes(5);
+    // How many times in a row a box has failed its cheap reachability probe (ping/DCOM) in the monitor.
+    // Cleared the moment a probe succeeds. Drives the offline-confirmation below.
+    private readonly ConcurrentDictionary<string, int> _consecutiveProbeFailures = new(StringComparer.OrdinalIgnoreCase);
+    // Consecutive failed reachability probes required before a previously-online box is declared offline —
+    // kills the false "Went offline → Back online" blips from a single dropped ping/busy WMI under load.
+    private const int OfflineConfirmThreshold = 2;
     // The post-reboot rescan runs on a box that JUST rebooted (boot-time-confirmed) but may still be
     // settling; a transient unreachable mid-settle gets a short wait + retry rather than a stuck red Error.
     private static readonly TimeSpan PostRebootRescanRetryDelay = TimeSpan.FromSeconds(20);
@@ -3930,8 +3936,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             _monitorThrottle.Release();
         }
 
-        computer.IsOnline = online;
-        computer.LastError = online ? null : error;
+        // Confirm an offline before believing it. A single failed reachability probe under load (a dropped
+        // ping / busy WMI) is transient; only OfflineConfirmThreshold consecutive failures flip a
+        // previously-online box. This suppresses the false "Went offline → Back online" blips.
+        int consecutiveFailures = online
+            ? 0
+            : _consecutiveProbeFailures.AddOrUpdate(computer.Name, 1, (_, n) => n + 1);
+        if (online)
+        {
+            _consecutiveProbeFailures.TryRemove(computer.Name, out _);
+        }
+        bool effectiveOnline = ReachabilityConfirmation.ConfirmEffectiveOnline(previous, online, consecutiveFailures, OfflineConfirmThreshold);
+
+        computer.IsOnline = effectiveOnline;
+        computer.LastError = online
+            ? null
+            : effectiveOnline
+                ? "probe timed out (busy)"   // unconfirmed single failure — soft note, NOT an offline state
+                : error;                     // confirmed offline — the real reason
 
         // A host that just came back online (offline→online) may have actually rebooted: clear any
         // "degraded WinRM" flag so we probe it again, and open a short re-probe window (a just-booted
@@ -3993,13 +4015,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
         }
 
-        if (previous == online)
+        if (previous == effectiveOnline)
         {
             return; // unchanged — leave LastStatus as-is
         }
 
-        computer.LastStatus = online ? "Online" : "Offline";
-        if (online)
+        computer.LastStatus = effectiveOnline ? "Online" : "Offline";
+        if (effectiveOnline)
         {
             // Came back from a known-offline state (a reboot/shutdown) — the BatchPatch-style
             // "it's back" signal. Include the down-time when we caught the moment it went down;
