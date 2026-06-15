@@ -41,6 +41,17 @@ internal static class StagedInstallInteraction
             return StagedInstallOutcome.ProceedNormally;
         }
 
+        // Before prompting, skip any flagged box already current this cycle (verified this session, or its UBR
+        // already matches the target). Already-current boxes are marked "Already current — skipped" and install
+        // their minor updates via WUA; fail-open leaves an unreadable box in the dialog. Re-plan so the now-current
+        // boxes move from the dialog set into Normal.
+        await vm.ResolveAlreadyCurrentAsync(plan.FlaggedNotStaged);
+        plan = vm.PlanStagedInstall(targets);
+        if (!plan.NeedsDecision)
+        {
+            return StagedInstallOutcome.ProceedNormally; // every flagged box was already current → install all normally
+        }
+
         var dialog = new StagedInstallDecisionDialog(plan) { Owner = owner };
         dialog.ShowDialog();
 

@@ -182,4 +182,81 @@ public class StagedInstallPlannerTests
         Assert.Empty(plan.Normal);
         Assert.Empty(plan.Mismatches);
     }
+
+    // --- PartitionByCurrency: pre-dialog "already current this cycle" split (fail-open) ---
+
+    private static LcuVerifyOutcome? OutcomeMap(Dictionary<string, LcuVerifyOutcome?> map, Computer c) =>
+        map.TryGetValue(c.Name, out LcuVerifyOutcome? o) ? o : null;
+
+    [Fact]
+    public void PartitionByCurrency_all_current_leaves_none_needing_the_dialog()
+    {
+        var a = Box("A", osBuild: 14393, flagged: true);
+        var b = Box("B", osBuild: 14393, flagged: true);
+        var map = new Dictionary<string, LcuVerifyOutcome?>
+        {
+            ["A"] = LcuVerifyOutcome.Verified,
+            ["B"] = LcuVerifyOutcome.Verified,
+        };
+
+        var (alreadyCurrent, stillNeed) = StagedInstallPlanner.PartitionByCurrency([a, b], c => OutcomeMap(map, c));
+
+        Assert.Equal(["A", "B"], alreadyCurrent.Select(c => c.Name));
+        Assert.Empty(stillNeed); // → the gate skips the dialog entirely
+    }
+
+    [Fact]
+    public void PartitionByCurrency_mixed_keeps_only_non_current_for_the_dialog()
+    {
+        var current = Box("CURRENT", osBuild: 14393, flagged: true);
+        var behind = Box("BEHIND", osBuild: 14393, flagged: true);
+        var map = new Dictionary<string, LcuVerifyOutcome?>
+        {
+            ["CURRENT"] = LcuVerifyOutcome.Verified,
+            ["BEHIND"] = LcuVerifyOutcome.WrongBuild,
+        };
+
+        var (alreadyCurrent, stillNeed) = StagedInstallPlanner.PartitionByCurrency([current, behind], c => OutcomeMap(map, c));
+
+        Assert.Equal(["CURRENT"], alreadyCurrent.Select(c => c.Name));
+        Assert.Equal(["BEHIND"], stillNeed.Select(c => c.Name)); // dialog shows only the box that still needs the CU
+    }
+
+    [Theory]
+    [InlineData(LcuVerifyOutcome.Unreachable)] // null UBR read → unreachable
+    [InlineData(LcuVerifyOutcome.WrongBuild)]  // readable but not at target
+    public void PartitionByCurrency_fails_open_keeps_unconfirmed_box_in_the_dialog(LcuVerifyOutcome outcome)
+    {
+        var box = Box("BOX", osBuild: 14393, flagged: true);
+        var map = new Dictionary<string, LcuVerifyOutcome?> { ["BOX"] = outcome };
+
+        var (alreadyCurrent, stillNeed) = StagedInstallPlanner.PartitionByCurrency([box], c => OutcomeMap(map, c));
+
+        Assert.Empty(alreadyCurrent);
+        Assert.Equal(["BOX"], stillNeed.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void PartitionByCurrency_null_read_fails_open()
+    {
+        // A box the check never produced an outcome for (errored/cancelled) must stay in the dialog set.
+        var box = Box("BOX", osBuild: 14393, flagged: true);
+
+        var (alreadyCurrent, stillNeed) = StagedInstallPlanner.PartitionByCurrency([box], _ => null);
+
+        Assert.Empty(alreadyCurrent);
+        Assert.Equal(["BOX"], stillNeed.Select(c => c.Name));
+    }
+
+    [Fact]
+    public void PartitionByCurrency_excludes_verified_this_session_without_a_read()
+    {
+        // Condition 1: a box already verified this session is current even if the UBR read is null/unavailable.
+        var box = Box("BOX", osBuild: 14393, flagged: true, verifiedThisSession: true);
+
+        var (alreadyCurrent, stillNeed) = StagedInstallPlanner.PartitionByCurrency([box], _ => null);
+
+        Assert.Equal(["BOX"], alreadyCurrent.Select(c => c.Name));
+        Assert.Empty(stillNeed);
+    }
 }
