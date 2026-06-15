@@ -201,6 +201,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int MaxTransientRetries = 3;
     private static readonly TimeSpan TransientRetryBackoff = TimeSpan.FromSeconds(60);
 
+    // An SLS outage fails every box at once, so a FIXED backoff makes the whole fleet retry in lockstep and
+    // hammer the recovering service. Spread them with up to 15s of random jitter (same rationale + pattern
+    // as the reboot-trigger jitter — Random.Shared.Next). Per-attempt, so the spread re-rolls each round.
+    private const int TransientRetryJitterMs = 15_000;
+
+    /// <summary>The inter-attempt backoff (60s) plus up to 15s of random jitter, so a fleet-wide SLS outage
+    /// doesn't retry in lockstep against the recovering service. Used by both the scan and install retry.</summary>
+    private static Task TransientBackoffDelayAsync(int retryNumber, CancellationToken token) =>
+        Task.Delay(TransientRetryBackoff + TimeSpan.FromMilliseconds(Random.Shared.Next(TransientRetryJitterMs + 1)), token);
+
     // Reboot-and-verify wave throttles. Two separate concerns:
     //   _waveThrottle: concurrency width for the watch loop itself — effectively unbounded (256)
     //     so ALL selected boxes start their offline watch simultaneously; a slow box (e.g. 45-min
@@ -2554,7 +2564,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             HostPatchStatus status = await TransientRetryRunner.RunAsync(
                 attempt: ct => _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, ct),
                 maxRetries: MaxTransientRetries,
-                delay: (_, ct) => Task.Delay(TransientRetryBackoff, ct),
+                delay: TransientBackoffDelayAsync,
                 onRetrying: n => SetTransientRetryingState(computer, n),
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);
@@ -2788,8 +2798,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // the scalar property updates, so the grid stays current as the SYSTEM task reports in.
         // Suppress a TRANSIENT reach error mid-stream so the row never flashes red — the runner will
         // retry it silently. Normal progress (Scanning/Downloading/Installing) still applies live.
+        // Also latch whether install has actually BEGUN this run (see the re-entry guard below).
+        bool installBegan = false;
         var progress = new Progress<HostPatchStatus>(s =>
         {
+            if (s.Phase is PatchPhase.Installing or PatchPhase.PendingReboot or PatchPhase.Done || s.InstalledCount > 0)
+            {
+                installBegan = true;
+            }
+
             if (s.Phase == PatchPhase.Error && TransientWuaError.IsTransient(s.Message))
             {
                 return;
@@ -2804,9 +2821,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // exhausted reach failure resolves to an honest "couldn't reach WU" state (never a false
             // "installed"/"up to date"), and a real install failure surfaces at once with no retry.
             HostPatchStatus final = await TransientRetryRunner.RunAsync(
-                attempt: ct => _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, ct),
+                attempt: async ct =>
+                {
+                    HostPatchStatus r = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, ct);
+
+                    // RE-ENTRY GUARD: once install has BEGUN, a late transient must NOT trigger a re-run —
+                    // the re-search would find 0 applicable (already installed) and report a false "up to
+                    // date"/zero, silently dropping the installed count and reboot-pending. Surface it as a
+                    // terminal error (no transient HRESULT in the text, so the runner won't retry) telling
+                    // the operator to re-scan. Search/download transients (install never began) still retry.
+                    if (installBegan && r.Phase == PatchPhase.Error && TransientWuaError.IsTransient(r.Message))
+                    {
+                        return HostPatchStatus.Failed(
+                            $"Install was interrupted after it began on {computer.Name} — some updates may have installed. Re-scan to confirm; not retried, to avoid dropping the installed count.");
+                    }
+
+                    return r;
+                },
                 maxRetries: MaxTransientRetries,
-                delay: (_, ct) => Task.Delay(TransientRetryBackoff, ct),
+                delay: TransientBackoffDelayAsync,
                 onRetrying: n => SetTransientRetryingState(computer, n),
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);

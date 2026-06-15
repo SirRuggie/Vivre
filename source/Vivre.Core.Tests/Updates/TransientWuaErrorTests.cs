@@ -62,6 +62,8 @@ public class TransientWuaErrorTests
     [InlineData("Access is denied (0x80070005)")]
     [InlineData("SLS completed with [00000000] and http status code[200]")] // success code only
     [InlineData("No applicable updates")]
+    // The re-entry guard message must stay non-transient, or a post-install transient would re-run.
+    [InlineData("Install was interrupted after it began on HOST — some updates may have installed. Re-scan to confirm; not retried, to avoid dropping the installed count.")]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
