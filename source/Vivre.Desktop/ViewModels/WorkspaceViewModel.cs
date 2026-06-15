@@ -181,12 +181,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // amber dot forever (once RebootRequired is true we otherwise stop probing).
     private readonly ConcurrentDictionary<string, int> _rebootRecheckBudget = new(StringComparer.OrdinalIgnoreCase);
     private const int PostBootRebootRechecks = 5;
-    // Last time we ran a reboot-pending probe for a host (any reason). A box KNOWN reboot-pending is NOT
-    // re-probed on every 20s poll (the shell-churn optimization), so if its pending state clears out-of-band
-    // — e.g. another tool reboots it — WITHOUT Vivre observing an offline→online transition, the amber
-    // "Reboot pending" pill would stick until a manual re-scan. Re-probe a known-pending box at most this
-    // often so a stale pending self-clears on a later poll. Read-only (a registry/SCCM marker read); no reboot.
+    // Last time we ran a reboot-pending probe for a host (any reason). The reboot-pending probe runs on a
+    // single slow cadence (RebootPendingRecheckInterval) for ALL boxes — pending or not — rather than on
+    // every 20s monitor pass, so a full online fleet doesn't churn a fresh WinRM shell per row each pass
+    // (heavy shell churn that can poison a degraded target). The 20s loop now does only the cheap
+    // online/offline ping; this stamp gates the reboot probe. Read-only (a registry/SCCM marker read); no reboot.
     private readonly ConcurrentDictionary<string, DateTime> _lastRebootProbeAt = new(StringComparer.OrdinalIgnoreCase);
+    // The unified reboot-pending probe cadence: every box (pending or not) is re-probed at most this often.
+    // A box known reboot-pending self-clears its amber pill on a later poll if it rebooted out-of-band; a
+    // not-pending box notices a newly-pending state — both at this slow rate, never every 20s.
     private static readonly TimeSpan RebootPendingRecheckInterval = TimeSpan.FromMinutes(5);
     // The post-reboot rescan runs on a box that JUST rebooted (boot-time-confirmed) but may still be
     // settling; a transient unreachable mid-settle gets a short wait + retry rather than a stuck red Error.
@@ -3941,10 +3944,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         // While the Windows Update view is up, keep the Pending Reboot column live — a small
         // registry/SCCM-aggregated probe over WinRM, throttled so a large fleet doesn't open dozens
-        // of runspaces at once. But DON'T re-probe a box every 20s once it's known reboot-pending:
-        // the markers are sticky until it actually reboots, so re-probing only churns fresh WinRM
-        // shells (which can poison a degraded target). Probe when state is unknown/clear, or during
-        // the brief post-boot recheck window. A degraded host is backed off (re-tested only every
+        // of runspaces at once. DON'T re-probe on every 20s pass: that churns a fresh WinRM shell per
+        // online box each pass (which can poison a degraded target). Instead probe every box — pending
+        // or not — on a single slow cadence (RebootPendingRecheckInterval, ~5 min); the 20s loop above
+        // does only the cheap ping. The brief post-boot recheck window and a degraded-retry still probe
+        // promptly every pass as overrides. A degraded host is backed off (re-tested only every
         // DegradedRetryInterval) but DOES get retried so we notice it recovered.
         bool degraded = _degradedHosts.TryGetValue(computer.Name, out DateTime retryAt);
         bool backoffActive = degraded && DateTime.UtcNow < retryAt;
@@ -3956,16 +3960,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (online && IsUpdateMode && !backoffActive && !winRmUnsupported)
         {
             bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
-            // A box KNOWN reboot-pending is skipped on normal polls (shell-churn optimization) — but if its
-            // pending state cleared out-of-band without Vivre seeing an offline→online transition, the amber
-            // pill would stick until a manual re-scan. So re-probe a known-pending box on a slow cadence
-            // (RebootPendingRecheckInterval) too: a stale pending self-clears on a later poll, while we still
-            // never churn shells every 20s.
-            bool stalePendingRecheckDue = computer.RebootRequired == true
-                && (!_lastRebootProbeAt.TryGetValue(computer.Name, out DateTime lastProbe)
-                    || DateTime.UtcNow - lastProbe >= RebootPendingRecheckInterval);
-            // A degraded-retry probes regardless of the reboot-pending skip — its job is to re-test WinRM.
-            if (computer.RebootRequired != true || recheck || degradedRetryDue || stalePendingRecheckDue)
+            // Every box — pending or not — is re-probed on a single slow cadence (RebootPendingRecheckInterval,
+            // ~5 min) rather than on every 20s pass. A not-pending box notices it became pending; a pending box
+            // self-clears if it rebooted out-of-band — both without churning a fresh WinRM shell each pass.
+            bool cadenceDue = !_lastRebootProbeAt.TryGetValue(computer.Name, out DateTime lastProbe)
+                || DateTime.UtcNow - lastProbe >= RebootPendingRecheckInterval;
+            // The post-boot recheck window and a degraded-retry are prompt overrides — they probe every pass
+            // (the latter's job is to re-test WinRM) until they resolve, regardless of the slow cadence.
+            if (recheck || degradedRetryDue || cadenceDue)
             {
                 // No ConfigureAwait(false): this method mutates data-bound Computer state after the
                 // await (and below), so keep the continuation on the captured UI context.
