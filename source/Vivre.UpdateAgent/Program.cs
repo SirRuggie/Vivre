@@ -465,6 +465,19 @@ namespace Vivre.UpdateAgent
             ISearchResult result = searcher.Search(
                 "IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'" + typeFilter);
 
+            // The SECOND face of the transient failure: the search returned WITHOUT throwing but did not
+            // cleanly succeed (SucceededWithErrors / Failed / Aborted). Its result is INCOMPLETE, so "no
+            // applicable updates" would be a false green. Surface a transient reach failure (HRESULT
+            // 0x80240438) the controller retries — read-only, no install, no reboot.
+            if (result.ResultCode != OperationResultCode.orcSucceeded)
+            {
+                progress.Write("Error",
+                    "Windows Update search did not complete cleanly (result code " + ((int)result.ResultCode)
+                    + ", HRESULT 0x80240438) - the update source was not fully reached.",
+                    100, 0, 0, 0, false);
+                return false;
+            }
+
             List<IUpdate> applicable = FilterUpdates(result.Updates, config, requireUninstallable: false);
             int total = applicable.Count;
             if (total == 0)
@@ -715,6 +728,18 @@ namespace Vivre.UpdateAgent
             string typeFilter = config.IncludeDrivers ? string.Empty : " and Type='Software'";
             string installedFilter = installedScope ? "IsInstalled=1" : "IsInstalled=0";
             ISearchResult result = searcher.Search(installedFilter + " and IsHidden=0" + typeFilter);
+
+            // Second face (see RunInstall): a search that returned without throwing but did not cleanly
+            // succeed has an INCOMPLETE list — never report it as "up to date"/"no updates". Surface a
+            // transient reach failure (0x80240438) the controller retries — read-only, no install, no reboot.
+            if (result.ResultCode != OperationResultCode.orcSucceeded)
+            {
+                progress.Write("Error",
+                    "Windows Update search did not complete cleanly (result code " + ((int)result.ResultCode)
+                    + ", HRESULT 0x80240438) - the update source was not fully reached.",
+                    100, 0, 0, 0, false);
+                return false;
+            }
 
             // Installed scope: map each installed update to its most recent install date from WUA
             // history, by Identity UpdateID and (fallback) by KB — same dual keying as the PS scan,

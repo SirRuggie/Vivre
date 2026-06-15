@@ -24,6 +24,48 @@ public class SmbAgentLaneTests
     public void ToAdminShareUnc_rejects_a_non_drive_rooted_path() =>
         Assert.Throws<ArgumentException>(() => SmbAgentLane.ToAdminShareUnc("HOST", @"\\server\share\x"));
 
+    // --- BuildScanStatus: no false-green ----------------------------------
+
+    [Fact]
+    public void BuildScanStatus_a_failed_scan_can_never_read_up_to_date()
+    {
+        // The agent reported an Error (a search that threw OR did not cleanly succeed — face 2). Even if a
+        // stale/empty result JSON is present, the scan must surface the failure, never "up to date".
+        HostPatchStatus status = SmbAgentLane.BuildScanStatus(
+            isErrorOutcome: true,
+            outcomeMessage: "Windows Update search did not complete cleanly (result code 3, HRESULT 0x80240438) - the update source was not fully reached.",
+            scanResultJson: "[]",
+            installedScope: false,
+            excludes: []);
+
+        Assert.Equal(PatchPhase.Error, status.Phase);
+        Assert.True(TransientWuaError.IsTransient(status.Message)); // → the lane-level retry re-runs it
+        Assert.DoesNotContain("up to date", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildScanStatus_a_clean_empty_scan_reads_up_to_date()
+    {
+        HostPatchStatus status = SmbAgentLane.BuildScanStatus(
+            isErrorOutcome: false, outcomeMessage: "", scanResultJson: "[]",
+            installedScope: false, excludes: []);
+
+        Assert.Equal(PatchPhase.Available, status.Phase);
+        Assert.Equal(0, status.AvailableCount);
+        Assert.Contains("up to date", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildScanStatus_missing_result_json_is_a_failure_not_up_to_date()
+    {
+        HostPatchStatus status = SmbAgentLane.BuildScanStatus(
+            isErrorOutcome: false, outcomeMessage: "", scanResultJson: null,
+            installedScope: false, excludes: []);
+
+        Assert.Equal(PatchPhase.Error, status.Phase);
+        Assert.DoesNotContain("up to date", status.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
     // --- ParseScanResultJson ----------------------------------------------
 
     [Fact]

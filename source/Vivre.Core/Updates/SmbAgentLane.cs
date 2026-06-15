@@ -75,27 +75,9 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 startingMessage: installedScope ? "Scanning installed updates…" : "Scanning for updates…",
                 cancellationToken).ConfigureAwait(false);
 
-            if (outcome.Last.Phase == PatchPhase.Error)
-            {
-                return HostPatchStatus.Failed(outcome.Last.Message);
-            }
-
-            if (outcome.ScanResultJson is null)
-            {
-                return HostPatchStatus.Failed("Scan returned no data.");
-            }
-
-            IReadOnlyList<SoftwareUpdate> updates = ParseScanResultJson(outcome.ScanResultJson);
-            updates = WuaUpdateLane.ApplyExclude(updates, options.ExcludeNameContains);
-
-            string message = installedScope
-                ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update{(updates.Count == 1 ? "" : "s")}")
-                : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update{(updates.Count == 1 ? "" : "s")} available");
-
-            return new HostPatchStatus(PatchPhase.Available, message, AvailableCount: updates.Count)
-            {
-                Updates = updates,
-            };
+            return BuildScanStatus(
+                outcome.Last.Phase == PatchPhase.Error, outcome.Last.Message, outcome.ScanResultJson,
+                installedScope, options.ExcludeNameContains);
         }
         catch (OperationCanceledException)
         {
@@ -636,6 +618,40 @@ public sealed class SmbAgentLane : ISmbAgentLane
         char drive = localPath[0];
         string rest = localPath[3..].Replace('/', '\\').TrimStart('\\');
         return $@"\\{host}\{drive}$\{rest}";
+    }
+
+    /// <summary>
+    /// Builds the scan status from the agent-run outcome. An <b>Error</b> outcome — a search that threw,
+    /// OR (the second face) that returned without throwing but did not cleanly succeed and so the agent
+    /// wrote an error line — is surfaced as a FAILURE and can NEVER read "up to date"; only a clean run
+    /// with a parsed result list reports availability. Pure so the no-false-green rule is unit-tested.
+    /// </summary>
+    public static HostPatchStatus BuildScanStatus(
+        bool isErrorOutcome, string outcomeMessage, string? scanResultJson,
+        bool installedScope, IReadOnlyList<string> excludes)
+    {
+        // A failed scan is a failure — it must never fall through to the "up to date" / "no updates" path.
+        if (isErrorOutcome)
+        {
+            return HostPatchStatus.Failed(outcomeMessage);
+        }
+
+        if (scanResultJson is null)
+        {
+            return HostPatchStatus.Failed("Scan returned no data.");
+        }
+
+        IReadOnlyList<SoftwareUpdate> updates = ParseScanResultJson(scanResultJson);
+        updates = WuaUpdateLane.ApplyExclude(updates, excludes);
+
+        string message = installedScope
+            ? (updates.Count == 0 ? "No installed updates" : $"{updates.Count} installed update{(updates.Count == 1 ? "" : "s")}")
+            : (updates.Count == 0 ? "Up to date" : $"{updates.Count} update{(updates.Count == 1 ? "" : "s")} available");
+
+        return new HostPatchStatus(PatchPhase.Available, message, AvailableCount: updates.Count)
+        {
+            Updates = updates,
+        };
     }
 
     /// <summary>Parses the agent's JSON scan array (Title/KB/IsDownloaded/SizeMb/IsUninstallable/InstalledAt)
