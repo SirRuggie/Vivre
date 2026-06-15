@@ -188,6 +188,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // often so a stale pending self-clears on a later poll. Read-only (a registry/SCCM marker read); no reboot.
     private readonly ConcurrentDictionary<string, DateTime> _lastRebootProbeAt = new(StringComparer.OrdinalIgnoreCase);
     private static readonly TimeSpan RebootPendingRecheckInterval = TimeSpan.FromMinutes(5);
+    // The post-reboot rescan runs on a box that JUST rebooted (boot-time-confirmed) but may still be
+    // settling; a transient unreachable mid-settle gets a short wait + retry rather than a stuck red Error.
+    private static readonly TimeSpan PostRebootRescanRetryDelay = TimeSpan.FromSeconds(20);
+    private const int PostRebootRescanAttempts = 3;
     // Machines with a pending scheduled task — install or reboot (name → trigger time). Drives the
     // "Scheduled task" columns and lets the monitor clear them once the time has passed (client-side).
     private readonly ConcurrentDictionary<string, DateTime> _scheduledTasks = new(StringComparer.OrdinalIgnoreCase);
@@ -3487,22 +3491,44 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         string name = computer.Name;
 
         // ── a) Applicable rescan (read-only: ScanAsync only, never Install/Uninstall/Reboot) ──────
+        // The box JUST rebooted (boot-time-confirmed) but may still be settling; a transient unreachable
+        // ("network name no longer available") mid-settle is NOT a terminal failure — wait briefly and
+        // retry. A genuinely failed rescan is surfaced as an honest "couldn't rescan" (below), and is NEVER
+        // stamped onto the row's phase — that is what previously left a recovering box stuck on a red Error.
         bool scanFailed = false;
-        try
+        for (int attempt = 1; ; attempt++)
         {
-            PatchOptions applicableOptions = _patchOptions.Clone();
-            applicableOptions.Scope = UpdateScope.Applicable;
-            HostPatchStatus status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, token);
-            ApplyStatus(computer, status, UpdateScope.Applicable);
-        }
-        catch (OperationCanceledException)
-        {
-            // Propagate cancellation — don't swallow it.
-            throw;
-        }
-        catch
-        {
-            scanFailed = true;
+            HostPatchStatus status;
+            try
+            {
+                PatchOptions applicableOptions = _patchOptions.Clone();
+                applicableOptions.Scope = UpdateScope.Applicable;
+                status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // Propagate cancellation — don't swallow it.
+            }
+            catch
+            {
+                status = HostPatchStatus.Failed("rescan threw");
+            }
+
+            if (status.Phase != PatchPhase.Error)
+            {
+                ApplyStatus(computer, status, UpdateScope.Applicable);
+                break;
+            }
+
+            // The rescan couldn't reach the box (still settling after the reboot). Do NOT ApplyStatus the
+            // Error (that stamped a stuck red on a recovering box). If attempts remain, wait and retry.
+            if (attempt >= PostRebootRescanAttempts)
+            {
+                scanFailed = true;
+                break;
+            }
+
+            await Task.Delay(PostRebootRescanRetryDelay, token);
         }
 
         // ── b) remaining after rescan ─────────────────────────────────────────────────────────────

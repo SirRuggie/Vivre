@@ -25,5 +25,15 @@ public sealed record RebootConfirmationResult(RebootConfirmationOutcome Outcome,
 /// passed per call rather than baked into the wave.</summary>
 public interface IPostRebootConfirmation
 {
+    /// <summary>
+    /// Called by the wave <b>before</b> it issues the reboot, so a strategy that needs a pre-reboot
+    /// baseline can capture it. <see cref="ReadyConfirmation"/> records the box's <c>LastBootUpTime</c>
+    /// here so <see cref="ConfirmAsync"/> can tell a REAL reboot (newer boot time) from a brief
+    /// reachability flicker during reboot-prep (same boot time). Default no-op — strategies that don't
+    /// need a baseline (e.g. the 2016 <c>UbrConfirmation</c>, which implicitly requires the real reboot
+    /// because the UBR only advances after the CU commits) inherit this.
+    /// </summary>
+    Task CaptureBaselineAsync(string host, CancellationToken cancellationToken) => Task.CompletedTask;
+
     Task<RebootConfirmationResult> ConfirmAsync(string host, CancellationToken cancellationToken);
 }

@@ -78,6 +78,12 @@ public sealed class RebootWave
             return Fail(progress, $"{host} isn't reboot-ready — {ready.Reason}. Stage it (and let it finish) first.");
         }
 
+        // Capture the pre-reboot baseline (e.g. LastBootUpTime) BEFORE issuing the reboot, so confirmation
+        // can tell a REAL reboot from a brief reachability flicker during reboot-prep — a box that merely
+        // flickered and came back on the SAME boot has not rebooted. No-op for strategies that don't need a
+        // baseline (e.g. the 2016 UBR check). Read-only — captures a value, never reboots anything.
+        await confirmation.CaptureBaselineAsync(host, cancellationToken).ConfigureAwait(false);
+
         // 2) Graceful reboot first (let SQL/services flush cleanly). NOTE ON SCOPE: reaching this method at
         // all means the operator already picked THIS specific box and confirmed a Reboot Wave on it — the
         // tool never gets here on its own. So the escalation below is the *completion* of a reboot the
