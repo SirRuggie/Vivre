@@ -71,8 +71,10 @@ public partial class WorkspaceView : UserControl
         vm.CustomColumns.CollectionChanged += OnLayoutChanged;
         vm.HiddenColumns.CollectionChanged += OnLayoutChanged;
         vm.ClearSelectionRequested += OnClearSelectionRequested;
+        vm.PropertyChanged += OnVmPropertyChanged;
         ComputerGrid.Sorting += OnComputerGridSorting;
         SyncColumns();
+        UpdateStagedColumnVisibility(vm);
     }
 
     /// <summary>The TabControl recreates this view when you switch tabs, so drop the layout subscriptions
@@ -91,6 +93,7 @@ public partial class WorkspaceView : UserControl
             vm.CustomColumns.CollectionChanged -= OnLayoutChanged;
             vm.HiddenColumns.CollectionChanged -= OnLayoutChanged;
             vm.ClearSelectionRequested -= OnClearSelectionRequested;
+            vm.PropertyChanged -= OnVmPropertyChanged;
         }
 
         _wiredVm = null;
@@ -98,6 +101,20 @@ public partial class WorkspaceView : UserControl
     }
 
     private void OnLayoutChanged(object? sender, NotifyCollectionChangedEventArgs e) => SyncColumns();
+
+    /// <summary>A DataGridColumn isn't in the visual tree, so its Visibility can't be data-bound — drive the
+    /// whole "Staged" column (header + width) from the VM's HasStagedServer2016 in code-behind instead, so it
+    /// disappears entirely when no 2016 box is flagged for staged patching.</summary>
+    private void OnVmPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(WorkspaceViewModel.HasStagedServer2016) && ViewModel is { } vm)
+        {
+            UpdateStagedColumnVisibility(vm);
+        }
+    }
+
+    private void UpdateStagedColumnVisibility(WorkspaceViewModel vm) =>
+        StagedColumn.Visibility = vm.HasStagedServer2016 ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>Brings the machine grid in line with the view-model's saved layout: hides/shows the
     /// built-in columns and creates/removes a text column per custom-column spec (bound to the row's
