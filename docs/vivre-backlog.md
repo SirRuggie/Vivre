@@ -69,6 +69,20 @@ remains is the polish / standalone items further down, each "do only if it recur
 
 ## DONE (committed) — recent
 
+- **Update download-size accuracy — WUA-first + catalog override for inflated express CUs** (`d39c0e3`,
+  merged to master). **Root cause:** Vivre read `IUpdate.MaxDownloadSize`, WUA's worst-case aggregate — an
+  express CU reported **21,926 MB** vs the real **2,435 MB** full package. **Fix:** show `MaxDownloadSize` for
+  every normal update (Defender / drivers / SQL / .NET / normal CUs — instant, no network, matches BatchPatch);
+  substitute the Microsoft Update Catalog full-package size only when `Max` is absurd (>10 GB); dash only when
+  both fail. Catalog lookup gated to absurd rows only (`NeedsCatalogLookup`) → **zero** catalog calls on a normal
+  fleet scan. Self-contained (direct HTTPS GET + HtmlAgilityPack parse of the catalog's `_originalSize` byte
+  count — no PowerShell module, no shell-out). New: `MicrosoftUpdateCatalogService`, `CatalogPageParser`,
+  `UpdateSizeResolver`, `ArchFromTitle`; `SoftwareUpdate` Min/Max bytes; scan + agent emit
+  `MinSizeBytes`+`MaxSizeBytes`. 596 tests; cardinal clean.
+  - **BatchPatch per-machine figure (e.g. 1,446 MB):** investigated — it's the express **per-device** download,
+    which is NOT present in WUA scan metadata (only the inflated aggregate is); getting it requires an on-box
+    download-evaluation. **Decision:** show the conservative full-package size (catalog), not the per-machine
+    express delta. Express parity is a possible future feature (resolve-once-and-cache) if ever wanted.
 - **Transient WUA reach-failure retry — no false-green** (`ea1d078` · `bd490a0` · `7676980` · `ec6adfa` ·
   `4e34f02` · `cfba5e8`; **on branch `feat/transient-wua-retry` — operator merges + pushes**). **Root cause
   proven** from `APVWUG`'s `WindowsUpdate.log`: `0x80072EE2` is a **transient SLS (service-locator) timeout
