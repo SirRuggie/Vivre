@@ -1053,8 +1053,13 @@ namespace Vivre.UpdateAgent
 
                     string kb = (u.KBArticleIDs != null && u.KBArticleIDs.Count > 0) ? u.KBArticleIDs[0] : null;
 
-                    double size = 0;
-                    try { size = Math.Round((double)u.MaxDownloadSize / 1048576.0, 1); } catch { }
+                    // Emit BOTH WUA sizes as RAW BYTES (no MB rounding here). The controller shows MaxDownloadSize
+                    // directly for normal updates (Min when Max is 0) and substitutes the Microsoft Update Catalog
+                    // size only when Max is implausibly large (the inflated express-CU aggregate).
+                    long minBytes = 0;
+                    long maxBytes = 0;
+                    try { minBytes = (long)u.MinDownloadSize; } catch { }
+                    try { maxBytes = (long)u.MaxDownloadSize; } catch { }
 
                     bool isUninstallable = true;
                     if (installedScope)
@@ -1086,7 +1091,8 @@ namespace Vivre.UpdateAgent
                         ["Title"] = title,
                         ["KB"] = kb,
                         ["IsDownloaded"] = isDownloaded,
-                        ["SizeMb"] = size,
+                        ["MinSizeBytes"] = minBytes,
+                        ["MaxSizeBytes"] = maxBytes,
                         ["IsUninstallable"] = isUninstallable,
                         ["InstalledAt"] = installedAt,
                     });

@@ -63,10 +63,11 @@ public class WuaUpdateLaneTests
     [Fact]
     public void ParseScan_reads_typed_updates_and_skips_blank_titles()
     {
+        // Distinct Min/Max bytes prove ParseScan reads each field independently (not one value duplicated).
         var rows = new List<PSObject>
         {
-            ScanRow("Update A", "5037782", downloaded: true, sizeMb: 512.5),
-            ScanRow("", null, false, 0),
+            ScanRow("Update A", "5037782", downloaded: true, minBytes: 1048576, maxBytes: 537001984),
+            ScanRow("", null, false, 0, 0),
         };
 
         IReadOnlyList<SoftwareUpdate> updates = WuaUpdateLane.ParseScan(rows);
@@ -75,7 +76,8 @@ public class WuaUpdateLaneTests
         Assert.Equal("Update A", updates[0].Title);
         Assert.Equal("5037782", updates[0].ArticleId);
         Assert.True(updates[0].IsDownloaded);
-        Assert.Equal(512.5, updates[0].SizeMb);
+        Assert.Equal(1048576L, updates[0].MinDownloadSizeBytes);
+        Assert.Equal(537001984L, updates[0].MaxDownloadSizeBytes);
     }
 
     // --- progress JSON parsing ---
@@ -167,10 +169,10 @@ public class WuaUpdateLaneTests
     [Fact]
     public void ParseScan_reads_InstalledAt_when_present_and_null_when_absent()
     {
-        var withDate = ScanRow("Cumulative (installed)", "5031234", downloaded: true, sizeMb: 40);
+        var withDate = ScanRow("Cumulative (installed)", "5031234", downloaded: true, minBytes: 0, maxBytes: 0);
         var when = new DateTime(2026, 5, 1, 9, 30, 0, DateTimeKind.Local);
         withDate.Properties.Add(new PSNoteProperty("InstalledAt", when));
-        var noDate = ScanRow("Optional (installed)", "5045678", downloaded: true, sizeMb: 20);
+        var noDate = ScanRow("Optional (installed)", "5045678", downloaded: true, minBytes: 0, maxBytes: 0);
 
         IReadOnlyList<SoftwareUpdate> updates = WuaUpdateLane.ParseScan([withDate, noDate]);
 
@@ -182,7 +184,7 @@ public class WuaUpdateLaneTests
     public async Task ScanAsync_reports_installed_count_for_the_installed_scope()
     {
         var result = new PSExecutionResult(
-            [ScanRow("Installed cumulative", "5037782", downloaded: true, sizeMb: 0)], [], [], HadErrors: false);
+            [ScanRow("Installed cumulative", "5037782", downloaded: true, minBytes: 0, maxBytes: 0)], [], [], HadErrors: false);
         var service = new PatchService(new FakeHost(result));
         var options = new PatchOptions { Scope = UpdateScope.Installed };
 
@@ -199,7 +201,7 @@ public class WuaUpdateLaneTests
     public async Task ScanAsync_returns_available_count_after_exclude()
     {
         var result = new PSExecutionResult(
-            [ScanRow("Cumulative Update", "5037782", false, 100), ScanRow("SQL Server patch", "1234567", false, 50)],
+            [ScanRow("Cumulative Update", "5037782", false, 0, 0), ScanRow("SQL Server patch", "1234567", false, 0, 0)],
             [], [], HadErrors: false);
         var service = new PatchService(new FakeHost(result));
         var options = new PatchOptions { ExcludeNameContains = ["SQL"] };
@@ -261,7 +263,7 @@ public class WuaUpdateLaneTests
         // Even when a non-clean search returned some rows, the result is incomplete and untrustworthy —
         // surface the reach failure, not a misleadingly-short "N updates available" list.
         var result = new PSExecutionResult(
-            [SearchStatusRow(3), ScanRow("Cumulative Update", "5037782", false, 100)], [], [], HadErrors: false);
+            [SearchStatusRow(3), ScanRow("Cumulative Update", "5037782", false, 0, 0)], [], [], HadErrors: false);
         var service = new PatchService(new FakeHost(result));
 
         HostPatchStatus status = await service.ScanAsync("NYC-SRV1", new PatchOptions(), credential: null);
@@ -309,7 +311,7 @@ public class WuaUpdateLaneTests
     {
         // Older rows without the IsUninstallable field default to true so the checklist's
         // checkboxes stay enabled (Applicable-scope assumption).
-        var rows = new List<PSObject> { ScanRow("Update A", "5037782", downloaded: true, sizeMb: 100) };
+        var rows = new List<PSObject> { ScanRow("Update A", "5037782", downloaded: true, minBytes: 0, maxBytes: 0) };
 
         IReadOnlyList<SoftwareUpdate> updates = WuaUpdateLane.ParseScan(rows);
 
@@ -319,7 +321,7 @@ public class WuaUpdateLaneTests
     [Fact]
     public void ParseScan_reads_IsUninstallable_when_emitted_by_the_scan()
     {
-        var row = ScanRow("Servicing Stack Update", "5036893", downloaded: true, sizeMb: 30);
+        var row = ScanRow("Servicing Stack Update", "5036893", downloaded: true, minBytes: 0, maxBytes: 0);
         row.Properties.Add(new PSNoteProperty("IsUninstallable", false));
         var rows = new List<PSObject> { row };
 
@@ -393,15 +395,16 @@ public class WuaUpdateLaneTests
 
     // --- helpers ---
 
-    private static SoftwareUpdate Update(string title) => new(title, null, false, 0);
+    private static SoftwareUpdate Update(string title) => new(title, null, false, 0, 0);
 
-    private static PSObject ScanRow(string title, string? kb, bool downloaded, double sizeMb)
+    private static PSObject ScanRow(string title, string? kb, bool downloaded, long minBytes, long maxBytes)
     {
         var o = new PSObject();
         o.Properties.Add(new PSNoteProperty("Title", title));
         o.Properties.Add(new PSNoteProperty("KB", kb));
         o.Properties.Add(new PSNoteProperty("IsDownloaded", downloaded));
-        o.Properties.Add(new PSNoteProperty("SizeMb", sizeMb));
+        o.Properties.Add(new PSNoteProperty("MinSizeBytes", minBytes));
+        o.Properties.Add(new PSNoteProperty("MaxSizeBytes", maxBytes));
         return o;
     }
 

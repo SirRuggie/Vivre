@@ -119,6 +119,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly IDeploymentService _deployment;
     private readonly ISoftwareProbe _software;
     private readonly ICustomColumnProbe _customColumns;
+    private readonly ICatalogSizeService _catalogSize;
     private readonly AppSettingsStore _appSettings = new();
 
     /// <summary>User-defined custom columns (machine mode), loaded from settings; the view builds a grid
@@ -778,7 +779,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -808,6 +809,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _deployment = deployment;
         _software = software;
         _customColumns = customColumns;
+        _catalogSize = catalogSize;
         LoadColumnLayout();
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
@@ -3861,6 +3863,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             computer.UpdatesAvailable = status.AvailableCount;
             ReplaceUpdatesForScope(computer, scope, status.Updates);
+            // Fill the real download sizes from the Microsoft Update Catalog (async, cached per KB). The grid
+            // shows a dash / WUA-definite size until the lookup answers, then upgrades to the catalog size.
+            // Fire-and-forget — display-only, never blocks or gates the scan.
+            _ = ResolveCatalogSizesAsync(computer, scope);
             // Cache per-scope so toggling between Applicable / Installed preserves the data.
             if (scope == UpdateScope.Installed)
             {
@@ -3955,6 +3961,63 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
 
             target.Add(new SelectableUpdate(update, selected));
+        }
+    }
+
+    /// <summary>
+    /// Fills <see cref="SelectableUpdate.CatalogSizeBytes"/> from the Microsoft Update Catalog, but ONLY for the
+    /// rows whose WUA <c>MaxDownloadSize</c> is implausibly large — the inflated express-CU case
+    /// (<see cref="UpdateSizeResolver.NeedsCatalogLookup"/>). Every other row already shows its real WUA size with
+    /// no network call, so the catalog (and its jump-box TLS dependency) is touched only for the handful of rows
+    /// that need it. One lookup per unique KB+architecture (the shared service caches across machines and tabs);
+    /// the result is applied to whatever rows currently carry that KB, so a re-scan that rebuilt the list still
+    /// gets the cached size. Display-only — touches no install/reboot path. The service swallows catalog failures
+    /// to null (→ dash); this wrapper guards the unexpected so a fire-and-forget never crashes the app.
+    /// </summary>
+    private async Task ResolveCatalogSizesAsync(Computer computer, UpdateScope scope)
+    {
+        try
+        {
+            ObservableCollection<SelectableUpdate> target = scope == UpdateScope.Installed
+                ? computer.InstalledUpdates
+                : computer.ApplicableUpdates;
+
+            // Distinct (KB, arch) pairs to look up — ONLY rows with an absurd MaxDownloadSize (express CUs);
+            // arch is derived best-effort from the update title. No absurd rows ⇒ no catalog traffic at all.
+            var lookups = target
+                .Where(u => !string.IsNullOrWhiteSpace(u.Kb)
+                            && UpdateSizeResolver.NeedsCatalogLookup(u.Update.MaxDownloadSizeBytes))
+                .Select(u => (Kb: u.Kb!, Arch: UpdateSizeResolver.ArchFromTitle(u.Title)))
+                .Distinct()
+                .ToList();
+
+            foreach ((string kb, string? arch) in lookups)
+            {
+                // No ConfigureAwait(false): ApplyStatus (our caller) runs on the UI thread, so the continuation
+                // resumes there and setting the observable below is thread-safe — the same invariant ApplyStatus
+                // already relies on when it writes bound properties directly.
+                long? bytes = await _catalogSize.GetSizeBytesAsync(kb, arch);
+                if (bytes is null)
+                {
+                    continue;
+                }
+
+                // Apply to the CURRENT rows for this KB+arch — the list may have been replaced by a newer scan
+                // while the lookup was in flight (the collection instance is stable; only its contents change).
+                foreach (SelectableUpdate u in target)
+                {
+                    if (string.Equals(u.Kb, kb, StringComparison.OrdinalIgnoreCase)
+                        && string.Equals(UpdateSizeResolver.ArchFromTitle(u.Title), arch, StringComparison.Ordinal))
+                    {
+                        u.CatalogSizeBytes = bytes;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            // Catalog sizing is a display nicety; never let a fire-and-forget failure escape.
+            _activity.Warn(computer.Name, $"Couldn't resolve catalog update sizes. {ex.Message}");
         }
     }
 

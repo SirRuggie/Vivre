@@ -32,7 +32,7 @@ public class StagedInstallPlannerTests
         };
         foreach ((string title, string? kb) in applicable ?? [])
         {
-            c.ApplicableUpdates.Add(new SelectableUpdate(new SoftwareUpdate(title, kb, IsDownloaded: false, SizeMb: 10)));
+            c.ApplicableUpdates.Add(new SelectableUpdate(new SoftwareUpdate(title, kb, IsDownloaded: false, MinDownloadSizeBytes: 0, MaxDownloadSizeBytes: 0)));
         }
 
         return c;

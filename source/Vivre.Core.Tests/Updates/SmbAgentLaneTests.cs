@@ -71,8 +71,9 @@ public class SmbAgentLaneTests
     [Fact]
     public void ParseScanResultJson_reads_applicable_rows()
     {
+        // Distinct Min/Max bytes prove the parser reads each field independently (not one value duplicated).
         const string json =
-            """[{"Title":"2026-01 Cumulative Update","KB":"5000001","IsDownloaded":true,"SizeMb":512.5,"IsUninstallable":true,"InstalledAt":null}]""";
+            """[{"Title":"2026-01 Cumulative Update","KB":"5000001","IsDownloaded":true,"MinSizeBytes":1048576,"MaxSizeBytes":537001984,"IsUninstallable":true,"InstalledAt":null}]""";
 
         IReadOnlyList<SoftwareUpdate> updates = SmbAgentLane.ParseScanResultJson(json);
 
@@ -80,7 +81,8 @@ public class SmbAgentLaneTests
         Assert.Equal("2026-01 Cumulative Update", u.Title);
         Assert.Equal("5000001", u.ArticleId);
         Assert.True(u.IsDownloaded);
-        Assert.Equal(512.5, u.SizeMb);
+        Assert.Equal(1048576L, u.MinDownloadSizeBytes);
+        Assert.Equal(537001984L, u.MaxDownloadSizeBytes);
         Assert.True(u.IsUninstallable);
         Assert.Null(u.InstalledAt);
     }
@@ -89,7 +91,7 @@ public class SmbAgentLaneTests
     public void ParseScanResultJson_reads_installed_rows_with_dates()
     {
         const string json =
-            """[{"Title":"Security Update KB5000002","KB":"5000002","IsDownloaded":true,"SizeMb":0,"IsUninstallable":false,"InstalledAt":"2026-01-15T08:30:00.0000000Z"}]""";
+            """[{"Title":"Security Update KB5000002","KB":"5000002","IsDownloaded":true,"MinSizeBytes":0,"MaxSizeBytes":0,"IsUninstallable":false,"InstalledAt":"2026-01-15T08:30:00.0000000Z"}]""";
 
         SoftwareUpdate u = Assert.Single(SmbAgentLane.ParseScanResultJson(json));
 

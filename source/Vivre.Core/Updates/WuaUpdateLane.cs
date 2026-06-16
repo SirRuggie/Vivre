@@ -536,7 +536,8 @@ public sealed class WuaUpdateLane
                     Title: title!,
                     ArticleId: Str(row, "KB"),
                     IsDownloaded: Bool(row, "IsDownloaded"),
-                    SizeMb: Dbl(row, "SizeMb"),
+                    MinDownloadSizeBytes: Long(row, "MinSizeBytes"),
+                    MaxDownloadSizeBytes: Long(row, "MaxSizeBytes"),
                     IsUninstallable: BoolOr(row, "IsUninstallable", fallback: true),
                     InstalledAt: DateTimeOrNull(row, "InstalledAt")));
             }
@@ -733,14 +734,20 @@ public sealed class WuaUpdateLane
                 try {
                     $kb = $null
                     if ($u.KBArticleIDs.Count -gt 0) { $kb = $u.KBArticleIDs.Item(0) }
-                    $size = 0
-                    try { $size = [math]::Round($u.MaxDownloadSize / 1MB, 1) } catch { }
+                    # Emit BOTH WUA sizes as RAW BYTES (no MB rounding here). The controller shows MaxDownloadSize
+                    # directly for normal updates (Min when Max is 0) and substitutes the Microsoft Update Catalog
+                    # size only when Max is implausibly large (the inflated express-CU aggregate).
+                    $minBytes = 0
+                    $maxBytes = 0
+                    try { $minBytes = [int64]$u.MinDownloadSize } catch { }
+                    try { $maxBytes = [int64]$u.MaxDownloadSize } catch { }
                     {{installedAtBlock}}
                     [PSCustomObject]@{
                         Title           = $u.Title
                         KB              = $kb
                         IsDownloaded    = [bool]$u.IsDownloaded
-                        SizeMb          = $size
+                        MinSizeBytes    = $minBytes
+                        MaxSizeBytes    = $maxBytes
                         IsUninstallable = {{uninstallableExpr}}
                         InstalledAt     = $installedAt
                     }
@@ -1057,10 +1064,10 @@ public sealed class WuaUpdateLane
     private static DateTime? DateTimeOrNull(PSObject row, string name) =>
         row.Properties[name]?.Value is DateTime dt ? dt : null;
 
-    private static double Dbl(PSObject row, string name)
+    private static long Long(PSObject row, string name)
     {
         object? value = row.Properties[name]?.Value;
-        return value is null ? 0 : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+        return value is null ? 0L : Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
     private static string? GetString(JsonElement root, string name) =>

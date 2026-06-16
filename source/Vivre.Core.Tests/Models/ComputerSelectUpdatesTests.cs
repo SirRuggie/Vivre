@@ -12,7 +12,7 @@ namespace Vivre.Core.Tests.Models;
 public class ComputerSelectUpdatesTests
 {
     private static SelectableUpdate Update(string title, string kb, bool isSelected) =>
-        new(new SoftwareUpdate(title, kb, IsDownloaded: false, SizeMb: 10), isSelected);
+        new(new SoftwareUpdate(title, kb, IsDownloaded: false, MinDownloadSizeBytes: 0, MaxDownloadSizeBytes: 0), isSelected);
 
     [Fact]
     public void Ticks_a_previously_unticked_applicable_update_and_keeps_ticked_ones()

@@ -129,6 +129,16 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **The update Size column shows a real size for every update — and quietly fixes the one case Windows Update
+  inflates** — the column now shows Windows Update's reported download size for all update types (Defender,
+  drivers, .NET, SQL, normal cumulative updates), matching BatchPatch, with no extra lookup. The one exception
+  is an express/checkpoint OS cumulative update (Server 2025 / Windows 11 24H2), where Windows Update reports a
+  worst-case *aggregate* that's wildly too big (e.g. **21,926 MB** for a package that's really **2,435 MB**).
+  Only for those — detected by an implausibly large value (>10 GB) — does Vivre substitute the exact published
+  size from the **Microsoft Update Catalog** (a single read-only HTTPS lookup, cached per KB). It shows a dash
+  (**—**) only when *both* are unavailable: an inflated express update whose catalog size couldn't be fetched
+  (e.g. the machine running Vivre is offline / locked-down). Normal updates never trigger a catalog lookup, so
+  there's no network cost for the common case. (Display only — nothing that reads or acts on the size changed.)
 - **Reboot & verify now auto-selects the remaining updates it surfaces** — after a box comes back from
   reboot-and-verify still needing updates, those updates are now ticked, so the top **Install** can target
   them in one click — the same readiness a fresh scan gives. Previously the post-reboot rescan surfaced the

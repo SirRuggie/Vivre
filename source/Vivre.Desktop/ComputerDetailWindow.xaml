@@ -510,7 +510,7 @@
                     <ui:DataGrid.Columns>
                         <DataGridTextColumn Header="KB" Binding="{Binding Kb}" Width="Auto" MinWidth="80" />
                         <DataGridTextColumn Header="Update" Binding="{Binding Title}" Width="*" />
-                        <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                        <DataGridTextColumn Header="Size" Binding="{Binding DisplaySizeMb, StringFormat={}{0:N1} MB, TargetNullValue=—}" Width="Auto" />
                     </ui:DataGrid.Columns>
                 </ui:DataGrid>
             </TabItem>

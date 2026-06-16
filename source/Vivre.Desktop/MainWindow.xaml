@@ -1308,7 +1308,7 @@
                                                                     </Style>
                                                                 </DataGridTextColumn.ElementStyle>
                                                             </DataGridTextColumn>
-                                                            <DataGridTextColumn Header="Size" Binding="{Binding SizeMb, StringFormat={}{0:N1} MB}" Width="Auto" />
+                                                            <DataGridTextColumn Header="Size" Binding="{Binding DisplaySizeMb, StringFormat={}{0:N1} MB, TargetNullValue=—}" Width="Auto" />
                                                             <!-- "Installed" / "Installed — reboot pending" chip: visible only when installed this session. -->
                                                             <DataGridTemplateColumn Width="Auto">
                                                                 <DataGridTemplateColumn.CellTemplate>

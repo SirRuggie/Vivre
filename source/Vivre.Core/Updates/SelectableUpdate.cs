@@ -46,14 +46,29 @@ public partial class SelectableUpdate : ObservableObject
         InstalledThisSessionRebootPending = false;
     }
 
+    /// <summary>
+    /// Microsoft Update Catalog package size in bytes. Filled asynchronously after the scan ONLY for the
+    /// inflated express-CU case (WUA's MaxDownloadSize implausibly large); null for every normal update — those
+    /// show their WUA size directly with no lookup. Drives <see cref="DisplaySizeMb"/> — when it changes the grid
+    /// re-reads the displayed size. Runtime-only; never persisted.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplaySizeMb))]
+    public partial long? CatalogSizeBytes { get; set; }
+
     /// <summary>KB article id (e.g. "5037782"), null if the update has none.</summary>
     public string? Kb => Update.ArticleId;
 
     /// <summary>Update display title.</summary>
     public string Title => Update.Title;
 
-    /// <summary>Download size in MB.</summary>
-    public double SizeMb => Update.SizeMb;
+    /// <summary>
+    /// The size to SHOW (MB), or null to render a dash. Resolved by <see cref="UpdateSizeResolver"/>: WUA's
+    /// MaxDownloadSize for the vast majority of updates, the catalog size substituted only when WUA's value is
+    /// implausibly large (express CUs) — see that type for the tier order. Never shows WUA's inflated aggregate.
+    /// </summary>
+    public double? DisplaySizeMb =>
+        UpdateSizeResolver.ResolveDisplaySize(CatalogSizeBytes, Update.MinDownloadSizeBytes, Update.MaxDownloadSizeBytes);
 
     /// <summary>Whether the target has already downloaded this update.</summary>
     public bool IsDownloaded => Update.IsDownloaded;

@@ -52,6 +52,9 @@ public partial class App : Application
         var deployment = new DeploymentService(powerShell);
         var software = new SoftwareProbe(powerShell);
         var customColumns = new CustomColumnProbe(powerShell);
+        // One shared catalog-size lookup: its per-KB cache is process-wide, so many machines showing the same
+        // KB hit the Microsoft Update Catalog once. Self-contained HTTPS GET; failures fall back silently.
+        var catalogSize = new MicrosoftUpdateCatalogService();
         // Session-only, shared across tabs (consistent with the in-memory credential model).
         var patchOptions = new PatchOptions();
 
@@ -96,7 +99,7 @@ public partial class App : Application
         ApplyTheme(settings.Theme);
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize);
 
         // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.
         // The nav section's DataContext binds to ShellViewModel.RdpViewModel.

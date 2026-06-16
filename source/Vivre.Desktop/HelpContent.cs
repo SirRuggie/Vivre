@@ -456,12 +456,13 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.CheckboxChecked24, Title = "How do I pick which updates to install?",
-            Keywords = "select choose checklist applicable tick tab bottom panel filter",
+            Keywords = "select choose checklist applicable tick tab bottom panel filter size catalog mb download",
             Lines =
             [
                 "Click a machine — its Updates tab opens at the bottom. On the Applicable tab, tick/untick the updates you want.",
                 "Use All / None to select quickly, or the filter box to find an update by KB or title.",
                 "Install then targets only the ticked ones (or everything applicable if you don't tick anything).",
+                "The Size column shows each update's download size — the size Windows Update reports, the same as BatchPatch. For the occasional Windows cumulative update whose reported size is implausibly large (an express-update quirk), Vivre substitutes the exact size from the Microsoft Update Catalog. A dash (—) means neither was available — usually one of those large cumulative updates on a machine that can't reach the catalog (offline / locked-down). It never blocks installing.",
             ],
         },
         new HelpTopic

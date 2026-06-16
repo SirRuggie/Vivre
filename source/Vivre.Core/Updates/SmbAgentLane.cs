@@ -654,8 +654,9 @@ public sealed class SmbAgentLane : ISmbAgentLane
         };
     }
 
-    /// <summary>Parses the agent's JSON scan array (Title/KB/IsDownloaded/SizeMb/IsUninstallable/InstalledAt)
-    /// into typed updates, mirroring <see cref="WuaUpdateLane.ParseScan"/>. Skips rows with no title.</summary>
+    /// <summary>Parses the agent's JSON scan array
+    /// (Title/KB/IsDownloaded/MinSizeBytes/MaxSizeBytes/IsUninstallable/InstalledAt) into typed updates,
+    /// mirroring <see cref="WuaUpdateLane.ParseScan"/>. Skips rows with no title.</summary>
     public static IReadOnlyList<SoftwareUpdate> ParseScanResultJson(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
@@ -687,7 +688,8 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 Title: title!,
                 ArticleId: GetString(row, "KB"),
                 IsDownloaded: GetBool(row, "IsDownloaded"),
-                SizeMb: GetDouble(row, "SizeMb"),
+                MinDownloadSizeBytes: GetInt64(row, "MinSizeBytes"),
+                MaxDownloadSizeBytes: GetInt64(row, "MaxSizeBytes"),
                 IsUninstallable: GetBoolOr(row, "IsUninstallable", fallback: true),
                 InstalledAt: GetDateTime(row, "InstalledAt")));
         }
@@ -713,10 +715,10 @@ public sealed class SmbAgentLane : ISmbAgentLane
             ? el.GetBoolean()
             : fallback;
 
-    private static double GetDouble(JsonElement row, string name) =>
-        row.TryGetProperty(name, out JsonElement el) && el.ValueKind == JsonValueKind.Number && el.TryGetDouble(out double d)
-            ? d
-            : 0;
+    private static long GetInt64(JsonElement row, string name) =>
+        row.TryGetProperty(name, out JsonElement el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt64(out long n)
+            ? n
+            : 0L;
 
     private static DateTime? GetDateTime(JsonElement row, string name)
     {
