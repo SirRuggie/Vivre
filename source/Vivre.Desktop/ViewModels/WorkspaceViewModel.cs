@@ -1049,12 +1049,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         foreach (Computer c in Computers)
         {
-            // Don't clobber the message of a row that's showing a FAILURE (PatchState.Error — incl. the
-            // "Can't reach WU" Unreachable state) or is mid-operation (IsPatching): its UpdateMessage is the
-            // error/progress detail, NOT a scope-scoped scan result, and the target scope's cached message is
-            // null for it (those are only set on a successful scan), so swapping would silently blank the
-            // failure detail. The per-scope counts still track; only the message is preserved for these rows.
-            if (c.PatchState != PatchState.Error && !c.IsPatching)
+            // Net rule: no terminal status — success (Done/RebootPending, which includes the 2016
+            // Cleaned/Deferred terminals) or failure (Error, incl. the "Can't reach WU" Unreachable
+            // state) — is ever blanked by a scope-toggle, and neither is an in-flight row (IsPatching).
+            // Those rows carry operation detail (e.g. "Installed 3 updates", "Can't reach WU"),
+            // NOT a scope-scoped scan result; the target scope's cached message is often null for them,
+            // so swapping would silently blank the detail. Only a non-terminal scanned state (e.g.
+            // Available) has a real cached message on both sides and should swap. The per-scope COUNTS
+            // still track for every row regardless — only the message is preserved for terminal/in-flight rows.
+            if (!ScopeToggleRule.PreservesMessageOnScopeToggle(c.PatchState, c.IsPatching))
             {
                 c.UpdateMessage = value ? c.InstalledMessage : c.ApplicableMessage;
             }
