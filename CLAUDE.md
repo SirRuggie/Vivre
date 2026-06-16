@@ -124,12 +124,16 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
     the real error.
 - Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
   changes or a feature lands — they're the human-readable source of truth.
-- **Bump the app version when you ship a user-facing change.** `<VersionPrefix>` in
-  `source/Vivre.Desktop/Vivre.Desktop.csproj` is the single source of truth (the build stamp and the
-  **Help ▸ About** box both derive from it via `AboutWindow.RunningVersion()`). Bump it **in the same
-  commit** as the change: **minor** (`1.11.0 → 1.12.0`) for a new feature, **patch** (`1.11.0 → 1.11.1`)
-  for a fix or small UX tweak. Don't let it drift — every shipped feature/fix should move it. (It stalled
-  at 1.10.1 across three features once; that's the failure mode this rule prevents.)
+- **Bump the app version only when cutting a RELEASE (a deploy build) — NOT per merge.** `<VersionPrefix>`
+  in `source/Vivre.Desktop/Vivre.Desktop.csproj` is the single source of truth (the build stamp and the
+  **Help ▸ About** box both derive from it via `AboutWindow.RunningVersion()`), so it marks a release the
+  operator actually deploys, not every merge. Between releases, merged work accumulates under the
+  **Unreleased** section of `CHANGELOG.md` with **no per-merge version bump**. When a release is cut: bump
+  `VersionPrefix` (operator's call on the number — **minor** for a release that adds features, **patch** for
+  a fix-only release) and rename **Unreleased** to that version with a dated heading; a fresh **Unreleased**
+  then starts accumulating again. Every merge MUST still add its user-facing change to **Unreleased** —
+  that's how nothing is lost between releases. (The earlier per-merge-bump rule caused version churn and is
+  retired; do not reintroduce it.)
 - **After every commit, verify the in-app how-to guide** (`HelpContent.cs`, surfaced as **Help ▸ How
   to use Vivre**). Any user-facing change — a new/renamed action, moved or restyled UI, or a changed
   workflow — likely needs a matching how-to topic. Update it in the same commit (or an immediate

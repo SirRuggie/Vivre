@@ -7,6 +7,10 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Install concurrency default raised to 50, and now operator-tunable** — the cap on how many machines
+  install at once defaults to **50** (was 10) and is editable in **Settings ▸ Max simultaneous installs**.
+  Changing it takes effect on the next install you start; an in-flight install is never disrupted. The scan
+  cap and the reboot-issue burst cap are unchanged.
 - **Server 2016 "Clean up" now shows it's alive on a backlogged box and reads at a glance when it's
   done.** A component-store cleanup can legitimately run for hours while DISM's percent sits frozen, so
   the row now shows a live host-side **"Cleaning — 12m"** readout (with the percent when Windows reports
@@ -125,6 +129,11 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **Reboot & verify now auto-selects the remaining updates it surfaces** — after a box comes back from
+  reboot-and-verify still needing updates, those updates are now ticked, so the top **Install** can target
+  them in one click — the same readiness a fresh scan gives. Previously the post-reboot rescan surfaced the
+  count but left the update unchecked (it inherited the just-completed install's untick), so Install reported
+  "No updates selected." The rescan stays read-only — it only selects; it never installs or reboots.
 - **The Server 2016 panel buttons explain themselves instead of silently doing nothing** — Clean up, Stage,
   and Verify only act on Server 2016 boxes you've marked for staged patching. When none are marked (the
   common "the 2016 buttons don't do anything" case), clicking one now opens a short dialog telling you to
@@ -168,9 +177,11 @@ it ships, then gets a dated heading.
 - **A box rebooted outside Vivre clears its "Reboot pending" on its own** — if a box's pending reboot is
   cleared out-of-band (e.g. by BatchPatch) the pill self-clears on a later monitor poll (within a few
   minutes) instead of sticking until you manually re-scan.
-- **Switching the Applicable/Installed view keeps an errored box's failure detail** — toggling the scope
-  radio no longer blanks the "Windows update message" for a box that's showing an error (or is mid-
-  operation); the failure text is preserved.
+- **Switching the Applicable/Installed view never blanks a row's terminal status** — toggling the scope
+  radio no longer wipes the "Windows update message" for a box showing any terminal result (a failure, a
+  successful "Installed N", a "Cleaned"/"Deferred" outcome) or one mid-operation; only a new scan/operation
+  the operator starts replaces it. (It previously preserved error detail only; it now preserves successful
+  results too.)
 - **A Kerberos auth rejection no longer masquerades as "the remote session ended"** — when a target refuses
   the WinRM login with `0x80090322` (SEC_E_WRONG_PRINCIPAL), Vivre was reporting "Lost connection — the
   remote session ended (the target may have rebooted)", which is wrong (nothing dropped or rebooted — the
