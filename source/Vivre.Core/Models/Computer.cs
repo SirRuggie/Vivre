@@ -305,6 +305,11 @@ public partial class Computer : ObservableObject
             // failure everywhere. The distinct "Can't reach WU" chip label comes from the UpdatePhase
             // string in the grid template, mirroring how Staging/Cleaning carry their own labels.
             PatchPhase.Unreachable => PatchState.Error,
+            // Deferred: the agent refused a Stage/Cleanup because a reboot is already pending. A deferral
+            // means the box IS reboot-pending, so it reads amber RebootPending (never green / "staged") —
+            // the distinct "Deferred" chip label + "reboot first" message come from the UpdatePhase/Message
+            // strings, mirroring how Staging/Cleaning carry their own labels.
+            PatchPhase.Deferred => PatchState.RebootPending,
             PatchPhase.Scanning => PatchState.Scanning,
             // The 2016 stage (DISM add-package) and component cleanup (DISM /StartComponentCleanup) are their
             // own phases shown as distinct chip labels ("Staging"/"Cleaning up"), but reduce to the same

@@ -630,6 +630,9 @@ public sealed class WuaUpdateLane
         "installing" => PatchPhase.Installing,
         "uninstalling" => PatchPhase.Uninstalling,
         "pendingreboot" or "rebootrequired" => PatchPhase.PendingReboot,
+        // A servicing-busy REFUSAL: the agent didn't start because a reboot is already pending. Terminal,
+        // reboot-pending, but NOT a successful stage — distinct from "pendingreboot" so it never reads "staged".
+        "deferred" => PatchPhase.Deferred,
         "rebooting" => PatchPhase.Rebooting,
         "done" or "noupdates" or "complete" => PatchPhase.Done,
         "error" => PatchPhase.Error,

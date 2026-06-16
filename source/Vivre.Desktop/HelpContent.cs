@@ -552,6 +552,7 @@ public static class HelpContent
                 "4. Reboot Wave (night): select the staged boxes, click, and confirm. Each reboots and is tracked until its build confirms the update took.",
                 "5. Verify (any time): re-checks a box's build — use it on anything that came back late.",
                 "Why Clean up? Windows Server 2016 accumulates old update pieces in a hidden store over time. Running Clean up tells Windows to clear that backlog before you stage the new CU — without it, staging can stall or hang. It never reboots the box and is safe to run any time.",
+                "Clean up on a backlogged box can run for hours. The row shows a live \"Cleaning — 12m\" readout (with a percent when Windows reports one) so you can see it's still working even while the percent sits still; it only flags \"looks stalled (may still be working)\" or \"still going, check the box\" as a heads-up — it won't give up on a working box. When it finishes you'll see one of three results: \"Cleaned — ready to Stage\" (green, good to go), \"Cleaned — reboot-pending\" (amber — reboot before you Stage), or, if the box already has a reboot waiting, \"Couldn't clean up — reboot to clear the pending state first\" (it didn't run, to avoid clashing with Windows servicing).",
             ],
             Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update, and drop the Catalog .msu in the CU package folder before staging.",
         },

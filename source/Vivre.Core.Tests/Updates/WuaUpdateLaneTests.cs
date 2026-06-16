@@ -120,6 +120,20 @@ public class WuaUpdateLaneTests
         Assert.True(status.RebootPending);
     }
 
+    [Fact]
+    public void TryParseProgress_maps_deferred_to_a_distinct_reboot_pending_phase()
+    {
+        // The agent's servicing-busy refusal (mirrors Program.cs's Write("Deferred", …, rebootPending:true)).
+        // It must map to its OWN phase — never PendingReboot — so the host can keep it from reading as "staged".
+        const string json =
+            """{"phase":"Deferred","message":"Deferred — a reboot is already pending. Reboot the machine, then re-run.","rebootPending":true}""";
+
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.Equal(PatchPhase.Deferred, status.Phase);
+        Assert.NotEqual(PatchPhase.PendingReboot, status.Phase);
+        Assert.True(status.RebootPending);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("__VIVRE_TASK_GONE__")]

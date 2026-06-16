@@ -7,6 +7,23 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **Server 2016 "Clean up" now shows it's alive on a backlogged box and reads at a glance when it's
+  done.** A component-store cleanup can legitimately run for hours while DISM's percent sits frozen, so
+  the row now shows a live host-side **"Cleaning — 12m"** readout (with the percent when Windows reports
+  one) that keeps ticking independent of DISM — it never looks stuck. It only *flags* a long run
+  (*"looks stalled (may still be working)"*, and past 8 hours *"still going, check the box"*) as a
+  heads-up; it never gives up on a working box. The old 3-hour hard timeout that could tear down a
+  still-working cleanup mid-run is gone for cleanup (a genuinely dead agent is still caught by the
+  silence-watchdog and a real DISM error). When it finishes the row reads one of three distinct
+  states — **"Cleaned — ready to Stage"** (green), **"Cleaned — reboot-pending (reboot before Stage)"**
+  (amber), or, if a reboot was already pending so it didn't run, **"Couldn't clean up — reboot to clear
+  the pending state first."**
+- **A servicing-busy refusal no longer masquerades as a successful stage.** When the 2016 Stage or
+  Clean up agent declines to run because a reboot is *already* pending (to avoid colliding with in-flight
+  Windows servicing), the row now lands on a distinct **Deferred** state — amber, reboot-pending, with a
+  *"reboot to clear the pending state first"* message — instead of reading as the amber **"Staged — run
+  Reboot Wave"** state. The box wasn't touched, so it must not look staged; the label prescribes a reboot
+  the operator runs through the existing Reboot Wave (no new reboot path was added).
 - **Patching now rides out transient Windows Update network blips instead of failing — and never
   fake-greens a box it couldn't actually scan** — a scan or install that momentarily can't reach Windows
   Update now **silently retries the whole operation up to 3 times** (~60s apart, with a little random

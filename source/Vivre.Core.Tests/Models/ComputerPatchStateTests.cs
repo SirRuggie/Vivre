@@ -32,6 +32,11 @@ public class ComputerPatchStateTests
     // Unreachable (transient WU retries exhausted) reduces to the red Error display-state — never green —
     // so a box that couldn't be scanned is counted/coloured as a failure and NEVER reads "up to date".
     [InlineData("Unreachable", null, PatchState.Error)]
+    // Deferred (servicing-busy refusal: the agent didn't stage/clean because a reboot is already pending)
+    // means the box IS reboot-pending — amber RebootPending, never green, regardless of the RebootRequired
+    // flag's exact value (a deferral always implies a pending reboot).
+    [InlineData("Deferred", true, PatchState.RebootPending)]
+    [InlineData("Deferred", null, PatchState.RebootPending)]
     public void Derives_expected_state(string? phase, bool? rebootRequired, PatchState expected)
     {
         var c = new Computer("HOST") { UpdatePhase = phase, RebootRequired = rebootRequired };

@@ -3157,9 +3157,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Panel button: free component-store space on the targeted 2016 boxes (DISM cleanup as SYSTEM),
     /// so a tight box has room for the CU. Safe to run any time — the agent refuses if a reboot is pending.</summary>
+    /// <remarks>Cleanup runs with an INFINITE per-host timeout so the 3-hour <see cref="PatchOptions.PerHostTimeout"/>
+    /// never cancels-the-watch + tears down + deletes the progress file mid-cleanup. A backlogged 2016 component
+    /// store can take many hours to reclaim; the watch stays alive the whole time. A genuinely dead agent is still
+    /// caught — the agent emits a terminal Error on a real DISM failure, and the lane's silence-watchdog
+    /// (<see cref="PatchOptions.NoResponseTimeout"/>) still trips on total silence (the agent's 10s heartbeat +
+    /// ~20s "Cleaning" lines keep a WORKING-or-STALLED cleanup from tripping it). Past the 8-hour ceiling the row
+    /// gets a display-only "still going, check the box" flag — never a teardown.</remarks>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private Task CleanUp2016Async() =>
-        RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", _patchThrottle);
+        RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", _patchThrottle,
+            // Infinite per-host timeout: RunOnePatchHostAsync's CancelAfter(hostTimeout) never fires for cleanup.
+            System.Threading.Timeout.InfiniteTimeSpan);
 
     // Panel button "Stage" routes through the View's RunStageWorkflowAsync (scan-gate + package-readiness loop)
     // and StageLcuForAsync — the same shared workflow the decision dialog's "Stage CU first" uses.
@@ -3284,6 +3293,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 case PatchPhase.PendingReboot:
                     _activity.Info(computer.Name, $"Staged {target.Kb} — reboot-ready (run the Reboot Wave to commit).");
                     break;
+                case PatchPhase.Deferred:
+                    // A servicing-busy refusal — NOT a stage. Say "couldn't stage, reboot first", never "Staged …".
+                    _activity.Warn(computer.Name, $"Couldn't stage {target.Kb} — a reboot is already pending. Reboot to clear the pending state first, then re-stage.");
+                    break;
                 case PatchPhase.Done:
                     _activity.Info(computer.Name, $"{computer.Name} is already current for {target.Kb}.");
                     break;
@@ -3313,32 +3326,43 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    /// <summary>Maps a stage <see cref="HostPatchStatus"/> onto a row. PendingReboot forces the amber
-    /// reboot-pending state (Vivre's "staged — action needed"): <see cref="Computer.RebootRequired"/> must be
-    /// set true or the derived state would read green-done for a box that hasn't actually rebooted yet.</summary>
+    /// <summary>Maps a stage <see cref="HostPatchStatus"/> onto a row via the pure
+    /// <see cref="Lcu2016RowState.MapStageTerminal"/> decision (tested in Vivre.Core.Tests). A real stage
+    /// (PendingReboot) forces the amber reboot-pending state AND sets <see cref="Computer.StagedThisSession"/>;
+    /// a Deferred servicing-busy refusal is reboot-pending too (amber) but is NEVER staged — the operator must
+    /// reboot first. <see cref="Computer.RebootRequired"/> is only ever forced true here (never cleared, so a
+    /// true set elsewhere survives), matching the prior behaviour. Non-terminal progress ticks fall through to
+    /// the live-progress default.</summary>
     private static void ApplyLcuStageStatus(Computer computer, HostPatchStatus status, string kb)
     {
         switch (status.Phase)
         {
             case PatchPhase.PendingReboot:
-                computer.RebootRequired = true; // → amber RebootPending (the staged / action-needed state)
-                computer.StagedThisSession = true; // Verify uses this (not RebootRequired) to tell rollback from never-staged
-                computer.LcuVerifiedThisSession = false; // freshly (re)staged — a new CU supersedes any prior verified state
-                computer.UpdatePhase = PatchPhase.PendingReboot.ToString();
-                computer.UpdateProgress = 100;
-                computer.UpdateError = null;
-                computer.UpdateMessage = $"Staged {kb} · run Reboot Wave to commit";
-                break;
+            case PatchPhase.Deferred:
             case PatchPhase.Done:
-                computer.UpdatePhase = PatchPhase.Done.ToString();
-                computer.UpdateProgress = 100;
-                computer.UpdateError = null;
-                computer.UpdateMessage = $"Already current ({kb})";
-                break;
             case PatchPhase.Error:
-                computer.UpdatePhase = PatchPhase.Error.ToString();
-                computer.UpdateError = status.Message;
-                computer.UpdateMessage = status.Message;
+                Lcu2016RowState.StageRowOutcome outcome = Lcu2016RowState.MapStageTerminal(status.Phase, kb, status.Message);
+                // Only force RebootRequired true — never clear a true set elsewhere (matches prior behaviour).
+                if (outcome.RebootRequired)
+                {
+                    computer.RebootRequired = true;
+                }
+                computer.StagedThisSession = outcome.Staged; // Verify uses this (not RebootRequired) to tell rollback from never-staged
+                if (outcome.Staged)
+                {
+                    // A real (re)stage supersedes any prior verified state; a Deferred refusal must NOT touch it.
+                    computer.LcuVerifiedThisSession = false;
+                }
+                computer.UpdatePhase = outcome.Phase;
+                // A clean terminal (staged/current) sits at 100%; an error/deferral leaves the bar as-is.
+                if (status.Phase is PatchPhase.PendingReboot or PatchPhase.Done)
+                {
+                    computer.UpdateProgress = 100;
+                }
+                // Surface the agent's message as the row error only on a real failure (not a deferral, which is
+                // a clean "reboot first" outcome, and not a successful stage/current).
+                computer.UpdateError = status.Phase == PatchPhase.Error ? status.Message : null;
+                computer.UpdateMessage = outcome.Message;
                 break;
             default:
                 computer.UpdatePhase = status.Phase.ToString();
@@ -3348,7 +3372,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    /// <summary>Per-host component-store cleanup (DISM /StartComponentCleanup as SYSTEM) for the 2016 lane.</summary>
+    /// <summary>Per-host component-store cleanup (DISM /StartComponentCleanup as SYSTEM) for the 2016 lane.
+    /// Keeps a LIVE host-side "Cleaning — {elapsed}" readout so the row never looks frozen even when DISM's
+    /// percent stalls (the elapsed is independent of the agent's %); the agent's last-known % + "looks
+    /// stalled" hint decorate it, and past the 8-hour ceiling a "still going, check the box" flag is appended.
+    /// On a terminal status the live readout stops and the per-box terminal label
+    /// (<see cref="Lcu2016RowState.MapCleanupTerminal"/>) wins: "Cleaned — ready to Stage" (green) /
+    /// "Cleaned — reboot-pending (reboot before Stage)" (amber) / "Deferred" (servicing-busy refusal).</summary>
     private async Task ComponentCleanupLcuRowAsync(Computer computer, CancellationToken token)
     {
         if (computer.IsPatching)
@@ -3362,23 +3392,59 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdatePhase = PatchPhase.Cleaning.ToString();
         computer.UpdateMessage = "Cleaning the component store…";
 
-        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        // Host-side liveness state. Both the progress callback and the elapsed-updater tick run on the
+        // captured UI context (no ConfigureAwait(false) anywhere in this method's path), so the single-
+        // threaded UI context serializes every read/write of these — no locking needed. The progress
+        // callback only RECORDS the agent's latest % + stalled hint (and forwards to ApplyStatus for the
+        // reboot-pending/error bookkeeping); the updater RENDERS the live "Cleaning — {elapsed}" label.
+        DateTime startedUtc = DateTime.UtcNow;
+        int? latestPercent = null;
+        bool latestStalled = false;
+        bool terminalSeen = false;
+
+        var progress = new Progress<HostPatchStatus>(s =>
+        {
+            if (s.Phase == PatchPhase.Cleaning)
+            {
+                // A non-terminal "Cleaning" display line: capture its % + stalled hint for the updater, but
+                // do NOT write the message here (the updater owns the live label so it never looks frozen).
+                latestPercent = s.Percent;
+                latestStalled = s.Message?.Contains("looks stalled", StringComparison.OrdinalIgnoreCase) == true;
+                return;
+            }
+
+            // Any non-Cleaning status (terminal, or a transient Scanning) goes through the shared bookkeeping
+            // (RebootRequired on 3010, error recording, etc.). The terminal label is applied below the await.
+            terminalSeen = s.Phase is PatchPhase.Done or PatchPhase.PendingReboot or PatchPhase.Deferred or PatchPhase.Error;
+            ApplyStatus(computer, s);
+        });
+
+        // The elapsed-updater loop: refreshes the live "Cleaning — {elapsed}" label every ~2.5s until the
+        // cleanup completes. Cancelled via updaterCts when the cleanup terminates (success, error, or Stop).
+        using var updaterCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+        Task updater = RunCleanupElapsedUpdaterAsync(computer, startedUtc, () => latestPercent, () => latestStalled, () => terminalSeen, updaterCts.Token);
+
         try
         {
             // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
             // (live-filtered properties), so the continuation must resume on the captured (UI) context.
             HostPatchStatus final = await _patch
                 .ComponentCleanupLcuAsync(computer.Name, _patchOptions, progress, token);
+
+            // Stop the live readout before applying the terminal label so it can't overwrite it on a late tick.
+            updaterCts.Cancel();
+            try { await updater; } catch (OperationCanceledException) { /* expected on cancel */ }
+
+            // Shared bookkeeping (RebootRequired on the 3010 PendingReboot case, error recording) …
             ApplyStatus(computer, final);
-            if (final.Phase == PatchPhase.Done)
-            {
-                computer.UpdatePhase = PatchPhase.Cleaned.ToString();
-                computer.UpdateMessage = "Component store cleaned";
-            }
+            // … then the per-box terminal label wins over ApplyStatus's generic message.
+            (string phase, string message) = Lcu2016RowState.MapCleanupTerminal(final.Phase, final.Message);
+            computer.UpdatePhase = phase;
+            computer.UpdateMessage = message;
         }
         catch (OperationCanceledException)
         {
-            // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
+            // Clear any transient phase (Scanning/Cleaning/…) so a user Stop never leaves the row stuck
             // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
             computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
@@ -3393,7 +3459,40 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
+            // Belt-and-braces: ensure the updater is stopped on every exit path (cancel/error too).
+            updaterCts.Cancel();
+            try { await updater; } catch { /* updater already faulted/cancelled — nothing to surface */ }
             computer.IsPatching = false;
+        }
+    }
+
+    /// <summary>The live host-side elapsed readout for a running cleanup. Refreshes the row's
+    /// <see cref="Computer.UpdateMessage"/> (and % bar) every ~2.5s with <see cref="Lcu2016RowState.BuildCleanupProgressLabel"/>
+    /// so the row never looks frozen even while DISM's percent sits still — the elapsed is the real liveness.
+    /// Runs on the captured UI context (no ConfigureAwait(false)) so it never races the data-bound writes the
+    /// rest of the method makes. Stops the moment a terminal status is seen or the token is cancelled; the
+    /// caller then applies the terminal label.</summary>
+    private static async Task RunCleanupElapsedUpdaterAsync(
+        Computer computer, DateTime startedUtc, Func<int?> percent, Func<bool> stalled, Func<bool> terminalSeen, CancellationToken token)
+    {
+        while (!token.IsCancellationRequested && !terminalSeen())
+        {
+            TimeSpan elapsed = DateTime.UtcNow - startedUtc;
+            bool pastCeiling = Lcu2016RowState.IsPastCleanupCeiling(elapsed, Lcu2016RowState.CleanupCeiling);
+            computer.UpdateMessage = Lcu2016RowState.BuildCleanupProgressLabel(elapsed, percent(), stalled(), pastCeiling);
+            if (percent() is int p)
+            {
+                computer.UpdateProgress = p;
+            }
+
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(2.5), token);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 
@@ -3756,6 +3855,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (status.Phase is PatchPhase.Error or PatchPhase.Unreachable)
             {
                 _activity.Error(computer.Name, status.Message);
+            }
+            else if (status.Phase == PatchPhase.Deferred)
+            {
+                // A servicing-busy refusal (reboot already pending) — not a failure, but not a success
+                // either. Warn so the operator sees the "reboot first" message stand out, while the chip
+                // reads amber RebootPending (never green) via DerivePatchState.
+                _activity.Warn(computer.Name, message);
             }
             else
             {

@@ -696,7 +696,9 @@ public sealed class SmbAgentLane : ISmbAgentLane
     }
 
     private static bool IsTerminal(PatchPhase phase) =>
-        phase is PatchPhase.Done or PatchPhase.Error or PatchPhase.PendingReboot;
+        // Deferred is a terminal servicing-busy refusal (the agent didn't start because a reboot is
+        // already pending) — the tail must stop on it like any other terminal phase.
+        phase is PatchPhase.Done or PatchPhase.Error or PatchPhase.PendingReboot or PatchPhase.Deferred;
 
     private static string? GetString(JsonElement row, string name) =>
         row.TryGetProperty(name, out JsonElement el) && el.ValueKind == JsonValueKind.String

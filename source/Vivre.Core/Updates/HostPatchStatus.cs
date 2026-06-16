@@ -49,6 +49,18 @@ public enum PatchPhase
     Error,
 
     /// <summary>
+    /// The agent REFUSED a Stage/Cleanup because a reboot is already pending (Windows servicing is
+    /// mid-flight), so it deliberately did NOT start — to avoid colliding with the in-progress servicing.
+    /// TERMINAL, and carries <c>RebootPending=true</c>. It is NOT a successful stage and must NEVER read
+    /// as "Staged": the box hasn't been touched, it just needs a reboot to clear the pending state before
+    /// Stage/Cleanup can run. Reduces to <see cref="PatchState.RebootPending"/> (amber — a deferral means
+    /// the box is reboot-pending), with its own "reboot first" message distinct from the staged message.
+    /// The label prescribes a reboot the operator performs via the existing Reboot Wave; it adds no reboot
+    /// call of its own.
+    /// </summary>
+    Deferred,
+
+    /// <summary>
     /// Couldn't reach Windows Update after the transient-retry budget was exhausted — a network
     /// reach failure (e.g. the SLS service-locator call timed out), NOT a real install failure and
     /// NOT a clean "up to date". Reduces to <see cref="PatchState.Error"/> (red — never green) but
