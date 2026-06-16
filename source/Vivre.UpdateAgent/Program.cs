@@ -76,7 +76,11 @@ namespace Vivre.UpdateAgent
                 bool isScan = string.Equals(config.Mode, "Scan", StringComparison.OrdinalIgnoreCase);
                 if (!isScan && BootBusyGuard.IsServicingBusy(out string busyReason))
                 {
-                    progress.Write("PendingReboot",
+                    // Phase "Deferred" (NOT "PendingReboot"): a servicing-busy refusal must NOT look
+                    // like a successful stage's reboot-pending. The host maps "Deferred" to a
+                    // non-staged "reboot first, then re-run" state — a deferral is never a success.
+                    // This covers every mutating mode (AddPackage/Cleanup/Uninstall/Install).
+                    progress.Write("Deferred",
                         "Deferred — " + busyReason + ". Reboot the machine, then re-run. (Not started, to avoid colliding with Windows servicing.)",
                         100, 0, 0, 0, true);
                     return 0;
@@ -408,16 +412,28 @@ namespace Vivre.UpdateAgent
             }
         }
 
+        // --- component cleanup (Server 2016 lane) --------------------------
+
+        // Liveness tuning for component cleanup (named so they're trivially adjustable). On a backlogged
+        // 2016 box DISM's percent stalls for long silent reclamation phases, so we emit a DISPLAYED
+        // "still working" line on a cadence and treat "no meaningful CPU for the whole hang window" as a
+        // genuine hang. A working DISM consumes CPU; a deadlocked one sits at ~0.
+        private static readonly TimeSpan HeartbeatCadence = TimeSpan.FromSeconds(20);
+        private static readonly TimeSpan HangWindow = TimeSpan.FromMinutes(45);
+        // A CPU delta over the high-water mark must exceed this to count as "meaningful work" and reset
+        // the hang clock — filters idle-thread noise from a genuinely advancing dism.
+        private static readonly TimeSpan CpuAdvanceThreshold = TimeSpan.FromSeconds(1);
+
         /// <summary>
         /// Reclaims component-store space: <c>DISM /Online /Cleanup-Image /StartComponentCleanup</c>,
-        /// streaming percent. Never reboots. (RunFromConfig's BootBusyGuard already refuses this when a
-        /// reboot is pending / servicing is in progress, so it won't collide with a staged update.)
+        /// with a liveness sampler (see <see cref="RunDismWithLiveness"/>). Never reboots. (RunFromConfig's
+        /// BootBusyGuard already refuses this when a reboot is pending / servicing is in progress, so it
+        /// won't collide with a staged update.)
         /// </summary>
         private static bool RunComponentCleanup(ProgressWriter progress)
         {
             progress.Write("Cleaning", "Cleaning the component store (DISM /StartComponentCleanup)…", 0, 1, 0, 0, false);
-            int exit = RunDism("/online /cleanup-image /startcomponentcleanup /english",
-                progress, "Cleaning", "Cleaning component store");
+            int exit = RunDismWithLiveness("/online /cleanup-image /startcomponentcleanup /english", progress);
 
             const int ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
             if (exit == 0)
@@ -436,6 +452,174 @@ namespace Vivre.UpdateAgent
                 "Component cleanup failed (exit 0x" + exit.ToString("X8") + "). See %WINDIR%\\Logs\\DISM\\dism.log.",
                 100, 1, 0, 1, false);
             return false;
+        }
+
+        /// <summary>
+        /// A cleanup-specific DISM runner with a liveness sampler. Like <see cref="RunDism"/> it parses
+        /// dism's redrawn percent, but where RunDism only emits when the percent changes (so it goes
+        /// SILENT during 2016's long reclamation phases) this runner drives a separate timer loop that,
+        /// independent of any stdout, every <see cref="HeartbeatCadence"/>:
+        ///   • emits a DISPLAYED "Cleaning" progress line with the compact elapsed time + the latest known
+        ///     percent (the elapsed + "working" is the real liveness; the stalled percent is decoration);
+        ///   • samples the dism child's <see cref="System.Diagnostics.Process.TotalProcessorTime"/>,
+        ///     tracking a high-water mark + the UTC time CPU last advanced meaningfully. If CPU has not
+        ///     advanced for the whole <see cref="HangWindow"/> the cleanup is genuinely hung (a working
+        ///     DISM burns CPU; a deadlocked one sits at ~0) — it writes a TERMINAL "Error" line and Kills
+        ///     the dism process so WaitForExit unwinds and the agent exits cleanly.
+        ///
+        /// <para>Percent parsing runs off the async <c>OutputDataReceived</c> pump (so it never blocks the
+        /// sampler), and the sampler runs on its OWN thread (so a fully silent dism — no stdout at all —
+        /// is still sampled on cadence and still detected as hung). DISM redraws its bar with CR, which the
+        /// event splits into lines we scan for the most-recent "NN.N%".</para>
+        ///
+        /// <para>Killing a CONFIRMED-hung CHILD process is NOT a reboot/shutdown — the agent stays
+        /// reboot-free; only Vivre.Core's DcomRebootTrigger ever reboots.</para>
+        ///
+        /// <para>The hang DECISION and elapsed formatting are the pure, linked, unit-tested
+        /// <see cref="CleanupLiveness"/> predicates; only the live CPU/process I/O lives here.</para>
+        /// </summary>
+        private static int RunDismWithLiveness(string arguments, ProgressWriter progress)
+        {
+            const string phase = "Cleaning";
+
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "dism.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            using (var p = new System.Diagnostics.Process { StartInfo = psi })
+            {
+                // Latest parsed dism percent (-1 until first seen). Written by the async stdout pump,
+                // read by the sampler thread — volatile is enough for a single int snapshot.
+                int latestPct = -1;
+                bool killedForHang = false;
+                var gate = new object();
+
+                p.OutputDataReceived += (s, e) =>
+                {
+                    if (string.IsNullOrEmpty(e.Data))
+                    {
+                        return;
+                    }
+
+                    // DISM redraws "NN.N%" repeatedly; take the most-recent one on this line.
+                    var matches = System.Text.RegularExpressions.Regex.Matches(e.Data, @"(\d{1,3}(?:\.\d+)?)%");
+                    if (matches.Count > 0 &&
+                        double.TryParse(matches[matches.Count - 1].Groups[1].Value,
+                            NumberStyles.Any, CultureInfo.InvariantCulture, out double val))
+                    {
+                        int pct = (int)Math.Round(val);
+                        if (pct < 0) pct = 0; else if (pct > 100) pct = 100;
+                        System.Threading.Volatile.Write(ref latestPct, pct);
+                    }
+                };
+                p.ErrorDataReceived += (s, e) => { /* drain stderr so the pipe can't fill and deadlock */ };
+
+                p.Start();
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
+
+                // The liveness sampler runs on its own thread so it fires on cadence even while dism emits
+                // NOTHING on stdout (the exact 2016 stall). It exits when dism does (WaitForExit below
+                // sets the stop event) or after it kills a confirmed hang.
+                DateTime startedUtc = DateTime.UtcNow;
+                var stop = new System.Threading.ManualResetEventSlim(false);
+                var sampler = new System.Threading.Thread(() =>
+                {
+                    DateTime lastCpuAdvanceUtc = startedUtc;
+                    TimeSpan cpuHighWater = TimeSpan.Zero;
+
+                    // Wait a full cadence between samples; Wait returns true if signalled to stop.
+                    while (!stop.Wait(HeartbeatCadence))
+                    {
+                        DateTime nowUtc = DateTime.UtcNow;
+
+                        // Sample CPU. A working dism keeps consuming processor time; reset the hang clock
+                        // only on a MEANINGFUL advance over the high-water mark (filters idle-thread noise).
+                        try
+                        {
+                            TimeSpan cpu = p.TotalProcessorTime;
+                            if (CleanupLiveness.CpuAdvancedMeaningfully(cpuHighWater, cpu, CpuAdvanceThreshold))
+                            {
+                                cpuHighWater = cpu;
+                                lastCpuAdvanceUtc = nowUtc;
+                            }
+                        }
+                        catch
+                        {
+                            // TotalProcessorTime can throw if the process just exited between the stop
+                            // check and here; the outer WaitForExit handles that exit. Treat as "no
+                            // advance" — only the 45-min window may terminate, never a transient read error.
+                        }
+
+                        // Emit the DISPLAYED liveness line (phase "Cleaning" so the host shows it — NOT a
+                        // "Heartbeat" line, which the host ignores for display).
+                        int pctSnapshot = System.Threading.Volatile.Read(ref latestPct);
+                        string elapsed = CleanupLiveness.FormatElapsed(nowUtc - startedUtc);
+                        string msg = "Cleaning component store — " + elapsed + ", working";
+                        int? pctField = null;
+                        if (pctSnapshot >= 0)
+                        {
+                            msg += " (" + pctSnapshot + "%)";
+                            pctField = pctSnapshot;
+                        }
+
+                        progress.Write(phase, msg, pctField, 1, 0, 0, false);
+
+                        // Hang decision is the pure predicate. If hung: terminal Error + Kill the child so
+                        // WaitForExit unwinds. Killing a CONFIRMED-hung child is NOT a reboot.
+                        if (CleanupLiveness.IsHung(nowUtc - lastCpuAdvanceUtc, HangWindow))
+                        {
+                            int hangMinutes = (int)Math.Round(HangWindow.TotalMinutes);
+                            progress.Write("Error",
+                                "Component cleanup appears hung — dism used no CPU for " + hangMinutes
+                                + " min. See %WINDIR%\\Logs\\DISM\\dism.log.",
+                                100, 1, 0, 1, false);
+
+                            lock (gate) { killedForHang = true; }
+                            try
+                            {
+                                p.Kill();
+                            }
+                            catch
+                            {
+                                // Already exiting / gone — WaitForExit returns regardless.
+                            }
+
+                            return; // sampler done; WaitForExit below unwinds the process
+                        }
+                    }
+                })
+                {
+                    IsBackground = true,
+                    Name = "VivreDismLiveness",
+                };
+                sampler.Start();
+
+                p.WaitForExit();
+
+                // Stop the sampler and let it settle so no stray "Cleaning" line trails the terminal line.
+                stop.Set();
+                try { sampler.Join(TimeSpan.FromSeconds(2)); }
+                catch { /* best-effort join; background thread won't block process exit */ }
+
+                bool wasKilled;
+                lock (gate) { wasKilled = killedForHang; }
+                if (wasKilled)
+                {
+                    // Terminal Error already written by the sampler. Return a non-zero so the caller's
+                    // exit-code mapping does NOT mislabel a killed hang as a clean cleanup (a Killed
+                    // process's exit code is unreliable). The Error line already on the wire is the truth.
+                    return unchecked((int)0x800705B4); // ERROR_TIMEOUT
+                }
+
+                return p.ExitCode;
+            }
         }
 
         /// <summary>True when the CBS "RebootPending" key exists — the authoritative "an update is staged

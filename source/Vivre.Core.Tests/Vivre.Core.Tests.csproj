@@ -32,6 +32,9 @@
     <Compile Include="..\Vivre.UpdateAgent\BootServicingState.cs" Link="Updates\BootServicingState.cs" />
     <Compile Include="..\Vivre.UpdateAgent\DismHelper.cs" Link="Updates\DismHelper.cs" />
     <Compile Include="..\Vivre.UpdateAgent\AgentConfig.cs" Link="Updates\AgentConfig.cs" />
+    <!-- CleanupLiveness: the component-cleanup hang decision + elapsed formatting (no Process/IO
+         deps). The live CPU sampling stays in the agent's Program.cs; the DECISION is tested here. -->
+    <Compile Include="..\Vivre.UpdateAgent\CleanupLiveness.cs" Link="Updates\CleanupLiveness.cs" />
   </ItemGroup>
 
 </Project>
