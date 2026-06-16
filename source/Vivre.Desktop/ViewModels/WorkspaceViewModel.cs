@@ -213,8 +213,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // the UI context — this plain List needs no locking only because of that. If you ever add
     // ConfigureAwait(false) to a sweep's own awaits, switch this to a ConcurrentDictionary/lock.
     private readonly List<CancellationTokenSource> _activeCts = [];
-    // Install/uninstall throttle (heavy SYSTEM-task operations — kept low; per-tab).
-    private readonly SemaphoreSlim _patchThrottle;
+    // Install/uninstall throttle (heavy SYSTEM-task operations; per-tab). Non-readonly so
+    // CurrentInstallThrottle() can swap it when the operator changes "Max simultaneous installs"
+    // in Settings. In-flight sweeps capture the old semaphore reference at sweep-start and keep
+    // using it; only sweeps started after the change use the new cap.
+    private SemaphoreSlim _patchThrottle;
+    private int _patchThrottleCap;
+    private static int ClampInstallCap(int v) => Math.Clamp(v, 1, 200);
 
     // Silent transient-retry budget for a WUA scan/install (see TransientRetryRunner + TransientWuaError).
     // 3 retries × ~60s: each failing WUA attempt already burns ~2.5 min on Windows' own internal retries,
@@ -786,7 +791,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _scripts = scripts;
         _patch = patch;
         _patchOptions = patchOptions;
-        _patchThrottle = new SemaphoreSlim(Math.Max(1, patchOptions.MaxConcurrentHosts));
+        _patchThrottleCap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
+        _patchThrottle = new SemaphoreSlim(_patchThrottleCap);
         // First tab wins: the shared read budget is set once from the singleton PatchOptions and then
         // reused by every subsequent tab. Safe without a lock because all WorkspaceViewModel instances
         // are constructed on the UI thread (ShellViewModel.NewTab dispatches to no background thread).
@@ -1612,14 +1618,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <param name="targetPath">The final file/folder path on each target.</param>
     /// <param name="packageName">For the activity log + row status.</param>
     public Task StageSelectedAsync(IReadOnlyList<Computer> rows, string sourcePath, bool sourceIsFolder, string targetPath, string packageName) =>
-        // Bounded by the conservative patch throttle (a payload copy is heavy on the wire). No
-        // operationLabel: staging tracks Command result, not PatchState, so the patch-style completion
-        // summary doesn't apply — per-row results + the activity log carry the outcome.
+        // Bounded by the install throttle (a payload copy is heavy on the wire). No operationLabel:
+        // staging tracks Command result, not PatchState, so the patch-style completion summary doesn't
+        // apply — per-row results + the activity log carry the outcome.
         RunPatchSweepAsync(
             rows.Count > 0 ? rows : [.. Computers],
             (c, ct) => StageRowAsync(c, sourcePath, sourceIsFolder, targetPath, packageName, ct),
             operationLabel: null,
-            _patchThrottle);
+            CurrentInstallThrottle());
 
     /// <summary>Per-host stage: copy the package to the target and reflect the result on the row's
     /// Command result + the activity log. Nothing is executed on the target.</summary>
@@ -2309,6 +2315,32 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// a tray balloon (unfocused) or the in-window completion bar (focused).</summary>
     public event Action<string, OperationSeverity>? OperationCompleted;
 
+    /// <summary>Returns the semaphore to use as the install throttle, swapping to a fresh one if the
+    /// operator has changed "Max simultaneous installs" in Settings since the last sweep. Called on the
+    /// UI thread at sweep-start, so reference assignment is safe and no lock is needed.
+    /// SAFE: in-flight sweeps captured the OLD semaphore at their start and keep using it — we never
+    /// resize a live semaphore, so no in-flight slot accounting is disturbed. A brief overlap of an
+    /// old sweep at the old cap and a new sweep at the new cap is acceptable; they use independent
+    /// semaphores and the total concurrent load stays bounded.</summary>
+    private SemaphoreSlim CurrentInstallThrottle()
+    {
+        int cap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
+        if (cap != _patchThrottleCap)
+        {
+            // Operator changed "Max simultaneous installs". Swap to a fresh semaphore at the new cap.
+            // SAFE: in-flight sweeps captured the OLD semaphore (it's passed BY REFERENCE into
+            // RunPatchSweepAsync at their start) and keep using it — we never resize a live semaphore,
+            // so no in-flight slot accounting is disturbed. Sweeps started AFTER the change use the new
+            // cap. Reference assignment is atomic and this runs on the UI thread at sweep-start, so no
+            // torn read. (A brief overlap of an old sweep at the old cap + a new sweep at the new cap is
+            // acceptable and bounded — they use independent semaphores.)
+            _patchThrottle = new SemaphoreSlim(cap);
+            _patchThrottleCap = cap;
+        }
+
+        return _patchThrottle;
+    }
+
     private async Task RunPatchSweepAsync(
         IReadOnlyList<Computer> rows,
         Func<Computer, CancellationToken, Task> operation,
@@ -2316,8 +2348,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         SemaphoreSlim? throttle = null,
         TimeSpan? perHostTimeout = null)
     {
-        // Scans pass the high scan throttle; install/uninstall default to the conservative one.
-        throttle ??= _patchThrottle;
+        // Scans pass the high scan throttle; install/uninstall default to the current install cap.
+        throttle ??= CurrentInstallThrottle();
         // The Reboot Wave self-bounds at its own hard cap and passes a longer per-host timeout; everything
         // else uses the shared PatchOptions timeout so a single hung box can't pin the grid.
         TimeSpan hostTimeout = perHostTimeout ?? _patchOptions.PerHostTimeout;
@@ -3031,7 +3063,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Stage this month's CU on the given flagged 2016 boxes (decision dialog "Stage CU first"). Same
     /// per-host stage as the panel button, scoped to a specific set.</summary>
     public Task StageLcuForAsync(IReadOnlyList<Computer> boxes) =>
-        RunPatchSweepAsync(boxes, (c, ct) => StageLcuRowAsync(c, null, ct), "Stage", _patchThrottle);
+        RunPatchSweepAsync(boxes, (c, ct) => StageLcuRowAsync(c, null, ct), "Stage", CurrentInstallThrottle());
 
     /// <summary>Install only the NON-cumulative updates on the given flagged 2016 boxes via WUA (decision dialog
     /// "Install minor updates only"). <see cref="InstallRowAsync"/> excludes the OS CU per row, so the broken
@@ -3166,7 +3198,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// gets a display-only "still going, check the box" flag — never a teardown.</remarks>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private Task CleanUp2016Async() =>
-        RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", _patchThrottle,
+        RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", CurrentInstallThrottle(),
             // Infinite per-host timeout: RunOnePatchHostAsync's CancelAfter(hostTimeout) never fires for cleanup.
             System.Threading.Timeout.InfiniteTimeSpan);
 

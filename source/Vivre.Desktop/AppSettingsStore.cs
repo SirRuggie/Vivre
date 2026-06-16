@@ -70,6 +70,13 @@ public sealed class AppSettings
     /// OrdinalIgnoreCase; the source of truth behind <see cref="Vivre.Core.Models.Computer.RequiresStagedPatching"/>.
     /// Always normalize after deserialization — a JSON round-trip resets the set's comparer to ordinal.</summary>
     public HashSet<string> StagedHosts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Cap on how many hosts install/uninstall/stage/clean-up at once. Operator-tunable in
+    /// Settings → "Max simultaneous installs"; applied to every install sweep started after the change
+    /// (in-flight sweeps continue at the cap they were started with). The practical governor is
+    /// update-download bandwidth (N hosts pulling cumulative updates simultaneously), not the client.
+    /// Range 1–200; default 50.</summary>
+    public int MaxSimultaneousInstalls { get; set; } = 50;
 }
 
 /// <summary>

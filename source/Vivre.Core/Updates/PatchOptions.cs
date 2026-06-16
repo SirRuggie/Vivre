@@ -73,8 +73,9 @@ public sealed class PatchOptions
     /// WinRM session (mostly idle-waiting once open) plus the target downloading/installing as
     /// SYSTEM. The practical governor is update-download bandwidth (N hosts pulling cumulative
     /// updates at once), not the client — raise it on a fast LAN with WSUS/SCCM + Delivery
-    /// Optimization peering, lower it over a slow WAN. Scan has its own (much higher) cap.</summary>
-    public int MaxConcurrentHosts { get; set; } = 10;
+    /// Optimization peering, lower it over a slow WAN. Scan has its own (much higher) cap.
+    /// Default 50; operator-tunable in Settings → "Max simultaneous installs".</summary>
+    public int MaxConcurrentHosts { get; set; } = 50;
 
     /// <summary>App-wide shared budget for all remote READ operations: vitals probes, health checks,
     /// update scans, software checks, and custom-column sweeps — across ALL open tabs. This is a

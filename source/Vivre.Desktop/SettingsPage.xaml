@@ -72,6 +72,32 @@
                 </Grid>
             </Border>
 
+            <!-- ── Max simultaneous installs (flat row) ─────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0" Symbol="ArrowDownload24" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:TextBlock Text="Max simultaneous installs" />
+                        <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                                      Text="How many machines install, uninstall, stage, or clean up at once. The practical limit is download bandwidth. Range 1–200; default 50. Takes effect on the next install sweep — in-flight sweeps are not interrupted." />
+                    </StackPanel>
+                    <ui:TextBox Grid.Column="2" x:Name="MaxInstallsBox"
+                                MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
+                                PlaceholderText="50"
+                                LostFocus="OnMaxInstallsChanged"
+                                TextChanged="OnMaxInstallsChanged"
+                                ToolTip="Cap on simultaneous installs/uninstalls/stages (1–200). Default 50." />
+                </Grid>
+            </Border>
+
             <!-- ── Grid columns (flat row) ───────────────────────────────── -->
             <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

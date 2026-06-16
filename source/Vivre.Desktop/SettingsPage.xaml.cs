@@ -48,6 +48,7 @@ public partial class SettingsPage : UserControl
         LcuKbBox.Text = s.MonthlyCu?.Kb ?? string.Empty;
         LcuUbrBox.Text = s.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
         LcuPackagesFolderBox.Text = s.LcuPackagesFolder;
+        MaxInstallsBox.Text = s.MaxSimultaneousInstalls.ToString();
 
         // Inline version in the Help & about expander.
         VersionText.Text = $"Vivre {AboutWindow.RunningVersion()}";
@@ -171,6 +172,25 @@ public partial class SettingsPage : UserControl
         }
 
         PersistSettings(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.TargetUbr = ubr; });
+    }
+
+    private void OnMaxInstallsChanged(object sender, RoutedEventArgs e)
+    {
+        string raw = MaxInstallsBox.Text.Trim();
+        if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > 200)
+        {
+            // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
+            MaxInstallsBox.Text = _settingsStore?.Load().MaxSimultaneousInstalls.ToString() ?? "50";
+            return;
+        }
+
+        int clamped = Math.Clamp(parsed, 1, 200);
+        if (clamped.ToString() != raw)
+        {
+            MaxInstallsBox.Text = clamped.ToString();
+        }
+
+        PersistSettings(s => s.MaxSimultaneousInstalls = clamped);
     }
 
     private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)
