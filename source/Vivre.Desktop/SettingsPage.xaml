@@ -34,7 +34,7 @@
                                        VerticalAlignment="Center" Margin="0,0,12,0" />
                         <StackPanel Grid.Column="1" VerticalAlignment="Center">
                             <ui:TextBlock Text="App theme" />
-                            <ui:TextBlock Appearance="Secondary" Text="Select which app theme to display" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Select which app theme to display" />
                         </StackPanel>
                         <ComboBox Grid.Column="2" x:Name="ThemeCombo" MinWidth="160"
                                   VerticalAlignment="Center"
@@ -61,7 +61,7 @@
                                    VerticalAlignment="Center" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <ui:TextBlock Text="Auto-check on load" />
-                        <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                       Text="When on, loading a list auto-pings and checks vitals. When off, the grid is a frozen snapshot until you click Ping All or Check Vitals." />
                     </StackPanel>
                     <ui:ToggleSwitch Grid.Column="2" x:Name="AutoToggle"
@@ -86,7 +86,7 @@
                                    VerticalAlignment="Center" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <ui:TextBlock Text="Max simultaneous installs" />
-                        <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                       Text="How many machines install, uninstall, stage, or clean up at once. The practical limit is download bandwidth. Range 1–200; default 50. Takes effect on the next install sweep — in-flight sweeps are not interrupted." />
                     </StackPanel>
                     <ui:TextBox Grid.Column="2" x:Name="MaxInstallsBox"
@@ -112,7 +112,7 @@
                                    VerticalAlignment="Center" Margin="0,0,12,0" />
                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
                         <ui:TextBlock Text="Grid columns" />
-                        <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                       Text="Show or hide built-in columns; add custom PowerShell columns." />
                     </StackPanel>
                     <ui:Button Grid.Column="2" Content="Manage columns…"
@@ -127,7 +127,7 @@
                              Icon="{ui:SymbolIcon Key24}"
                              Header="Remote credentials">
                 <StackPanel Margin="0,8,0,0">
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="Used for SCCM actions, Run Script, and Enable WinRM. Held for this session only — never saved to disk." />
 
                     <RadioButton x:Name="UseLoginRadio"
@@ -183,7 +183,7 @@
                                 PlaceholderText="e.g. 10.70.25.111"
                                 LostFocus="OnWugServerChanged"
                                 Margin="0,0,0,4" />
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,16"
                                   Text="Used by right-click ▸ WhatsUp Gold maintenance… to put machines in or out of monitoring maintenance. Hostname or IP; connects over HTTPS with the credentials you enter in that dialog." />
 
                     <!-- Package library folder -->
@@ -201,7 +201,7 @@
                                    Click="OnBrowsePackagesFolder"
                                    ToolTip="Pick the package library folder." />
                     </Grid>
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                   Text="Source library for right-click ▸ Software ▸ Stage software… — each subfolder or file here becomes a stageable package. Local or UNC path (e.g. \\server\packages). This is where packages come from, not where they're delivered." />
 
                 </StackPanel>
@@ -212,7 +212,7 @@
                              Icon="{ui:SymbolIcon Box24}"
                              Header="Server 2016 cumulative update">
                 <StackPanel Margin="0,8,0,0">
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="The month's CU the Server 2016 panel stages and verifies. Update the KB and target UBR each cycle; the package itself is a .msu you download from the Microsoft Update Catalog into the folder below." />
 
                     <!-- KB number -->
@@ -221,7 +221,7 @@
                                 PlaceholderText="e.g. KB5094122"
                                 LostFocus="OnLcuKbChanged"
                                 Margin="0,0,0,4" />
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="The CU article number, e.g. KB5094122. Used to find the .msu in the package folder and shown in the 2016 panel." />
 
                     <!-- Target UBR -->
@@ -230,7 +230,7 @@
                                 PlaceholderText="e.g. 9234"
                                 LostFocus="OnLcuUbrChanged"
                                 Margin="0,0,0,4" />
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="The build revision after the CU commits. On the update history page each entry lists 'OS Build 14393.XXXX' — use the digits after the dot (e.g. 9234)." />
 
                     <!-- Update history page — read-only, selectable label; the source for this month's KB + UBR. -->
@@ -262,7 +262,7 @@
                                    Click="OnBrowseLcuPackagesFolder"
                                    ToolTip="Pick the folder you drop the monthly .msu into." />
                     </Grid>
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                   Text="Where you drop the monthly cumulative-update .msu downloaded from the Microsoft Update Catalog. Default: C:\Vivre\VivrePackages. Vivre only reads from here — it never downloads the file itself." />
                 </StackPanel>
             </ui:CardExpander>
@@ -273,7 +273,7 @@
                              Header="Staged patching machines"
                              Expanded="OnStagedHostsExpanded">
                 <StackPanel Margin="0,8,0,0">
-                    <ui:TextBlock Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,12"
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="Server 2016 machines you've flagged to patch through the DISM staging lane instead of normal Windows Update. Flag one by right-clicking its row in a Patching tab ▸ Mark as Staged patching. Remove a machine here to send it back to normal Windows Update." />
 
                     <ListBox x:Name="StagedHostsList" MaxHeight="220" Margin="0,0,0,8"
@@ -298,7 +298,7 @@
                         </ListBox.ItemTemplate>
                     </ListBox>
 
-                    <ui:TextBlock x:Name="StagedHostsEmpty" Appearance="Secondary" FontSize="12"
+                    <ui:TextBlock x:Name="StagedHostsEmpty" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12"
                                   Margin="0,0,0,8" Visibility="Collapsed"
                                   Text="No machines flagged for staged patching yet." />
 
@@ -312,7 +312,7 @@
                              Icon="{ui:SymbolIcon Info24}"
                              Header="Help &amp; about">
                 <StackPanel Margin="0,8,0,0">
-                    <ui:TextBlock x:Name="VersionText" Appearance="Secondary"
+                    <ui:TextBlock x:Name="VersionText" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                   Margin="0,0,0,10" />
                     <StackPanel Orientation="Horizontal">
                         <ui:Button Content="How to use Vivre…" Icon="{ui:SymbolIcon QuestionCircle24}"
