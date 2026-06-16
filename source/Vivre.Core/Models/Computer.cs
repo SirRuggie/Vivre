@@ -371,6 +371,22 @@ public partial class Computer : ObservableObject
     /// <see cref="ApplicableUpdates"/> but feeds the uninstall flow.</summary>
     public ObservableCollection<SelectableUpdate> InstalledUpdates { get; } = [];
 
+    /// <summary>
+    /// Ticks every applicable update for install. Used by the reboot-and-verify post-reboot rescan so the
+    /// updates it surfaces as "still applicable" are one-click-installable — the same readiness a fresh
+    /// scan gives. (A fresh scan auto-ticks its finds; a rescan, via the scan path's preserve-prior
+    /// selection, would otherwise inherit a just-completed install's untick on a re-found still-applicable
+    /// update, leaving it surfaced-but-unchecked.) Selection only — touches <see cref="ApplicableUpdates"/>
+    /// (never <see cref="InstalledUpdates"/>), and never installs or reboots.
+    /// </summary>
+    public void SelectAllApplicableUpdates()
+    {
+        foreach (SelectableUpdate update in ApplicableUpdates)
+        {
+            update.IsSelected = true;
+        }
+    }
+
     /// <summary>"N update(s) available" / "Up to date" message from the last Applicable scan;
     /// null until that scope has been scanned for this machine.</summary>
     [ObservableProperty]

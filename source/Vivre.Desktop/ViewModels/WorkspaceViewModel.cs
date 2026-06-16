@@ -3660,6 +3660,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (status.Phase != PatchPhase.Error)
             {
                 ApplyStatus(computer, status, UpdateScope.Applicable);
+                // Read-only readiness: the post-reboot rescan surfaces what's STILL applicable. Auto-select
+                // those updates for THIS box so the operator can one-click Install them — the same readiness
+                // a fresh scan gives. (ApplyStatus → ReplaceUpdatesForScope preserves prior selection, which
+                // here inherits the just-completed install's untick on a re-found still-applicable update,
+                // leaving it surfaced-but-unchecked so the checked-updates-only Install finds nothing.) This
+                // ONLY selects — it never installs and never reboots; the operator still clicks Install.
+                computer.SelectAllApplicableUpdates();
                 break;
             }
 
