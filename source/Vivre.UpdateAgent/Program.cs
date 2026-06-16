@@ -416,13 +416,20 @@ namespace Vivre.UpdateAgent
 
         // Liveness tuning for component cleanup (named so they're trivially adjustable). On a backlogged
         // 2016 box DISM's percent stalls for long silent reclamation phases, so we emit a DISPLAYED
-        // "still working" line on a cadence and treat "no meaningful CPU for the whole hang window" as a
-        // genuine hang. A working DISM consumes CPU; a deadlocked one sits at ~0.
+        // "still working" line on a cadence. The "working" signal is the whole servicing stack (dism +
+        // TiWorker + TrustedInstaller) burning CPU OR the CBS log growing; "no activity for the whole
+        // window" is a non-terminal DISPLAY FLAG ("looks stalled — may still be working"), never a kill.
         private static readonly TimeSpan HeartbeatCadence = TimeSpan.FromSeconds(20);
-        private static readonly TimeSpan HangWindow = TimeSpan.FromMinutes(45);
-        // A CPU delta over the high-water mark must exceed this to count as "meaningful work" and reset
-        // the hang clock — filters idle-thread noise from a genuinely advancing dism.
+        // StallWindow is now a FLAG threshold, not a kill threshold — nothing is killed, so it's safe to
+        // lower later if a tighter "looks stalled" hint is wanted.
+        private static readonly TimeSpan StallWindow = TimeSpan.FromMinutes(45);
+        // A summed-stack CPU delta over the high-water mark must exceed this to count as activity and reset
+        // the stall clock — filters idle-thread noise from a genuinely advancing servicing stack.
         private static readonly TimeSpan CpuAdvanceThreshold = TimeSpan.FromSeconds(1);
+
+        // The servicing-stack processes whose summed CPU is the "stack is working" signal. dism.exe is a
+        // thin client; the heavy reclamation runs in TiWorker / TrustedInstaller, so dism alone can idle.
+        private static readonly string[] ServicingStackProcessNames = { "dism", "TiWorker", "TrustedInstaller" };
 
         /// <summary>
         /// Reclaims component-store space: <c>DISM /Online /Cleanup-Image /StartComponentCleanup</c>,
@@ -460,23 +467,32 @@ namespace Vivre.UpdateAgent
         /// SILENT during 2016's long reclamation phases) this runner drives a separate timer loop that,
         /// independent of any stdout, every <see cref="HeartbeatCadence"/>:
         ///   • emits a DISPLAYED "Cleaning" progress line with the compact elapsed time + the latest known
-        ///     percent (the elapsed + "working" is the real liveness; the stalled percent is decoration);
-        ///   • samples the dism child's <see cref="System.Diagnostics.Process.TotalProcessorTime"/>,
-        ///     tracking a high-water mark + the UTC time CPU last advanced meaningfully. If CPU has not
-        ///     advanced for the whole <see cref="HangWindow"/> the cleanup is genuinely hung (a working
-        ///     DISM burns CPU; a deadlocked one sits at ~0) — it writes a TERMINAL "Error" line and Kills
-        ///     the dism process so WaitForExit unwinds and the agent exits cleanly.
+        ///     percent (the elapsed + working/stalled hint is the real liveness; the percent is decoration);
+        ///   • samples the WHOLE servicing stack's CPU — the summed
+        ///     <see cref="System.Diagnostics.Process.TotalProcessorTime"/> across the running
+        ///     <c>dism</c> / <c>TiWorker</c> / <c>TrustedInstaller</c> processes — tracking a high-water
+        ///     mark, AND the CBS log's newest write time (<c>%WINDIR%\Logs\CBS\CBS.log</c> +
+        ///     <c>CbsPersist_*.log</c>). The cleanup is WORKING this tick if stack CPU advanced OR the log
+        ///     grew; the stall clock resets on any activity. If NEITHER has shown activity for the whole
+        ///     <see cref="StallWindow"/> the line is flagged "looks stalled (may still be working)" — a
+        ///     NON-TERMINAL DISPLAY hint. Nothing is killed and no terminal Error is written; the next
+        ///     active tick clears the flag.
+        ///
+        /// <para>Why the whole stack, not dism alone: dism.exe is a thin client — the heavy reclamation
+        /// runs in TiWorker / TrustedInstaller, so dism can sit at ~0% CPU for long LEGITIMATE stretches.
+        /// Sampling dism alone would false-flag (and, before this revision, KILL) a working cleanup. The
+        /// log signal is a second proof-of-life robust to a momentarily-flat CPU read.</para>
         ///
         /// <para>Percent parsing runs off the async <c>OutputDataReceived</c> pump (so it never blocks the
         /// sampler), and the sampler runs on its OWN thread (so a fully silent dism — no stdout at all —
-        /// is still sampled on cadence and still detected as hung). DISM redraws its bar with CR, which the
-        /// event splits into lines we scan for the most-recent "NN.N%".</para>
+        /// is still sampled on cadence). DISM redraws its bar with CR, which the event splits into lines we
+        /// scan for the most-recent "NN.N%". The runner always returns dism's real <c>ExitCode</c> — there
+        /// is no kill and no sentinel.</para>
         ///
-        /// <para>Killing a CONFIRMED-hung CHILD process is NOT a reboot/shutdown — the agent stays
-        /// reboot-free; only Vivre.Core's DcomRebootTrigger ever reboots.</para>
-        ///
-        /// <para>The hang DECISION and elapsed formatting are the pure, linked, unit-tested
-        /// <see cref="CleanupLiveness"/> predicates; only the live CPU/process I/O lives here.</para>
+        /// <para>The stall DECISION (<see cref="CleanupLiveness.IsStalled"/> /
+        /// <see cref="CleanupLiveness.IsWorking"/> / <see cref="CleanupLiveness.LogAdvanced"/>) and elapsed
+        /// formatting are the pure, linked, unit-tested <see cref="CleanupLiveness"/> predicates; only the
+        /// live CPU/process + log file I/O lives here.</para>
         /// </summary>
         private static int RunDismWithLiveness(string arguments, ProgressWriter progress)
         {
@@ -497,8 +513,6 @@ namespace Vivre.UpdateAgent
                 // Latest parsed dism percent (-1 until first seen). Written by the async stdout pump,
                 // read by the sampler thread — volatile is enough for a single int snapshot.
                 int latestPct = -1;
-                bool killedForHang = false;
-                var gate = new object();
 
                 p.OutputDataReceived += (s, e) =>
                 {
@@ -525,43 +539,63 @@ namespace Vivre.UpdateAgent
                 p.BeginErrorReadLine();
 
                 // The liveness sampler runs on its own thread so it fires on cadence even while dism emits
-                // NOTHING on stdout (the exact 2016 stall). It exits when dism does (WaitForExit below
-                // sets the stop event) or after it kills a confirmed hang.
+                // NOTHING on stdout (the exact 2016 stall). It exits only when dism does (WaitForExit below
+                // sets the stop event) — it never kills anything; a stall is a display flag, not an end.
                 DateTime startedUtc = DateTime.UtcNow;
                 var stop = new System.Threading.ManualResetEventSlim(false);
                 var sampler = new System.Threading.Thread(() =>
                 {
-                    DateTime lastCpuAdvanceUtc = startedUtc;
+                    DateTime lastActivityUtc = startedUtc;
                     TimeSpan cpuHighWater = TimeSpan.Zero;
+                    DateTime logMaxWriteUtc = SampleCbsLogMaxWriteUtc(); // baseline before any work
 
                     // Wait a full cadence between samples; Wait returns true if signalled to stop.
                     while (!stop.Wait(HeartbeatCadence))
                     {
                         DateTime nowUtc = DateTime.UtcNow;
 
-                        // Sample CPU. A working dism keeps consuming processor time; reset the hang clock
-                        // only on a MEANINGFUL advance over the high-water mark (filters idle-thread noise).
-                        try
+                        // Signal 1 — servicing-stack CPU. Sum TotalProcessorTime across the running
+                        // dism / TiWorker / TrustedInstaller processes; a MEANINGFUL advance over the
+                        // high-water mark (filters idle-thread noise) is CPU activity. dism alone can idle
+                        // while TiWorker burns the CPU, so sampling the whole stack is what makes this safe.
+                        TimeSpan stackCpu = SampleServicingStackCpu();
+                        bool stackCpuAdvanced =
+                            CleanupLiveness.CpuAdvancedMeaningfully(cpuHighWater, stackCpu, CpuAdvanceThreshold);
+                        if (stackCpuAdvanced)
                         {
-                            TimeSpan cpu = p.TotalProcessorTime;
-                            if (CleanupLiveness.CpuAdvancedMeaningfully(cpuHighWater, cpu, CpuAdvanceThreshold))
-                            {
-                                cpuHighWater = cpu;
-                                lastCpuAdvanceUtc = nowUtc;
-                            }
+                            cpuHighWater = stackCpu;
                         }
-                        catch
+
+                        // Signal 2 — CBS log growth. The servicing stack appends to CBS.log (rolling over to
+                        // CbsPersist_*.log when large) while it works, so a newer max last-write means the
+                        // stack did work even if its CPU read was momentarily flat.
+                        DateTime newLogMaxWriteUtc = SampleCbsLogMaxWriteUtc();
+                        bool logAdvanced = CleanupLiveness.LogAdvanced(logMaxWriteUtc, newLogMaxWriteUtc);
+                        if (newLogMaxWriteUtc > logMaxWriteUtc)
                         {
-                            // TotalProcessorTime can throw if the process just exited between the stop
-                            // check and here; the outer WaitForExit handles that exit. Treat as "no
-                            // advance" — only the 45-min window may terminate, never a transient read error.
+                            logMaxWriteUtc = newLogMaxWriteUtc;
                         }
+
+                        // Working this tick if EITHER signal fired; reset the stall clock on any activity.
+                        bool working = CleanupLiveness.IsWorking(stackCpuAdvanced, logAdvanced);
+                        if (working)
+                        {
+                            lastActivityUtc = nowUtc;
+                        }
+
+                        // Stall is a NON-TERMINAL DISPLAY FLAG: NEITHER signal active for the whole window.
+                        // The line says so but the sampler + dism keep running; the next active tick clears
+                        // it. No kill, no terminal Error.
+                        bool stalled = CleanupLiveness.IsStalled(nowUtc - lastActivityUtc, StallWindow);
 
                         // Emit the DISPLAYED liveness line (phase "Cleaning" so the host shows it — NOT a
                         // "Heartbeat" line, which the host ignores for display).
                         int pctSnapshot = System.Threading.Volatile.Read(ref latestPct);
                         string elapsed = CleanupLiveness.FormatElapsed(nowUtc - startedUtc);
-                        string msg = "Cleaning component store — " + elapsed + ", working";
+                        string state = stalled
+                            ? "looks stalled (may still be working) — check the box"
+                            : "working";
+                        string msg = "Cleaning component store — " + elapsed + ", " + state;
                         int? pctField = null;
                         if (pctSnapshot >= 0)
                         {
@@ -570,29 +604,6 @@ namespace Vivre.UpdateAgent
                         }
 
                         progress.Write(phase, msg, pctField, 1, 0, 0, false);
-
-                        // Hang decision is the pure predicate. If hung: terminal Error + Kill the child so
-                        // WaitForExit unwinds. Killing a CONFIRMED-hung child is NOT a reboot.
-                        if (CleanupLiveness.IsHung(nowUtc - lastCpuAdvanceUtc, HangWindow))
-                        {
-                            int hangMinutes = (int)Math.Round(HangWindow.TotalMinutes);
-                            progress.Write("Error",
-                                "Component cleanup appears hung — dism used no CPU for " + hangMinutes
-                                + " min. See %WINDIR%\\Logs\\DISM\\dism.log.",
-                                100, 1, 0, 1, false);
-
-                            lock (gate) { killedForHang = true; }
-                            try
-                            {
-                                p.Kill();
-                            }
-                            catch
-                            {
-                                // Already exiting / gone — WaitForExit returns regardless.
-                            }
-
-                            return; // sampler done; WaitForExit below unwinds the process
-                        }
                     }
                 })
                 {
@@ -608,17 +619,110 @@ namespace Vivre.UpdateAgent
                 try { sampler.Join(TimeSpan.FromSeconds(2)); }
                 catch { /* best-effort join; background thread won't block process exit */ }
 
-                bool wasKilled;
-                lock (gate) { wasKilled = killedForHang; }
-                if (wasKilled)
+                // Always return dism's real exit code — nothing is killed and there is no sentinel, so the
+                // caller's 0 → Done / 3010 → PendingReboot / else → Error mapping is the whole truth.
+                return p.ExitCode;
+            }
+        }
+
+        /// <summary>
+        /// Sums <see cref="System.Diagnostics.Process.TotalProcessorTime"/> across the running servicing
+        /// stack (<c>dism</c> / <c>TiWorker</c> / <c>TrustedInstaller</c>) — the "stack is working" signal,
+        /// because dism.exe is a thin client and the heavy reclamation runs in TiWorker / TrustedInstaller.
+        /// Any process can exit between enumeration and the CPU read, so each read is guarded individually
+        /// (skip the gone process, never throw out of a tick), and every enumerated handle is disposed.
+        /// </summary>
+        private static TimeSpan SampleServicingStackCpu()
+        {
+            TimeSpan total = TimeSpan.Zero;
+            foreach (string name in ServicingStackProcessNames)
+            {
+                System.Diagnostics.Process[] procs;
+                try
                 {
-                    // Terminal Error already written by the sampler. Return a non-zero so the caller's
-                    // exit-code mapping does NOT mislabel a killed hang as a clean cleanup (a Killed
-                    // process's exit code is unreliable). The Error line already on the wire is the truth.
-                    return unchecked((int)0x800705B4); // ERROR_TIMEOUT
+                    procs = System.Diagnostics.Process.GetProcessesByName(name);
+                }
+                catch
+                {
+                    // Enumeration itself can fail transiently (e.g. a perf-counter hiccup); treat the whole
+                    // name as contributing nothing this tick rather than failing the sample.
+                    continue;
                 }
 
-                return p.ExitCode;
+                foreach (var proc in procs)
+                {
+                    try
+                    {
+                        total += proc.TotalProcessorTime;
+                    }
+                    catch
+                    {
+                        // Process exited between enumeration and the read, or access was denied; skip it.
+                    }
+                    finally
+                    {
+                        proc.Dispose();
+                    }
+                }
+            }
+
+            return total;
+        }
+
+        /// <summary>
+        /// The newest write time across the CBS log files (<c>%WINDIR%\Logs\CBS\CBS.log</c> and the rolled
+        /// <c>CbsPersist_*.log</c>) — robust to rollover. A later max last-write since the prior tick means
+        /// the servicing stack appended to the log, i.e. it did work. Returns <see cref="DateTime.MinValue"/>
+        /// when the folder/files can't be read (treated as "no info this tick" by the caller — never throws).
+        /// </summary>
+        private static DateTime SampleCbsLogMaxWriteUtc()
+        {
+            try
+            {
+                string windir = Environment.GetEnvironmentVariable("WINDIR");
+                if (string.IsNullOrEmpty(windir))
+                {
+                    // Fall back to the parent of the system directory (…\System32 → …\Windows).
+                    windir = System.IO.Directory.GetParent(Environment.SystemDirectory)?.FullName;
+                }
+
+                if (string.IsNullOrEmpty(windir))
+                {
+                    return DateTime.MinValue;
+                }
+
+                string cbsDir = System.IO.Path.Combine(windir, "Logs", "CBS");
+                if (!System.IO.Directory.Exists(cbsDir))
+                {
+                    return DateTime.MinValue;
+                }
+
+                DateTime max = DateTime.MinValue;
+                foreach (string pattern in new[] { "CBS.log", "CbsPersist_*.log" })
+                {
+                    foreach (string file in System.IO.Directory.EnumerateFiles(cbsDir, pattern))
+                    {
+                        try
+                        {
+                            DateTime w = System.IO.File.GetLastWriteTimeUtc(file);
+                            if (w > max)
+                            {
+                                max = w;
+                            }
+                        }
+                        catch
+                        {
+                            // The file may be locked/deleted mid-rollover; skip it, no info from this file.
+                        }
+                    }
+                }
+
+                return max;
+            }
+            catch
+            {
+                // IO / Unauthorized enumerating the folder — no info this tick, never throw out of a sample.
+                return DateTime.MinValue;
             }
         }
 
