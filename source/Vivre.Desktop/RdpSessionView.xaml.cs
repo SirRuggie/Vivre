@@ -202,14 +202,14 @@ public partial class RdpSessionView : UserControl
         }
     }
 
-    /// <summary>This PC's display scale for the remote: DesktopScaleFactor (100–500, e.g. 150 for 150%) so the
-    /// remote's icons/text match local size, plus the paired DeviceScaleFactor (only 100/140/180 are valid).</summary>
+    /// <summary>The remote session's display + device scale, both pinned to 100 (100%). The Failover Cluster
+    /// Manager context-menu bug trips at any session scale above 100% (Microsoft won't-fix), so we never raise
+    /// it. Fill/readability comes from the framebuffer being the pane's own pixel size (see RemotePixelSize) —
+    /// the remote renders at the pane resolution and fills it natively, no scaling. Read by both Connect and the
+    /// resize re-fit, so the session stays at 100% on connect and on every resize.</summary>
     private (uint Desktop, uint Device) LocalScale()
     {
-        int percent = (int)Math.Round(System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX * 100);
-        uint desktop = (uint)Math.Clamp(percent, 100, 500);
-        uint device = desktop >= 180 ? 180u : desktop >= 140 ? 140u : 100u;
-        return (desktop, device);
+        return (100u, 100u);
     }
 
     /// <summary>WindowsFormsHost ignores Stretch and otherwise sizes to the hosted control's default — so set

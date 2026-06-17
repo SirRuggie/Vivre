@@ -129,6 +129,12 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **Cross-Domain RDP sessions now fill the pane *and* keep Failover Cluster Manager's right-click menus
+  working** — the embedded remote session now pins its display scale to **100%** instead of matching this
+  PC's display scale (~150% on a high-DPI jump box). At the host scale, FCM's context menus collapsed the
+  instant they opened (a documented Windows bug at any scaling above 100%); pinned to 100% they work, and the
+  session still fills the pane natively because the remote is rendered at the pane's own pixel resolution.
+  Rendering config only — nothing reboots.
 - **The update Size column shows a real size for every update — and quietly fixes the one case Windows Update
   inflates** — the column now shows Windows Update's reported download size for all update types (Defender,
   drivers, .NET, SQL, normal cumulative updates), matching BatchPatch, with no extra lookup. The one exception
