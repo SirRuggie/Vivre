@@ -162,23 +162,25 @@ Specifically:
 This standard applies to investigations, red-team passes, build commits,
 and checkpoint reviews — every task without exception.
 
-## Commit messages
+## Commit messages — keep them SHORT
 
-Follow **[Conventional Commits](https://www.conventionalcommits.org/)** — `type: imperative summary`:
+Follow **[Conventional Commits](https://www.conventionalcommits.org/)** — `type: imperative summary` —
+and in the common case **stop there: one short subject line IS the whole commit.**
 
-- **Type** (required prefix): `feat` (new feature) · `fix` (bug fix) · `docs` (docs only) ·
-  `refactor` (no behaviour change) · `perf` (performance) · `test` (tests) ·
-  `chore` (build / deps / housekeeping) · `style` (formatting only) · `ci` (pipeline).
-- **Subject**: imperative mood ("add", not "added"/"adds"), lower-case after the colon,
-  **≤ 72 chars**, **no trailing period**. One logical change per commit.
-- **Body** (optional, for non-trivial commits): blank line after the subject, wrap at ~72 cols,
-  explain **what & why** — not how. Use `-` bullets for multiple points.
-- Still applies: **no `Co-Authored-By` / AI attribution trailer**, commit **only when asked**,
-  and commits are **unsigned**.
+- **Subject** (required — usually the entire message): `type: what changed`, imperative mood ("add", not
+  "added"/"adds"), lower-case after the colon, **≤ 72 chars**, no trailing period. One logical change per
+  commit. `type` ∈ `feat` · `fix` · `docs` · `refactor` · `perf` · `test` · `chore` · `style` · `ci`.
+- **Body — OPTIONAL and rare:** at most **one or two short lines**, and only for genuinely non-obvious
+  context or a cardinal-safety note. Most commits need NO body.
+- **Do NOT** write multi-paragraph bodies, bulleted change-logs, or restate the diff/rationale in the
+  commit. That detail goes in the REPORT to the operator and in `docs/` / `CHANGELOG.md` — **not** in git
+  history. Applies to **every** commit, including doc / CLAUDE.md changes.
+- Still applies: **no `Co-Authored-By` / AI attribution trailer**, commit **only when asked**, **unsigned**.
 
-Examples:
+Good — subject only:
 ```
-feat: add searchable "How to use Vivre" help guide
-fix: stop reboot and update message columns from colliding
-docs: bring CHANGELOG and UPDATE_PLAN current
+fix: rebuild RDP control on Reconnect and keep involuntary drops open
+docs: require short commit messages in CLAUDE.md
 ```
+Bad — that same fine subject buried under several paragraphs re-explaining the dead button, the OCX, the
+refactor, and the disconnect-reason logic. That's a report / CHANGELOG entry, not a commit body.
