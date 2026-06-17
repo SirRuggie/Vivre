@@ -56,6 +56,19 @@ public partial class RdpSessionView : UserControl
         _connected = false;
         _connectStarted = false;
 
+        CreateControl();
+
+        _vm.PropertyChanged += OnViewModelPropertyChanged;
+        _vm.ReconnectRequested += OnReconnectRequested;
+
+        Connect();
+    }
+
+    /// <summary>Builds a FRESH RDP ActiveX control + its host panel and wires its events. Used both on first
+    /// load and on Reconnect — the OCX can't be reliably re-Connect()ed after a drop, so reconnect tears the old
+    /// one down and rebuilds through this same path, so first-connect and reconnect can't drift.</summary>
+    private void CreateControl()
+    {
         // Ax control fills an intermediate WinForms Panel; the Panel (which accepts any size) is the host's
         // Child — NOT the Ax control (whose fixed default size makes the host collapse).
         _hostPanel = new System.Windows.Forms.Panel();
@@ -77,11 +90,45 @@ public partial class RdpSessionView : UserControl
         _rdp.OnAutoReconnected += OnRdpAutoReconnected;
         _rdp.OnEnterFullScreenMode += OnEnterFullScreen;
         _rdp.OnLeaveFullScreenMode += OnLeaveFullScreen;
+    }
 
-        _vm.PropertyChanged += OnViewModelPropertyChanged;
-        _vm.ReconnectRequested += OnReconnectRequested;
+    /// <summary>Unsubscribes the control's events (BEFORE disconnecting, so its Disconnect() can't re-enter our
+    /// handlers), disconnects if live, then disposes the control + host panel. Used by Reconnect (rebuild) and
+    /// DisposeSession (final teardown).</summary>
+    private void TearDownControl()
+    {
+        if (_rdp is null)
+        {
+            return;
+        }
 
-        Connect();
+        _rdp.OnConnecting -= OnRdpConnecting;
+        _rdp.OnConnected -= OnRdpConnected;
+        _rdp.OnLoginComplete -= OnRdpLoginComplete;
+        _rdp.OnDisconnected -= OnRdpDisconnected;
+        _rdp.OnFatalError -= OnRdpFatalError;
+        _rdp.OnAutoReconnecting -= OnRdpAutoReconnecting;
+        _rdp.OnAutoReconnected -= OnRdpAutoReconnected;
+        _rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
+        _rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
+
+        try
+        {
+            if (_rdp.Connected != 0)
+            {
+                _rdp.Disconnect();
+            }
+        }
+        catch (Exception)
+        {
+            // Best-effort teardown: the control may already be disconnecting.
+        }
+
+        RdpHostElement.Child = null;
+        _rdp.Dispose();
+        _rdp = null;
+        _hostPanel?.Dispose();
+        _hostPanel = null;
     }
 
     private void Connect()
@@ -115,6 +162,11 @@ public partial class RdpSessionView : UserControl
             // some servers, so we scale instead. The control owns full-screen (toolbar / Ctrl+Alt+Break).
             _rdp.AdvancedSettings9.SmartSizing = true;
             _rdp.AdvancedSettings9.ContainerHandledFullScreen = 0;
+
+            // Let the client transparently recover a transient drop (brief network blip) on its own before we
+            // surface a disconnect; and grab keyboard/mouse focus on (re)connect so input goes to the remote.
+            _rdp.AdvancedSettings9.EnableAutoReconnect = true;
+            _rdp.AdvancedSettings9.GrabFocusOnConnect = true;
 
             // Match the remote's display scale to THIS PC's (e.g. 150%) so icons/text aren't tiny on a high-DPI
             // display — the remote's "Scale and layout". Must be set before Connect, via the extended settings.
@@ -150,11 +202,10 @@ public partial class RdpSessionView : UserControl
             return;
         }
 
-        // After a transient drop the RDP control often auto-reconnects on its own, so by the time the user
-        // clicks Reconnect the session may already be back. Re-running Connect() — which re-sets Server / size /
-        // scale on the control — throws "Unexpected HRESULT…" unless the control is fully disconnected, even
-        // though the live session is fine. So only reconnect when it's actually down; otherwise just resync the
-        // status bar to the control's real state (which clears the stale error/overlay).
+        // After a transient drop the control's own auto-reconnect (EnableAutoReconnect) often brings the session
+        // back, so by the time the user clicks Reconnect it may already be live. Rebuilding a still-live control
+        // would tear down a working session — so when it's still connected/connecting, just resync the status bar
+        // to the control's real state (clears the stale error/overlay); only rebuild when it's actually down.
         if (_rdp.Connected != 0)
         {
             bool live = _rdp.Connected == 1;
@@ -163,7 +214,13 @@ public partial class RdpSessionView : UserControl
             return;
         }
 
+        // Fully down: the OCX can't be reliably re-Connect()ed after a drop, so tear it down and build a FRESH
+        // control on the same creation path, then reconnect with the same per-host settings (_vm.Settings,
+        // resolved once when the session was opened). This keeps reconnect and first-connect identical.
+        TearDownControl();
+        _connected = false;
         _connectStarted = false;
+        CreateControl();
         Connect();
     }
 
@@ -273,11 +330,11 @@ public partial class RdpSessionView : UserControl
             return; // we're tearing the control down ourselves
         }
 
-        // A session that had reached the desktop and is now gone — logged off, signed out, idle-timed-out,
-        // kicked, or ended by the server — can't be resumed in place, so close the tab (like mstsc closing its
-        // window on logoff). Brief network blips don't reach here; the control's auto-reconnect handles those.
-        // Reconnect is only useful for a connect that never succeeded, so for those keep the tab + show why.
-        if (_connected)
+        // Only a DELIBERATE sign-out closes the tab (like mstsc closing its window on logoff). An INVOLUNTARY
+        // drop — network blip, server reboot, idle timeout, admin disconnect, protocol error — KEEPS the session
+        // + tab open in a disconnected state with the Reconnect button enabled, so the operator can rebuild it.
+        // (Brief blips are usually recovered first by the control's own auto-reconnect.)
+        if (_connected && IsUserLogoff())
         {
             // Defer the close so the control's own disconnect callback unwinds before we dispose it.
             Dispatcher.BeginInvoke(() => _vm?.RequestClose());
@@ -328,6 +385,30 @@ public partial class RdpSessionView : UserControl
     // Heuristic for the NLA hint — credential/authentication-ish disconnect reasons. Advisory only.
     private static bool LooksLikeAuthFailure(int reason) =>
         reason is 2825 or 3334 or 2055 or 5639 or 264 or 516;
+
+    /// <summary>True when the disconnect was a DELIBERATE sign-out (the session ended on purpose), read from the
+    /// control's <c>ExtendedDisconnectReason</c>: API-initiated logoff (2), server-initiated logoff (4), or
+    /// logoff-by-user (6). Everything else (network / idle timeout / server- or admin-initiated disconnect /
+    /// protocol error) is treated as involuntary, so the session stays open for Reconnect.</summary>
+    private bool IsUserLogoff()
+    {
+        if (_rdp is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            // ExtendedDisconnectReasonCode → int: 2 = API-initiated logoff, 4 = server-initiated logoff,
+            // 6 = logoff-by-user. Everything else (network / idle / disconnect / error) is an involuntary drop.
+            int reason = (int)_rdp.ExtendedDisconnectReason;
+            return reason is 2 or 4 or 6;
+        }
+        catch (Exception)
+        {
+            return false; // can't read the reason → treat as involuntary (keep the session open)
+        }
+    }
 
     private void OnEnterFullScreen(object? sender, EventArgs e)
     {
@@ -397,39 +478,6 @@ public partial class RdpSessionView : UserControl
             _vm.ReconnectRequested -= OnReconnectRequested;
         }
 
-        if (_rdp is null)
-        {
-            return;
-        }
-
-        // Detach every control event BEFORE disconnecting, so the COM Disconnect() can't re-enter our handlers
-        // mid-teardown (the _closing guard backs this up).
-        _rdp.OnConnecting -= OnRdpConnecting;
-        _rdp.OnConnected -= OnRdpConnected;
-        _rdp.OnLoginComplete -= OnRdpLoginComplete;
-        _rdp.OnDisconnected -= OnRdpDisconnected;
-        _rdp.OnFatalError -= OnRdpFatalError;
-        _rdp.OnAutoReconnecting -= OnRdpAutoReconnecting;
-        _rdp.OnAutoReconnected -= OnRdpAutoReconnected;
-        _rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
-        _rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
-
-        try
-        {
-            if (_rdp.Connected != 0)
-            {
-                _rdp.Disconnect();
-            }
-        }
-        catch (Exception)
-        {
-            // Best-effort teardown: the control may already be disconnecting.
-        }
-
-        RdpHostElement.Child = null;
-        _rdp.Dispose();
-        _rdp = null;
-        _hostPanel?.Dispose();
-        _hostPanel = null;
+        TearDownControl();
     }
 }

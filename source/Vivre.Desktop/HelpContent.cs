@@ -688,13 +688,14 @@ public static class HelpContent
         new HelpTopic
         {
             Category = CrossDomainRdp, Icon = SymbolRegular.Desktop24, Title = "How do I connect, go full-screen, and disconnect?",
-            Keywords = "connect double click full screen disconnect session tab",
+            Keywords = "connect double click full screen disconnect reconnect dropped session tab",
             Lines =
             [
                 "Connect: select a host and click Connect, or just double-click it — it opens a session tab on the right.",
                 "Switch sessions with the tabs above the remote view; switch to a machine tab and back without dropping them.",
                 "Full screen: click Full screen (Ctrl+Alt+Break toggles back out).",
                 "Disconnect: click the ✕ on a session tab, or select it and click Disconnect.",
+                "Dropped connection: if a session drops (network blip, server reboot, idle timeout) it stays open as disconnected — click Reconnect to rebuild it. Signing out inside the remote closes its tab automatically.",
             ],
         },
     ];
