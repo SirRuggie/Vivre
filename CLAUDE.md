@@ -39,6 +39,7 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
 - docs/key-file-path-map.md — load-bearing file locations
 - docs/2016-LCU-lane-spec.md, docs/2016-LCU-panel-spec.md, docs/2016-LCU-red-team-review.md — read before touching the 2016 patch lane
 - docs/vivre-backlog.md — current priorities + what's done
+- docs/vivre-rdp-scaling-and-fcm-findings.md — embedded-RDP scaling/FCM saga; read before touching Cross-Domain RDP scaling
 
 ## Layout
 

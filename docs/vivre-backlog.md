@@ -13,9 +13,15 @@
 
 ## ▶ DO NEXT — recommended order
 
-_No feature work queued._ The 2016 staged-patching toggle shipped (see DONE), and **KB auto-population
-from a scan is closed — manual only** (decision recorded under *Settings simplification* below). What
-remains is the polish / standalone items further down, each "do only if it recurs / when a signal appears."
+- **Fix the RDP Reconnect button (currently dead)** — agreed fix B+C: recreate the control on reconnect;
+  stop auto-closing involuntary drops; fold in `EnableAutoReconnect` + `GrabFocusOnConnect`. Diagnosed,
+  not yet implemented (see the Cross-Domain RDP section in `key-file-path-map.md` +
+  `vivre-rdp-scaling-and-fcm-findings.md`).
+
+Beyond that, no patching feature work is queued. The 2016 staged-patching toggle shipped (see DONE), and
+**KB auto-population from a scan is closed — manual only** (decision recorded under *Settings simplification*
+below). What remains is the polish / standalone items further down, each "do only if it recurs / when a
+signal appears."
 
 ---
 
@@ -64,11 +70,22 @@ remains is the polish / standalone items further down, each "do only if it recur
   arbitrary-script-over-SMB-as-SYSTEM without a strong reason).
 - **Force-reboot-over-RPC/SMB** as an additional wave fallback path — only if the DCOM + SMB reboot
   paths prove insufficient at scale.
+- **Embedded RDP magnification** — the remote renders compact vs mRemoteNG's bigger/readable image. Proved
+  SmartSizing will **NOT** upscale inside `WindowsFormsHost`; mRemoteNG's size comes from pure-WinForms
+  framework DPI scaling its WPF-airspace host can't replicate. Recommended next lever: a **per-host
+  display-scale toggle** (real scale default, force-100% on cluster/FCM boxes). Full findings + all candidate
+  paths in `docs/vivre-rdp-scaling-and-fcm-findings.md`. (The throwaway `[RDP fill diag]` scaffold + the
+  ÷1.5 / undock+explicit-Size experiments are parked in `git stash` for a future Fit-To-Panel attempt.)
 
 ---
 
 ## DONE (committed) — recent
 
+- **Embedded RDP — Failover Cluster Manager context menus fixed** (`1ce1abf`, on master): pinned the RDP
+  session display scale to 100% (`DesktopScaleFactor=DeviceScaleFactor=100`), sidestepping the documented
+  FCM >100%-scaling menu-collapse bug. Session was measured at 150% (the cause) vs mRemoteNG's 100%. Fills +
+  FCM-safe; trade-off is a compact (native-100%) image. Magnification to match mRemoteNG is PARKED (see
+  above + `docs/vivre-rdp-scaling-and-fcm-findings.md`).
 - **Update download-size accuracy — WUA-first + catalog override for inflated express CUs** (`d39c0e3`,
   merged to master). **Root cause:** Vivre read `IUpdate.MaxDownloadSize`, WUA's worst-case aggregate — an
   express CU reported **21,926 MB** vs the real **2,435 MB** full package. **Fix:** show `MaxDownloadSize` for
@@ -193,8 +210,8 @@ remains is the polish / standalone items further down, each "do only if it recur
 
 ## KNOWLEDGE DOCS — current set + refresh status
 Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
-`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`. (`OVERNIGHT_KERBEROS_STATUS.md` and
-`first-run-beta-checklist.md` were removed as stale/spent.)
+`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`, `vivre-rdp-scaling-and-fcm-findings.md`.
+(`OVERNIGHT_KERBEROS_STATUS.md` and `first-run-beta-checklist.md` were removed as stale/spent.)
 - `key-file-path-map.md` — **refreshed this pass** (staged-patching toggle: `StagedInstallPlanner` /
   `Lcu2016CuMatcher` / decision dialog + gate / `RequiresStagedPatching` ⇄ `StagedHosts` / Staged column;
   427 tests. Earlier: OneDrive trap → resolved/relocated; nav → done; the two 5.1 shell-out gotchas incl.
@@ -202,6 +219,9 @@ Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`,
   TODO: capture the as-built NavigationView shell layout next time MainWindow
   is touched.
 - `vivre-backlog.md` — **this file, refreshed this pass.**
+- `vivre-rdp-scaling-and-fcm-findings.md` — **new this pass.** The embedded-RDP scaling/FCM saga: the
+  100%-scale FCM fix (`1ce1abf`), why SmartSizing won't magnify inside WindowsFormsHost, all candidate paths
+  tried, and the recommended per-host display-scale toggle.
 - `2016-LCU-panel-spec.md` — minor: shows "313 tests" as the historical as-built count (fine as a
   point-in-time record); could note cab-extraction + SSU/LCU ordering + StagedThisSession when next edited.
 - `2016-LCU-lane-spec.md` / `2016-LCU-red-team-review.md` — substantively accurate; cycle-specific

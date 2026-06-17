@@ -190,6 +190,19 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   - `MainWindow.ResyncStagedPatchingFlags` — re-seeds every loaded row's `RequiresStagedPatching` from `StagedHosts` after a Settings remove/clear, so an edited list never leaves a stale flag.
   - `WorkspaceView` `StagedColumn` — the narrow "Staged" pill column (visible only on flagged 2016 rows; neutral styling, distinct from the amber "STAGED — needs Reboot Wave" tag). A `DataGridColumn` can't bind `Visibility`, so the View drives it from code-behind via the VM's `HasStagedServer2016` (`OnVmPropertyChanged` / `UpdateStagedColumnVisibility`). `BuildContextMenu` adds the **Mark as Staged patching** / **Remove Staged flag** items (2016 + Patching only, acting on the right-clicked row).
 
+## Cross-Domain RDP
+- `source/Vivre.Desktop/RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded RDP host; owns control creation,
+  `LocalScale()` (pinned to `(100,100)` for the FCM fix, `1ce1abf`), the framebuffer (`DesktopWidth/Height`),
+  `SmartSizing`, `Dock`, and the host panel. Control stack: WPF → `WindowsFormsHost` (`RdpHostElement`) →
+  WinForms `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
+- `source/Vivre.Desktop/ViewModels/RdpSessionViewModel.cs`, `ViewModels/CrossDomainRdpViewModel.cs` — the RDP
+  session + host-tree view-models.
+- `source/Vivre.Desktop/CrossDomainRdpView.xaml`(`.cs`) — the Cross-Domain RDP UI (host tree + session tabs);
+  per-host settings resolve via `_creds.Resolve(host, RdpTree.AncestorsOf(_tree, host))` in `ConnectTo` — the
+  hook a future per-host scale setting would use.
+- **Note:** the Failover Cluster Manager context-menu fix is the 100%-scale pin (`1ce1abf`); embedded-RDP
+  magnification (matching mRemoteNG's bigger image) is **parked** — see `vivre-rdp-scaling-and-fcm-findings.md`.
+
 ## Settings / data
 - `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED (`0718f7a`)** — it was display-only; the package is matched by KB + architecture, never size. **`StagedHosts`** — `HashSet<string>` (OrdinalIgnoreCase) of host names flagged for the 2016 DISM staging lane (the source of truth behind `Computer.RequiresStagedPatching`); **`ReadFromDisk` re-normalizes it via `StagedHostMatching.Normalize`** because a JSON round-trip resets the comparer to ordinal. Pure case-insensitive membership helpers live in `StagedHostMatching` (Vivre.Core/Updates).
 - `source/Vivre.Core/Computers/ComputerListStore.cs` — the computer list store.
@@ -216,7 +229,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 
 ## Docs in repo
 - **Root:** `UPDATE_PLAN.md` (the WUA lane), `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
-- **`docs/`:** `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`.
+- **`docs/`:** `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`, `vivre-rdp-scaling-and-fcm-findings.md`.
 - Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / UPDATE_PLAN.md / this file.
 
 ## Recent commits (restore points, newest last)
