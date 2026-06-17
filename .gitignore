@@ -324,3 +324,6 @@ ASALocalRun/
 # Stray dual-theme verification screenshots written to the repo root during UI checks
 screenshot_*.png
 
+# Claude Code — personal per-user command approvals (machine-local, not shared)
+.claude/settings.local.json
+
