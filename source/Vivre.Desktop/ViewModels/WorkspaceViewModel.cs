@@ -2793,21 +2793,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (computer.RequiresStagedPatching && !minorOnly)
             {
                 // Flagged box: never auto-stage and never WUA-install the OS CU from here — the decision dialog,
-                // shown up front by the View, owns that choice. Resolve the two no-prompt cases; otherwise skip
-                // with guidance so a path that reaches this row directly can't silently do the wrong thing.
+                // shown up front by the View, owns that choice. Resolve the no-prompt cases; otherwise skip with
+                // guidance so a path that reaches this row directly can't silently do the wrong thing.
                 if (StagePreconditions.IsAlreadyStaged(computer.RebootRequired == true, computer.StagedThisSession))
                 {
                     computer.UpdateMessage = "CU staged — run Reboot Wave before installing other updates.";
                     return;
                 }
 
-                if (!computer.LcuVerifiedThisSession)
+                // Same predicate the View's decision dialog uses (single source of truth) — blocks ONLY when an OS
+                // CU actually needs staging: a scan that shows a Server 2016 OS CU, or an unscanned box we can't
+                // clear. A freshly-scanned flagged box with NO OS CU (e.g. OS already current, only minor updates
+                // like Office/Defender pending) has nothing to stage, so it falls through to the normal WUA install
+                // of its ticked minor updates instead of being dead-ended here.
+                if (StagedInstallPlanner.NeedsStageDecision(computer))
                 {
                     computer.UpdatePhase = PatchPhase.Idle.ToString();
-                    computer.UpdateMessage = "Needs CU staging — use Install to choose Stage or minor-only.";
+                    computer.UpdateMessage = "Needs CU staging — use the Install button in the toolbar to choose Stage or minor-only.";
                     return;
                 }
-                // else: CU already verified/committed this session → its remaining minor updates go via WUA below.
+                // else: nothing to stage (no OS CU in scan), or the CU is already verified/committed this session →
+                // its remaining minor updates go via WUA below.
             }
             // minorOnly (operator chose "Install minor updates only") falls through to WUA with the CU excluded.
         }
@@ -3080,8 +3086,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Pre-dialog "already current this cycle" check for the staged-update decision. For each flagged
     /// 2016 box not yet staged/verified, read its UBR over the SAME path the pre-stage check uses
     /// (<see cref="IPatchService.VerifyLcuAsync"/> → DcomLcuBuildReader) and, when it's already at this month's
-    /// target UBR, mark it verified-this-session + "Already current — skipped" so the planner drops it from the
-    /// dialog and it installs its minor updates via WUA like a non-flagged box. FAIL-OPEN: a null/unreadable UBR
+    /// target UBR, mark it verified-this-session (and log the skip to the activity log) so the planner drops it from
+    /// the dialog and it installs its minor updates via WUA like a non-flagged box; the follow-on install stamps the
+    /// prominent "Windows update message" column with the real outcome. FAIL-OPEN: a null/unreadable UBR
     /// (Unreachable), a WrongBuild, or any error leaves the box in the dialog set — never skip a box we couldn't
     /// confirm. Reads run concurrently bounded by the shared remote-read throttle; the reader self-times-out (8s)
     /// so a dead box can't hang the prompt.</summary>
@@ -3126,7 +3133,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         foreach (Computer box in alreadyCurrent)
         {
             box.LcuVerifiedThisSession = true; // confirmed at target UBR this cycle → drops from the dialog, WUA minor
-            box.UpdateMessage = "Already current — skipped";
+            // Don't stamp the prominent "Windows update message" column here — the normal install that follows
+            // sets the real outcome (Installed N / Up to date). The routing detail stays in the activity log only.
             _activity.Info(box.Name, "CU already current — skipping the staged-update prompt; minor updates install via Windows Update.");
         }
     }

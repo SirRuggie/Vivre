@@ -85,14 +85,30 @@ public static class StagedInstallPlanner
     }
 
     /// <summary>A flagged 2016 box needs the stage decision when its CU is neither staged (this session) nor
-    /// already verified committed. Already-staged → run Reboot Wave (handled by the normal install's skip note);
-    /// already-verified → its remaining minor updates go via WUA (normal install). Non-2016 / non-flagged boxes
-    /// never need the decision.</summary>
+    /// already verified committed, AND we can't rule out an OS cumulative update that actually needs staging
+    /// (<see cref="MayHaveOsCuToStage"/>). Already-staged → run Reboot Wave (handled by the normal install's skip
+    /// note); already-verified → its remaining minor updates go via WUA (normal install); freshly-scanned with NO
+    /// OS CU → nothing to stage, install its minor updates normally. Non-2016 / non-flagged boxes never need the
+    /// decision. This is the SINGLE source of truth for the staging gate — both the View's decision dialog (via
+    /// <see cref="Plan"/>) and the per-row install guard call it, so the two gates can never drift.</summary>
     public static bool NeedsStageDecision(Computer c) =>
         LcuRouting.Is2016(c.OsBuild)
         && c.RequiresStagedPatching
         && !StagePreconditions.IsAlreadyStaged(c.RebootRequired == true, c.StagedThisSession)
-        && !c.LcuVerifiedThisSession;
+        && !c.LcuVerifiedThisSession
+        && MayHaveOsCuToStage(c);
+
+    /// <summary>True when we cannot rule out a Windows Server 2016 OS cumulative update that needs staging on this
+    /// box — so the stage gate must still hold it. Either the box hasn't been scanned this session
+    /// (<see cref="Computer.LastScannedApplicable"/> is null, so we can't see its updates — FAIL-SAFE: assume an OS
+    /// CU might be pending), OR its scan actually lists a Server 2016 OS CU (<see cref="Lcu2016CuMatcher.CuKbs"/>,
+    /// scoped to the literal "Cumulative Update" + "Windows Server 2016"/"1607" and excluding ".NET", so SQL Server
+    /// / .NET CUs never count). A freshly-scanned box with NO OS CU in its scan returns false — there is genuinely
+    /// nothing to stage, so the staging gate must not block its minor updates. The OS CU therefore can never reach
+    /// the WUA install path via the false branch: that branch only fires when no OS CU exists.</summary>
+    public static bool MayHaveOsCuToStage(Computer c) =>
+        c.LastScannedApplicable is null
+        || Lcu2016CuMatcher.CuKbs(c.ApplicableUpdates.Select(u => (u.Title, u.Kb))).Any();
 
     /// <summary>
     /// Pre-dialog currency split for the flagged-not-staged boxes: before prompting, decide which boxes are

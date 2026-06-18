@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Vivre.Core.Models;
@@ -20,6 +21,7 @@ public class StagedInstallPlannerTests
         bool? rebootRequired = null,
         bool stagedThisSession = false,
         bool verifiedThisSession = false,
+        bool scannedThisSession = false,
         (string Title, string? Kb)[]? applicable = null)
     {
         var c = new Computer(name)
@@ -29,6 +31,9 @@ public class StagedInstallPlannerTests
             RebootRequired = rebootRequired,
             StagedThisSession = stagedThisSession,
             LcuVerifiedThisSession = verifiedThisSession,
+            // null = never scanned this session (the StagePreconditions.UnscannedThisSession signal); a non-null
+            // value marks the box as freshly scanned so MayHaveOsCuToStage trusts its applicable list.
+            LastScannedApplicable = scannedThisSession ? new DateTime(2026, 6, 17) : null,
         };
         foreach ((string title, string? kb) in applicable ?? [])
         {
@@ -181,6 +186,98 @@ public class StagedInstallPlannerTests
         Assert.Empty(plan.FlaggedNotStaged);
         Assert.Empty(plan.Normal);
         Assert.Empty(plan.Mismatches);
+    }
+
+    // --- NeedsStageDecision: the staging gate fires ONLY when an OS CU actually needs staging ---
+    // The gate exists solely to keep the Windows Server 2016 OS CU off the WUA/Express path on a flagged box;
+    // it must not dead-end a flagged box that has nothing to stage. Both gates (the View dialog via Plan, and the
+    // per-row InstallRowAsync guard) call NeedsStageDecision, so these lock the single source of truth.
+
+    [Fact]
+    public void NeedsStageDecision_freshly_scanned_no_os_cu_is_false()
+    {
+        // The reported symptom: flagged 2016, OS already current, freshly scanned, only minor updates pending
+        // (Office/Defender) plus a SQL CU — NONE of which is the Windows Server 2016 OS CU. Nothing to stage ⇒
+        // the gate must let it install normally (the bug was that it blocked with "Needs CU staging").
+        var box = Box("APVDBA1-VIS74", osBuild: 14393, flagged: true, scannedThisSession: true, applicable:
+        [
+            ("Security Update for SQL Server 2017 RTM CU (KB5090354)", "5090354"),
+            ("Security Update for Microsoft Office 2016 (KB5002852)", "5002852"),
+            ("Security Intelligence Update for Microsoft Defender Antivirus (KB2267602)", "2267602"),
+        ]);
+
+        Assert.False(StagedInstallPlanner.NeedsStageDecision(box));
+        Assert.False(StagedInstallPlanner.MayHaveOsCuToStage(box));
+    }
+
+    [Fact]
+    public void NeedsStageDecision_freshly_scanned_with_os_cu_is_true() // SAFETY
+    {
+        // A real Server 2016 OS CU in the scan ⇒ the gate must hold the box (so the CU never reaches WUA).
+        var box = Box("BOX", osBuild: 14393, flagged: true, scannedThisSession: true, applicable:
+        [
+            ("2026-06 Cumulative Update for Windows Server 2016 (KB5094122)", "5094122"),
+            ("Security Update for Microsoft Office 2016 (KB5002852)", "5002852"),
+        ]);
+
+        Assert.True(StagedInstallPlanner.NeedsStageDecision(box));
+        Assert.True(StagedInstallPlanner.MayHaveOsCuToStage(box));
+    }
+
+    [Fact]
+    public void NeedsStageDecision_unscanned_is_true() // SAFETY (fail-safe)
+    {
+        // Never scanned this session ⇒ we can't confirm there is no OS CU ⇒ stay safe and hold the box.
+        var box = Box("BOX", osBuild: 14393, flagged: true, scannedThisSession: false);
+
+        Assert.True(StagedInstallPlanner.NeedsStageDecision(box));
+        Assert.True(StagedInstallPlanner.MayHaveOsCuToStage(box));
+    }
+
+    [Fact]
+    public void NeedsStageDecision_freshly_scanned_only_sql_and_dotnet_cu_is_false()
+    {
+        // A SQL Server CU ("...RTM CU") and a .NET Framework CU both contain CU/"Cumulative Update" but are NOT
+        // the OS LCU — the matcher excludes them — so a freshly-scanned box with only these has nothing to stage.
+        var box = Box("BOX", osBuild: 14393, flagged: true, scannedThisSession: true, applicable:
+        [
+            ("Security Update for SQL Server 2017 RTM CU (KB5090354)", "5090354"),
+            ("2026-06 Cumulative Update for .NET Framework 4.8 for Windows Server 2016 (KB5099999)", "5099999"),
+        ]);
+
+        Assert.False(StagedInstallPlanner.NeedsStageDecision(box));
+    }
+
+    [Fact]
+    public void Plan_freshly_scanned_flagged_2016_no_os_cu_proceeds_normally()
+    {
+        // Gate 1 (the View's decision dialog, via Plan) shares NeedsStageDecision: a freshly-scanned flagged box
+        // with no OS CU is routed to the normal install, not the dialog.
+        var box = Box("BOX", osBuild: 14393, flagged: true, scannedThisSession: true, applicable:
+        [
+            ("Security Update for Microsoft Office 2016 (KB5002852)", "5002852"),
+        ]);
+
+        StagedInstallPlan plan = StagedInstallPlanner.Plan([box], settingsCuKb: "KB5094122");
+
+        Assert.False(plan.NeedsDecision);
+        Assert.Empty(plan.FlaggedNotStaged);
+        Assert.Single(plan.Normal);
+    }
+
+    [Fact]
+    public void Plan_freshly_scanned_flagged_2016_with_os_cu_needs_decision() // SAFETY
+    {
+        var box = Box("BOX", osBuild: 14393, flagged: true, scannedThisSession: true, applicable:
+        [
+            ("2026-06 Cumulative Update for Windows Server 2016 (KB5094122)", "5094122"),
+        ]);
+
+        StagedInstallPlan plan = StagedInstallPlanner.Plan([box], settingsCuKb: "KB5094122");
+
+        Assert.True(plan.NeedsDecision);
+        Assert.Single(plan.FlaggedNotStaged);
+        Assert.Empty(plan.Normal);
     }
 
     // --- PartitionByCurrency: pre-dialog "already current this cycle" split (fail-open) ---
