@@ -129,6 +129,16 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **Flagged Server 2016 boxes with no pending OS cumulative update now install their minor updates instead of
+  being dead-ended by the staging prompt** — the staging gate exists only to keep the broken Express-delta OS
+  cumulative update off Windows Update on a flagged box, but it was blocking *any* flagged box that wasn't
+  verified-current — including one whose scan holds only minor updates (Office, Defender) and no OS CU at all.
+  The bottom **Install checked** button just showed *"Needs CU staging"* and installed nothing. The gate now
+  fires only when there's genuinely something to stage: a scan that actually contains a Server 2016 OS CU, or an
+  unscanned box that can't be cleared yet (SQL Server / .NET cumulative updates never count). A freshly-scanned
+  flagged box with no OS CU falls through to a normal Windows Update install of its ticked minor updates. The
+  "already current" routing note moved off the prominent grid column into the activity log, so the column shows
+  the real install outcome. Install-path only — nothing reboots.
 - **Cross-Domain RDP sessions now fill the pane *and* keep Failover Cluster Manager's right-click menus
   working** — the embedded remote session now pins its display scale to **100%** instead of matching this
   PC's display scale (~150% on a high-DPI jump box). At the host scale, FCM's context menus collapsed the
