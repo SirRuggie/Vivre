@@ -38,7 +38,7 @@ namespace Vivre.UpdateAgent
 
         public void Write(string phase, string message, int? percent, int available, int installed, int failed, bool rebootPending)
         {
-            var obj = new Dictionary<string, object>
+            Emit(new Dictionary<string, object>
             {
                 ["phase"] = phase,
                 ["message"] = message,
@@ -48,8 +48,36 @@ namespace Vivre.UpdateAgent
                 ["failed"] = failed,
                 ["rebootPending"] = rebootPending,
                 ["ts"] = DateTime.Now.Ticks,
-            };
+            });
+        }
 
+        /// <summary>
+        /// Emits a component-cleanup terminal line carrying the RAW access-denied facts (the
+        /// StartComponentCleanup exit code, whether AnalyzeComponentStore parsed, and the reclaimable count)
+        /// alongside the standard fields, so the controller's classifier — not the agent — builds the
+        /// operator-facing wording. The phase is a normal terminal phase ("Done"): the cleanup cleared the
+        /// backlog; the locked remainder is the caveat the facts describe.
+        /// </summary>
+        public void WriteCleanupFacts(string phase, string message, int cleanupExit, bool analyzeOk, int? reclaimable)
+        {
+            Emit(new Dictionary<string, object>
+            {
+                ["phase"] = phase,
+                ["message"] = message,
+                ["percent"] = 100,
+                ["available"] = 1,
+                ["installed"] = 1,
+                ["failed"] = 0,
+                ["rebootPending"] = false,
+                ["cleanupExit"] = cleanupExit,
+                ["analyzeOk"] = analyzeOk,
+                ["reclaimable"] = reclaimable,
+                ["ts"] = DateTime.Now.Ticks,
+            });
+        }
+
+        private void Emit(Dictionary<string, object> obj)
+        {
             string line = _serializer.Serialize(obj);
             lock (_gate)
             {

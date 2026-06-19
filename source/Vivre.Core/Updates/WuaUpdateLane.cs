@@ -606,6 +606,12 @@ public sealed class WuaUpdateLane
             int failed = GetInt(root, "failed") ?? 0;
             bool rebootPending = GetBool(root, "rebootPending");
 
+            // Component-cleanup facts only appear on the agent's access-denied (locked-files) terminal line;
+            // absent everywhere else, so CleanupFacts stays null for every other status.
+            ComponentCleanupFacts? cleanupFacts = GetInt(root, "cleanupExit") is int cleanupExit
+                ? new ComponentCleanupFacts(cleanupExit, GetBool(root, "analyzeOk"), GetInt(root, "reclaimable"))
+                : null;
+
             status = new HostPatchStatus(
                 Phase: phase,
                 Message: message,
@@ -613,7 +619,10 @@ public sealed class WuaUpdateLane
                 AvailableCount: available,
                 InstalledCount: installed,
                 FailedCount: failed,
-                RebootPending: rebootPending);
+                RebootPending: rebootPending)
+            {
+                CleanupFacts = cleanupFacts,
+            };
             return true;
         }
         catch (JsonException)

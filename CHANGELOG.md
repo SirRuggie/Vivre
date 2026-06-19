@@ -129,6 +129,15 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **Server 2016 "Clean up" no longer reports a false failure when security software holds files open** — a
+  component-store cleanup that cleared the update backlog but couldn't delete a locked remainder (commonly
+  AV/EDR holding WinSxS handles, so DISM exits access-denied) used to read as a hard *"Component cleanup
+  failed"* in red. It's now correctly shown as **"Cleaned · locked files (see log)"** in the neutral done
+  (green) state, with a plain-English activity-log note explaining that staging isn't blocked and how to
+  reclaim the rest (temporarily disable AV and re-run, or reboot to release the lock). The agent backs this
+  with evidence — on the access-denied exit it runs a read-only `AnalyzeComponentStore` and reports the
+  reclaimable-package count; the reclassification is decided from those raw facts, not assumed. Genuine
+  cleanup failures (any other exit code) still surface as errors unchanged. No reboot path was added.
 - **Flagged Server 2016 boxes with no pending OS cumulative update now install their minor updates instead of
   being dead-ended by the staging prompt** — the staging gate exists only to keep the broken Express-delta OS
   cumulative update off Windows Update on a flagged box, but it was blocking *any* flagged box that wasn't

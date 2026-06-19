@@ -443,6 +443,7 @@ namespace Vivre.UpdateAgent
             int exit = RunDismWithLiveness("/online /cleanup-image /startcomponentcleanup /english", progress);
 
             const int ERROR_SUCCESS_REBOOT_REQUIRED = 3010;
+            const int ERROR_ACCESS_DENIED = 5;
             if (exit == 0)
             {
                 progress.Write("Done", "Component cleanup complete.", 100, 1, 1, 0, false);
@@ -455,10 +456,92 @@ namespace Vivre.UpdateAgent
                 return false;
             }
 
+            if (exit == ERROR_ACCESS_DENIED)
+            {
+                // Access-denied (0x80070005 in CBS): the CSI scavenge cleared the backlog but couldn't commit
+                // the deletion of a locked remainder — commonly security software (AV/EDR) holding WinSxS
+                // handles. This is a success-with-caveat, NOT a hard failure. Emit the RAW facts (exit code,
+                // whether the read-only AnalyzeComponentStore parsed, reclaimable count) and let the
+                // controller's ComponentCleanupClassifier build the operator-facing wording — the agent
+                // builds none. AnalyzeComponentStore is read-only; nothing here reboots.
+                bool analyzeOk = TryGetReclaimablePackages(out int reclaimable);
+                progress.WriteCleanupFacts("Done",
+                    "StartComponentCleanup exit 0x" + exit.ToString("X8")
+                        + " (access denied); analyzeOk=" + analyzeOk
+                        + " reclaimable=" + (analyzeOk ? reclaimable.ToString(CultureInfo.InvariantCulture) : "?"),
+                    exit, analyzeOk, analyzeOk ? reclaimable : (int?)null);
+                return false;
+            }
+
             progress.Write("Error",
                 "Component cleanup failed (exit 0x" + exit.ToString("X8") + "). See %WINDIR%\\Logs\\DISM\\dism.log.",
                 100, 1, 0, 1, false);
             return false;
+        }
+
+        /// <summary>
+        /// Runs a read-only <c>DISM /Online /Cleanup-Image /AnalyzeComponentStore /english</c> and parses the
+        /// "Number of Reclaimable Packages : N" line. Returns true with <paramref name="reclaimable"/> set when
+        /// DISM ran and the count parsed; false (count -1) when it couldn't run or the line wasn't found — so
+        /// the caller can report the remaining count as unknown. Never reboots; /english forces the parseable
+        /// label on localized hosts. Doubles as a store-health check: a store that can't be analyzed may be
+        /// genuinely broken.
+        /// </summary>
+        private static bool TryGetReclaimablePackages(out int reclaimable)
+        {
+            reclaimable = -1;
+            try
+            {
+                string stdout = RunDismCaptureStdout("/online /cleanup-image /analyzecomponentstore /english");
+                if (string.IsNullOrEmpty(stdout))
+                {
+                    return false;
+                }
+
+                var m = System.Text.RegularExpressions.Regex.Match(
+                    stdout, @"Number of Reclaimable Packages\s*:\s*(\d+)");
+                if (m.Success && int.TryParse(m.Groups[1].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out int n))
+                {
+                    reclaimable = n;
+                    return true;
+                }
+
+                return false;
+            }
+            catch
+            {
+                // Best-effort store-health probe: any failure to launch/read DISM means the count is unknown,
+                // which the classifier reports honestly ("a locked remainder couldn't be removed"). Never throw
+                // into the cleanup terminal path.
+                return false;
+            }
+        }
+
+        /// <summary>Runs <c>dism.exe</c> with <paramref name="arguments"/>, capturing full stdout (stderr is
+        /// drained so the pipe can't deadlock). Used by the read-only AnalyzeComponentStore probe.</summary>
+        private static string RunDismCaptureStdout(string arguments)
+        {
+            var psi = new System.Diagnostics.ProcessStartInfo
+            {
+                FileName = "dism.exe",
+                Arguments = arguments,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true,
+            };
+
+            var sb = new StringBuilder();
+            using (var p = new System.Diagnostics.Process { StartInfo = psi })
+            {
+                p.OutputDataReceived += (s, e) => { if (e.Data != null) { sb.AppendLine(e.Data); } };
+                p.ErrorDataReceived += (s, e) => { /* drain stderr so the pipe can't fill and deadlock */ };
+                p.Start();
+                p.BeginOutputReadLine();
+                p.BeginErrorReadLine();
+                p.WaitForExit();
+                return sb.ToString();
+            }
         }
 
         /// <summary>

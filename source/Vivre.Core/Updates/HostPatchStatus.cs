@@ -106,6 +106,17 @@ public enum PatchState
 }
 
 /// <summary>
+/// Raw component-cleanup facts the on-target agent emits on an access-denied (locked-files) cleanup
+/// terminal, so the controller's <see cref="ComponentCleanupClassifier"/> — not the agent — decides
+/// CleanSuccess vs CleanedFilesLocked vs Failed. Null on every status except that one cleanup terminal.
+/// </summary>
+/// <param name="ExitCode">The StartComponentCleanup process exit code (decimal; access-denied = 5).</param>
+/// <param name="AnalyzeOk">True when the follow-up read-only AnalyzeComponentStore ran and its
+/// "Number of Reclaimable Packages" line parsed.</param>
+/// <param name="ReclaimablePackages">Reclaimable package count when <paramref name="AnalyzeOk"/>; null when unknown.</param>
+public sealed record ComponentCleanupFacts(int ExitCode, bool AnalyzeOk, int? ReclaimablePackages);
+
+/// <summary>
 /// A snapshot of one host's patch state, emitted by <see cref="PatchService"/> via
 /// <see cref="IProgress{T}"/>. The view model writes it onto the matching
 /// <c>Computer</c> row each poll. Immutable — a new instance per update.
@@ -128,6 +139,10 @@ public sealed record HostPatchStatus(
 {
     /// <summary>The applicable updates (populated after a scan; empty otherwise).</summary>
     public IReadOnlyList<SoftwareUpdate> Updates { get; init; } = [];
+
+    /// <summary>Raw cleanup facts on an access-denied (locked-files) cleanup terminal; null otherwise.
+    /// Drives <see cref="ComponentCleanupClassifier"/> in the cleanup result path.</summary>
+    public ComponentCleanupFacts? CleanupFacts { get; init; }
 
     /// <summary>An error status with no counts.</summary>
     public static HostPatchStatus Failed(string message) => new(PatchPhase.Error, message);

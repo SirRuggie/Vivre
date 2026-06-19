@@ -136,6 +136,45 @@ public class WuaUpdateLaneTests
         Assert.True(status.RebootPending);
     }
 
+    [Fact]
+    public void TryParseProgress_reads_component_cleanup_access_denied_facts()
+    {
+        // The agent's access-denied (locked-files) cleanup terminal: a normal "Done" phase carrying the raw
+        // facts so the controller's ComponentCleanupClassifier — not the agent — decides the outcome.
+        const string json =
+            """{"phase":"Done","message":"StartComponentCleanup exit 0x00000005 (access denied); analyzeOk=True reclaimable=0","percent":100,"available":1,"installed":1,"failed":0,"rebootPending":false,"cleanupExit":5,"analyzeOk":true,"reclaimable":0}""";
+
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.NotNull(status.CleanupFacts);
+        Assert.Equal(5, status.CleanupFacts!.ExitCode);
+        Assert.True(status.CleanupFacts.AnalyzeOk);
+        Assert.Equal(0, status.CleanupFacts.ReclaimablePackages);
+    }
+
+    [Fact]
+    public void TryParseProgress_leaves_cleanup_facts_null_when_count_absent()
+    {
+        // analyze couldn't parse: the agent omits "reclaimable", so the count is unknown (null), not 0.
+        const string json =
+            """{"phase":"Done","message":"locked","cleanupExit":5,"analyzeOk":false}""";
+
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.NotNull(status.CleanupFacts);
+        Assert.Equal(5, status.CleanupFacts!.ExitCode);
+        Assert.False(status.CleanupFacts.AnalyzeOk);
+        Assert.Null(status.CleanupFacts.ReclaimablePackages);
+    }
+
+    [Fact]
+    public void TryParseProgress_leaves_cleanup_facts_null_on_an_ordinary_line()
+    {
+        const string json =
+            """{"phase":"Done","message":"Component cleanup complete.","percent":100,"available":1,"installed":1,"failed":0,"rebootPending":false}""";
+
+        Assert.True(WuaUpdateLane.TryParseProgress(json, out HostPatchStatus status));
+        Assert.Null(status.CleanupFacts);
+    }
+
     [Theory]
     [InlineData("")]
     [InlineData("__VIVRE_TASK_GONE__")]

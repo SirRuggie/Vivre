@@ -3482,10 +3482,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             // Shared bookkeeping (RebootRequired on the 3010 PendingReboot case, error recording) …
             ApplyStatus(computer, final);
-            // … then the per-box terminal label wins over ApplyStatus's generic message.
-            (string phase, string message) = Lcu2016RowState.MapCleanupTerminal(final.Phase, final.Message);
-            computer.UpdatePhase = phase;
-            computer.UpdateMessage = message;
+
+            // The access-denied (locked-files) cleanup is a SUCCESS-WITH-CAVEAT, not a failure: the agent
+            // emits raw facts, the classifier decides. Render it as the neutral "Cleaned" state (which
+            // DerivePatchState maps to green Done), never red — the AV/EDR caveat lives in the activity log.
+            ComponentCleanupClassification? classified = final.CleanupFacts is { } facts
+                ? ComponentCleanupClassifier.Classify(facts.ExitCode, facts.AnalyzeOk, facts.ReclaimablePackages)
+                : null;
+
+            if (classified is { Outcome: ComponentCleanupOutcome.CleanedFilesLocked } locked)
+            {
+                computer.UpdatePhase = "Cleaned";
+                computer.UpdateMessage = locked.ShortStatus!;
+                _activity.Info(computer.Name, locked.Detail!);
+            }
+            else
+            {
+                // … the per-box terminal label wins over ApplyStatus's generic message.
+                (string phase, string message) = Lcu2016RowState.MapCleanupTerminal(final.Phase, final.Message);
+                computer.UpdatePhase = phase;
+                computer.UpdateMessage = message;
+            }
         }
         catch (OperationCanceledException)
         {
