@@ -24,7 +24,10 @@ public static class TransientRetryRunner
     /// upcoming retry number (1-based). Injected so tests don't really wait; a real caller passes
     /// <c>Task.Delay(backoff, ct)</c>.</param>
     /// <param name="onRetrying">Invoked (with the upcoming 1-based retry number) just before each retry
-    /// so the caller can show a calm "Retrying…" row state — never an error.</param>
+    /// so the caller can show a calm "Retrying…" row state — never an error. NOTE: this (like
+    /// <paramref name="attempt"/> and <paramref name="buildExhausted"/>) is invoked on THIS runner's
+    /// context — after an internal <c>ConfigureAwait(false)</c>, i.e. a thread-pool thread, NOT the
+    /// caller's captured SynchronizationContext. A UI caller MUST marshal any UI-bound write it does here.</param>
     /// <param name="buildExhausted">Builds the honest terminal status from the last transient message
     /// once retries run out (the VM passes <see cref="HostPatchStatus.Unreachable"/>).</param>
     /// <param name="token">Cancellation (user Stop) — propagates out of the attempt or the delay.</param>

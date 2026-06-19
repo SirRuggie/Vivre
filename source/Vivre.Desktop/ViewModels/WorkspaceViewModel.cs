@@ -2609,6 +2609,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// re-dispatch runs. (<see cref="TransientRetryRunner"/> calls this before each backoff pause.)</summary>
     private static void SetTransientRetryingState(Computer computer, int retryNumber)
     {
+        // CALLED OFF THE UI THREAD. This is the onRetrying callback TransientRetryRunner.RunAsync invokes
+        // AFTER `await attempt(...).ConfigureAwait(false)`, so it runs on a thread-pool thread — NOT on the
+        // sweep's UI continuation. UpdatePhase is a live-filtered grid property (PatchState derives from it),
+        // and writing it off the UI thread re-shapes the live CollectionView on the writing thread → throws
+        // "the calling thread cannot access this object" (this was the live v1.13.0 crash on a transient
+        // retry, install AND scan). Unlike progress.Report — which the UI-built Progress<T> marshals for us —
+        // a direct callback does NOT marshal, so we marshal here. Inline when already on the UI thread (or no
+        // Application, e.g. unit tests).
+        Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+        if (dispatcher is null || dispatcher.CheckAccess())
+        {
+            ApplyTransientRetryingState(computer, retryNumber);
+        }
+        else
+        {
+            dispatcher.InvokeAsync(() => ApplyTransientRetryingState(computer, retryNumber));
+        }
+    }
+
+    private static void ApplyTransientRetryingState(Computer computer, int retryNumber)
+    {
         computer.UpdateError = null;
         computer.UpdateProgress = null;
         computer.UpdatePhase = PatchPhase.Scanning.ToString(); // blue "working" — never the red Error pill
@@ -2668,6 +2689,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 },
                 maxRetries: MaxTransientRetries,
                 delay: TransientBackoffDelayAsync,
+                // INVARIANT: a callback handed to a Core runner (onRetrying/buildExhausted/attempt) runs on
+                // the runner's post-ConfigureAwait(false) context — a thread-pool thread, NOT this UI sweep
+                // continuation — so it must NOT write UI-bound/live-filtered state directly; route via the
+                // UI-built IProgress or marshal. SetTransientRetryingState marshals to the Dispatcher itself.
                 onRetrying: n => SetTransientRetryingState(computer, n),
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);
@@ -2949,6 +2974,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 },
                 maxRetries: MaxTransientRetries,
                 delay: TransientBackoffDelayAsync,
+                // INVARIANT: a callback handed to a Core runner (onRetrying/buildExhausted/attempt) runs on
+                // the runner's post-ConfigureAwait(false) context — a thread-pool thread, NOT this UI sweep
+                // continuation — so it must NOT write UI-bound/live-filtered state directly; route via the
+                // UI-built IProgress or marshal. SetTransientRetryingState marshals to the Dispatcher itself.
                 onRetrying: n => SetTransientRetryingState(computer, n),
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);

@@ -129,6 +129,13 @@ it ships, then gets a dated heading.
   is matched by KB + architecture, never size).
 
 ### Fixed
+- **Install/scan no longer crash with a cross-thread error when a machine needs a Windows Update retry** —
+  when reaching Windows Update hit a transient network blip and the operation retried (common when a big
+  Stage batch was saturating the network at the same time), the row's "retrying…" status update ran on a
+  background thread and threw *"The calling thread cannot access this object because a different thread owns
+  it,"* failing the whole install/scan on every affected machine. The status update is now marshalled to the
+  UI thread. Added a debug-only safety check that makes any future off-thread write to a grid status property
+  fail loudly during development instead of crashing in the field.
 - **Server 2016 "Clean up" no longer reports a false failure when security software holds files open** — a
   component-store cleanup that cleared the update backlog but couldn't delete a locked remainder (commonly
   AV/EDR holding WinSxS handles, so DISM exits access-denied) used to read as a hard *"Component cleanup

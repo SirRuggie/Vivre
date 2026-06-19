@@ -45,6 +45,20 @@ signal appears."
 
 ## OPEN — polish / smaller standalone items
 
+- **Stage copy fan-out I/O contention (UI sluggish during big batch Stage)** — NOT a UI-blocking copy and NOT
+  a wrong-thread hash (both were earlier guesses). The 1.7 GB Stage copy already runs OFF the UI thread
+  (`SmbAgentLane.cs:230-246` — `File.Copy` inside `Task.Run(...).ConfigureAwait(false)`), and integrity is
+  byte-count only (no SHA-256 of the package). Real cause: **copy fan-out** — up to the install cap hosts each
+  `File.Copy` the SAME workstation-local 1.7 GB source concurrently → N parallel source reads + N concurrent
+  1.7 GB SMB uploads → workstation disk + uplink saturation; "sluggish, not frozen" is the per-host UI-thread
+  progress continuations queueing on the single Dispatcher under that pressure. **Concurrency facts (corrects
+  any "hardcoded 10-host cap" notion):** there is NO hardcoded 10 — `PatchOptions.MaxConcurrentHosts = 50`
+  (`PatchOptions.cs:78`), and the install/stage throttle is the operator-settable **Max simultaneous installs**
+  (per-tab `_patchThrottle`, default 50; `MaxConcurrentScans = 32` is separate). Cross-tab coupling is
+  architectural (one Dispatcher + singleton `PatchService`/`PSRunspaceHost`; scan/monitor/reboot throttles are
+  `static`) but `_patchThrottle` is per-tab, so installs are NOT cross-tab gated. Fix direction (future): a
+  dedicated I/O-aware copy cap separate from the install cap; and/or stage to one share and have targets pull;
+  and/or sequence the large copies.
 - **Proactive gray-out of known-WinRM-broken boxes** — visually mark boxes that are known to fail WinRM
   so the operator isn't surprised, rather than only learning at action time. Design pass needed.
 - **Idle-monitor reachability throttle** — throttle added (d3b5ed0). Verify it holds at scale
@@ -81,6 +95,22 @@ signal appears."
 
 ## DONE (committed) — recent
 
+- **Patch-sweep cross-thread crash on a transient WU-reach retry — RESOLVED** (local commit, not yet pushed).
+  Was live on v1.13.0 *despite* the June-13 threading fix (`7c7b5f78`, which was correct but incomplete).
+  Vector: `WorkspaceViewModel.SetTransientRetryingState` wrote `Computer.UpdatePhase` (a grid live-filtered
+  property; `PatchState` derives from it) **directly on the thread-pool thread** — it is the `onRetrying`
+  callback `TransientRetryRunner.RunAsync` invokes *after* `await attempt(...).ConfigureAwait(false)`, so it
+  runs on the runner's context, not the sweep's UI continuation. Off-thread, the write re-shapes the live
+  `_computersView` CollectionView on the writing thread → "the calling thread cannot access this object".
+  Gated on a transient `0x80072EE2` retry (which a concurrent Stage batch's copy-fan-out I/O saturation made
+  near-universal), and shared by **install AND scan** (both wire the same `onRetrying`). Fix: marshal the
+  write to the Dispatcher (`SetTransientRetryingState` → `Application.Current.Dispatcher.InvokeAsync`), plus a
+  DEBUG thread-affinity guard on the live-filtered-property writers (`Computer.OnUpdatePhaseChanged` /
+  `OnRebootRequiredChanged`, via an injected `LiveFilteredWriteIsOnUiThread` check wired in `App.OnStartup`,
+  keeping Vivre.Core WPF-free). **Lesson:** "no `ConfigureAwait(false)` on the VM sweep" is *insufficient* —
+  any callback the VM hands a Core runner (`onRetrying`/`buildExhausted`/`attempt`) runs off-thread; route via
+  `IProgress` or marshal. (3-pass investigation: pass 1 wrongly blamed a stale build; pass 2 proved the main
+  sweep continuation stays on UI; pass 3 found this callback vector. 611 tests green.)
 - **Embedded RDP — Failover Cluster Manager context menus fixed** (`1ce1abf`, on master): pinned the RDP
   session display scale to 100% (`DesktopScaleFactor=DeviceScaleFactor=100`), sidestepping the documented
   FCM >100%-scaling menu-collapse bug. Session was measured at 150% (the cause) vs mRemoteNG's 100%. Fills +

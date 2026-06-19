@@ -29,6 +29,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+#if DEBUG
+        // Catch off-thread writes to a grid live-filtered property (UpdatePhase/RebootRequired → PatchState)
+        // loudly, with the offending property name, instead of as an opaque "calling thread cannot access this
+        // object" crash when the live CollectionView re-shapes off-thread. Wired only in DEBUG; Vivre.Core
+        // stays UI-agnostic (it calls this injected check, never WPF). Runs on the UI thread.
+        Vivre.Core.Models.Computer.LiveFilteredWriteIsOnUiThread =
+            () => Current?.Dispatcher.CheckAccess() ?? true;
+#endif
+
         // Shared singletons (one PowerShell host, one credential store, …) used by every tab.
         // Wrap the real WinRM host so a host that rejects Kerberos (0x80090322) is recorded once and
         // routed to SMB/DCOM instead of re-paying the ~20s doomed WinRM connect. Transparent to every
