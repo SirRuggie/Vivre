@@ -190,6 +190,30 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   - `MainWindow.ResyncStagedPatchingFlags` — re-seeds every loaded row's `RequiresStagedPatching` from `StagedHosts` after a Settings remove/clear, so an edited list never leaves a stale flag.
   - `WorkspaceView` `StagedColumn` — the narrow "Staged" pill column (visible only on flagged 2016 rows; neutral styling, distinct from the amber "STAGED — needs Reboot Wave" tag). A `DataGridColumn` can't bind `Visibility`, so the View drives it from code-behind via the VM's `HasStagedServer2016` (`OnVmPropertyChanged` / `UpdateStagedColumnVisibility`). `BuildContextMenu` adds the **Mark as Staged patching** / **Remove Staged flag** items (2016 + Patching only, acting on the right-clicked row).
 
+## ⚠ Computer.cs observability + the live-filtered grid (load-bearing, reusable)
+
+**Stale-in-an-open-panel = a non-observable property.** If a value shows correctly in a freshly-opened
+Machine Details panel/tab but won't update in place after a re-check (e.g. Check Vitals), the property it
+binds through isn't raising PropertyChanged. Two flavors: a plain auto-property (`Vitals`, `VitalityReasons`
+— fixed `5e6ddee` via `[ObservableProperty]`) or a computed property with no notify (`VitalsSummary`,
+`LastRebootDisplay`, `MonthlyCuDisplay`, `LcuPackagesFolder` — still deferred where only the grid reads them).
+Fix = make the *container* observable: one `[ObservableProperty]` on `Vitals` re-resolves every `Vitals.*`
+reading at once.
+
+**Before making ANY `Computer.cs` property observable, run this 2-question safety check** (the `7d8abd4`
+cross-thread crash was an off-thread write to a *live-filtered* property re-shaping the grid's CollectionView
+on the wrong thread):
+1. **Is the property in the live-filtered set?** (the predicate inputs in `WorkspaceViewModel.cs` ~828-834:
+   `Name`, `IsOnline`, `PatchState`, `RebootRequired`, `LastError`, `UpdateError`, `UpdatesAvailable`,
+   `MissingUpdates`, `VitalityBand`, `OsBuild`, `UpdatePhase`, `ScheduledNextRun`.) If YES, a change re-shapes
+   the grid → it MUST be written on the UI thread (marshal, or route via `IProgress`).
+2. **Is the write on the UI thread?** Confirm the call path keeps the UI `SynchronizationContext` (no
+   `ConfigureAwait(false)` / `Task.Run` upstream) — and remember callbacks handed to a Core runner run on the
+   runner's `ConfigureAwait(false)` context, so those must marshal.
+
+Non-live-filtered + on-UI-thread (`Vitals`, `VitalityReasons`) = safe to make observable — the opposite
+direction from the crash.
+
 ## Cross-Domain RDP
 - `source/Vivre.Desktop/RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded RDP host; owns control creation,
   `LocalScale()` (pinned to `(100,100)` for the FCM fix, `1ce1abf`), the framebuffer (`DesktopWidth/Height`),
