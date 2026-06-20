@@ -128,7 +128,7 @@
                              Header="Remote credentials">
                 <StackPanel Margin="0,8,0,0">
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="Used for SCCM actions, Run Script, and Enable WinRM. Held for this session only — never saved to disk." />
+                                  Text="Used to reach your machines — for health checks, patching, Run Script, SCCM client actions, and Enable WinRM. Held for this session only — never saved to disk." />
 
                     <RadioButton x:Name="UseLoginRadio"
                                  Content="Use my Windows login"

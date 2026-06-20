@@ -101,7 +101,7 @@ public static class HelpContent
             [
                 "1. Open Settings (left navigation) ▸ Remote credentials.",
                 "2. Keep \"Use my Windows login\", or pick \"Use these credentials\" and enter Domain / Username / Password.",
-                "These are used for all remote actions (health checks, Run Script, reboots, patching, Enable WinRM).",
+                "This is the account Vivre uses to reach your machines — for health checks, patching, Run Script, SCCM client actions, and Enable WinRM.",
             ],
             Tip = "Credentials are held in memory for the session only — never written to disk. Set an admin account here if your login can't reach the targets.",
         },
@@ -360,6 +360,7 @@ public static class HelpContent
                 "Pick Enter (suppress alerts) or Exit (resume) — the button label follows your choice — enter the WUG server + your WUG login, then click it.",
                 "The window closes right away and the work runs in the background: each machine's row shows progress, with a summary in the activity log — handy to silence monitoring while you patch, then resume after.",
                 "It matches your machine names to WUG devices (by name, then by IP) and calls out any that didn't match a WUG device.",
+                "Not sure it'll connect? Click Test connection first — it checks the server and your login. If the WhatsUp Gold PowerShell module isn't installed yet, an Install module button appears to add it for you.",
             ],
             Tip = "Runs on this PC against the WUG server (not on the targets). The WUG login is asked each time and never saved (only the server address is remembered); the WhatsUpGoldPS module auto-installs for your user if it's missing.",
         },
@@ -462,7 +463,7 @@ public static class HelpContent
                 "Click a machine — its Updates tab opens at the bottom. On the Applicable tab, tick/untick the updates you want.",
                 "Use All / None to select quickly, or the filter box to find an update by KB or title.",
                 "Install then targets only the ticked ones (or everything applicable if you don't tick anything).",
-                "The Size column shows each update's download size — the size Windows Update reports, the same as BatchPatch. For the occasional Windows cumulative update whose reported size is implausibly large (an express-update quirk), Vivre substitutes the exact size from the Microsoft Update Catalog. A dash (—) means neither was available — usually one of those large cumulative updates on a machine that can't reach the catalog (offline / locked-down). It never blocks installing.",
+                "The Size column shows each update's download size — the size Windows reports, the same as BatchPatch. Once in a while Windows reports a wildly wrong size for a big cumulative update; when that happens Vivre shows the real download size from Microsoft's update catalog instead. A dash (—) means no size was available — usually one of those big updates on a machine that can't reach the catalog (offline or locked-down). It never blocks installing.",
             ],
         },
         new HelpTopic
@@ -535,7 +536,7 @@ public static class HelpContent
                 "  Back online · installed N · N remaining — more updates still apply; run Install again.",
                 "  Back online · reboot still pending — another reboot is needed; run again when ready.",
                 "  Back online · couldn't rescan — the re-scan didn't complete; use Scan to re-check.",
-                "If a box doesn't return during the live wave, use right-click ▸ Verify (2016) or Scan (other boxes) once it's back up — the wave never marks a box failed just for being slow.",
+                "If a box doesn't return during the live wave, just re-check it once it's back up — the wave never marks a box failed for being slow. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
             ],
             Tip = "Reboot & verify reboots ONLY the machines you select and confirm. It never touches the rest of the fleet. To reboot without a post-reboot rescan, use right-click ▸ Reboot (force now).",
         },
@@ -574,6 +575,18 @@ public static class HelpContent
                 "Manage your flagged boxes in Settings ▸ Staged patching machines: see the whole list, remove a box (sends it back to normal Windows Update), or Clear all.",
             ],
             Tip = "Set this month's KB + target UBR in Settings ▸ Server 2016 cumulative update before staging or using \"Install minor updates only\" — both need to know which update is the cumulative one. Flagging is remembered between sessions.",
+        },
+        new HelpTopic
+        {
+            Category = Updates, Icon = SymbolRegular.Box24, Title = "A flagged 2016 box with only small updates installs them normally",
+            Keywords = "staged 2016 flagged minor updates no cumulative cu install office defender dotnet needs staging dialog skip everyday",
+            Lines =
+            [
+                "Marking a Server 2016 box for staged patching only changes how its monthly cumulative update is delivered — it doesn't hold back the box's other updates.",
+                "So if you click Install on a flagged box that has no cumulative update waiting (just smaller things like Office, Defender or .NET), Vivre installs those normally through Windows Update — it won't stop to ask you to stage anything.",
+                "You're only asked to Stage (or to choose \"Install minor updates only\") when a flagged box actually has this month's cumulative update pending.",
+            ],
+            Tip = "Flagging a box is safe: it never blocks that box's everyday updates — it only routes the monthly cumulative update through the staging lane when one is due.",
         },
 
         // ---------------- Tips & shortcuts ----------------
