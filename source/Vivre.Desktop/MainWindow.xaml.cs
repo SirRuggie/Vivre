@@ -617,11 +617,11 @@ public partial class MainWindow : FluentWindow
 
     // --- unified bottom dock (Activity + per-machine Updates) ---
 
-    // The machine grid must always remain the dominant pane — keep the dock to at most this
-    // fraction of the section height.  40% leaves the grid ≥ 60% of the space at any height.
-    // Adjust here if the balance needs tuning; the floor constant beneath it prevents the
-    // dock opening uselessly thin regardless of the fraction.
-    private const double DockMaxOpenFraction = 0.40;
+    // The dock reopens to the operator's last saved height (persisted in AppSettings) — we no longer
+    // shrink it to a fraction on reopen. To keep the machine grid usable, the grid keeps this minimum;
+    // the same value is set as WorkspaceGridRow.MinHeight in XAML so a splitter drag can't squeeze the
+    // list away either, and ShowDock caps the saved height against it should the window have shrunk since.
+    private const double WorkspaceGridMinHeight = 150;
 
     /// <summary>Sensible floor so a degenerate saved value can't open the dock uselessly thin.</summary>
     private const double DockMinOpenHeight = 100;
@@ -722,16 +722,18 @@ public partial class MainWindow : FluentWindow
 
     private void RecomputeBottomDock()
     {
-        bool updates = UpdatesTriggerActive;
-        bool activity = ActivityLogToggle?.IsChecked == true;
+        // The Updates TAB exists only in Patching mode with a focused machine (it shows that machine's
+        // updates). The dock's OPEN-state is driven SOLELY by the toggle — selecting a row NEVER opens it.
+        bool updatesTab = UpdatesTriggerActive;
+        bool open = ActivityLogToggle?.IsChecked == true;
 
-        UpdatesTab.Visibility = updates ? Visibility.Visible : Visibility.Collapsed;
-        if (!updates && BottomDockTabs.SelectedItem == UpdatesTab)
+        UpdatesTab.Visibility = updatesTab ? Visibility.Visible : Visibility.Collapsed;
+        if (!updatesTab && BottomDockTabs.SelectedItem == UpdatesTab)
         {
             BottomDockTabs.SelectedItem = ActivityTab;
         }
 
-        if (activity || updates)
+        if (open)
         {
             ShowDock();
         }
@@ -749,19 +751,20 @@ public partial class MainWindow : FluentWindow
         // pinned it to a fixed pixel height — this ensures the grid always flexes with the window.
         WorkspaceGridRow.Height = new GridLength(1, GridUnitType.Star);
 
-        // Clamp the open height so the dock never dominates the layout.
-        // Skip the fraction clamp on startup (ActualHeight == 0 — the window hasn't laid out yet).
+        // Open to the operator's last saved height AS-IS (persisted across close/reopen). The only clamps
+        // keep both panes usable: never thinner than the dock floor, and never so tall the machine grid
+        // drops below its minimum (which can only happen if the window shrank since the height was saved).
         double rawHeight = _activityHeight.Value;
         double sectionHeight = ComputersSection.ActualHeight;
         double openHeight;
         if (sectionHeight > 0)
         {
-            double maxHeight = sectionHeight * DockMaxOpenFraction;
+            double maxHeight = Math.Max(DockMinOpenHeight, sectionHeight - WorkspaceGridMinHeight);
             openHeight = Math.Max(DockMinOpenHeight, Math.Min(rawHeight, maxHeight));
         }
         else
         {
-            // Pre-layout: use the remembered height as-is (fraction clamp not yet meaningful).
+            // Pre-layout: use the remembered height as-is (section height not known yet).
             openHeight = Math.Max(DockMinOpenHeight, rawHeight);
         }
 
@@ -822,7 +825,9 @@ public partial class MainWindow : FluentWindow
     {
         if (ActivityLogToggle.IsChecked == true)
         {
-            BottomDockTabs.SelectedItem = ActivityTab;
+            // Patching opens to the Updates tab (the primary patching content) when a machine is focused;
+            // otherwise — and always in Health — open to the Activity tab.
+            BottomDockTabs.SelectedItem = UpdatesTriggerActive ? UpdatesTab : ActivityTab;
         }
 
         RecomputeBottomDock();

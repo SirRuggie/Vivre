@@ -363,7 +363,9 @@
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="Auto" />
-                        <RowDefinition x:Name="WorkspaceGridRow" Height="*" />
+                        <!-- MinHeight keeps the machine grid usable: it bounds the splitter drag so the bottom
+                             dock can never squeeze the list away (mirrors WorkspaceGridMinHeight in code-behind). -->
+                        <RowDefinition x:Name="WorkspaceGridRow" Height="*" MinHeight="150" />
                         <RowDefinition x:Name="SplitterRow" Height="0" />
                         <RowDefinition x:Name="ActivityRow" Height="0" MinHeight="0" />
                     </Grid.RowDefinitions>
@@ -1597,10 +1599,23 @@
                                       IsChecked="False"
                                       Checked="OnActivityLogToggleChanged"
                                       Unchecked="OnActivityLogToggleChanged"
-                                      ToolTip="Show / hide the Activity log dock">
+                                      ToolTip="Show or hide the bottom panel">
                             <StackPanel Orientation="Horizontal">
                                 <ui:SymbolIcon Symbol="History24" FontSize="14" Margin="0,0,4,0" />
-                                <TextBlock Text="Activity log" FontSize="11" VerticalAlignment="Center" />
+                                <!-- Label flips with the fleet mode: Patching's dock has Updates + Activity tabs,
+                                     Health's has only Activity. OneWay Text via DataTrigger (NOT a Run.Text bind). -->
+                                <TextBlock FontSize="11" VerticalAlignment="Center">
+                                    <TextBlock.Style>
+                                        <Style TargetType="TextBlock">
+                                            <Setter Property="Text" Value="Activity log" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
+                                                    <Setter Property="Text" Value="Updates &amp; Activity" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
                             </StackPanel>
                         </ToggleButton>
                     </StackPanel>
