@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.0 — 2026-06-19
+
 ### Added
 - **Install concurrency default raised to 50, and now operator-tunable** — the cap on how many machines
   install at once defaults to **50** (was 10) and is editable in **Settings ▸ Max simultaneous installs**.
