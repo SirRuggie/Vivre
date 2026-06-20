@@ -7,6 +7,10 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **Machine Details now refreshes live when you click Check Vitals.** With the Details window open, re-running
+  Check Vitals updated the score but left the readings (system-drive free, memory, CPU, last boot, reboot
+  pending, the drives list, and the "why" reasons) showing the old values until you closed and reopened the
+  window. They now update in place.
 - **Reboot & verify now shows it's rechecking, and stops printing "Up to date · up to date."** After a box
   reboots and comes back online, Vivre automatically rechecks it for updates — the row now reads
   "… · rechecking for updates…" during that check, so you know not to rescan it by hand. And a Server 2016

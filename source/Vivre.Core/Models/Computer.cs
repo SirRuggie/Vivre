@@ -170,8 +170,10 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial VitalityBand? VitalityBand { get; set; }
 
-    /// <summary>The worst contributing factors behind the score (the "why"), for the triage panel.</summary>
-    public IReadOnlyList<string> VitalityReasons { get; set; } = [];
+    /// <summary>The worst contributing factors behind the score (the "why"), for the triage panel.
+    /// Observable so an open Machine Details panel re-resolves the "why" list when Check Vitals re-runs.</summary>
+    [ObservableProperty]
+    public partial IReadOnlyList<string> VitalityReasons { get; set; } = [];
 
     /// <summary>
     /// True when the box has a non-runtime admin-attention finding (currently: WinRM/Kerberos
@@ -241,9 +243,15 @@ public partial class Computer : ObservableObject
     /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
     public int LastInstallFailedCount { get; set; }
 
-    /// <summary>The full vitals snapshot behind the score, kept off the observable surface for the
-    /// triage panel's per-drive / per-event breakdown. Null until vitals are read.</summary>
-    public MachineVitals? Vitals { get; set; }
+    /// <summary>The full vitals snapshot behind the score — the Machine Details triage panel's per-drive /
+    /// per-reading breakdown binds THROUGH this (e.g. <c>Vitals.Drives</c>, <c>Vitals.SystemDriveFreePercent</c>,
+    /// <c>Vitals.LastBootTime</c>). Observable so a Check Vitals run WHILE Machine Details is open re-resolves
+    /// those readings live: ApplyVitals replaces the whole snapshot, and the notification re-evaluates the
+    /// bindings (previously it was a plain property, so the panel showed the old snapshot until reopened).
+    /// Null until vitals are read. NOT in the grid's live-filtered set, so notifying here never re-shapes the
+    /// grid CollectionView — and ApplyVitals runs on the UI thread.</summary>
+    [ObservableProperty]
+    public partial MachineVitals? Vitals { get; set; }
 
     /// <summary>One-line vitals digest for the chip tooltip / triage header
     /// (e.g. "Disk 4% · Mem 92% · CPU 30% · 3 stopped svc"); null until any vital is read.</summary>
