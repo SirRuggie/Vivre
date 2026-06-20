@@ -3689,6 +3689,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         string name = computer.Name;
 
+        // The reboot wave's success message (e.g. "Back online — rebooted. (committed in ~0 min)") is the
+        // row's message right now. Capture it BEFORE the rescan's ApplyStatus below overwrites it, so the
+        // 2016 outcome keeps the commit note as its base — and so we never read it back as "Up to date"
+        // (reading the overwritten value is what produced the doubled "Up to date · up to date").
+        string committedMessage = computer.UpdateMessage ?? string.Empty;
+
+        // Make the AUTOMATIC post-reboot recheck VISIBLE while the rescan runs — operators were manually
+        // rescanning because the row looked finished. The rescan below is awaited, so this is what shows
+        // during it; the final outcome (further below) then replaces it. Keep the commit/elapsed note alongside.
+        computer.UpdateMessage = committedMessage.Length > 0
+            ? $"{committedMessage} · rechecking for updates…"
+            : "Back online — rechecking for updates…";
+
         // ── a) Applicable rescan (read-only: ScanAsync only, never Install/Uninstall/Reboot) ──────
         // The box JUST rebooted (boot-time-confirmed) but may still be settling; a transient unreachable
         // ("network name no longer available") mid-settle is NOT a terminal failure — wait briefly and
@@ -3772,26 +3785,28 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         else
         {
-            // 2016 lane: keep the wave's UBR Done message as primary — do NOT overwrite it with WUA
-            // "installed N" strings. Append only a supplementary note.
-            string supplement;
+            // 2016 lane. The rescan's ApplyStatus above already wrote the scan conclusion onto the row, so
+            // appending a supplement that restates it printed the same thing twice ("Up to date · up to
+            // date"). Compose a single clear message instead — DISPLAY only; the rescan still runs once.
             if (scanFailed)
             {
-                supplement = "couldn't rescan — re-check";
+                // The rescan errored, so ApplyStatus did NOT overwrite the row — keep the wave's commit
+                // message (captured above) and flag that the automatic recheck didn't complete.
+                computer.UpdateMessage = committedMessage.Length > 0
+                    ? $"{committedMessage} · couldn't rescan — re-check"
+                    : "Couldn't rescan after reboot — re-check";
+                _activity.Info(name, $"{name}: couldn't rescan — re-check");
             }
             else if (remaining > 0)
             {
-                supplement = $"{remaining} update(s) still applicable — run a WUA pass";
+                computer.UpdateMessage = $"{remaining} update(s) still applicable — run a WUA pass";
+                _activity.Info(name, $"{name}: {remaining} update(s) still applicable — run a WUA pass");
             }
             else
             {
-                supplement = "up to date";
+                computer.UpdateMessage = "Up to date";
+                _activity.Info(name, $"{name}: up to date");
             }
-
-            // Preserve the UBR Done message; append the supplement with a mid-dot separator.
-            string baseMessage = computer.UpdateMessage ?? string.Empty;
-            computer.UpdateMessage = $"{baseMessage} · {supplement}";
-            _activity.Info(name, $"{name}: {supplement}");
         }
     }
 

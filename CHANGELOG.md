@@ -6,6 +6,13 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **Reboot & verify now shows it's rechecking, and stops printing "Up to date · up to date."** After a box
+  reboots and comes back online, Vivre automatically rechecks it for updates — the row now reads
+  "… · rechecking for updates…" during that check, so you know not to rescan it by hand. And a Server 2016
+  box with nothing left to install now reads a single **Up to date** instead of the doubled
+  "Up to date · up to date."
+
 ## 1.14.0 — 2026-06-19
 
 ### Added
