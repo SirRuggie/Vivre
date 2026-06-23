@@ -125,8 +125,8 @@ down, each "do only if it recurs / when a signal appears."
     touches the load-bearing live-filtered property. Medium.
   - **Lower-impact (perf):** `RaiseCanExecuteForSweepCommands` re-checks whole-list conditions + 10 command states
     per completed row (mitigated by short-circuit); the focused machine's update checklist repopulates row-by-row
-    (O(n²) re-hook) instead of in bulk; the 60-second relative-time refresh raises a no-op `PropertyChanged` for
-    every row in every tab (virtualization absorbs it — trivial guard); the grids don't enable column virtualization.
+    (O(n²) re-hook) instead of in bulk; the grids don't enable column virtualization. (The 60-second relative-time
+    no-op refresh that was listed here was the one safe item and is now fixed.)
   - **Low-impact (leaks / hygiene):** old install-throttle `SemaphoreSlim` not disposed on a cap change; per-host
     WinRM-gate semaphores + the catalog `HttpClient` never disposed (bounded / app-lifetime).
   - **Checked and CLEARED (false alarms — do NOT chase):** "detail window leaks per open/close" (WPF weak events +
