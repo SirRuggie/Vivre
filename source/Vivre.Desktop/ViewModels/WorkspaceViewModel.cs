@@ -1127,6 +1127,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Replaces the grid with a fresh set of machines (from the loader or a saved list).</summary>
     public void SetComputers(IEnumerable<string> names)
     {
+        // Drop per-host monitor state for the outgoing rows FIRST: Computers.Clear() raises a Reset
+        // (OldItems is null), so OnComputersChanged can't do it — a same-named host in the new list would
+        // otherwise inherit stale state (e.g. a permanently-suppressed reboot probe or a 5-min back-off).
+        foreach (Computer existing in Computers)
+        {
+            ForgetHostState(existing.Name);
+        }
+
         Computers.Clear();
         SelectedComputers.Clear();
         FocusedComputer = null;
@@ -1749,6 +1757,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // Clear the columns regardless — there's nothing pending from our side now.
                 computer.ScheduledAction = null;
                 computer.ScheduledNextRun = null;
+                computer.UpdateMessage = null; // drop the stale "… scheduled for …" text the schedule left on the row
                 _scheduledTasks.TryRemove(computer.Name, out _);
                 computer.LastStatus = result.HadErrors ? "Cancel had errors" : "Scheduled task cancelled";
                 _activity.Info(computer.Name, "Cancelled pending scheduled task(s).");
@@ -4108,6 +4117,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.LastError = online ? null : error;
             if (online)
             {
+                // If the monitor was stopped while this box was down, a stale "Offline since …" reboot
+                // message can linger; a confirmed-online ping clears it so it doesn't contradict the green dot.
+                if (computer.RebootMessage is { } rm && rm.StartsWith("Offline since", StringComparison.Ordinal))
+                {
+                    computer.RebootMessage = null;
+                }
+
                 _activity.Info(computer.Name, "Ping: online");
             }
             else
@@ -4677,6 +4693,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.MemoryUsedPercent = v.MemoryUsedPercent;
         computer.CpuLoadPercent = v.CpuLoadPercent;
         computer.StoppedAutoServiceCount = v.StoppedAutoServiceCount;
+        // Promote the logged-on signal too (the grid's "Users Online" column), guarded so a partial
+        // DCOM-fallback read that couldn't see it doesn't blank a value a health check confirmed.
+        if (v.UserLoggedOn is { } user)
+        {
+            computer.UserLoggedOn = user;
+        }
+
         if (v.LastBootTime is { } boot)
         {
             computer.LastBootTime = boot;

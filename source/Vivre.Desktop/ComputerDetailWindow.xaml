@@ -413,7 +413,7 @@
                                                    Text="{Binding Computer.Vitals.LastBootTime, StringFormat=g, TargetNullValue='—'}" />
                                         <ui:TextBlock Grid.Row="4" Grid.Column="0" Appearance="Secondary" Margin="0,0,16,0" Text="Reboot pending" />
                                         <TextBlock Grid.Row="4" Grid.Column="1"
-                                                   Text="{Binding Computer.Vitals.RebootPending, Converter={StaticResource YesNo}}" />
+                                                   Text="{Binding Computer.RebootRequired, Converter={StaticResource YesNo}}" />
                                     </Grid>
                                 </StackPanel>
                             </Border>

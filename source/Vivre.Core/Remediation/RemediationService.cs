@@ -151,8 +151,13 @@ public sealed class RemediationService : IRemediationService
             if (-not $svc) {
                 [PSCustomObject]@{ ok = $false; message = "Service not found: $dn" }
             } else {
-                if ($svc.Status -ne 'Running') { Start-Service -InputObject $svc -ErrorAction Stop }
-                [PSCustomObject]@{ ok = $true; message = "Started '$($svc.DisplayName)' (now $($svc.Status))" }
+                if ($svc.Status -ne 'Running') {
+                    Start-Service -InputObject $svc -ErrorAction Stop
+                    $svc.Refresh()
+                    [PSCustomObject]@{ ok = $true; message = "Started '$($svc.DisplayName)' (now $($svc.Status))" }
+                } else {
+                    [PSCustomObject]@{ ok = $true; message = "'$($svc.DisplayName)' is already running" }
+                }
             }
         } catch {
             [PSCustomObject]@{ ok = $false; message = $_.Exception.Message }

@@ -983,7 +983,7 @@ public sealed class WuaUpdateLane
                                 # Check for a terminal phase so we know when to stop tailing.
                                 try {
                                     $obj = $line | ConvertFrom-Json
-                                    if ($obj.phase -eq 'Done' -or $obj.phase -eq 'Error' -or $obj.phase -eq 'PendingReboot') {
+                                    if ($obj.phase -eq 'Done' -or $obj.phase -eq 'Error' -or $obj.phase -eq 'PendingReboot' -or $obj.phase -eq 'Deferred') {
                                         $done = $true
                                         break
                                     }

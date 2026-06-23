@@ -69,6 +69,27 @@ down, each "do only if it recurs / when a signal appears."
   severity: the per-run-named service is harmless and the next run reaps it. Fix: inject an `IActivityLog`
   (or Serilog) into `SmbAgentLane` and log at trace/warn instead of `Debug.WriteLine`, keeping the
   "don't replace the operation result" intent. (Found in the 2026-06-23 audit.)
+- **From the 2026-06-23 drift/stale hunt — not yet fixed (the easy 8 were done; these need more thought):**
+  - **Post-reboot message shows the wrong install count.** `ReportPostRebootOutcomeAsync` (`WorkspaceViewModel.cs`
+    ~3780) reads `LastInstall*` from the most recent install this session, not from the operation that triggered
+    the wave — so a standalone Reboot & verify reads "installed 0", and two installs report the second's counts.
+    The pill is correct; only the message text. Fix needs deciding how to tie counts to the wave (reset after
+    use, or carry per-operation). Medium.
+  - **DCOM vitals omit stopped-services + logged-on user.** `DcomVitalsProbe` doesn't populate
+    `StoppedAutoServices` / `StoppedAutoServiceCount` / `UserLoggedOn` / `LoggedOnUsers`, so a Kerberos-broken /
+    WinRM-down box shows an empty stopped-services list in triage (and blank Users-Online from a Vitals-only
+    run). Needs new DCOM/WMI queries. Medium.
+  - **Stale reboot-pending dot on DCOM-only boxes (narrow edge).** `ApplyVitals` only clears `RebootRequired`
+    when `v.RebootPending` is non-null; `DcomVitalsProbe` returns null when all three reboot reads fail, so a
+    Kerberos-broken box in Health mode can keep an amber dot after it rebooted (Check All clears it). Low.
+  - **"Last reboot" grid column vs Readings card can disagree on DCOM hosts.** `ApplyVitals` keeps the prior
+    `LastBootTime` when a DCOM read returns null while the Readings card shows "—". Low / cosmetic.
+  - **Latent / no current impact:** RebootWave "Overdue — offline N min" wording before the box has actually
+    gone offline (slow shutdown); `WuaUpdateLane` skips `SafetyCleanupAsync` on a currently-unreachable
+    mid-stream Kerberos error; `HostWinRmGate` assumes a single `PSRunspaceHost`; `VitalsProbe` DCOM-fallback
+    swallows the DCOM exception with no trace; RDP FullScreen not re-applied after Reconnect;
+    `CrossDomainRdpViewModel.Dispose` skips the `HasSessions` notification; the Deploy / SoftwareCheck / Columns
+    fire-and-forget dialog tasks have no top-level fault surface.
 
 ---
 

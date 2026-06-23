@@ -303,9 +303,10 @@ public sealed class SmbAgentLane : ISmbAgentLane
             {
                 lastActivityUtc = DateTime.UtcNow;
 
-                // Heartbeat proves the agent is alive but must not change the displayed phase.
-                if (line.Contains("\"phase\":\"Heartbeat\"", StringComparison.Ordinal) ||
-                    line.Contains("\"phase\": \"Heartbeat\"", StringComparison.Ordinal))
+                // Heartbeat proves the agent is alive but must not change the displayed phase. (The agent's
+                // serializer always emits compact JSON, so only the compact form is checked — matching the
+                // drain loop below and the WinRM lane.)
+                if (line.Contains("\"phase\":\"Heartbeat\"", StringComparison.Ordinal))
                 {
                     continue;
                 }

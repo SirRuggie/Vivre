@@ -11,6 +11,26 @@ it ships, then gets a dated heading.
   When a box you'd just patched was rebooted by someone else, Vivre correctly cleared the reboot-pending pill
   and flag but left the update-message text still reading "… · reboot required". The text now clears too. (The
   cleanup is separator-agnostic, so it can't silently drift out of sync with the agent's wording again.)
+- **A patch action on a box that's already reboot-pending no longer leaves the row stuck "working."** When the
+  on-target agent defers a mutating action (install / clean / stage) because a reboot is already pending, the
+  row now finishes cleanly — previously the background session stayed open (and left temp files on the target)
+  until you hit Stop.
+- **Cancelling a scheduled task clears its "… scheduled for …" message.** The update-message column no longer
+  keeps showing the old schedule after a cancel (it cleared the chip but left the text).
+- **Reloading a computer list no longer carries over stale per-host monitor state.** A returning host could be
+  silently skipped for reboot-pending checks; it now starts fresh.
+- **"Check Vitals" now refreshes the "Users Online" column** (previously only a full Check All updated it).
+- **Machine Details no longer shows two different "Reboot pending" values** — the Readings card now tracks the
+  same live value as the header, so they can't disagree after a reboot.
+- **A confirmed-online ping clears a stale "Offline since …" reboot message** left over when monitoring was
+  stopped while the box was down.
+- **Starting a stopped service reports its real post-start status** (it used to log "now Stopped" right after a
+  successful start; an already-running service now says so instead of "Started").
+
+### Internal
+- Made the SMB-agent heartbeat-line filter consistent across its read paths (no behaviour change). Remaining
+  items from the 2026-06-23 drift/stale hunt (post-reboot install-count accuracy; DCOM-path vitals fields) are
+  parked in the backlog.
 
 ## 1.14.1 — 2026-06-23
 
