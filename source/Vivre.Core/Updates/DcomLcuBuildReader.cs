@@ -82,7 +82,7 @@ public sealed class DcomLcuBuildReader : ILcuBuildReader
     private static object? InvokeRegRead(
         CimSession session, CimOperationOptions cimOptions, string method, string valueName, string outParam)
     {
-        var inParams = new CimMethodParametersCollection
+        using var inParams = new CimMethodParametersCollection
         {
             CimMethodParameter.Create("hDefKey", HklmHive, CimType.UInt32, CimFlags.In),
             CimMethodParameter.Create("sSubKeyName", CurrentVersionKey, CimType.String, CimFlags.In),

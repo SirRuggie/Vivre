@@ -121,7 +121,7 @@ public sealed class DcomRebootTrigger : IRebootTrigger
             {
                 using (os)
                 {
-                    var inParams = new CimMethodParametersCollection
+                    using var inParams = new CimMethodParametersCollection
                     {
                         CimMethodParameter.Create("Flags", flags, CimType.SInt32, CimFlags.In),
                     };

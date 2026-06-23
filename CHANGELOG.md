@@ -27,6 +27,11 @@ it ships, then gets a dated heading.
 - **Starting a stopped service reports its real post-start status** (it used to log "now Stopped" right after a
   successful start; an already-running service now says so instead of "Started").
 
+- **Fixed a native-handle leak on machines reached over DCOM** (Kerberos-broken / WinRM-down boxes). The vitals
+  and reboot-pending probes created a small CIM parameters object on each call without releasing it, so its
+  Windows handle lingered until garbage collection; they are now disposed immediately, matching the rest of the
+  codebase. Prevents handle build-up over long sessions against such fleets.
+
 ### Internal
 - Made the SMB-agent heartbeat-line filter consistent across its read paths (no behaviour change). Remaining
   items from the 2026-06-23 drift/stale hunt (post-reboot install-count accuracy; DCOM-path vitals fields) are

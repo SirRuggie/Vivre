@@ -137,7 +137,7 @@ public sealed class DcomRebootReadinessProbe : IRebootReadinessProbe
     /// itself is the signal, its contents are irrelevant.</summary>
     private static bool EnumKeyExists(CimSession session, CimOperationOptions cimOptions, string subKey)
     {
-        var inParams = new CimMethodParametersCollection
+        using var inParams = new CimMethodParametersCollection
         {
             CimMethodParameter.Create("hDefKey", HklmHive, CimType.UInt32, CimFlags.In),
             CimMethodParameter.Create("sSubKeyName", subKey, CimType.String, CimFlags.In),

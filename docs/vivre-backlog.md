@@ -90,6 +90,32 @@ down, each "do only if it recurs / when a signal appears."
     swallows the DCOM exception with no trace; RDP FullScreen not re-applied after Reconnect;
     `CrossDomainRdpViewModel.Dispose` skips the `HasSessions` notification; the Deploy / SoftwareCheck / Columns
     fire-and-forget dialog tasks have no top-level fault surface.
+- **From the 2026-06-23 performance / leak hunt — not yet fixed (the one safe leak fix shipped; these touch the
+  live-filtered grid / load-bearing `PatchState` hot path — the area behind the past cross-thread crash — so they
+  need a dedicated, TESTED pass, NOT a quick knock-out):**
+  - **Loading a big list is janky.** `AddComputers` / `SetComputers` add rows one at a time; each
+    `ObservableCollection.Add` fires the full `OnComputersChanged` + `RaiseFleetChanged` cascade synchronously on
+    the UI thread, so loading 300+ stutters and 500+ can freeze for seconds. A batched/suppressed add is the fix —
+    BUT a naive `Clear`+range/`Reset` skips the per-row `PropertyChanged` re-subscription in `OnComputersChanged`
+    (the `Reset` → `NewItems==null` trap), which would break live row updates. Needs a careful design + test. Medium.
+  - **Fleet-aggregate recompute storm during sweeps.** Every per-row `PatchState` / `UpdateProgress` /
+    `VitalityBand` change calls `RaiseFleetChanged` (WorkspaceViewModel ~929), re-raising 9 aggregates; several
+    re-scan the whole `Computers` list, `HasVitalsFleetSummary` re-walks its summary a second time, and each
+    `PatchState` read does an `Enum.TryParse` of the phase string — no coalescing. At 300 machines over a sweep
+    that's hundreds of thousands of UI-thread passes. Provably-safe slices exist (route an `UpdateProgress`-only
+    change to raise just `FleetProgress` — confirmed the only progress-dependent aggregate; drop the redundant
+    `Has*` double-walks; cache the `PatchState` parse) but each needs careful dependency verification because it
+    touches the load-bearing live-filtered property. Medium.
+  - **Lower-impact (perf):** `RaiseCanExecuteForSweepCommands` re-checks whole-list conditions + 10 command states
+    per completed row (mitigated by short-circuit); the focused machine's update checklist repopulates row-by-row
+    (O(n²) re-hook) instead of in bulk; the 60-second relative-time refresh raises a no-op `PropertyChanged` for
+    every row in every tab (virtualization absorbs it — trivial guard); the grids don't enable column virtualization.
+  - **Low-impact (leaks / hygiene):** old install-throttle `SemaphoreSlim` not disposed on a cap change; per-host
+    WinRM-gate semaphores + the catalog `HttpClient` never disposed (bounded / app-lifetime).
+  - **Checked and CLEARED (false alarms — do NOT chase):** "detail window leaks per open/close" (WPF weak events +
+    the requery timer is stopped on close); "selecting rows freezes the grid" (WPF batches selection to one event);
+    "the embedded-RDP host control leaks handles" (disposed on close; a manual dispose would break Reconnect);
+    "Stop poisons the update-size cache" (the cancel token isn't passed to that lookup).
 
 ---
 

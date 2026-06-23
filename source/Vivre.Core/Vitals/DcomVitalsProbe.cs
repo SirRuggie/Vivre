@@ -203,7 +203,7 @@ public sealed class DcomVitalsProbe : IDcomVitalsReader
         try
         {
             // StdRegProv EnumKey: ReturnValue 0 means the key exists.
-            var inParams = new CimMethodParametersCollection();
+            using var inParams = new CimMethodParametersCollection();
             inParams.Add(CimMethodParameter.Create("hDefKey", HklmHive, CimType.UInt32, CimFlags.In));
             inParams.Add(CimMethodParameter.Create("sSubKeyName",
                 @"SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending",
@@ -225,7 +225,7 @@ public sealed class DcomVitalsProbe : IDcomVitalsReader
         bool? wuReboot = null;
         try
         {
-            var inParams = new CimMethodParametersCollection();
+            using var inParams = new CimMethodParametersCollection();
             inParams.Add(CimMethodParameter.Create("hDefKey", HklmHive, CimType.UInt32, CimFlags.In));
             inParams.Add(CimMethodParameter.Create("sSubKeyName",
                 @"SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired",
