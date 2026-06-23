@@ -103,19 +103,6 @@ internal sealed class AdaptiveLayoutController
     private readonly Grid _commandBarGrid;
 
     /// <summary>
-    /// Stored window reference — used by <see cref="Initialise"/> to wire event handlers.
-    /// </summary>
-    private Window? _window;
-
-    /// <summary>
-    /// The nav-pane width set in the most recent <see cref="UpdateContentHostMargin"/> call.
-    /// Preserved for potential future use and diagnostic clarity; not read by
-    /// <see cref="ConstrainCommandBar"/> (which derives its value from
-    /// <c>_contentHost.ActualWidth</c> directly).
-    /// </summary>
-    private double _currentPaneWidth;
-
-    /// <summary>
     /// Called whenever the toolbar compact state changes.  The argument is the new value.
     /// Wired to <see cref="MainWindow.ToolbarCompact"/> by the window code-behind.
     /// </summary>
@@ -124,10 +111,6 @@ internal sealed class AdaptiveLayoutController
     /// <summary>Returns true when the active section is Patching (Windows Update) mode, whose wider
     /// button set needs more width before labels fit. Queried each time the toolbar is evaluated.</summary>
     private readonly Func<bool> _isPatchingMode;
-
-    /// <summary>The most recent window width, so <see cref="RefreshToolbar"/> can re-evaluate the
-    /// toolbar on a mode change without a resize event.</summary>
-    private double _lastWidth;
 
     // ── intent tracking ───────────────────────────────────────────────────────
 
@@ -193,11 +176,9 @@ internal sealed class AdaptiveLayoutController
     /// </summary>
     public void Initialise(Window window)
     {
-        _window = window;
-
         // Load saved wide-pane intent (defaults to false — starts compact).
         try   { _wideIntent = _settings?.Load().NavPaneOpen ?? false; }
-        catch { _wideIntent = false; }
+        catch (Exception ex) { _wideIntent = false; Serilog.Log.Warning(ex, "AdaptiveLayout: couldn't read NavPaneOpen; starting compact."); }
 
         // Apply the correct state for the window's current (startup) size.
         // Force the state machine to treat _state as "unknown" so Evaluate
@@ -316,7 +297,6 @@ internal sealed class AdaptiveLayoutController
         }
 
         // ── toolbar compact (measure-based) ───────────────────────────────────
-        _lastWidth = width;
         EvaluateToolbarByMeasure();
     }
 
@@ -589,7 +569,6 @@ internal sealed class AdaptiveLayoutController
     /// </summary>
     private void UpdateContentHostMargin(double paneWidth)
     {
-        _currentPaneWidth = paneWidth;
         _navPaneColumn.Width = new GridLength(paneWidth);
     }
 
@@ -639,9 +618,10 @@ internal sealed class AdaptiveLayoutController
             s.NavPaneOpen = open;
             _settings.Save(s);
         }
-        catch
+        catch (Exception ex)
         {
             // Settings write failure is non-fatal; the preference just won't survive restart.
+            Serilog.Log.Warning(ex, "AdaptiveLayout: couldn't persist NavPaneOpen.");
         }
     }
 }

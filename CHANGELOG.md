@@ -6,6 +6,18 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.1 — 2026-06-23
+
+### Changed
+- **The bottom dock is now a mode-labeled toggle that no longer auto-opens.** The single dock button reads
+  **Updates & Activity** in Patching mode and **Activity log** in Health mode; selecting a machine row no
+  longer pops the dock open — the toggle is the only thing that opens it, and it reopens at the height you
+  last dragged it to (floored so the machine grid can't vanish).
+- **Run Script now uses the app's shared connection path.** Script runs go through the same WinRM→SMB
+  transport cache as every other action, so on a host that already rejected Kerberos this session a script
+  run fast-fails instead of re-paying the ~20-second connect timeout (and a healthy WinRM connection is now
+  recorded for the rest of the app to reuse).
+
 ### Fixed
 - **Machine Details now refreshes live when you click Check Vitals.** With the Details window open, re-running
   Check Vitals updated the score but left the readings (system-drive free, memory, CPU, last boot, reboot
@@ -16,6 +28,25 @@ it ships, then gets a dated heading.
   "… · rechecking for updates…" during that check, so you know not to rescan it by hand. And a Server 2016
   box with nothing left to install now reads a single **Up to date** instead of the doubled
   "Up to date · up to date."
+- **Reboot & verify no longer false-fails a slow-to-restart Server 2016 box as "rolled back."** If a box
+  reported its restart was already underway but was slow to actually drop off the network, Vivre could read
+  its old build number and wrongly mark it failed. It now waits for the box to genuinely go offline before
+  verifying, so a box that's merely slow to come down is verified correctly when it returns.
+- **Cancelling WhatsUp Gold maintenance no longer reports it as "failed."** Pressing Cancel now leaves a
+  neutral "cancelled" note on each row instead of "WhatsUp Gold: failed — The operation was canceled."
+- **Continuous monitoring no longer dies silently.** If the background monitor hits an unexpected error it
+  now logs it and switches the toggle off (so you can restart it), instead of leaving the toggle showing
+  "on" while nothing is actually running.
+- **Software check finds products whose name contains brackets.** A search like `Cisco [VPN]` is now matched
+  literally instead of being treated as a wildcard pattern (which silently returned "not found").
+- **A re-added machine's "Pending Reboot" column populates promptly again.** Removing and re-adding a host
+  no longer leaves stale per-host timing that could blank the column for up to five minutes.
+
+### Internal
+- Added failure logging on several swallowed-exception paths (settings reads/writes, the pre-dialog currency
+  check, layout-state persistence), removed dead fields/code, and refreshed the docs (README, windows-patching-lane,
+  backlog, key-file-path-map, the 2016-LCU specs, the RDP findings) to match the as-built code. No behaviour
+  change.
 
 ## 1.14.0 — 2026-06-19
 
@@ -454,7 +485,7 @@ it ships, then gets a dated heading.
   Right-click or drag in the tree to organize; sessions stay connected when you switch tabs.
 - **Windows Update lane** — scan, install, and uninstall updates per machine with live progress,
   driven by a compiled SYSTEM agent. Update Source toggle (Windows Update / Microsoft Update /
-  Managed-WSUS) + an exclude-by-name list. (See `UPDATE_PLAN.md`.)
+  Managed-WSUS) + an exclude-by-name list. (See `docs/windows-patching-lane.md`.)
 - **Grid filter + state chips** — a filter bar on both views: search machines by name and one-click
   quick filters (Updates available · Reboot pending · Errors · Offline · Done), with a live
   "Showing N of M" count. Filters the whole tab and updates mid-sweep (a row that errors appears

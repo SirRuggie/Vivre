@@ -20,7 +20,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   with a fleet tally and an **Unhealthy** filter — at-a-glance triage of which boxes are sick. Stopped
   auto-services and recent error events are shown for context but not scored (too noisy on their own).
   From a machine's **Details ▸ Vitals** you can **act in place** — start a stopped service, free up
-  disk space, or end a runaway process — and the score re-checks on the spot.
+  disk space, or end a runaway process — and the score re-checks on the spot (a per-machine **Check
+  Vitals** there reads just that one box). The vitality chip shows on both the Health and Patching grids.
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
@@ -30,7 +31,13 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   blocked. Vivre delivers the files; you run the install your way (e.g. Run script…). No install
   runs, so EDR agents that disrupt WinRM mid-install can't break it.
 - **Windows Update lane** — scan, install, uninstall, and schedule updates per machine with live
-  progress (a built-in BatchPatch-style patcher). See `UPDATE_PLAN.md`.
+  progress (a built-in BatchPatch-style patcher), with operator-tunable install concurrency
+  (**Settings ▸ Max simultaneous installs**) and a separate **Server 2016 staged DISM lane** (opt-in
+  per box, for the boxes whose Express-delta CUs break under normal Windows Update). See `docs/windows-patching-lane.md`.
+- **Reboot & verify** — after an operator-confirmed reboot, Vivre watches each box offline → back →
+  ready, then auto-rescans and reports a plain outcome (Server 2016 boxes are build-verified first).
+- **WhatsUp Gold maintenance** — put the selected machines into / out of WUG maintenance mode, with a
+  pre-flight connection + module check.
 - **Filter & report** — filter the grid by name or state (Updates / Reboot pending / Errors /
   Offline / Done), **Select shown** to act on just that subset, and **Export to CSV** for a
   maintenance-window write-up.
@@ -39,8 +46,6 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Roadmap
 
-- **Reboot-and-wait** after install (auto-reboot + watch for the box to return) — the on-target
-  agent already reboots; only the UI toggle + "waiting…" status is missing.
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Accessibility polish deferred as low-value for a single sighted user: full screen-reader naming
   on the grids + automation IDs; light-theme tuning of the script editor's highlight colours.
@@ -76,11 +81,12 @@ git-ignored.)
 
 ## Repo layout
 
-- `source/` — the solution (`Vivre.slnx`): `Vivre.Core`, `Vivre.Desktop`, `Vivre.Core.Tests`.
+- `source/` — the solution (`Vivre.slnx`): `Vivre.Core`, `Vivre.Desktop`, `Vivre.UpdateAgent` (the tiny
+  net48 EXE run as SYSTEM on the target for WUA install/uninstall), `Vivre.Core.Tests`.
 - `tools/RemoteRun` — small console to test remote PowerShell against a host.
 - `scripts/` — the curated PowerShell script library (PS7 / `Get-CimInstance`), organised into
   category folders. Shipped with the app and seeded into `%APPDATA%\Vivre\Scripts` on first
   run; opened from the grid's right-click **Run script…**. See `scripts/README.md`.
-- `UPDATE_PLAN.md` — the Windows Update lane: how patching works and its reliability constraints.
+- `docs/windows-patching-lane.md` — the Windows patching (WUA) lane: how it works and its reliability constraints.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.

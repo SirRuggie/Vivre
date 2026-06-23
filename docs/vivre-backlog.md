@@ -3,33 +3,27 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **transient WUA reach-failure retry / no-false-green built on branch
-> `feat/transient-wua-retry` (488 tests; awaiting operator merge + push)**; 2016 staged-patching toggle
-> merged to master; KB auto-population closed (manual only) + ARC-8 verified already-handled; smart scan flow Stage guards
-> shipped + merged to master; fleet-wide reboot-and-verify shipped + merged to master; OneDrive relocation
-> DONE (repo now `C:\src\Vivre`); WUG saga + dialog audit closed; NavigationView refactor (incl. Phase 4) DONE.
+> not a mandate). Last refreshed: **2026-06-23** (post full code + docs audit). Everything below is on
+> `master`. **Commit hashes in the DONE list predate a history rewrite and may not all resolve — `git
+> log` is the authoritative restore-point list, and the per-entry test counts are point-in-time only
+> (current suite is ~600 green).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-- **Fix the RDP Reconnect button (currently dead)** — agreed fix B+C: recreate the control on reconnect;
-  stop auto-closing involuntary drops; fold in `EnableAutoReconnect` + `GrabFocusOnConnect`. Diagnosed,
-  not yet implemented (see the Cross-Domain RDP section in `key-file-path-map.md` +
-  `vivre-rdp-scaling-and-fcm-findings.md`).
-
-Beyond that, no patching feature work is queued. The 2016 staged-patching toggle shipped (see DONE), and
-**KB auto-population from a scan is closed — manual only** (decision recorded under *Settings simplification*
-below). What remains is the polish / standalone items further down, each "do only if it recurs / when a
-signal appears."
+Nothing queued. The RDP Reconnect button (the previous #1) shipped — see DONE. The 2016 staged-patching
+toggle shipped (see DONE), and **KB auto-population from a scan is closed — manual only** (decision
+recorded under *Settings simplification* below). What remains is the polish / standalone items further
+down, each "do only if it recurs / when a signal appears."
 
 ---
 
 ## OPEN — patching features (design mostly settled, build pending)
 
 ### Settings simplification
-- `ExpectedSizeMb` (the display-only "Approx. package size (MB)" field) is **DONE** (`0718f7a` —
-  removed; package matched by KB + arch, never size).
+- `ExpectedSizeMb` (the display-only "Approx. package size (MB)" field) is **DONE** (removed;
+  package matched by KB + arch, never size).
 - KB and Target UBR **cannot** be removed: Target UBR is not present in any WUA scan result so it
   can't be derived automatically, and KB must remain overridable for off-cycle patches. Keep KB,
   Target UBR, and the package folder.
@@ -37,7 +31,7 @@ signal appears."
   is a bad idea — it clobbers the single-value `MonthlyCu` across mixed/old-cycle fleets and overwrites a
   deliberately-set KB — and the weak ("use this scan's CU" button) version isn't worth it: UBR must be
   set by hand every cycle anyway (not in any scan result), and the Settings **update-history URL**
-  (`e590d2e`) now makes the manual KB+UBR lookup a two-click copy. The `Lcu2016CuMatcher.FindCuKb`
+  now makes the manual KB+UBR lookup a two-click copy. The `Lcu2016CuMatcher.FindCuKb`
   heuristic built for the staged-patching dialog exists if this is ever revisited, but the decision is:
   manual only.
 
@@ -95,8 +89,8 @@ signal appears."
 
 ## DONE (committed) — recent
 
-- **Patch-sweep cross-thread crash on a transient WU-reach retry — RESOLVED** (local commit, not yet pushed).
-  Was live on v1.13.0 *despite* the June-13 threading fix (`7c7b5f78`, which was correct but incomplete).
+- **Patch-sweep cross-thread crash on a transient WU-reach retry — RESOLVED** (on master).
+  Surfaced *despite* the June-13 threading fix (`7c7b5f78`, which was correct but incomplete).
   Vector: `WorkspaceViewModel.SetTransientRetryingState` wrote `Computer.UpdatePhase` (a grid live-filtered
   property; `PatchState` derives from it) **directly on the thread-pool thread** — it is the `onRetrying`
   callback `TransientRetryRunner.RunAsync` invokes *after* `await attempt(...).ConfigureAwait(false)`, so it
@@ -111,6 +105,12 @@ signal appears."
   any callback the VM hands a Core runner (`onRetrying`/`buildExhausted`/`attempt`) runs off-thread; route via
   `IProgress` or marshal. (3-pass investigation: pass 1 wrongly blamed a stale build; pass 2 proved the main
   sweep continuation stays on UI; pass 3 found this callback vector. 611 tests green.)
+- **Embedded RDP — Reconnect button fixed (dead → live)** (`87674c2`, on master): Reconnect now tears
+  down and rebuilds the MSTSC ActiveX control (`TearDownControl` + `CreateControl`); involuntary drops
+  keep the tab open with a Reconnect button (a deliberate sign-out is distinguished from a drop via
+  `ExtendedDisconnectReason` 2/4/6); `EnableAutoReconnect` + `GrabFocusOnConnect` are wired. Full-screen
+  reflows the session to monitor resolution (`MonitorPixelSize`) and restores on exit. See
+  `vivre-rdp-scaling-and-fcm-findings.md`. (This was the previous DO-NEXT #1.)
 - **Embedded RDP — Failover Cluster Manager context menus fixed** (`1ce1abf`, on master): pinned the RDP
   session display scale to 100% (`DesktopScaleFactor=DeviceScaleFactor=100`), sidestepping the documented
   FCM >100%-scaling menu-collapse bug. Session was measured at 150% (the cause) vs mRemoteNG's 100%. Fills +
@@ -240,22 +240,18 @@ signal appears."
 
 ## KNOWLEDGE DOCS — current set + refresh status
 Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
-`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`, `vivre-rdp-scaling-and-fcm-findings.md`.
-(`OVERNIGHT_KERBEROS_STATUS.md` and `first-run-beta-checklist.md` were removed as stale/spent.)
-- `key-file-path-map.md` — **refreshed this pass** (staged-patching toggle: `StagedInstallPlanner` /
-  `Lcu2016CuMatcher` / decision dialog + gate / `RequiresStagedPatching` ⇄ `StagedHosts` / Staged column;
-  427 tests. Earlier: OneDrive trap → resolved/relocated; nav → done; the two 5.1 shell-out gotchas incl.
-  the BOM bug + validation-trap meta-lesson; smart scan flow Stage guards + StagePreconditions).
-  TODO: capture the as-built NavigationView shell layout next time MainWindow
-  is touched.
-- `vivre-backlog.md` — **this file, refreshed this pass.**
-- `vivre-rdp-scaling-and-fcm-findings.md` — **new this pass.** The embedded-RDP scaling/FCM saga: the
-  100%-scale FCM fix (`1ce1abf`), why SmartSizing won't magnify inside WindowsFormsHost, all candidate paths
-  tried, and the recommended per-host display-scale toggle.
-- `2016-LCU-panel-spec.md` — minor: shows "313 tests" as the historical as-built count (fine as a
-  point-in-time record); could note cab-extraction + SSU/LCU ordering + StagedThisSession when next edited.
-- `2016-LCU-lane-spec.md` / `2016-LCU-red-team-review.md` — substantively accurate; cycle-specific
-  KB/UBR (KB5094122 / 9234) is "this cycle" by design.
-- Consider a `vivre-ui-review-gate.md` (static XAML review checklist: never bind Run.Text, no new
-  TwoWay binds, display binds OneWay, build-green ≠ render-green, visual-check before commit) — the
-  rule that would have caught the a0cb80a broken panel. Fold into CLAUDE.md or stand alone.
+`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`, `vivre-rdp-scaling-and-fcm-findings.md`
+(under `docs/`), plus the top-level `CLAUDE.md`, `README.md`, `CHANGELOG.md` — and `windows-patching-lane.md` (now under `docs/` too).
+All were refreshed in the **2026-06-23** code+docs audit against the as-built code:
+- `key-file-path-map.md` — refreshed: `Is2016` corrected to `LcuRouting` (not `Computer.cs`), the decaying
+  "Recent commits / restore-point" list removed (use `git log`), the duplicated PS 5.1 gotchas reduced to a
+  cross-reference to CLAUDE.md, and the new pure-decision helpers added (`RebootVerifyMenu`, `Lcu2016RowState`,
+  `ScopeToggleRule`, `ComponentCleanupClassifier`).
+- `2016-LCU-lane-spec.md` / `-panel-spec.md` / `-red-team-review.md` — refreshed: the install path is
+  `dism.exe /add-package` on expand.exe-extracted `.cab`s (not `Add-WindowsPackage`), the lane is **opt-in
+  per box** (`RequiresStagedPatching`), and the build-sequencing "future work" / resolved red-team risks were
+  retired. Cycle-specific KB/UBR is "this cycle" by design.
+- `vivre-rdp-scaling-and-fcm-findings.md` — refreshed: the Reconnect work is now DONE (was the deferred item);
+  the magnification investigation + candidate paths remain the load-bearing record.
+- `windows-patching-lane.md` — refreshed: the agent's five operation modes (Install / Uninstall / Scan / AddPackage /
+  Cleanup), the scan-on-`RemoteSessionLostException` SMB fallback, and the component-store cleanup lane.

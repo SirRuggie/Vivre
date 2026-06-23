@@ -23,7 +23,7 @@
   - `StagedInstallPlanner` (Vivre.Core/Updates) — pure planner. `Plan` partitions an Install set into flagged-2016-not-staged (the dialog set) vs Normal, + per-box Settings-vs-scan CU KB mismatches; `NeedsStageDecision` (the per-box predicate); `PartitionByCurrency` — the pre-dialog already-current split, **fail-open**: a box is excluded only on `LcuVerifiedThisSession` OR a definitive `Verified` UBR read (Unreachable / WrongBuild / null read → stays in the dialog).
   - `Lcu2016CuMatcher` (Vivre.Core/Updates) — identifies the 2016 OS CU KB from a scan's titles. `FindCuKb` (single confident match → the dialog's mismatch warning, returns null when ambiguous) and `CuKbs` (EVERY CU-titled KB → the "Install minor updates only" exclude set, so the CU can't slip through WUA even when the scan lists two CU KBs).
   - `LcuRouting.RebootVerifyLaneFor(int?, bool)` — override-aware lane: a 2016 box verifies via the UBR (Lcu2016) lane ONLY when flagged for staging; a non-flagged 2016 box verifies via WUA. The 1-arg overload is kept for legacy callers (treats every 2016 box as the LCU lane).
-- **Transient WUA reach-failure retry (no false-green) — the `0x80072EE2` SLS timeout + the BatchPatch fake-green trap (see UPDATE_PLAN.md ▸ "Transient WUA reach failures"):**
+- **Transient WUA reach-failure retry (no false-green) — the `0x80072EE2` SLS timeout + the BatchPatch fake-green trap (see windows-patching-lane.md ▸ "Transient WUA reach failures"):**
   - `TransientWuaError` (Vivre.Core/Updates) — pure classifier: is a WUA failure a transient reach hiccup (retry) or terminal (surface at once)? Transient family = `0x80072EE2` + `0x80240438` + the WININET/WinHTTP & WU_E_PT timeout/5xx siblings; auth/config/4xx/install errors excluded. Keys on the HRESULT, **not** the phase. `IsTransient(int)` / `IsTransient(string)` / `FirstTransientToken`.
   - `TransientRetryRunner` (Vivre.Core/Updates) — pure retry driver (injected attempt / delay / onRetrying / buildExhausted): transient + retries-left → calm "retrying" + backoff + re-dispatch; success or terminal → return at once; exhausted → honest `Unreachable`. Wraps the WHOLE operation (service-reg → search → download → install).
   - **Face 2 (non-clean search ≠ up-to-date):** `WuaUpdateLane.ScanAsync` reads the search `ResultCode` (the scan script emits it as a `SearchResultCode` status row) and diverts any non-`orcSucceeded` result to a transient reach failure via `SearchDidNotCleanlySucceed` / `BuildSearchIncompleteMessage` (`OrcSucceeded=2`) **before** the up-to-date path. `SmbAgentLane.BuildScanStatus` does the same for the SMB scan; `Vivre.UpdateAgent` `RunScan`/`RunInstall` write a terminal Error line on a non-clean `ResultCode` (read-only — no install/reboot added).
@@ -43,7 +43,7 @@
 
 These BOTH bit the WUG feature and together ate most of a debugging session. Any NEW code that
 writes a temp `.ps1` and shells out to **Windows PowerShell 5.1** must respect BOTH or it will fail
-in confusing, non-obvious ways. They are independent — fixing one does not fix the other.
+in confusing, non-obvious ways. They are independent — fixing one does not fix the other. (Canonical short version: `CLAUDE.md` § Conventions; the file locations where each fix is applied are listed below.)
 
 ### Gotcha 1 — PS7 contaminates `PSModulePath` (module reads as "not installed")
 Vivre hosts an **in-process PowerShell 7 runspace** (`PSRunspaceHost`). When the PS7 SDK initializes
@@ -182,7 +182,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
 - `App.xaml`(.cs) — composition root.
 - Converters: `EnumEqualsConverter.cs`, `UxConverters.cs`, `PhaseChipConverter.cs` (class `PhaseChipLabelConverter`; SHARED — Patching Status column + ComputerDetailWindow; do NOT edit for Patching-only label changes). Help text: `HelpContent.cs`.
 - **Dialog sizing standard** (audit `fe4d68e`): modals use `CenterOwner`; fixed-content forms use `SizeToContent` + Min/Max (NoResize OK); content-heavy/list dialogs use `CanResize` + a ScrollViewer with the action buttons in their OWN row OUTSIDE the ScrollViewer (so they're always visible). `SoftwareCheckWindow` uses `SizeToContent="Height"` + `MaxHeight` so it opens fully visible and only scrolls on a too-short screen. Sizing attributes only — **never bind `Run.Text`** (the a0cb80a render-break class).
-- `Computer.cs` — `OsBuild` populated in `ApplyVitals`; `Is2016`/`IsServer2016` predicate (single source of truth for both panel filter and routing). `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`. Also `LastInstallInstalledCount` / `LastInstallFailedCount` — runtime-only, non-observable counts written by `InstallRowAsync` and read by `ReportPostRebootOutcomeAsync` for the post-reboot outcome message. **`RequiresStagedPatching`** (observable) — the operator's per-box opt-in for the 2016 DISM staging lane; seeded from `AppSettings.StagedHosts` on row add, drives routing + the Staged column. **`LcuVerifiedThisSession`** (runtime-only, non-observable) — set when a 2016 box's CU is confirmed at the target UBR this cycle (verify, 2016 reboot-wave commit, or the pre-dialog already-current check); cleared on re-stage. Lets the staged-update dialog skip an already-current box.
+- `Computer.cs` — `OsBuild` populated in `ApplyVitals` — the 2016 predicate is `LcuRouting.Is2016(int?)` (Vivre.Core/Updates), the single source of truth for both the panel filter and routing; it is **not** a property on `Computer.cs`. `PatchState` derives from `UpdatePhase` + `RebootRequired`. `IsScheduled => ScheduledNextRun is not null`. `PatchPhase.Cleaned` → `PatchState.Done`. Also `LastInstallInstalledCount` / `LastInstallFailedCount` — runtime-only, non-observable counts written by `InstallRowAsync` and read by `ReportPostRebootOutcomeAsync` for the post-reboot outcome message. **`RequiresStagedPatching`** (observable) — the operator's per-box opt-in for the 2016 DISM staging lane; seeded from `AppSettings.StagedHosts` on row add, drives routing + the Staged column. **`LcuVerifiedThisSession`** (runtime-only, non-observable) — set when a 2016 box's CU is confirmed at the target UBR this cycle (verify, 2016 reboot-wave commit, or the pre-dialog already-current check); cleared on re-stage. Lets the staged-update dialog skip an already-current box.
 - **Staged-patching toggle — Desktop pieces:**
   - `StagedInstallDecisionDialog.xaml`(.cs) — the "Server 2016 staged update required" dialog: **Stage CU first** / **Install minor updates only** / **Cancel**, the Settings-vs-scan KB-mismatch warning, and the inline minor-only reboot caution (Proceed / Back). Returns a `StagedInstallChoice`.
   - `StagedInstallInteraction.cs` — the View-layer gate **every** Install entry point routes through (`MainWindow.RunInstallFlowAsync`, the right-click *Install selected*, and — as a safe skip-with-guidance fallback — *Install checked*). `ResolveAsync` plans → runs the already-current pre-check + re-plan → shows the dialog → carries out the choice (the flagged action + the normal install on the rest, concurrently). Cancel skips ONLY the flagged boxes; the rest of the fleet still installs. Also `RunStageWorkflowAsync` (the shared chip-Stage workflow: scan-gate + package-readiness loop + stage).
@@ -228,12 +228,19 @@ direction from the crash.
   magnification (matching mRemoteNG's bigger image) is **parked** — see `vivre-rdp-scaling-and-fcm-findings.md`.
 
 ## Settings / data
-- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED (`0718f7a`)** — it was display-only; the package is matched by KB + architecture, never size. **`StagedHosts`** — `HashSet<string>` (OrdinalIgnoreCase) of host names flagged for the 2016 DISM staging lane (the source of truth behind `Computer.RequiresStagedPatching`); **`ReadFromDisk` re-normalizes it via `StagedHostMatching.Normalize`** because a JSON round-trip resets the comparer to ordinal. Pure case-insensitive membership helpers live in `StagedHostMatching` (Vivre.Core/Updates).
+- `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED** — it was display-only; the package is matched by KB + architecture, never size. **`StagedHosts`** — `HashSet<string>` (OrdinalIgnoreCase) of host names flagged for the 2016 DISM staging lane (the source of truth behind `Computer.RequiresStagedPatching`); **`ReadFromDisk` re-normalizes it via `StagedHostMatching.Normalize`** because a JSON round-trip resets the comparer to ordinal. Pure case-insensitive membership helpers live in `StagedHostMatching` (Vivre.Core/Updates).
 - `source/Vivre.Core/Computers/ComputerListStore.cs` — the computer list store.
 - `RebootOutcomeMessages.cs` (Vivre.Core) — the 7 ready-to-use reboot-and-verify outcome strings ("Back online · installed N · up to date", "… N remaining", "… N failed", and `BackOnlineRescanFailed()` → "Back online · couldn't rescan — re-check"). **Now wired** (no longer defined-but-unused) via the pure, truthfulness-first `RebootOutcomeSelector.Select` → `WorkspaceViewModel.ReportPostRebootOutcomeAsync` — a scan failure or failed updates never read as a clean "up to date".
 
+## Pure decision helpers (Vivre.Core/Updates)
+Extracted UI/IO-free predicates, each unit-tested:
+- `RebootVerifyMenu.ShouldOfferRebootVerify(Computer, bool isUpdateMode)` — per-row visibility of the right-click **Reboot & verify…** item.
+- `Lcu2016RowState` — maps terminal/in-flight agent status onto a 2016 staged-patching grid row; enforces the load-bearing **Deferred ≠ Staged** invariant.
+- `ScopeToggleRule` — on the Applicable/Installed scope-toggle, preserves a row's existing message for terminal + in-flight states instead of swapping in the target scope's cached scan message.
+- `ComponentCleanupClassifier` / `ComponentCleanupMessages` — 2016 component-cleanup outcomes, incl. the `CleanedFilesLocked` access-denied case (DISM exit 5 = EDR/AV holding WinSxS handles → neutral **Cleaned**, not red).
+
 ## Tests
-- `source/Vivre.Core.Tests/...` — **488 green** (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **~600 green** as of the 2026-06-23 audit — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
@@ -252,48 +259,9 @@ direction from the crash.
   and the override-aware `RebootVerifyLaneFor(osBuild, requiresStaging)` routing.
 
 ## Docs in repo
-- **Root:** `UPDATE_PLAN.md` (the WUA lane), `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
-- **`docs/`:** `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`, `vivre-rdp-scaling-and-fcm-findings.md`.
-- Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / UPDATE_PLAN.md / this file.
+- **Root:** `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
+- **`docs/`:** `windows-patching-lane.md` (the WUA / patching lane), `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`, `vivre-rdp-scaling-and-fcm-findings.md`.
+- Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / windows-patching-lane.md / this file.
 
-## Recent commits (restore points, newest last)
-- LCU routing + wiring (`b078014`); self-populating 2016 panel rebuilt clean (`5631a61`) — NOTE the
-  earlier `a0cb80a` proved to render broken (Run.Text two-way bind); panel rebuilt on `b078014` base.
-- scan/install SMB-agent fallback on generic WinRM failure (`9d3f82a`)
-- quick-wins label fixes (`0a40d17`, `c78c3bf`)
-- Health/Patching chip-bar split + LCU-bar gated to Patching (Part A)
-- status pill + message naming standard + Not scanned / Scheduled chips (Part B)
-- retired the two "Scheduled task" columns; folded into the update message (`087b748`)
-- plain WinRM-unavailable guidance on no-fallback ops + RoutingPowerShellHost comment fix
-- consistent dialog sizing across all popups (`fe4d68e`)
-- **WUG maintenance pre-flight (Test connection + module/creds check); fix PS7-contaminated
-  `PSModulePath` + BOM-less script encoding on the 5.1 shell-outs (`756fa9d`)** — closes
-  the WUG saga; covers the pre-flight feature, Gotcha-1 strip, Gotcha-2 BOM helper + regression test,
-  and the truthful-connect-error parse contract.
-- **Fleet-wide reboot-and-verify (`473585d`→`7e4c1dd`; Patching-only gating fix `300ee4e`)** — generalized
-  the 2016 Reboot Wave to ALL boxes: pluggable verify/readiness (`IPostRebootConfirmation` —
-  `UbrConfirmation` for 2016 / `ReadyConfirmation` for others — + `BasicReachabilityReadinessProbe`),
-  post-reboot WUA rescan wired to `RebootOutcomeMessages` via `RebootOutcomeSelector`, unbounded per-box
-  watch (`_waveThrottle`) + reboot-trigger gate (`IRebootGate`/`RebootTriggerGate`/`_rebootTriggerThrottle`),
-  right-click **Reboot & verify…** (Patching-only). 367 tests; merged to master.
-- **Smart scan flow — Stage guards (`3a35292` already-staged · `ef795de` already-current · `6350957`
-  scan-gate) + `0718f7a` remove ExpectedSizeMb. 378 tests; merged to master.** Pure `StagePreconditions` helper wired
-  into Stage: scan-this-session gate, already-staged skip, already-current UBR check (fail-open).
-  Removed display-only `MonthlyCu.ExpectedSizeMb` Settings field.
-- **Staged patching toggle — 2016 routing is now opt-in per box** (`08a9f9f` flag + persistence · `9489f74`
-  routing + decision dialog · `2876ecd` Cancel skips flagged only · `754a18d` right-click + Settings toggle ·
-  `bfb7bba` Staged pill column · `516d3fb` minor-only never WUAs the CU · `3125b0b` skip dialog for
-  already-current boxes). **427 tests; on branch `feat/staged-patching-toggle` (not yet merged).** Default is
-  now normal Windows Update for ALL 2016 boxes; only a flagged box (`Computer.RequiresStagedPatching` ⇄
-  `AppSettings.StagedHosts`) uses the DISM staging lane. Core: `StagedInstallPlanner` (+ `PartitionByCurrency`),
-  `Lcu2016CuMatcher`, override-aware `RebootVerifyLaneFor`. Desktop: `StagedInstallDecisionDialog` +
-  `StagedInstallInteraction` gate, the right-click Mark/Remove toggle, the Settings management card, the
-  Staged pill column, and `ResyncStagedPatchingFlags`. (Staged-patching toggle later merged to master.)
-- **Transient WUA reach-failure retry — no false-green** (`ea1d078` classifier · `bd490a0` silent
-  lane-level retry, face 1 · `7676980` WinRM scan non-clean-search → transient, face 2 · `ec6adfa` agent +
-  SMB lane non-clean-search → transient, all paths · `4e34f02` backoff jitter + install re-entry guard ·
-  `cfba5e8` fresh per-attempt scan timeout). **488 tests; on branch `feat/transient-wua-retry`.** Root
-  cause: the `0x80072EE2` SLS timeout at service-registration (proven from `APVWUG`'s `WindowsUpdate.log`);
-  rule: a non-clean search NEVER reads as up-to-date. Core: `TransientWuaError`, `TransientRetryRunner`.
-  See UPDATE_PLAN.md ▸ "Transient WUA reach failures".
-  `StagedColumn` pill. The fail-open pre-dialog UBR currency check reuses `VerifyLcuAsync` → `DcomLcuBuildReader`.
+## Restore points
+Use `git log` - it is the authoritative restore-point list. (A hand-maintained commit-SHA list used to live here; it decayed on every commit and after a history rewrite, so it was removed in the 2026-06-23 audit.)

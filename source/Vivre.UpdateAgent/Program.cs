@@ -943,7 +943,11 @@ namespace Vivre.UpdateAgent
                             }
                         }
                     }
-                    catch { }
+                    catch
+                    {
+                        // A stale COM proxy or odd update subtype on one entry — skip it; the DISM fallback
+                        // still removes the KB. (Surfacing per-entry COM hiccups here would just be noise.)
+                    }
                 }
             }
             catch

@@ -583,7 +583,7 @@ public partial class WorkspaceView : UserControl
         }
 
         IReadOnlyList<Computer> resolved = targets.Count > 0 ? targets : [.. vm.Computers];
-        new ScriptRunnerWindow(resolved, vm.Credentials, vm.Activity, vm.ScriptLibrary, initialScript) { Owner = OwnerWindow }.Show();
+        new ScriptRunnerWindow(resolved, vm.PowerShell, vm.Credentials, vm.Activity, vm.ScriptLibrary, initialScript) { Owner = OwnerWindow }.Show();
     }
 
     /// <summary>Copies the values one-per-line to the clipboard (Excel-friendly), skipping blanks.</summary>

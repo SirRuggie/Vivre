@@ -23,11 +23,13 @@ public partial class ScriptRunnerWindow : FluentWindow
 {
     private readonly ScriptRunnerViewModel _viewModel;
 
-    public ScriptRunnerWindow(IReadOnlyList<Computer> targets, CredentialStore credentials, Core.Logging.IActivityLog activity, IScriptLibrary library, ScriptFile? initialScript = null)
+    public ScriptRunnerWindow(IReadOnlyList<Computer> targets, IPowerShellHost powerShell, CredentialStore credentials, Core.Logging.IActivityLog activity, IScriptLibrary library, ScriptFile? initialScript = null)
     {
         InitializeComponent();
 
-        _viewModel = new ScriptRunnerViewModel(targets, new PSRunspaceHost(), library, credentials, activity);
+        // Use the shared routing host (passed in), NOT a raw new PSRunspaceHost() — so script runs share the
+        // session's Kerberos→SMB transport cache (fast-fail on known-bad hosts; record WinRM-healthy on success).
+        _viewModel = new ScriptRunnerViewModel(targets, powerShell, library, credentials, activity);
         DataContext = _viewModel;
 
         Editor.SyntaxHighlighting = LoadPowerShellHighlighting();

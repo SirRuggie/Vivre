@@ -268,7 +268,7 @@ public partial class Computer : ObservableObject
         }
     }
 
-    // --- Windows Update lane (the BatchPatch-replacement view; see UPDATE_PLAN.md) ---
+    // --- Windows Update lane (the BatchPatch-replacement view; see docs/windows-patching-lane.md) ---
 
     /// <summary>Per-host update status for the "Windows update message" column (e.g. "Installing 3 of 8").</summary>
     [ObservableProperty]

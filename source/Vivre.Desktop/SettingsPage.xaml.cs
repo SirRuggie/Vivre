@@ -184,13 +184,14 @@ public partial class SettingsPage : UserControl
             return;
         }
 
-        int clamped = Math.Clamp(parsed, 1, 200);
-        if (clamped.ToString() != raw)
+        // parsed is already in [1, 200] (guarded above), so no clamp is needed — just normalize the field
+        // text (e.g. "050" → "50") so it never displays junk.
+        if (parsed.ToString() != raw)
         {
-            MaxInstallsBox.Text = clamped.ToString();
+            MaxInstallsBox.Text = parsed.ToString();
         }
 
-        PersistSettings(s => s.MaxSimultaneousInstalls = clamped);
+        PersistSettings(s => s.MaxSimultaneousInstalls = parsed);
     }
 
     private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)

@@ -16,7 +16,7 @@ do not exist in PowerShell 7.
 | `SCCM Inventory & Updates/` | Full hardware inventory, update scan & eval, DCM baseline scan, count missing updates, install all required updates. |
 | `Windows Update/` | Direct Windows Update Agent: count missing, download & install (bypasses ConfigMgr). |
 | `Repair/` | Reset the Windows Update cache, rebuild the WMI repository, re-register WMI/BITS DLLs, restart a service, force a Group Policy update. |
-| `Info/` | Logged-on user, free disk, uptime/last boot, why-a-reboot-is-pending, OS version, installed-software search. |
+| `Info/` | Logged-on user, free disk, uptime/last boot, why-a-reboot-is-pending, OS version, installed-software search, log off all users (an action — see heads-up below). |
 
 ## Heads-up — these change the target machine
 

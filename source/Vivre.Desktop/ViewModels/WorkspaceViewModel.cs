@@ -1117,6 +1117,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>The shared script library — backs the cascading "Run script" menu and the Run Script window.</summary>
     public IScriptLibrary ScriptLibrary => _scripts;
 
+    /// <summary>The shared routing PowerShell host — also handed to the Run Script window so script runs go
+    /// through the same Kerberos→SMB transport cache (fast-fail + WinRM-healthy recording) as every other op.</summary>
+    public IPowerShellHost PowerShell => _powerShell;
+
     /// <summary>PowerShell credential for remote ops, or null to use the current Windows login.</summary>
     private PSCredential? CurrentPsCredential() => _credentials.Current?.ToPowerShellCredential();
 
@@ -1181,8 +1185,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             return _appSettings.Load().AutoCheckOnLoad;
         }
-        catch
+        catch (Exception ex)
         {
+            _activity.Warn(null, $"Couldn't read the auto-check-on-load setting — defaulting to on. {ex.Message}");
             return true;
         }
     }
@@ -3143,9 +3148,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 throw;
             }
-            catch
+            catch (Exception ex)
             {
                 // Couldn't read the UBR — fail open: no outcome recorded ⇒ the box stays in the dialog set.
+                _activity.Warn(box.Name, $"Pre-dialog currency check couldn't read the build — box stays in the staged-update dialog. {ex.Message}");
             }
             finally
             {
@@ -4170,6 +4176,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             // Monitoring was turned off (Stop / toggle / tab closed) — just exit the loop.
         }
+        catch (Exception ex)
+        {
+            // A non-cancellation fault would otherwise kill the monitor silently while the toggle still reads
+            // "on". Surface it and flip the toggle off so the operator knows to restart it. (The loop's awaits
+            // don't ConfigureAwait(false), so this runs on the UI context — touching IsMonitoring is safe.)
+            _activity.Error(null, $"Monitoring stopped unexpectedly — {ex.Message}");
+            IsMonitoring = false;
+        }
     }
 
     private async Task MonitorRowsAsync(IReadOnlyList<Computer> rows, CancellationToken token)
@@ -4750,6 +4764,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _rebootRecheckBudget.TryRemove(name, out _);
         _scheduledTasks.TryRemove(name, out _);
         _winRmRebootProbeUnsupported.TryRemove(name, out _);
+        _lastRebootProbeAt.TryRemove(name, out _);
+        _consecutiveProbeFailures.TryRemove(name, out _);
     }
 
     /// <summary>Mirrors the grid's selection into <see cref="SelectedComputers"/> (called from code-behind).</summary>
@@ -4960,6 +4976,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
             result = await WugMaintenance.RunAsync(names, enable, server, username, plain, reason, TimeSpan.FromMinutes(10), token, progress);
+        }
+        catch (OperationCanceledException)
+        {
+            // The operator cancelled — that is NOT a WUG failure. Leave a neutral per-row note and an info
+            // line, rather than stamping every row "failed — The operation was canceled."
+            foreach (Computer c in computers)
+            {
+                c.CommandResult = "WhatsUp Gold: cancelled";
+            }
+
+            _activity.Info(null, "WhatsUp Gold maintenance cancelled.");
+            return;
         }
         catch (Exception ex)
         {

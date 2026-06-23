@@ -104,31 +104,43 @@ public sealed class RebootWave
         // within the window, escalate to a forced reboot to make THAT ordered reboot actually complete. The
         // FORCED wait uses a strictly-longer window (ForcedGoOfflineWindow) — a box mid-CBS-commit can hold
         // the network up well past the graceful window, and re-using the same window would false-fail it.
-        if (!alreadyGoingOffline
-            && !await WaitForOfflineAsync(host, options.GoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
+        // sawOffline gates the commit-watch below: we must SEE the box leave the network before reading its
+        // post-reboot build, or a box that merely answers slowly during shutdown reads its OLD build and
+        // false-fails as "rolled back". The "already in progress" paths leave it false (we never observed the
+        // drop), so the watch waits for the real offline before confirming.
+        bool sawOffline = false;
+        if (!alreadyGoingOffline)
         {
-            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
-                $"Still up after {options.GoOfflineWindow.TotalMinutes:N0} min — escalating to a forced reboot to complete it…"));
-            RebootDispatch forced = await IssueRebootAsync(forced: true).ConfigureAwait(false);
-
-            if (forced == RebootDispatch.AlreadyInProgress)
+            if (await WaitForOfflineAsync(host, options.GoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
             {
-                // The forced call confirms a shutdown is already underway — the box IS going down (slowly).
-                // Don't fail it; drop into the commit-watch.
-                progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
-                    "A shutdown is already in progress — still committing (slow, not hung); watching for it to finish…"));
-            }
-            else if (!await WaitForOfflineAsync(host, options.ForcedGoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
-            {
-                // Both windows expired with no positive "going offline" signal — we genuinely can't confirm
-                // it dropped. Be honest (it may be committing very slowly, or it may be stuck), not alarming
-                // ("the reboot isn't taking" wrongly implies the reboot failed).
-                return Fail(progress,
-                    $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
+                sawOffline = true;
             }
             else
             {
-                progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Escalated to a forced reboot."));
+                progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                    $"Still up after {options.GoOfflineWindow.TotalMinutes:N0} min — escalating to a forced reboot to complete it…"));
+                RebootDispatch forced = await IssueRebootAsync(forced: true).ConfigureAwait(false);
+
+                if (forced == RebootDispatch.AlreadyInProgress)
+                {
+                    // The forced call confirms a shutdown is already underway — the box IS going down (slowly).
+                    // Don't fail it; drop into the commit-watch (which waits for the real offline before verifying).
+                    progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                        "A shutdown is already in progress — still committing (slow, not hung); watching for it to finish…"));
+                }
+                else if (!await WaitForOfflineAsync(host, options.ForcedGoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false))
+                {
+                    // Both windows expired with no positive "going offline" signal — we genuinely can't confirm
+                    // it dropped. Be honest (it may be committing very slowly, or it may be stuck), not alarming
+                    // ("the reboot isn't taking" wrongly implies the reboot failed).
+                    return Fail(progress,
+                        $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
+                }
+                else
+                {
+                    sawOffline = true;
+                    progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Escalated to a forced reboot."));
+                }
             }
         }
 
@@ -157,12 +169,23 @@ public sealed class RebootWave
 
             if (!await _reach.IsReachableAsync(host, cancellationToken).ConfigureAwait(false))
             {
+                sawOffline = true;
                 progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
                     $"Committing (offline) — {offline.Elapsed.TotalMinutes:N0} min…"));
                 continue;
             }
 
-            // Back on the network — ask the confirmation strategy. NotReady = retry, never a failure.
+            // Reachable but we have NOT yet seen it leave the network (a shutdown was "already in progress"
+            // but the box is slow to drop off). Confirming now would read the PRE-reboot build and false-fail
+            // the box as "rolled back", so wait until it has actually gone offline first.
+            if (!sawOffline)
+            {
+                progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                    "Still finishing the restart — waiting for it to drop off the network before verifying…"));
+                continue;
+            }
+
+            // Back on the network after a confirmed offline — ask the confirmation strategy. NotReady = retry, never a failure.
             RebootConfirmationResult verdict = await confirmation.ConfirmAsync(host, cancellationToken).ConfigureAwait(false);
 
             if (verdict.Outcome == RebootConfirmationOutcome.Confirmed)

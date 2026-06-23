@@ -7,7 +7,7 @@ namespace Vivre.Core.Updates;
 /// <inheritdoc cref="IPatchService"/>
 /// <remarks>
 /// Thin orchestrator over <see cref="WuaUpdateLane"/> (the WUA lane is the only lane
-/// today; an SCCM-deployment lane is deferred — see UPDATE_PLAN.md). Mirrors
+/// today; an SCCM-deployment lane is deferred — see docs/windows-patching-lane.md). Mirrors
 /// <c>ConfigMgrClient</c>'s construction (an <see cref="IPowerShellHost"/> in, logic
 /// delegated). Takes a <see cref="ConnectionCredential"/> rather than a
 /// <c>PSCredential</c> because install needs the raw credential for the DCOM

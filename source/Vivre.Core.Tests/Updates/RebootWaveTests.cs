@@ -123,6 +123,30 @@ public class RebootWaveTests
     }
 
     [Fact]
+    public async Task Already_in_progress_box_slow_to_leave_the_network_is_not_false_failed_as_rolled_back()
+    {
+        // Regression guard: a box reports "already in progress" (1115) but is SLOW to drop off — it still
+        // answers (at its PRE-reboot build) for a couple of checks while shutting down. The wave must NOT
+        // read that pre-reboot build and fail it as "rolled back"; it waits for the real offline, then
+        // verifies the box that returns at the target build as green.
+        var box = new FakeBox
+        {
+            RebootReportsAlreadyInProgress = true,
+            GoesOfflineWhenAlreadyInProgress = false, // does not drop off immediately
+            ChecksBeforeOffline = 2,                  // answers at the OLD build for 2 checks, then drops off
+            ComesBackAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);     // verified green, NOT a false "rolled back"
+        Assert.True(reboot.Graceful);
+        Assert.False(reboot.Forced);                     // never escalated — it was already going offline
+    }
+
+    [Fact]
     public async Task Box_offline_past_the_hard_cap_is_flagged_red_to_use_verify_later()
     {
         var box = new FakeBox { GracefulTakesOffline = true, ComesBackAfterChecks = int.MaxValue }; // never returns
@@ -207,6 +231,7 @@ public class RebootWaveTests
         public int OfflineChecks;
         public bool RebootReportsAlreadyInProgress;     // the trigger reports 1115 (a shutdown is already underway)
         public bool GoesOfflineWhenAlreadyInProgress;   // ...and the box then drops off the network on its own
+        public int ChecksBeforeOffline;                 // >0: answers (at the OLD build) this many reach checks, then drops off (a box slow to leave the network)
     }
 
     private sealed class FakeReboot(FakeBox box) : IRebootTrigger
@@ -243,6 +268,15 @@ public class RebootWaveTests
     {
         public Task<bool> IsReachableAsync(string host, CancellationToken cancellationToken)
         {
+            // A box slow to drop off after an "already in progress" reboot: it answers (still at the OLD
+            // build) for a few checks, then leaves the network.
+            if (box.Online && box.ChecksBeforeOffline > 0)
+            {
+                box.ChecksBeforeOffline--;
+                if (box.ChecksBeforeOffline == 0) { box.Online = false; }
+                return Task.FromResult(box.Online);
+            }
+
             if (!box.Online)
             {
                 box.OfflineChecks++;

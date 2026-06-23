@@ -16,11 +16,11 @@ maintainability over enterprise hardening. It's a dense power tool, not a consum
 ## Start here
 
 This file is the architecture + conventions reference. Two companions:
-- **[UPDATE_PLAN.md](UPDATE_PLAN.md)** — the Windows Update (WUA) lane deep-dive and its
+- **[windows-patching-lane.md](docs/windows-patching-lane.md)** — the Windows Update (WUA) lane deep-dive and its
   **load-bearing reliability constraints — read it before touching the update or remoting code.**
 - **[README.md](README.md)** — the human-facing overview + roadmap.
 
-Keep this file, UPDATE_PLAN, and README current when a decision changes or a feature lands.
+Keep this file, the patching-lane doc, and README current when a decision changes or a feature lands.
 
 ### Shell / tab hosting (as-built — the `ui:NavigationView` refactor is COMPLETE)
 The phased shell→NavigationView plan is done and retired (history in git + CHANGELOG). The shell is a
@@ -47,10 +47,10 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
   - **`Vivre.Core`** (net10.0) — non-UI logic: `Models`, `Net` (ping), `PowerShell`
     (`PSRunspaceHost` — the one WinRM choke point, wrapped by `RoutingPowerShellHost`: on a Kerberos
     `0x80090322` rejection it flips the host to the SMB/DCOM path via the session-scoped
-    `HostTransportCache`, and Vitals scores the degradation — see UPDATE_PLAN.md ▸ "Kerberos-broken
+    `HostTransportCache`, and Vitals scores the degradation — see docs/windows-patching-lane.md ▸ "Kerberos-broken
     hosts"), `Sccm` (`ConfigMgrClient`, client actions),
     `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
-    store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see UPDATE_PLAN.md),
+    store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see docs/windows-patching-lane.md),
     `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score),
     `Remediation` (`RemediationService` — start a service / free disk / end a process from the Vitals triage view),
     `Deploy` (`DeploymentService` — **stage** a package: copy a file/folder to a temp dir on the
@@ -74,7 +74,7 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
       opens) when `Environment.MachineName` matches the `ShellViewModel.CrossDomainRdpMachine` const
       (currently `"APVHOP"`). To re-target it to another PC, change that one const.
   - **`Vivre.UpdateAgent`** (net48) — tiny compiled EXE run as SYSTEM on the target to do WUA
-    install/uninstall with real progress callbacks; bundled beside `Vivre.exe` (see UPDATE_PLAN.md).
+    install/uninstall with real progress callbacks; bundled beside `Vivre.exe` (see docs/windows-patching-lane.md).
   - **`Vivre.Core.Tests`** (net10.0, xUnit).
 - `tools/RemoteRun` — dev console to exercise remote PowerShell (WinRM) against a host.
 - `scripts/` — the curated PowerShell script library (PS7 / `Get-CimInstance`), organised into
@@ -109,7 +109,7 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
 - All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
-  it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see UPDATE_PLAN.md).
+  it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see docs/windows-patching-lane.md).
 - **Shelling out to Windows PowerShell 5.1** (the WUG lane in `Wug/WugMaintenance.cs`, and any
   out-of-process `powershell.exe` launch) has two traps `dotnet build` can't catch — a compiled-in PS
   string only fails at *runtime*:
@@ -123,7 +123,7 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
     launched with `UseShellExecute=false` inherits it, so a 5.1 child can't find 5.1 modules.
   - Never flatten a launch/parse/timeout failure into a false negative (e.g. "module missing") — surface
     the real error.
-- Keep **CLAUDE.md** (this file), **UPDATE_PLAN.md**, and **README.md** current when a decision
+- Keep **CLAUDE.md** (this file), **docs/windows-patching-lane.md**, and **README.md** current when a decision
   changes or a feature lands — they're the human-readable source of truth.
 - **Bump the app version only when cutting a RELEASE (a deploy build) — NOT per merge.** `<VersionPrefix>`
   in `source/Vivre.Desktop/Vivre.Desktop.csproj` is the single source of truth (the build stamp and the

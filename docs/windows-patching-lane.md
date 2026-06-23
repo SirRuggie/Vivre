@@ -1,7 +1,7 @@
-# Windows Update (WUA) lane
+# Windows patching lane (WUA)
 
-How Vivre patches machines — the deep-dive that complements **[README.md](README.md)** (overview)
-and **[CLAUDE.md](CLAUDE.md)** (architecture + conventions). The lane is merged into `master`.
+How Vivre patches machines — the deep-dive that complements **[README.md](../README.md)** (overview)
+and **[CLAUDE.md](../CLAUDE.md)** (architecture + conventions). The lane is merged into `master`.
 
 ---
 
@@ -52,7 +52,11 @@ credential prompt): `Vivre.Core/Updates/SmbAgentLane.cs` + `Remoting/RemoteServi
 4. **Teardown:** stop → wait for stopped → `DeleteService` → delete the per-run drop files.
 
 **Selection lives in `WuaUpdateLane`** (not the routing decorator): Scan / Install / Uninstall try
-WinRM first and, on the typed `KerberosWrongPrincipalException`, transparently route here. The
+WinRM first and, on the typed `KerberosWrongPrincipalException`, transparently route here. **Scan
+additionally** falls back to this lane on a `RemoteSessionLostException` (any WinRM session drop, not
+just Kerberos) — per-attempt, never cached; if the SMB scan also fails it surfaces a dual-transport
+failure. Install / Uninstall fall back only on a *connect-time* `RemoteSessionLostException` with no
+progress yet (a mid-run drop does not re-route, to avoid a double-install). The
 operation result is **deliberately indistinguishable** from a WinRM run — the Kerberos degradation is
 surfaced only through Vitals, never on an operation result. The lane runs on the **ambient identity
 only** (an alternate credential is ignored — the whole point is that the current login works over
@@ -73,9 +77,13 @@ the controller tails.
   SCM "I'm running" check-in that avoids error 1053), the work runs on a thread, and the agent
   self-stops when done. Service mode also writes a periodic **heartbeat** line (console mode does not —
   so the WinRM stream is byte-identical to before).
-- **Three operations.** `Mode` is Install (default), Uninstall, or **Scan** (the SMB lane's read-only
+- **Five operations.** `Mode` is Install (default), Uninstall, **Scan** (the SMB lane's read-only
   WUA search, mirroring the WinRM scan script; it writes the update array to `ResultPath` for the
-  controller to read back over SMB).
+  controller to read back over SMB), **AddPackage** (the Server 2016 full-package CU lane — expand the
+  `.msu` to `.cab`s with `expand.exe` because online DISM rejects `.msu` on 2016, check an 8 GB disk
+  floor, `dism /add-package` each cab SSU-first, then confirm CBS `RebootPending` before reporting
+  "staged"), and **Cleanup** (`dism /Online /Cleanup-Image /StartComponentCleanup` to reclaim
+  component-store space before staging).
 
 - It uses WUA's own `IDownloadProgressChangedCallback` / `IInstallationProgressChangedCallback` for
   **ground-truth percent** — the thing PowerShell can't supply.
@@ -293,13 +301,13 @@ issued — nothing fires autonomously. Cancelling the dialog is a no-op.
 
 ### Per-box wave (`RebootWaveRowAsync` → `PatchService.RebootWaveLcuAsync` / `RebootWaveWuaAsync`)
 
-Routing is by `LcuRouting.RebootVerifyLaneFor(computer.OsBuild)`:
+Routing is by `LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.RequiresStagedPatching)`:
 
-- **Server 2016 (build 14393)** → `RebootWaveLcuAsync` → `DcomRebootReadinessProbe` +
+- **Server 2016 (build 14393) flagged for staged patching** → `RebootWaveLcuAsync` → `DcomRebootReadinessProbe` +
   `UbrConfirmation`. Pre-reboot guard checks TrustedInstaller-stopped + CBS RebootPending to
   avoid rebooting into the 2-hour Stopping hang. Post-reboot UBR is read via `DcomLcuBuildReader`
   and compared to the operator's target UBR; a rolled-back build is caught as Failed (red).
-- **All other boxes** → `RebootWaveWuaAsync` → `BasicReachabilityReadinessProbe` +
+- **All other boxes (incl. a non-flagged Server 2016 box)** → `RebootWaveWuaAsync` → `BasicReachabilityReadinessProbe` +
   `ReadyConfirmation`. Pre-reboot gate is unconditionally ready (no 2016-specific signals to
   check). Post-reboot confirmation queries `Win32_OperatingSystem` over DCOM/CIM — Confirmed when
   the OS stack answers, NotReady (retry) when it can't be reached yet. It never returns Failed;
@@ -370,7 +378,7 @@ supplementary note (e.g. "· up to date" or "· N update(s) still applicable —
 
 ### `RebootOutcomeMessages` — now wired
 
-`RebootOutcomeMessages.cs` defines six format methods (BackOnlineUpToDate, BackOnlineRemaining,
+`RebootOutcomeMessages.cs` defines seven format methods (BackOnlineUpToDate, BackOnlineRemaining,
 BackOnlineFailed, InstalledNoReboot, RebootStillPending, BackOnlineRescanFailed, StillRebooting).
 `RebootOutcomeSelector.Select` calls five of them (InstalledNoReboot and StillRebooting are
 excluded — wrong semantic context). The selector is called from `ReportPostRebootOutcomeAsync`

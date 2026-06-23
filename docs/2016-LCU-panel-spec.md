@@ -5,6 +5,24 @@ as-built record plus the standing rules for anyone touching these files again. C
 `5631a61` (panel, clean rebuild) · `ecb798e` (filter reset when the last 2016 box leaves) ·
 `e4047a0` (guided missing-package prompt) · `332efe8` (Clean up wording). Build 0/0, 313 tests.
 
+> **Post-build drift — corrected 2026-06-23 (the lane evolved after this hand-off spec was frozen; read
+> these overrides alongside the as-built text below):**
+> - **The 2016 actions are now opt-in per box.** Clean up / Stage / Verify act on `Server2016Targets()`
+>   = `StagePreconditions.IsStageTarget` (`LcuRouting.Is2016(OsBuild)` **AND** `RequiresStagedPatching`),
+>   not "all 2016 when none selected." Triggering them with no flagged box shows `StagedPatchingNeededDialog`.
+> - **Reboot Wave button re-points to `OnRebootAndVerify`** (the generalized fleet-wide reboot-and-verify),
+>   not `OnRebootWave2016`; `IsEnabled = SelectedComputers.Count > 0` (any selection, not 2016-only).
+> - **Chip count:** the Patching-mode chip bar now has 10 chips (All, Updates, Reboot pending, Errors,
+>   Offline, Done, Unhealthy, Not scanned, Scheduled, Server 2016); the Health bar has 6 — not "8".
+> - **Action-bar MultiDataTrigger has 3 conditions:** `ActiveFilter==Server2016` AND `HasServer2016` AND
+>   `IsUpdateMode==True` (Patching-only).
+> - **STAGED tag has 3 conditions:** `PatchState==RebootPending` AND `OsBuild==14393` AND
+>   `StagedThisSession==True` (so a non-LCU reboot-pending 2016 box never shows the tag).
+> - **Settings:** `MonthlyCu.ExpectedSizeMb` and the `LcuSizeBox` field were **removed** — the package is
+>   matched by KB + arch, never size. `MonthlyCu` is now `Kb / Arch / TargetUbr / Display`.
+> - New since this spec: the `StagedInstallDecisionDialog` (Stage CU / minor-only / Cancel), the
+>   scan-before-Stage gate, and the `LcuVerifiedThisSession` skip — see `2016-LCU-lane-spec.md`.
+
 The point of the panel: the people taking over patching **don't know which servers are 2016**.
 Vivre classifies them (a vitals check fills `Computer.OsBuild`) and surfaces the classification
 as a one-click filtered view with the four 2016 actions — nothing to look up, nothing manual.

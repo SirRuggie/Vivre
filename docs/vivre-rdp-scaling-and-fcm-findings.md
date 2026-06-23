@@ -335,11 +335,17 @@ Replicate mRemoteNG's `FitToWindow` exactly: **undock + explicit `Size` = conten
 
 ---
 
-## Related deferred RDP item (separate from scaling)
+## Related RDP item (separate from scaling) — SHIPPED (`87674c2`)
 
-**Reconnect is dead** (Issue 1) — diagnosed, **not implemented**, deferred. Agreed fix is **B + C**:
-recreate the control on reconnect; stop auto-closing involuntary drops; fold in `EnableAutoReconnect`
-+ `GrabFocusOnConnect`. Pick this up independently of the scaling work.
+**Reconnect was dead (Issue 1); it is now fixed** (commit `87674c2`, on master) — the **B + C** fix landed:
+`OnReconnectRequested` tears down and rebuilds the OCX (`TearDownControl` + `CreateControl` + `Connect`);
+`OnRdpDisconnected` distinguishes a deliberate sign-out (`ExtendedDisconnectReason` 2/4/6) from an
+involuntary drop, which keeps the tab open with a Reconnect button; `EnableAutoReconnect` +
+`GrabFocusOnConnect` are wired. The rebuild pattern (TearDownControl → CreateControl → Connect, with
+`LocalScale()` called by both first-connect and reconnect) is the template any future per-host scale work
+should follow. Full-screen also reflows to monitor resolution (`MonitorPixelSize` → `ResizeRemote`) and
+restores `RemotePixelSize` on exit; live resize is debounced (`OnHostContainerSizeChanged` →
+`OnResizeSettled`).
 
 ---
 
@@ -351,8 +357,10 @@ operator-confirmed gate. Re-grep on any merge as usual.
 ---
 
 ## State of the code as of parking this
-- **Committed (push pending):** `1ce1abf` — the FCM fix (pin `LocalScale` → `(100,100)`), fills +
-  FCM-safe + compact. This is the floor to build any of the paths above on top of.
+- **The FCM fix shipped** (`1ce1abf`, on master): `LocalScale` pinned to `(100,100)`, fills + FCM-safe +
+  compact. `RdpSessionView.xaml.cs` has since moved well beyond that baseline (the Reconnect lifecycle +
+  full-screen resize noted above); the `LocalScale()` pin survives. This is the floor to build any of the
+  scaling paths above on top of.
 - **Throwaway experimental working tree** (discard with `git restore` — it was never meant to ship):
   the magnification experiments (÷1.5 framebuffer, undock + explicit Size + Anchor, SmartSizing
   re-assert, `[RDP fill diag]` logging) across `RdpSessionView.xaml.cs` + the two VM diag-plumbing

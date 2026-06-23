@@ -60,8 +60,8 @@ public sealed class SoftwareProbe : ISoftwareProbe
     internal static string BuildScript(string queryLiteral, string serviceLiteral) =>
         $$"""
         $ErrorActionPreference = 'SilentlyContinue'
-        $q = {{queryLiteral}}
-        $svc = {{serviceLiteral}}
+        $q = [System.Management.Automation.WildcardPattern]::Escape({{queryLiteral}})
+        $svc = [System.Management.Automation.WildcardPattern]::Escape({{serviceLiteral}})
         $paths = @(
             'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
             'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'

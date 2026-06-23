@@ -8,7 +8,7 @@ namespace Vivre.Core.Updates;
 /// ("the network path to Windows Update hiccuped — try the whole thing again") versus a
 /// <b>terminal</b> failure (a real install / config / auth error that re-running won't fix).
 ///
-/// <para><b>Proven root cause</b> (see UPDATE_PLAN.md ▸ "Transient WUA reach failures"): on a
+/// <para><b>Proven root cause</b> (see docs/windows-patching-lane.md ▸ "Transient WUA reach failures"): on a
 /// failed box the on-box WUA's very first network call — the <c>SLS</c> (Service Locator Service)
 /// lookup during "Processing auto/pending service registrations", <em>before</em> search, download
 /// or install — timed out with <c>0x80072EE2</c> (no HTTP response at all) during a brief network
