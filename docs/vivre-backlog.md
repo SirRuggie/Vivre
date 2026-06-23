@@ -69,6 +69,23 @@ down, each "do only if it recurs / when a signal appears."
   severity: the per-run-named service is harmless and the next run reaps it. Fix: inject an `IActivityLog`
   (or Serilog) into `SmbAgentLane` and log at trace/warn instead of `Debug.WriteLine`, keeping the
   "don't replace the operation result" intent. (Found in the 2026-06-23 audit.)
+
+> **HANDLE WITH CARE — read before touching anything in the two hunt clusters below.** These items
+> (especially the live-filtered grid, the load-bearing `PatchState`, the bulk-add path, and the per-row
+> notification cascade) sit in the EXACT code that caused the past cross-thread crash. There are real
+> concerns here — this is precisely the "one small thing I didn't fully check, so it caused X, Y and Z"
+> class of regression we are NOT willing to repeat. So before tackling ANY of them:
+>
+> - **Research and observe FIRST.** Read the full call path end-to-end, map every property -> aggregate and
+>   collection -> subscription dependency, and confirm thread affinity (the live-filter writers MUST stay on
+>   the UI thread). Do not pattern-match a "quick fix" — these need deeper thought and observation of the
+>   actual code before any edit.
+> - **Beware the obvious-fix traps already found:** disposing the install-throttle / WinRM-gate semaphores
+>   breaks in-flight installs (they are held by reference on purpose); a naive `Clear` + range / `Reset` on the
+>   grid or the update checklist skips the per-row `PropertyChanged` re-subscription (the `Reset` ->
+>   `NewItems == null` trap) and silently breaks live row updates.
+> - **One at a time.** Tackle a SINGLE item, verify it (build + full tests + a visual check in the running app
+>   at fleet scale), and COMMIT it on its own before starting the next. Do not batch these.
 - **From the 2026-06-23 drift/stale hunt — not yet fixed (the easy 8 were done; these need more thought):**
   - **Post-reboot message shows the wrong install count.** `ReportPostRebootOutcomeAsync` (`WorkspaceViewModel.cs`
     ~3780) reads `LastInstall*` from the most recent install this session, not from the operation that triggered
