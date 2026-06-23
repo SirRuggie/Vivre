@@ -470,7 +470,18 @@ public partial class Computer : ObservableObject
     /// Re-evaluates <see cref="LastRebootDisplay"/> (it's relative to <c>DateTime.Now</c>, so it
     /// drifts between health checks). Called on a timer by the shell so the grid stays current.
     /// </summary>
-    public void RefreshRelativeTime() => OnPropertyChanged(nameof(LastRebootDisplay));
+    public void RefreshRelativeTime()
+    {
+        // Skip rows with no boot time: LastRebootDisplay is a constant null then, so raising the
+        // notification would only churn the binding engine for no visible change. (LastRebootDisplay is
+        // NOT a live-filter input, so this never affects the grid's filtering — purely a display refresh.)
+        if (LastBootTime is null)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(LastRebootDisplay));
+    }
 
     private static string Relative(TimeSpan since)
     {

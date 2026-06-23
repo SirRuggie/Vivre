@@ -36,6 +36,8 @@ it ships, then gets a dated heading.
 - Made the SMB-agent heartbeat-line filter consistent across its read paths (no behaviour change). Remaining
   items from the 2026-06-23 drift/stale hunt (post-reboot install-count accuracy; DCOM-path vitals fields) are
   parked in the backlog.
+- Skipped a wasted per-minute relative-time change-notification for grid rows that have no boot time (no
+  behaviour change).
 
 ## 1.14.1 — 2026-06-23
 
