@@ -62,6 +62,13 @@ down, each "do only if it recurs / when a signal appears."
   forcing full-width measure.
 - **Scan-timeout edge** — 5-min cap (a997642) may be short for the very worst first-scan boxes; bump to
   10 min (600s) ONLY if real "Scan timed out" false-positives appear.
+- **SMB-agent teardown is a silent swallow in Release builds** — `SmbAgentLane.TeardownServiceAsync`
+  (`SmbAgentLane.cs` ~414) reports a failed teardown only via `Debug.WriteLine`, which the compiler strips
+  from Release builds — so in the shipped build a teardown failure (a leftover per-run helper service, a
+  `DeleteService` error) disappears with no trace, against the "no empty catch / surface failures" rule. Low
+  severity: the per-run-named service is harmless and the next run reaps it. Fix: inject an `IActivityLog`
+  (or Serilog) into `SmbAgentLane` and log at trace/warn instead of `Debug.WriteLine`, keeping the
+  "don't replace the operation result" intent. (Found in the 2026-06-23 audit.)
 
 ---
 
