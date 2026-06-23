@@ -6,6 +6,12 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **A machine rebooted outside Vivre no longer keeps showing "… reboot required" on its update message.**
+  When a box you'd just patched was rebooted by someone else, Vivre correctly cleared the reboot-pending pill
+  and flag but left the update-message text still reading "… · reboot required". The text now clears too. (The
+  cleanup is separator-agnostic, so it can't silently drift out of sync with the agent's wording again.)
+
 ## 1.14.1 — 2026-06-23
 
 ### Changed

@@ -4413,17 +4413,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // Reboot just resolved (was pending, now clear) — the reliable "it's back, reboot
                 // done" signal (this transition is what turns the dot green, so it always runs even
                 // if the monitor never caught the brief offline window). Narrate it and strip the
-                // now-stale ", reboot required" the install left on the update message.
+                // now-stale reboot-required tail the install left on the update message.
                 if (was == true && !pending.Value)
                 {
                     computer.RebootMessage = $"Reboot complete — back online {DateTime.Now:HH:mm}";
                     computer.WentOfflineAt = null;
 
-                    const string suffix = ", reboot required";
-                    if (computer.UpdateMessage is { } msg && msg.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                    {
-                        computer.UpdateMessage = msg[..^suffix.Length];
-                    }
+                    // Separator-agnostic: the agent writes the tail with a middot separator, older builds
+                    // used a comma - remove whichever so the message stops contradicting the green pill.
+                    computer.UpdateMessage = UpdateMessageText.WithoutRebootRequiredTail(computer.UpdateMessage);
 
                     _activity.Info(computer.Name, "Reboot complete — back online, no reboot pending");
                 }
