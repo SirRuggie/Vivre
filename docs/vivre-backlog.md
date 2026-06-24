@@ -3,7 +3,7 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-06-23** (post full code + docs audit). Everything below is on
+> not a mandate). Last refreshed: **2026-06-24** (fleet-recompute progress-tick slice shipped — see DONE; prior: 2026-06-23 full code + docs audit). Everything below is on
 > `master`. **Commit hashes in the DONE list predate a history rewrite and may not all resolve — `git
 > log` is the authoritative restore-point list, and the per-entry test counts are point-in-time only
 > (current suite is ~600 green).**
@@ -16,6 +16,39 @@ Nothing queued. The RDP Reconnect button (the previous #1) shipped — see DONE.
 toggle shipped (see DONE), and **KB auto-population from a scan is closed — manual only** (decision
 recorded under *Settings simplification* below). What remains is the polish / standalone items further
 down, each "do only if it recurs / when a signal appears."
+
+---
+
+## RESEARCH — open questions to confirm (no fix yet — confirm the behavior first)
+
+- **Scheduled-task time zone: remote device local time, or the patching system's time?** When Vivre schedules
+  an install/reboot, the trigger is built in `WuaUpdateLane.cs` (~line 881) as
+  `New-ScheduledTaskTrigger -Once -At '<yyyy-MM-ddTHH:mm:ss>'` — a **bare datetime string with NO timezone
+  offset** (InvariantCulture) — and that command is evaluated by PowerShell **on the remote/target device**. A
+  no-offset datetime resolves in the *local* timezone of whatever machine runs it, so the strong hypothesis is
+  the task currently fires at the chosen wall-clock time in the **remote device's** local zone, NOT the patching
+  system's. **Desired: it should be the patching system's time** (the operator's Vivre host) so "2 PM" means the
+  same absolute moment across the fleet regardless of each box's timezone.
+  - **Confirm:** the `DateTimeKind` of `PatchOptions.ScheduleAt` and where the operator picks it
+    (`ScheduleWindow`); how that bare `-At` string actually resolves on a target whose timezone differs from the
+    host; and what the operator-facing "… scheduled for …" message (`FormatScheduledMessage`) displays.
+  - **Then decide the fix (don't pre-build it):** e.g. pass a timezone-anchored value (UTC, or with an offset)
+    or convert the operator's chosen instant into the target's local equivalent — whichever matches the
+    "patching system time" intent. Touches the patching scheduled-task path, so verify on real boxes in two
+    different timezones before committing.
+- **Why some OS cumulative updates show a "—" (dash) for size — e.g. KB5094126 on Win11 24H2 / build 26100
+  (observation, not a fix — working as designed).** The dash means `UpdateSizeResolver.ResolveDisplaySize`
+  ([UpdateSizeResolver.cs] line 46) returned null = "no trustworthy size to show." For a 24H2 / Server-2025
+  express/checkpoint CU, WUA reports a wildly-inflated worst-case `MaxDownloadSize` (tens of GB), so Vivre
+  deliberately ignores it (showing it would be a lie) and falls back to the Microsoft Update Catalog for the
+  real `.msu` size; if that lookup can't answer (the catalog isn't reachable from the patching host, or the KB
+  doesn't match a catalog row) the failed lookup is cached "unavailable" for the session — so the cell stays a
+  dash. (Less-likely alternative cause: WUA reported no size at all, Min = Max = 0, in which case the catalog
+  is never consulted — it's only used for the >10 GB inflated case.) This is intentional: a dash, never a wrong
+  number. **If we ever want fewer dashes:** confirm which case KB5094126 actually hits (inflated-Max-but-catalog-
+  empty vs 0/0), then decide whether to (a) extend the catalog lookup to the 0/0 case and/or (b) diagnose why
+  the catalog returns null for these CUs from the patching host (reachability vs row-match). Files:
+  `UpdateSizeResolver.cs`, `MicrosoftUpdateCatalogService.cs`, `WorkspaceViewModel.ResolveCatalogSizesAsync`.
 
 ---
 
@@ -39,6 +72,17 @@ down, each "do only if it recurs / when a signal appears."
 
 ## OPEN — polish / smaller standalone items
 
+- **Check whether a server is currently IN maintenance mode (read it, not just set it).** Vivre can put
+  machines into / out of WhatsUp Gold maintenance (`WugMaintenance` + `MaintenanceWindow`), but there's no way
+  to SEE the current state. Add a read — e.g. a per-row indicator or a status line in the maintenance dialog.
+  **Research first:** (1) confirm what "maintenance mode" should mean here — most likely WUG maintenance, given
+  the existing integration, but it could also mean an SCCM maintenance window, so clarify the intent when picked
+  up; (2) confirm the source even exposes a read — does the `WhatsUpGoldPS` module / WUG REST have a device
+  maintenance-state query (a `Get-WUGDevice` property, or a get-maintenance call)? If yes, surface it; if not,
+  decide whether a direct REST call is worth it. Note the same credential/SSL invariants as the existing WUG
+  path (creds never saved; `-IgnoreSSLErrors`). Files: `WugMaintenance.cs` (the 5.1 shell-out +
+  `Get-WUGDevice` / `Set-WUGDeviceMaintenance`), `MaintenanceWindow.xaml(.cs)`,
+  `WorkspaceViewModel.SetWugMaintenanceAsync`.
 - **Stage copy fan-out I/O contention (UI sluggish during big batch Stage)** — NOT a UI-blocking copy and NOT
   a wrong-thread hash (both were earlier guesses). The 1.7 GB Stage copy already runs OFF the UI thread
   (`SmbAgentLane.cs:230-246` — `File.Copy` inside `Task.Run(...).ConfigureAwait(false)`), and integrity is
@@ -115,14 +159,20 @@ down, each "do only if it recurs / when a signal appears."
     the UI thread, so loading 300+ stutters and 500+ can freeze for seconds. A batched/suppressed add is the fix —
     BUT a naive `Clear`+range/`Reset` skips the per-row `PropertyChanged` re-subscription in `OnComputersChanged`
     (the `Reset` → `NewItems==null` trap), which would break live row updates. Needs a careful design + test. Medium.
-  - **Fleet-aggregate recompute storm during sweeps.** Every per-row `PatchState` / `UpdateProgress` /
-    `VitalityBand` change calls `RaiseFleetChanged` (WorkspaceViewModel ~929), re-raising 9 aggregates; several
-    re-scan the whole `Computers` list, `HasVitalsFleetSummary` re-walks its summary a second time, and each
-    `PatchState` read does an `Enum.TryParse` of the phase string — no coalescing. At 300 machines over a sweep
-    that's hundreds of thousands of UI-thread passes. Provably-safe slices exist (route an `UpdateProgress`-only
-    change to raise just `FleetProgress` — confirmed the only progress-dependent aggregate; drop the redundant
-    `Has*` double-walks; cache the `PatchState` parse) but each needs careful dependency verification because it
-    touches the load-bearing live-filtered property. Medium.
+  - **Fleet-recompute storm — remaining cleanup (rare-event only; the high-frequency progress-tick flood is
+    already fixed — see DONE ▸ "Fleet-recompute storm — progress-tick slice shipped").** Now that a per-row
+    `UpdateProgress` tick raises just `FleetProgress`, what's left fires ONLY on the rare phase-change events (a
+    handful per row, not the per-tick flood), so the payoff is low. Both still sit in the load-bearing
+    live-filtered grid area — **HANDLE WITH CARE** applies — and each should be its own dependency-verified,
+    tested pass if/when it proves worth doing:
+    - **`Has*` double-walk cleanup.** `HasFleetSummary`→`FleetSummary`, `HasVitalsFleetSummary`→`VitalsFleetSummary`,
+      `IsPatchOperationOrFleetHeld`→`IsPatchOperationActive`, and `FilterStatus`→`VisibleRowCount` each re-walk the
+      list (or the filtered view) a second time just to check a length/count. Collapse the redundant double
+      evaluation so one `RaiseFleetChanged` doesn't pay for the same walk twice. Low payoff now. Low.
+    - **`PatchState` `Enum.TryParse`-per-read cache.** `DerivePatchState` parses the phase string on every read
+      (`Computer.cs` ~312). Same tier — only fires on phase changes now, not the progress flood; any cache MUST be
+      invalidated when `UpdatePhase` / `RebootRequired` change (the staleness trap), so it needs care, not a quick
+      memoize. Low.
   - **Lower-impact (perf):** `RaiseCanExecuteForSweepCommands` re-checks whole-list conditions + 10 command states
     per completed row (mitigated by short-circuit); the focused machine's update checklist repopulates row-by-row
     (O(n²) re-hook) instead of in bulk; the grids don't enable column virtualization. (The 60-second relative-time
@@ -160,6 +210,15 @@ down, each "do only if it recurs / when a signal appears."
 
 ## DONE (committed) — recent
 
+- **Fleet-recompute storm — progress-tick slice shipped** (`18d3d3b`, on master). The high-frequency path is
+  fixed: a per-row `UpdateProgress` tick now raises ONLY `FleetProgress` instead of the full 9-property
+  `RaiseFleetChanged()` — confirmed (in `ApplyStatus`) that `UpdateProgress` is the sole high-frequency property
+  funneling through `OnComputerStateChanged` (`UpdatePhase` is re-written same-value per tick = no-op, so
+  `PatchState` doesn't re-fire; `UpdateMessage` isn't handled by the storm path). Caught + rejected a worker's
+  wrong "FleetProgress is unused / pure waste" claim — it's consumed in `MainWindow.xaml.cs` code-behind (status
+  progress-bar animation), so nothing was deleted, only the progress-tick path re-routed. 625 tests green;
+  cardinal clean; visual-checked at fleet scale. Remaining rare-event cleanup (Has* double-walks, PatchState
+  parse cache) is split out under the open performance hunt cluster above.
 - **Patch-sweep cross-thread crash on a transient WU-reach retry — RESOLVED** (on master).
   Surfaced *despite* the June-13 threading fix (`7c7b5f78`, which was correct but incomplete).
   Vector: `WorkspaceViewModel.SetTransientRetryingState` wrote `Computer.UpdatePhase` (a grid live-filtered
