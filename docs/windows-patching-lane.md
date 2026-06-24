@@ -178,6 +178,36 @@ check — no install/reboot behavior added), which `SmbAgentLane` surfaces as a 
 runner re-dispatches. So Kerberos-broken boxes (which hit this failure most) get the **same** retry as
 WinRM boxes. **No auto-reboot:** the entire feature is classify/retry/timeout/status plumbing.
 
+### Install/uninstall failures are never green either (`10defc4`)
+
+The same no-false-green doctrine now covers the **install-failed** path, not just unreachable boxes. **A
+completed install/uninstall with `FailedCount > 0` forces `PatchState.Error` (red pill) — never green "Up to
+date", never amber reboot-pending.** Precedence is **ERROR > REBOOT-PENDING > UP-TO-DATE**: a failure
+outranks a pending reboot (a failed update is still applicable, so the box is not patched). The reboot **dot**
+still lights independently when a reboot is also pending — `DerivePatchState` maps `Error → PatchState.Error`
+regardless of `RebootRequired`, and `RebootRequired` is set separately.
+
+**How it's enforced (so it can't regress to phase-only).** `ApplyStatus` (WorkspaceViewModel) takes a
+`failuresAreErrors` flag passed `true` at **exactly two call sites — install-final and uninstall-final**. When
+set **and** `FailedCount > 0`, the phase is forced to Error *before* it's written to `UpdatePhase`. The flag
+**defaults to false**, so scan / cleanup / reboot-verify / every progress callback are **structurally** unable
+to reach the override — they cannot paint a box red regardless of what count they carry. This is the
+load-bearing point: the guard is scoped **by structure, not by assuming those paths carry `FailedCount = 0`**.
+
+**Two layers.** (1) The VM funnel above is the live fix and covers **all transports** — it also catches a
+**partial** failure (`installed > 0 && failed > 0`), which the agent still emits as Done/PendingReboot and the
+VM overrides to Error. (2) The agent's install `Summarize` now mirrors the uninstall path's all-failed guard
+(`installed == 0 && failed > 0 → Error`) so an all-failed run is classified at the source — ships on the next
+`publish.ps1` (the agent rebuilds on publish).
+
+**No-reboot note.** An all-failed install that WUA flagged reboot-required no longer returns "reboot required"
+from the agent (consistent with the uninstall guard and the existing no-update early-returns) — don't reboot a
+box where nothing installed. The cardinal no-auto-reboot rule is intact; no reboot path was added.
+
+**Reusable pattern.** The `failuresAreErrors` opt-in flag is the template for safely scoping a guard to
+specific call sites in **shared** completion code (`ApplyStatus` is shared across scan/install/uninstall/
+cleanup/reboot-verify) without touching the paths you didn't mean to.
+
 ---
 
 ## 2016 staged patching toggle (opt-in)

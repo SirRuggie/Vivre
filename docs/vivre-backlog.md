@@ -3,7 +3,7 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-06-24** (fleet-recompute progress-tick slice shipped — see DONE; prior: 2026-06-23 full code + docs audit). Everything below is on
+> not a mandate). Last refreshed: **2026-06-24** (partial-failure false-green pill fixed — see DONE; prior same-day: fleet-recompute progress-tick slice; 2026-06-23 full code + docs audit). Everything below is on
 > `master`. **Commit hashes in the DONE list predate a history rewrite and may not all resolve — `git
 > log` is the authoritative restore-point list, and the per-entry test counts are point-in-time only
 > (current suite is ~600 green).**
@@ -210,6 +210,19 @@ down, each "do only if it recurs / when a signal appears."
 
 ## DONE (committed) — recent
 
+- **Partial-failure false-green pill — FIXED** (`10defc4`, on master, live-verified). An install completing
+  with `FailedCount > 0` was showing a green "Up to date" (or amber reboot-pending) pill — a violation of the
+  no-false-green rule. Root cause confirmed at two layers: the agent's install `Summarize` picked the phase
+  from `rebootPending` only (the uninstall path had a `failed>0 → Error` guard, install didn't), and the VM
+  funnel `ApplyStatus` set `UpdatePhase` from `status.Phase` without reading `FailedCount`. Fix: a
+  `failuresAreErrors` opt-in flag on `ApplyStatus`, passed `true` at exactly the install-final and
+  uninstall-final call sites — when set and `FailedCount > 0`, the phase is forced to Error (structurally
+  unreachable from scan/cleanup/reboot-verify, so no false reds). The agent's install `Summarize` was given
+  the same all-failed guard as uninstall. Enforces **ERROR > REBOOT-PENDING > UP-TO-DATE**; the reboot dot
+  still lights alongside the Error pill. 626 tests (+1 Core precedence lock: `"Error"` + reboot-pending →
+  Error); cardinal clean. Live-confirmed: AZREASTMAILRL — the box that showed the false-green — now reads red
+  Error; successful boxes still green. (Full doctrine in `docs/windows-patching-lane.md` ▸ "Install/uninstall
+  failures are never green either".)
 - **Fleet-recompute storm — progress-tick slice shipped** (`18d3d3b`, on master). The high-frequency path is
   fixed: a per-row `UpdateProgress` tick now raises ONLY `FleetProgress` instead of the full 9-property
   `RaiseFleetChanged()` — confirmed (in `ApplyStatus`) that `UpdateProgress` is the sole high-frequency property
