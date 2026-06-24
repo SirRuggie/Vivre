@@ -900,12 +900,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             case nameof(Computer.IsOnline):
                 OnPropertyChanged(nameof(OnlineSummary));
                 break;
-            // The fleet tally / band / first-run hint all key off the derived PatchState, which the
-            // model raises when UpdatePhase or RebootRequired change. UpdateProgress feeds the band's
-            // overall bar. (Cheap: a LINQ group over the in-memory list, only on actual state change.)
-            case nameof(Computer.PatchState):
+            // Progress ticks are the highest-frequency change funnelled through here during a sweep (a
+            // download/install fires UpdateProgress many times per row while the phase sits still — the
+            // unchanged UpdatePhase write is a no-op, so PatchState does not re-fire), and FleetProgress
+            // is the ONLY fleet aggregate whose value depends on UpdateProgress. So a progress tick raises
+            // JUST FleetProgress instead of the full RaiseFleetChanged() recompute, which would re-walk the
+            // whole list for tallies a progress tick cannot change. EXACT match only — a null/blank
+            // PropertyName ("all properties changed") never lands here; it falls to the full-refresh case.
             case nameof(Computer.UpdateProgress):
+                OnPropertyChanged(nameof(FleetProgress));
+                break;
+            // The fleet tally / band / first-run hint all key off the derived PatchState, which the
+            // model raises when UpdatePhase or RebootRequired change; VitalityBand feeds the vitals tally.
+            // A null/blank PropertyName ("all changed") is folded in here so a coarse change safely drives
+            // the full recompute rather than being dropped. (Cheap: a LINQ group over the in-memory list,
+            // only on actual state change.)
+            case nameof(Computer.PatchState):
             case nameof(Computer.VitalityBand):
+            case null:
+            case "":
                 RaiseFleetChanged();
                 break;
             // A vitals check populates OsBuild, which is what makes a box appear in the self-populating

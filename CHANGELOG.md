@@ -6,6 +6,13 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **Smoother grid during large patch sweeps.** A per-row update-progress tick (which fires many times a
+  second per machine while a download/install runs) now refreshes only the overall progress bar instead of
+  recomputing every fleet tally and re-walking the whole machine list — so the per-tick UI work drops sharply
+  at fleet scale. Phase changes (scanning → installing → done / reboot / failed) still refresh the full
+  tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
+
 ### Fixed
 - **A machine rebooted outside Vivre no longer keeps showing "… reboot required" on its update message.**
   When a box you'd just patched was rebooted by someone else, Vivre correctly cleared the reboot-pending pill
