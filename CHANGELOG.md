@@ -14,6 +14,12 @@ it ships, then gets a dated heading.
   tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
 
 ### Fixed
+- **A "Reboot complete" / "Back online" notice no longer lingers in the Reboot column after the row moves on.**
+  These reboot notices had no clearer, so one could sit on a row that was now scanning or installing — looking
+  like a fresh reboot on an unrelated operation. Starting a new scan / install / uninstall on a row now clears
+  a stale reboot notice. The live "Offline since…" and "WinRM temporarily unavailable…" messages are unaffected
+  (they keep their own clearers), and a genuine reboot-and-verify still shows its completion message at the
+  moment it completes.
 - **A failed update no longer shows a green "Up to date" pill.** If an install (or uninstall) finishes with
   any update failed, the row now shows the red **Error** status — the failure wins over both "up to date" and
   reboot-pending, and the reboot dot still lights separately when a reboot is also pending. Previously a box

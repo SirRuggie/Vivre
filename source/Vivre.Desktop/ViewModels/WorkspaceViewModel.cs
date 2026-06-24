@@ -2682,6 +2682,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
+        // A new operation supersedes any lingering past-event reboot notice (it has no other clearer, so it
+        // would otherwise linger in the Reboot-message column across this unrelated op). Current-state notices
+        // ("Offline since…" / "WinRM temporarily unavailable…") keep their own clearers — see RebootMessageText.
+        if (RebootMessageText.IsTransientRebootNotice(computer.RebootMessage)) { computer.RebootMessage = null; }
         computer.UpdateError = null;
         computer.UpdateProgress = null;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
@@ -2780,6 +2784,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         options.Scope = UpdateScope.Installed;
         options.IncludeKbArticleIds = selectedKbs;
 
+        // A new operation supersedes any lingering past-event reboot notice (see RebootMessageText / ScanRowAsync).
+        if (RebootMessageText.IsTransientRebootNotice(computer.RebootMessage)) { computer.RebootMessage = null; }
         computer.IsPatching = true;
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
@@ -2950,6 +2956,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             options.IncludeKbArticleIds = selectedKbs;
         }
 
+        // A new operation supersedes any lingering past-event reboot notice (see RebootMessageText / ScanRowAsync).
+        if (RebootMessageText.IsTransientRebootNotice(computer.RebootMessage)) { computer.RebootMessage = null; }
         computer.IsPatching = true;
         computer.UpdateError = null;
         computer.UpdateProgress = 0;
