@@ -281,6 +281,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private DispatcherTimer? _fleetBandHoldTimer;
     private bool _fleetBandHeld;   // true while hold-open is active (prevents premature collapse)
 
+    // True only while AddComputers is bulk-inserting rows. The per-row PropertyChanged subscribe/unsubscribe
+    // in OnComputersChanged is NEVER gated by this (every row stays live); it only DEFERS the expensive
+    // fleet-aggregate recompute (OnComputersChanged's tail + OnVisibleRowsChanged's body) so a big load is
+    // raised ONCE at the end instead of per row — O(N^2) → O(N). Reset in a finally; see AddComputers.
+    private bool _bulkLoading;
+
     // The grid's default view, with a live filter (name search + state). Both mode grids bind
     // Computers, so they share this view — filtering once affects whichever grid is showing.
     private readonly ICollectionView _computersView;
@@ -849,6 +855,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Re-notify overlay and filter-status properties after the CollectionView updates its count.</summary>
     private void OnVisibleRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        // During a bulk load these are deferred and raised once at the end (AddComputers); VisibleRowCount is
+        // an O(N) view walk, so firing it per row is the second O(N^2) source the bulk-load flag removes.
+        if (_bulkLoading)
+        {
+            return;
+        }
+
         OnPropertyChanged(nameof(VisibleRowCount));
         OnPropertyChanged(nameof(GridOverlayState));
         OnPropertyChanged(nameof(ShowMachineGrid));
@@ -875,6 +888,22 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
         }
 
+        // The per-row subscribe/unsubscribe above ALWAYS runs (never gated) so every row stays live. During a
+        // bulk load, DEFER the expensive aggregate recompute — AddComputers raises it ONCE at the end.
+        if (_bulkLoading)
+        {
+            return;
+        }
+
+        RaiseCollectionAggregates();
+    }
+
+    /// <summary>Re-raise every overlay / command / fleet aggregate a collection change affects. The single
+    /// source of truth for the collection-changed cascade: called per row change by <see cref="OnComputersChanged"/>
+    /// normally, and ONCE at the end of a bulk load (<see cref="AddComputers"/>) instead of per row — so the
+    /// per-row path and the bulk-load path can never drift.</summary>
+    private void RaiseCollectionAggregates()
+    {
         OnPropertyChanged(nameof(OnlineSummary));
         OnPropertyChanged(nameof(HasComputers));
         OnPropertyChanged(nameof(GridOverlayState));
@@ -1162,15 +1191,42 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // Load settings once before the loop — StagedHosts is the persisted set of host names the
         // operator has flagged for the DISM lane; seed each new row's flag from it now.
         HashSet<string> stagedHosts = _appSettings.Load().StagedHosts;
-        foreach (string name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
+        // Bulk-load guard: each Computers.Add below STILL fires OnComputersChanged, which still subscribes the
+        // new row's PropertyChanged via its NewItems (NEVER gated — that keeps live updates working and avoids
+        // the Reset/NewItems==null trap). The flag only DEFERS the per-add fleet-aggregate recompute, raised
+        // ONCE after the loop (O(N^2) → O(N)). wasBulk makes a nested call safe: a nested AddComputers restores
+        // the outer's true in its finally, so ONLY the outermost call clears the flag and fires the coalesced raise.
+        bool wasBulk = _bulkLoading;
+        _bulkLoading = true;
+        try
         {
-            if (existing.Add(name))
+            foreach (string name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
             {
-                var computer = new Computer(name) { LastStatus = "Not checked" };
-                computer.RequiresStagedPatching = StagedHostMatching.IsStaged(stagedHosts, name);
-                Computers.Add(computer);
-                added.Add(computer);
+                if (existing.Add(name))
+                {
+                    var computer = new Computer(name) { LastStatus = "Not checked" };
+                    computer.RequiresStagedPatching = StagedHostMatching.IsStaged(stagedHosts, name);
+                    Computers.Add(computer);
+                    added.Add(computer);
+                }
             }
+        }
+        finally
+        {
+            // ALWAYS restore the flag (even if an Add or the enumeration throws): a stuck-true flag would
+            // suppress the fleet recompute fleet-wide for the rest of the session — worse than the freeze.
+            _bulkLoading = wasBulk;
+        }
+
+        // Coalesced recompute: raise ONCE everything the per-row OnComputersChanged tail + OnVisibleRowsChanged
+        // body were suppressed from raising during the load. RaiseCollectionAggregates is the OnComputersChanged
+        // tail (incl. RaiseFleetChanged → FilterStatus and the overlay/grid-visibility set); VisibleRowCount is
+        // the only OnVisibleRowsChanged-unique property not already covered. Outermost call only (a nested call
+        // leaves wasBulk true and lets the outer raise), and only when rows actually went in.
+        if (!wasBulk && added.Count > 0)
+        {
+            RaiseCollectionAggregates();
+            OnPropertyChanged(nameof(VisibleRowCount));
         }
 
         if (added.Count == 0)
