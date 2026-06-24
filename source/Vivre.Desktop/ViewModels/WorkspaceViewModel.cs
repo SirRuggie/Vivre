@@ -2790,7 +2790,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         try
         {
             HostPatchStatus final = await _patch.UninstallAsync(computer.Name, options, _credentials.Current, progress, token);
-            ApplyStatus(computer, final);
+            // Completion: a finished uninstall with any failure is NOT a success — force the red Error pill.
+            ApplyStatus(computer, final, failuresAreErrors: true);
         }
         catch (OperationCanceledException)
         {
@@ -3008,7 +3009,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 onRetrying: n => SetTransientRetryingState(computer, n),
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);
-            ApplyStatus(computer, final);
+            // Completion: a finished install with any failure is NOT a success — force the red Error pill.
+            ApplyStatus(computer, final, failuresAreErrors: true);
             computer.LastInstallInstalledCount = final.InstalledCount;
             computer.LastInstallFailedCount = final.FailedCount;
 
@@ -3927,8 +3929,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Writes a <see cref="HostPatchStatus"/> snapshot onto a row, logging phase transitions only.
     /// <paramref name="scopeForScan"/> is set by <see cref="ScanRowAsync"/> so the scan result lands in the
     /// right per-scope cache on <see cref="Computer"/>; null (the Progress&lt;T&gt; callback path) uses the
-    /// shared options' current scope, which only matters for the Phase.Available branch.</summary>
-    private void ApplyStatus(Computer computer, HostPatchStatus status, UpdateScope? scopeForScan = null)
+    /// shared options' current scope, which only matters for the Phase.Available branch.
+    /// <paramref name="failuresAreErrors"/> is set ONLY by the install/uninstall COMPLETION callers: when true
+    /// and the status carries <see cref="HostPatchStatus.FailedCount"/> &gt; 0, the row is forced to the Error
+    /// phase (red pill) so a partial/total failure can never read green "Up to date" or hide behind amber
+    /// reboot-pending. Default false so scan / cleanup / reboot-verify (which share this method) are never
+    /// painted red by an unrelated count.</summary>
+    private void ApplyStatus(Computer computer, HostPatchStatus status, UpdateScope? scopeForScan = null, bool failuresAreErrors = false)
     {
         UpdateScope scope = scopeForScan ?? _patchOptions.Scope;
 
@@ -3942,6 +3949,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             && scope == UpdateScope.Applicable;
 
         string phase = (upToDate ? PatchPhase.Done : status.Phase).ToString();
+
+        // ERROR > REBOOT-PENDING > UP-TO-DATE: a completed install/uninstall with ANY failure is NOT a
+        // success — force the red Error pill so a partial or total failure can never read green "Up to date"
+        // or hide behind an amber reboot-pending. DerivePatchState maps PatchPhase.Error → PatchState.Error
+        // regardless of RebootRequired (Error beats reboot-pending), and RebootRequired is still set below, so
+        // the reboot DOT stays lit alongside the Error pill. Gated to the install/uninstall COMPLETION callers
+        // via failuresAreErrors, so a scan / cleanup / reboot-verify that shares ApplyStatus can never be
+        // painted red by an unrelated count. The honest "Installed N, M failed" message text is preserved.
+        if (failuresAreErrors && status.FailedCount > 0)
+        {
+            phase = PatchPhase.Error.ToString();
+        }
+
         string message = upToDate ? "Up to date" : status.Message;
         bool phaseChanged = !string.Equals(computer.UpdatePhase, phase, StringComparison.Ordinal);
 

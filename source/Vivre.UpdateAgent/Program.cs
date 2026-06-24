@@ -1399,6 +1399,17 @@ namespace Vivre.UpdateAgent
                 }
             }
 
+            // Mirror the uninstall path (RunUninstall, ~line 1022): nothing installed and something failed →
+            // report Error (red), never a green "Done"/"PendingReboot". A failed install means the update is
+            // still applicable, so the box is NOT up to date. (The controller's ApplyStatus(failuresAreErrors)
+            // additionally catches the partial case — some installed, some failed — across every transport.)
+            if (installed == 0 && failed > 0)
+            {
+                string failMsg = string.Format(CultureInfo.InvariantCulture, "{0} 0, {1} failed", verb, failed);
+                progress.Write("Error", failMsg, 100, total, installed, failed, false);
+                return false;
+            }
+
             bool rebootPending = result.RebootRequired;
             string summary = failed > 0
                 ? string.Format(CultureInfo.InvariantCulture, "{0} {1}, {2} failed", verb, installed, failed)

@@ -29,6 +29,11 @@ public class ComputerPatchStateTests
     [InlineData("Rebooting", true, PatchState.RebootPending)]
     [InlineData("Done", false, PatchState.Done)]
     [InlineData("Error", null, PatchState.Error)]
+    // ERROR > REBOOT-PENDING: a failed install/uninstall (forced to the Error phase when FailedCount>0 by the
+    // agent's Summarize / the controller's ApplyStatus) must read red Error even when a reboot is ALSO
+    // pending — the failure is the headline; the reboot DOT stays lit separately. Locks the precedence the
+    // false-green fix depends on (Error must beat amber reboot-pending).
+    [InlineData("Error", true, PatchState.Error)]
     // Unreachable (transient WU retries exhausted) reduces to the red Error display-state — never green —
     // so a box that couldn't be scanned is counted/coloured as a failure and NEVER reads "up to date".
     [InlineData("Unreachable", null, PatchState.Error)]

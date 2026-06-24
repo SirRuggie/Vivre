@@ -14,6 +14,13 @@ it ships, then gets a dated heading.
   tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
 
 ### Fixed
+- **A failed update no longer shows a green "Up to date" pill.** If an install (or uninstall) finishes with
+  any update failed, the row now shows the red **Error** status — the failure wins over both "up to date" and
+  reboot-pending, and the reboot dot still lights separately when a reboot is also pending. Previously a box
+  that installed 0 and failed 1 could read green (or hide behind an amber reboot pill). Fixed at both layers:
+  the on-target agent now classifies an all-failed install as Error (matching the uninstall path), and the
+  controller forces Error on any install/uninstall completion that reports a failure. The "Installed N, M
+  failed" detail text is unchanged.
 - **A machine rebooted outside Vivre no longer keeps showing "… reboot required" on its update message.**
   When a box you'd just patched was rebooted by someone else, Vivre correctly cleared the reboot-pending pill
   and flag but left the update-message text still reading "… · reboot required". The text now clears too. (The
