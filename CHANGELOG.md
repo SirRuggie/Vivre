@@ -14,11 +14,13 @@ it ships, then gets a dated heading.
   tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
 
 ### Fixed
-- **Loading a big machine list no longer freezes the app.** Adding a few hundred machines (e.g. ~319) used to
-  hang the UI for 20-30 seconds because every single row insert re-ran the whole fleet-aggregate recompute —
-  an O(N²) cascade. Rows are now bulk-loaded: each row is still wired up individually (so live progress, phase,
-  and tally updates keep working exactly as before), but the expensive fleet/overlay recompute runs once at the
-  end instead of once per row, turning the load from O(N²) into O(N).
+- **Loading a big machine list with auto-check-on-load no longer freezes the app.** With "Check vitals on
+  load" enabled, adding a few hundred machines (e.g. ~319) froze the UI for 20-30 seconds: each health-check
+  result that came back recomputed the whole-fleet summaries by re-walking every row, so N results × an N-row
+  walk was O(N²). The fleet-summary recompute is now coalesced — a result marks the tallies dirty and a
+  UI-thread timer recomputes them at most ~5×/second — turning the sweep from O(N²) into O(N). The summaries
+  still climb smoothly during the sweep and are exactly correct when it finishes, and each machine's own row
+  (dot, score, status) still updates the instant its result lands.
 - **A "Reboot complete" / "Back online" notice no longer lingers in the Reboot column after the row moves on.**
   These reboot notices had no clearer, so one could sit on a row that was now scanning or installing — looking
   like a fresh reboot on an unrelated operation. Starting a new scan / install / uninstall on a row now clears

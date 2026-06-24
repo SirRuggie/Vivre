@@ -281,11 +281,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private DispatcherTimer? _fleetBandHoldTimer;
     private bool _fleetBandHeld;   // true while hold-open is active (prevents premature collapse)
 
-    // True only while AddComputers is bulk-inserting rows. The per-row PropertyChanged subscribe/unsubscribe
-    // in OnComputersChanged is NEVER gated by this (every row stays live); it only DEFERS the expensive
-    // fleet-aggregate recompute (OnComputersChanged's tail + OnVisibleRowsChanged's body) so a big load is
-    // raised ONCE at the end instead of per row — O(N^2) → O(N). Reset in a finally; see AddComputers.
-    private bool _bulkLoading;
+    // Coalesces the whole-fleet summary recompute. A row-state change (e.g. a vitals/scan result) or a
+    // collection change marks the tallies dirty (O(1)) instead of re-walking all N rows on the spot; a
+    // UI-thread timer recomputes once per ~200 ms window while dirty, then goes idle. This is what stops the
+    // O(N^2) recompute storm an N-machine auto-check-on-load sweep used to cause (319 boxes → 20-30 s freeze).
+    // Per-row bindings (the machine's own dot/score/status) update IMMEDIATELY, independent of this.
+    private bool _fleetDirty;
+    private DispatcherTimer? _fleetRecomputeTimer;
+    private static readonly TimeSpan FleetRecomputeWindow = TimeSpan.FromMilliseconds(200);
 
     // The grid's default view, with a live filter (name search + state). Both mode grids bind
     // Computers, so they share this view — filtering once affects whichever grid is showing.
@@ -852,21 +855,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         IsMonitoring = true; // start watching online/offline straight away
     }
 
-    /// <summary>Re-notify overlay and filter-status properties after the CollectionView updates its count.</summary>
+    /// <summary>Re-notify overlay and filter-status properties after the CollectionView updates its count.
+    /// Coalesced: these are whole-view counts (VisibleRowCount walks the view), so a bulk add that fires this
+    /// per row would be O(N^2) — mark dirty and let the timer recompute once.</summary>
     private void OnVisibleRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        // During a bulk load these are deferred and raised once at the end (AddComputers); VisibleRowCount is
-        // an O(N) view walk, so firing it per row is the second O(N^2) source the bulk-load flag removes.
-        if (_bulkLoading)
-        {
-            return;
-        }
-
-        OnPropertyChanged(nameof(VisibleRowCount));
-        OnPropertyChanged(nameof(GridOverlayState));
-        OnPropertyChanged(nameof(ShowMachineGrid));
-        OnPropertyChanged(nameof(ShowUpdateGrid));
-        OnPropertyChanged(nameof(FilterStatus));
+        MarkFleetDirty();
     }
 
     /// <summary>Subscribe/unsubscribe row state changes and refresh the online/total summary.</summary>
@@ -888,79 +882,49 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
         }
 
-        // The per-row subscribe/unsubscribe above ALWAYS runs (never gated) so every row stays live. During a
-        // bulk load, DEFER the expensive aggregate recompute — AddComputers raises it ONCE at the end.
-        if (_bulkLoading)
-        {
-            return;
-        }
-
-        RaiseCollectionAggregates();
-    }
-
-    /// <summary>Re-raise every overlay / command / fleet aggregate a collection change affects. The single
-    /// source of truth for the collection-changed cascade: called per row change by <see cref="OnComputersChanged"/>
-    /// normally, and ONCE at the end of a bulk load (<see cref="AddComputers"/>) instead of per row — so the
-    /// per-row path and the bulk-load path can never drift.</summary>
-    private void RaiseCollectionAggregates()
-    {
-        OnPropertyChanged(nameof(OnlineSummary));
-        OnPropertyChanged(nameof(HasComputers));
-        OnPropertyChanged(nameof(GridOverlayState));
-        OnPropertyChanged(nameof(ShowMachineGrid));
-        OnPropertyChanged(nameof(ShowUpdateGrid));
-        // Bug 1: Scan all / Install all are gated on HasMachines — re-evaluate their CanExecute
-        // and the computed CanInstallAll whenever a row is added, removed, or the list is cleared.
-        ScanTargetCommand.NotifyCanExecuteChanged();
-        InstallTargetCommand.NotifyCanExecuteChanged();
-        OnPropertyChanged(nameof(CanInstallAll));
-        OnPropertyChanged(nameof(Server2016Count));
-        OnPropertyChanged(nameof(HasServer2016));
-        OnPropertyChanged(nameof(HasStagedServer2016));
-        // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
-        if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
-        RaiseFleetChanged();
+        // The per-row subscribe/unsubscribe above ALWAYS runs immediately (never coalesced) so every row stays
+        // live and the Reset/NewItems==null re-subscription is never skipped. Only the expensive whole-fleet
+        // recompute is coalesced — a bulk add fires this per row, so doing it on the spot is O(N^2); the timer
+        // does it once. RaiseFleetAggregates covers the full set this used to raise inline (+ VisibleRowCount).
+        MarkFleetDirty();
     }
 
     private void OnComputerStateChanged(object? sender, PropertyChangedEventArgs e)
     {
         switch (e.PropertyName)
         {
+            // IsOnline drives OnlineSummary (a whole-list count). Every box's online result fires this during
+            // an auto-check sweep, so COALESCE the recompute instead of re-counting the whole list per result
+            // (this per-result whole-fleet recompute was the measured O(N^2) freeze). The row's own online dot
+            // still updates immediately via its binding — only the fleet tally is coalesced.
             case nameof(Computer.IsOnline):
-                OnPropertyChanged(nameof(OnlineSummary));
+                MarkFleetDirty();
                 break;
-            // Progress ticks are the highest-frequency change funnelled through here during a sweep (a
-            // download/install fires UpdateProgress many times per row while the phase sits still — the
-            // unchanged UpdatePhase write is a no-op, so PatchState does not re-fire), and FleetProgress
-            // is the ONLY fleet aggregate whose value depends on UpdateProgress. So a progress tick raises
-            // JUST FleetProgress instead of the full RaiseFleetChanged() recompute, which would re-walk the
-            // whole list for tallies a progress tick cannot change. EXACT match only — a null/blank
-            // PropertyName ("all properties changed") never lands here; it falls to the full-refresh case.
+            // Progress ticks are the highest-frequency change funnelled through here during an install sweep,
+            // and FleetProgress is the ONLY fleet aggregate whose value depends on UpdateProgress — so a tick
+            // raises JUST FleetProgress, IMMEDIATELY (kept narrow + live for a smooth bar; never the full
+            // recompute). EXACT match only — a null/blank PropertyName never lands here; it falls below.
             case nameof(Computer.UpdateProgress):
                 OnPropertyChanged(nameof(FleetProgress));
                 break;
-            // The fleet tally / band / first-run hint all key off the derived PatchState, which the
-            // model raises when UpdatePhase or RebootRequired change; VitalityBand feeds the vitals tally.
-            // A null/blank PropertyName ("all changed") is folded in here so a coarse change safely drives
-            // the full recompute rather than being dropped. (Cheap: a LINQ group over the in-memory list,
-            // only on actual state change.)
+            // PatchState / VitalityBand drive the fleet tallies (a null/blank "all changed" is folded in so a
+            // coarse change still recomputes). These storm during scan / install / vitals sweeps — one per
+            // result across the fleet — so COALESCE the whole-fleet recompute via the timer (O(N^2) → O(N)).
+            // The row's own chip/band update immediately via its bindings; only the TALLIES are coalesced.
             case nameof(Computer.PatchState):
             case nameof(Computer.VitalityBand):
             case null:
             case "":
-                RaiseFleetChanged();
+                MarkFleetDirty();
                 break;
-            // A vitals check populates OsBuild, which is what makes a box appear in the self-populating
-            // 2016 panel — re-tally so the panel's count + visibility track the fleet as it's classified.
+            // A vitals check populates OsBuild, which makes a box appear in the self-populating 2016 panel —
+            // COALESCE the re-tally (it storms as the whole fleet gets classified during the sweep). The 2016
+            // count/visibility AND the orphaned-filter reset are both in RaiseFleetAggregates.
             case nameof(Computer.OsBuild):
-                OnPropertyChanged(nameof(Server2016Count));
-                OnPropertyChanged(nameof(HasServer2016));
-                OnPropertyChanged(nameof(HasStagedServer2016));
-                // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
-                if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
+                MarkFleetDirty();
                 break;
-            // The operator marked/unmarked a box for staged patching — re-tally so the Staged column appears
-            // (first flag) or disappears (last flag cleared) without waiting for a row add/remove.
+            // The operator marked/unmarked a SINGLE box for staged patching — a rare one-off action, not a
+            // sweep storm — so raise immediately (the Staged column should appear/disappear at once).
             case nameof(Computer.RequiresStagedPatching):
                 OnPropertyChanged(nameof(HasStagedServer2016));
                 break;
@@ -980,6 +944,73 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(ShowUpdateFirstRunHint));
         // Live filtering can change the shown count as rows change state under an active filter.
         OnPropertyChanged(nameof(FilterStatus));
+    }
+
+    /// <summary>Request a coalesced recompute of the whole-fleet summaries. Cheap (O(1)): marks the tallies
+    /// dirty and ensures the recompute timer is running. The actual O(N) recompute happens at most once per
+    /// <see cref="FleetRecomputeWindow"/> on the UI thread (see <see cref="OnFleetRecomputeTick"/>), so an
+    /// N-result sweep costs O(N) total instead of the old O(N^2) (one whole-list recompute per result).
+    /// Called only on the UI thread (collection/view changes and row PropertyChanged all fire there).</summary>
+    private void MarkFleetDirty()
+    {
+        _fleetDirty = true;
+        _fleetRecomputeTimer ??= CreateFleetRecomputeTimer();
+        if (!_fleetRecomputeTimer.IsEnabled)
+        {
+            _fleetRecomputeTimer.Start();
+        }
+    }
+
+    /// <summary>Creates the coalescing timer. A <see cref="DispatcherTimer"/> fires on the thread that creates
+    /// it — the UI thread (the VM is built and operated on the UI thread, same as <see cref="_fleetBandHoldTimer"/>)
+    /// — so the recompute and its property raises stay UI-thread, which the live-filtered grid requires.</summary>
+    private DispatcherTimer CreateFleetRecomputeTimer()
+    {
+        var timer = new DispatcherTimer { Interval = FleetRecomputeWindow };
+        timer.Tick += OnFleetRecomputeTick;
+        return timer;
+    }
+
+    /// <summary>Coalescing tick: if anything was marked dirty since the last tick, recompute the fleet
+    /// aggregates ONCE and clear the flag; otherwise stop (go idle). This guarantees the trailing edge — the
+    /// LAST dirty mark is always followed by a tick that finds it dirty and recomputes, because the timer only
+    /// stops on a tick that finds NOTHING dirty (and dirty is cleared only by a recompute). So the final
+    /// tallies are exactly correct once the sweep ends; no final update is ever dropped.</summary>
+    private void OnFleetRecomputeTick(object? sender, EventArgs e)
+    {
+        if (_fleetDirty)
+        {
+            _fleetDirty = false;
+            RaiseFleetAggregates();
+        }
+        else
+        {
+            _fleetRecomputeTimer?.Stop();
+        }
+    }
+
+    /// <summary>The COMPLETE set of whole-fleet aggregates a row-state or collection change can affect, raised
+    /// together once by the coalescing timer. Superset union of what <see cref="OnComputersChanged"/>'s tail,
+    /// the storm cases of <see cref="OnComputerStateChanged"/>, and <see cref="OnVisibleRowsChanged"/> each used
+    /// to raise synchronously per change — so none goes stale. (Re-raising an aggregate whose value didn't
+    /// actually change is harmless: WPF skips the binding update when the value is equal.)</summary>
+    private void RaiseFleetAggregates()
+    {
+        OnPropertyChanged(nameof(OnlineSummary));
+        OnPropertyChanged(nameof(HasComputers));
+        OnPropertyChanged(nameof(VisibleRowCount));
+        OnPropertyChanged(nameof(GridOverlayState));
+        OnPropertyChanged(nameof(ShowMachineGrid));
+        OnPropertyChanged(nameof(ShowUpdateGrid));
+        ScanTargetCommand.NotifyCanExecuteChanged();
+        InstallTargetCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanInstallAll));
+        OnPropertyChanged(nameof(Server2016Count));
+        OnPropertyChanged(nameof(HasServer2016));
+        OnPropertyChanged(nameof(HasStagedServer2016));
+        // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
+        if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
+        RaiseFleetChanged();
     }
 
     // --- fleet aggregates (Status band + bottom bar + first-run hint) ---------------------
@@ -1191,42 +1222,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // Load settings once before the loop — StagedHosts is the persisted set of host names the
         // operator has flagged for the DISM lane; seed each new row's flag from it now.
         HashSet<string> stagedHosts = _appSettings.Load().StagedHosts;
-        // Bulk-load guard: each Computers.Add below STILL fires OnComputersChanged, which still subscribes the
-        // new row's PropertyChanged via its NewItems (NEVER gated — that keeps live updates working and avoids
-        // the Reset/NewItems==null trap). The flag only DEFERS the per-add fleet-aggregate recompute, raised
-        // ONCE after the loop (O(N^2) → O(N)). wasBulk makes a nested call safe: a nested AddComputers restores
-        // the outer's true in its finally, so ONLY the outermost call clears the flag and fires the coalesced raise.
-        bool wasBulk = _bulkLoading;
-        _bulkLoading = true;
-        try
+        foreach (string name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
         {
-            foreach (string name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
+            if (existing.Add(name))
             {
-                if (existing.Add(name))
-                {
-                    var computer = new Computer(name) { LastStatus = "Not checked" };
-                    computer.RequiresStagedPatching = StagedHostMatching.IsStaged(stagedHosts, name);
-                    Computers.Add(computer);
-                    added.Add(computer);
-                }
+                var computer = new Computer(name) { LastStatus = "Not checked" };
+                computer.RequiresStagedPatching = StagedHostMatching.IsStaged(stagedHosts, name);
+                Computers.Add(computer);
+                added.Add(computer);
             }
-        }
-        finally
-        {
-            // ALWAYS restore the flag (even if an Add or the enumeration throws): a stuck-true flag would
-            // suppress the fleet recompute fleet-wide for the rest of the session — worse than the freeze.
-            _bulkLoading = wasBulk;
-        }
-
-        // Coalesced recompute: raise ONCE everything the per-row OnComputersChanged tail + OnVisibleRowsChanged
-        // body were suppressed from raising during the load. RaiseCollectionAggregates is the OnComputersChanged
-        // tail (incl. RaiseFleetChanged → FilterStatus and the overlay/grid-visibility set); VisibleRowCount is
-        // the only OnVisibleRowsChanged-unique property not already covered. Outermost call only (a nested call
-        // leaves wasBulk true and lets the outer raise), and only when rows actually went in.
-        if (!wasBulk && added.Count > 0)
-        {
-            RaiseCollectionAggregates();
-            OnPropertyChanged(nameof(VisibleRowCount));
         }
 
         if (added.Count == 0)
@@ -2221,6 +2225,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             fbt.Stop();
             fbt.Tick -= OnFleetBandHoldTick;
             _fleetBandHoldTimer = null;
+        }
+
+        if (_fleetRecomputeTimer is { } frt)
+        {
+            frt.Stop();
+            frt.Tick -= OnFleetRecomputeTick;
+            _fleetRecomputeTimer = null;
         }
 
         // Defensive: drop the collection, per-row, focus, and checklist subscriptions wired up in the
