@@ -3,7 +3,7 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-06-24** (partial-failure false-green pill fixed — see DONE; prior same-day: fleet-recompute progress-tick slice; 2026-06-23 full code + docs audit). Everything below is on
+> not a mandate). Last refreshed: **2026-06-24** (stale reboot-message fix — see DONE; prior same-day: partial-failure false-green pill, fleet-recompute progress-tick slice; 2026-06-23 full code + docs audit). Everything below is on
 > `master`. **Commit hashes in the DONE list predate a history rewrite and may not all resolve — `git
 > log` is the authoritative restore-point list, and the per-entry test counts are point-in-time only
 > (current suite is ~600 green).**
@@ -210,6 +210,20 @@ down, each "do only if it recurs / when a signal appears."
 
 ## DONE (committed) — recent
 
+- **Stale reboot message never cleared — FIXED** (`3b6d9f3`, on master). The `RebootMessage` field held three
+  past-event notices ("Reboot complete — back online {time}", "Back online {time}", "Forced reboot sent") that
+  had **no clearer**, so they lingered indefinitely into unrelated later operations (observed: "Reboot complete
+  — back online 10:22" still showing on a box that had moved on to installing). Fix: a pure helper
+  `RebootMessageText.IsTransientRebootNotice` identifies the three past-event strings; scan/install/uninstall
+  now clear them at the point each commits to running. Deliberately scoped — the chokepoint is the **three
+  named operation methods**, NOT the shared `RunOnePatchHostAsync` wrapper (which also wraps reboot-and-verify;
+  clearing there would wipe the "Reboot complete" message *during* the verify flow). The two **current-state**
+  notices ("Offline since…", "WinRM temporarily unavailable…") were left untouched — they have their own
+  condition-based clearers and an unconditional clear could blank a still-valid one. Confirmed `RebootMessage`
+  is **not** in the live-filtered set (no grid-reshape / marshalling concern). 636 tests (+10
+  `RebootMessageText` cases); cardinal clean. Reboot-and-verify still shows its completion message at the time
+  it completes (the post-reboot rescan bypasses `ScanRowAsync`). Cosmetic message-lifecycle only — no patching
+  behavior changed (intentionally not documented in `windows-patching-lane.md`).
 - **Partial-failure false-green pill — FIXED** (`10defc4`, on master, live-verified). An install completing
   with `FailedCount > 0` was showing a green "Up to date" (or amber reboot-pending) pill — a violation of the
   no-false-green rule. Root cause confirmed at two layers: the agent's install `Summarize` picked the phase
