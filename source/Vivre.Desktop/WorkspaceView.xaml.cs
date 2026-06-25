@@ -38,12 +38,67 @@ public partial class WorkspaceView : UserControl
     /// <see cref="OnGridRightClick"/> immediately before the menu is built.</summary>
     private Computer? _contextRow;
 
+    /// <summary>Debounce timer for the post-settle corrective re-layout (see the constructor for the why).</summary>
+    private readonly System.Windows.Threading.DispatcherTimer _settleRelayoutTimer;
 
     public WorkspaceView()
     {
         InitializeComponent();
         Loaded += OnViewLoaded;
         Unloaded += OnViewUnloaded;
+
+        // Debounced "layout-settle" corrective re-layout. A virtualizing DataGrid first laid out DURING the
+        // window-open bring-up (its slot still growing) realizes ~0 rows on the cold pass and arranges to ~0
+        // even though its slot is real, then converges over later passes — but if the size stops changing
+        // before it converges it stays stuck (blank, or a short stale height) until external churn (a window
+        // resize) forces a fresh pass. This timer supplies that pass: kicked on every SizeChanged (startup
+        // bring-up + fresh-tab reveal) and on a bound-collection reload (where the size doesn't change), it
+        // fires ONCE ~150ms after things settle and re-measures + re-arranges the visible grids against the
+        // now-stable viewport. Kicks and teardown live in OnViewLoaded/OnViewUnloaded so a detached keep-alive
+        // view can't leak a running timer.
+        _settleRelayoutTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(150),
+        };
+        _settleRelayoutTimer.Tick += OnSettleRelayoutTick;
+    }
+
+    /// <summary>SizeChanged kick: the view's size changes throughout the window-open bring-up and again when a
+    /// keep-alive tab is revealed — (re)start the debounce so the corrective pass fires once the size settles.</summary>
+    private void OnViewSizeChanged(object sender, SizeChangedEventArgs e) => KickSettleRelayout();
+
+    /// <summary>Collection kick: a reload (Clear + refill) into an already-visible, fixed-size tab changes
+    /// neither the view size nor visibility, so SizeChanged can't cover it — (re)start the debounce instead.</summary>
+    private void OnComputersChanged(object? sender, NotifyCollectionChangedEventArgs e) => KickSettleRelayout();
+
+    private void KickSettleRelayout()
+    {
+        _settleRelayoutTimer.Stop();
+        _settleRelayoutTimer.Start();
+    }
+
+    /// <summary>Fires ONCE ~150ms after the last size/collection change (the bring-up or reload has settled).
+    /// Re-measures AND re-arranges each visible grid so a virtualizing grid stuck at a cold/under-realized height
+    /// (0 rows in a real slot, or a stale partial height) gets a fresh convergent pass against the now-stable
+    /// viewport — the correction a manual window resize provides today. Cannot loop: correcting a grid's height
+    /// stays within its "*" row, so it changes neither this view's size nor the bound collection, so it re-fires
+    /// neither kick.</summary>
+    private void OnSettleRelayoutTick(object? sender, EventArgs e)
+    {
+        _settleRelayoutTimer.Stop();
+        RelayoutIfVisible(ComputerGrid);
+        RelayoutIfVisible(UpdateGrid);
+    }
+
+    private static void RelayoutIfVisible(FrameworkElement grid)
+    {
+        if (!grid.IsVisible)
+        {
+            return;
+        }
+
+        grid.InvalidateMeasure();
+        grid.InvalidateArrange();
     }
 
     // The runtime-built custom columns by name (DataGridColumn has no Tag, so we track them here to tell
@@ -72,6 +127,12 @@ public partial class WorkspaceView : UserControl
         vm.HiddenColumns.CollectionChanged += OnLayoutChanged;
         vm.ClearSelectionRequested += OnClearSelectionRequested;
         vm.PropertyChanged += OnVmPropertyChanged;
+        // Kick sources for the debounced settle-relayout (see the constructor). SizeChanged covers the
+        // window-open bring-up and a fresh keep-alive tab's reveal; the bound-collection change covers a reload
+        // into an already-visible, fixed-size tab (where the size doesn't move). Both torn down in OnViewUnloaded
+        // — and the timer is stopped there too — so a detached view can't leak a running timer.
+        SizeChanged += OnViewSizeChanged;
+        vm.Computers.CollectionChanged += OnComputersChanged;
         ComputerGrid.Sorting += OnComputerGridSorting;
         SyncColumns();
         UpdateStagedColumnVisibility(vm);
@@ -88,12 +149,15 @@ public partial class WorkspaceView : UserControl
         }
 
         _columnsWired = false;
+        SizeChanged -= OnViewSizeChanged;
+        _settleRelayoutTimer.Stop();
         if (_wiredVm is { } vm)
         {
             vm.CustomColumns.CollectionChanged -= OnLayoutChanged;
             vm.HiddenColumns.CollectionChanged -= OnLayoutChanged;
             vm.ClearSelectionRequested -= OnClearSelectionRequested;
             vm.PropertyChanged -= OnVmPropertyChanged;
+            vm.Computers.CollectionChanged -= OnComputersChanged;
         }
 
         _wiredVm = null;

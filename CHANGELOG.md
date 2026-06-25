@@ -14,6 +14,14 @@ it ships, then gets a dated heading.
   tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
 
 ### Fixed
+- **The machine grid no longer comes up blank until you resize the window.** On a freshly shown tab — or
+  after reloading a list into an already-open one — the grid could render empty (no rows) until you nudged
+  the window size, sometimes for many seconds. The cause was a layout race during the window-open animation:
+  the virtualizing grid was first laid out before it had a real height, realized zero rows, arranged itself to
+  zero, and then nothing told it to lay out again once the size settled. A single debounced re-layout now fires
+  ~150 ms after the size (or the bound list) stops changing and re-measures + re-arranges the grid, so it fills
+  its space and shows its rows on its own — exactly what a manual resize was doing. (Replaces three earlier,
+  narrower re-measure attempts.)
 - **Loading a big machine list with auto-check-on-load no longer freezes the app.** With "Check vitals on
   load" enabled, adding a few hundred machines (e.g. ~319) froze the UI for 20-30 seconds: each health-check
   result that came back recomputed the whole-fleet summaries by re-walking every row, so N results × an N-row
