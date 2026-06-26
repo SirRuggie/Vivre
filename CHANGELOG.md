@@ -14,6 +14,13 @@ it ships, then gets a dated heading.
   tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
 
 ### Fixed
+- **Cold start no longer leaves the shell blank for ~10s when you open a big list.** With "Check vitals on
+  load" on, opening a few-hundred-machine list as the first action after launch fired the vitals sweep inline,
+  on the UI thread, before the just-loaded grid could paint — so the whole content area sat blank for ~10s.
+  The auto-check kickoff (the vitals sweep + the custom-column fill) is now deferred to a low (Background)
+  dispatcher priority, so the loaded rows lay out and paint first (~1s) and vitals begin a render cycle later.
+  Auto-check still runs on every load — only its start moves slightly later; the sweep's heavy remote work was
+  already off the UI thread.
 - **The machine grid no longer comes up blank until you resize the window.** On a freshly shown tab — or
   after reloading a list into an already-open one — the grid could render empty (no rows) until you nudged
   the window size, sometimes for many seconds. The cause was a layout race during the window-open animation:

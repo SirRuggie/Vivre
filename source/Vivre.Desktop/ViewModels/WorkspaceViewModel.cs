@@ -1250,11 +1250,33 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // the rows just loaded; the manual button stays for re-checks.
         if (AutoCheckOnLoadEnabled())
         {
-            // Fire both operations simultaneously: vitals registers rows in the held-rows registry
-            // (preventing conflicting ops), while the custom-column fill runs passively (no registry
-            // registration) so it never blocks and is never blocked by the vitals sweep.
-            _ = RunSweepAsync(added, CheckHealthAndVitalsRowAsync, "Checking vitals");
-            _ = RunCustomColumnsSelectedAsync(added);
+            // Defer the auto-check kickoff to AFTER the just-added rows render. Kicking it inline runs the
+            // sweep's synchronous prologue (a "Checking…" write per row + the first ping batch) on the UI
+            // thread before the grid can paint, and on a cold process the first remote call's continuation pays
+            // a one-time PowerShell SDK warm-up there too — starving the shell's first paint for several seconds.
+            // At Background priority (below Render/Input/Loaded) the loaded rows lay out and paint first, then
+            // vitals begin a render cycle later. Auto-check still runs on load — only its START moves later; the
+            // heavy remote work (runspace open / invoke) is already off the UI thread. Capture the exact rows
+            // just added so the deferred sweep's scope is unchanged, and run inline when there's no dispatcher
+            // (e.g. tests) so behaviour is preserved there.
+            IReadOnlyList<Computer> toSweep = added;
+            void KickAutoCheck()
+            {
+                // Vitals registers rows in the held-rows registry (preventing conflicting ops); the custom-column
+                // fill runs passively (no registration) so it never blocks and is never blocked by the sweep.
+                _ = RunSweepAsync(toSweep, CheckHealthAndVitalsRowAsync, "Checking vitals");
+                _ = RunCustomColumnsSelectedAsync(toSweep);
+            }
+
+            Dispatcher? dispatcher = System.Windows.Application.Current?.Dispatcher;
+            if (dispatcher is null)
+            {
+                KickAutoCheck();
+            }
+            else
+            {
+                _ = dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, (Action)KickAutoCheck);
+            }
         }
     }
 
