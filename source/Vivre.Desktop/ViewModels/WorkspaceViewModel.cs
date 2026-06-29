@@ -1783,8 +1783,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     public async Task ScheduleRebootSelectedAsync(IReadOnlyList<Computer> rows, DateTime at, CancellationToken token = default)
     {
+        // The operator's picked time means THIS host's wall-clock; the task is registered on the
+        // remote box, so anchor it to an absolute UTC instant and assign it directly to StartBoundary
+        // (a raw string keeps the Z that -At would strip). See ScheduleTimeFormatter.
+        string startBoundary = ScheduleTimeFormatter.FormatStartBoundaryUtc(at);
         string script = $$"""
-            $trigger   = New-ScheduledTaskTrigger -Once -At '{{at:s}}'
+            $trigger   = New-ScheduledTaskTrigger -Once -At (Get-Date)
+            $trigger.StartBoundary = '{{startBoundary}}'
             $action    = New-ScheduledTaskAction -Execute 'shutdown.exe' -Argument '/r /f /t 0 /c "Vivre scheduled reboot"'
             $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
             $settings  = New-ScheduledTaskSettingsSet
@@ -1812,10 +1817,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 {
                     computer.ScheduledAction = "Reboot";
                     computer.ScheduledNextRun = at;
-                    computer.LastStatus = $"Reboot scheduled for {at:g}";
+                    computer.LastStatus = $"Reboot scheduled for {at:g} (your time)";
                     computer.UpdateMessage = FormatScheduledMessage("Reboot", at);
                     _scheduledTasks[computer.Name] = at;
-                    _activity.Info(computer.Name, $"Reboot scheduled for {at:g}");
+                    _activity.Info(computer.Name, $"Reboot scheduled for {at:g} (your time)");
                 }
             }
             catch (OperationCanceledException)
@@ -4020,7 +4025,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             "Install updates" => "Install",
             _ => "Task",
         };
-        return $"{verb} scheduled for {when:g}";
+        // {when} is the operator's host-local pick; the "(your time)" tag makes that explicit so a
+        // remote box in another zone can't be misread (the task fires at the same absolute instant).
+        return $"{verb} scheduled for {when:g} (your time)";
     }
 
     /// <summary>Writes a <see cref="HostPatchStatus"/> snapshot onto a row, logging phase transitions only.

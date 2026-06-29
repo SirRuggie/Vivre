@@ -6,6 +6,15 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **Scheduled installs and reboots now fire at the time you actually picked, on every machine.** The
+  one-time task is registered on the remote box, and the trigger time was sent with no time zone — so each
+  target read your chosen wall-clock as *its own* local time. A box in a different zone (e.g. a UTC Azure VM)
+  could fire hours off: a "2 PM" install or reboot ran 4–5 hours early on a UTC box, into business hours. The
+  chosen time is now anchored to **your** local time (this PC's) and converted to an absolute instant, so every
+  selected machine runs at the same moment regardless of its own time zone. The "scheduled for …" message now
+  reads "(your time)" to make that explicit.
+
 ## 1.14.2 — 2026-06-29
 
 ### Changed

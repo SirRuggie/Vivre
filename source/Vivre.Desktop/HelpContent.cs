@@ -493,14 +493,15 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.CalendarClock24, Title = "How do I schedule an install or reboot for later?",
-            Keywords = "schedule task later time install reboot cancel one-time",
+            Keywords = "schedule task later time install reboot cancel one-time time zone timezone utc azure your time",
             Lines =
             [
                 "Select machines, right-click ▸ Schedule ▸, then:",
                 "• Install updates… — pick a date/time to install.",
                 "• Reboot… — pick a date/time to force-reboot.",
                 "• Cancel scheduled task — clears a pending one.",
-                "A scheduled task shows as a neutral 'Scheduled' status pill and a '<action> scheduled for <time>' message in the Windows update row; the Scheduled filter chip lists those machines. It clears once the time passes.",
+                "The time you pick is YOUR local time (this PC's). Every selected machine runs at that same moment — a box in another time zone (e.g. a UTC cloud VM) still fires at your chosen instant, not its own local clock.",
+                "A scheduled task shows as a neutral 'Scheduled' status pill and a '<action> scheduled for <time> (your time)' message in the Windows update row; the Scheduled filter chip lists those machines. It clears once the time passes.",
             ],
             Tip = "Scheduling registers a one-time task that runs as SYSTEM, so it needs admin rights on the target.",
         },

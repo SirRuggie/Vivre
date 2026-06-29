@@ -878,8 +878,11 @@ public sealed class WuaUpdateLane
         string expectedSha256,
         PatchOptions options)
     {
+        // The operator's picked time means the Vivre HOST's wall-clock; this bootstrap runs on the
+        // REMOTE box, so we convert to an absolute UTC instant and assign it DIRECTLY to StartBoundary
+        // (a raw string keeps the Z; -At's [DateTime] cast would strip it). See ScheduleTimeFormatter.
         string trigger = options is { RunBehavior: RunBehavior.ScheduleAt, ScheduleAt: { } at }
-            ? $"$trigger = New-ScheduledTaskTrigger -Once -At '{at.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture)}'"
+            ? $"$trigger = New-ScheduledTaskTrigger -Once -At (Get-Date)\n$trigger.StartBoundary = '{ScheduleTimeFormatter.FormatStartBoundaryUtc(at)}'"
             : "$trigger = $null";
 
         string registerTrigger = options.RunBehavior == RunBehavior.ScheduleAt
