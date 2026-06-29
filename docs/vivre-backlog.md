@@ -103,7 +103,7 @@ down, each "do only if it recurs / when a signal appears."
   (300 boxes); drop from list once confirmed in practice.
 - **Bottom-panel resize freeze with large row counts** — row virtualization added (ce624d4); appears
   fixed. Watch under heavy update-scan load; if it returns, next lever is the `Width="Auto"` columns
-  forcing full-width measure.
+  forcing full-width measure. (Measured in the 1.14.2 cold-start hunt: the Auto-width column measure is ~120–180ms/pass — real but minor, NOT a freeze cause.)
 - **Scan-timeout edge** — 5-min cap (a997642) may be short for the very worst first-scan boxes; bump to
   10 min (600s) ONLY if real "Scan timed out" false-positives appear.
 - **SMB-agent teardown is a silent swallow in Release builds** — `SmbAgentLane.TeardownServiceAsync`
@@ -158,11 +158,11 @@ down, each "do only if it recurs / when a signal appears."
     `ObservableCollection.Add` fires the full `OnComputersChanged` + `RaiseFleetChanged` cascade synchronously on
     the UI thread, so loading 300+ stutters and 500+ can freeze for seconds. A batched/suppressed add is the fix —
     BUT a naive `Clear`+range/`Reset` skips the per-row `PropertyChanged` re-subscription in `OnComputersChanged`
-    (the `Reset` → `NewItems==null` trap), which would break live row updates. Needs a careful design + test. Medium.
+    (the `Reset` → `NewItems==null` trap), which would break live row updates. Needs a careful design + test. Medium. **Update (1.14.2):** the cold-start *freeze* that was conflated with this is FIXED — its real cause was thread-pool serial worker-injection (see `docs/cold-start-freeze-and-threadpool-findings.md`), NOT the row-add. The row-add cascade itself measured ~65–83ms for 319 rows — small; this stays a minor "smoother load" nicety, not a freeze.
   - **Fleet-recompute storm — remaining cleanup (rare-event only; the high-frequency progress-tick flood is
     already fixed — see DONE ▸ "Fleet-recompute storm — progress-tick slice shipped").** Now that a per-row
     `UpdateProgress` tick raises just `FleetProgress`, what's left fires ONLY on the rare phase-change events (a
-    handful per row, not the per-tick flood), so the payoff is low. Both still sit in the load-bearing
+    handful per row, not the per-tick flood), so the payoff is low. **Update (1.14.2):** the `UpdateProgress`-only → `FleetProgress`-only slice shipped (CHANGELOG "Smoother grid during large patch sweeps"); the remaining `Has*` double-walk + `PatchState`-parse-cache slices are still open. Both still sit in the load-bearing
     live-filtered grid area — **HANDLE WITH CARE** applies — and each should be its own dependency-verified,
     tested pass if/when it proves worth doing:
     - **`Has*` double-walk cleanup.** `HasFleetSummary`→`FleetSummary`, `HasVitalsFleetSummary`→`VitalsFleetSummary`,
@@ -210,6 +210,7 @@ down, each "do only if it recurs / when a signal appears."
 
 ## DONE (committed) — recent
 
+- **Cold-start UI freeze on large lists — RESOLVED** (1.14.2: `19f766b` grid re-layout, `0bfd362` sweep deferral, `ea70c2f` `ThreadPool.SetMinThreads(64,64)`). Opening a ~319-box list on a cold start froze the UI 7–38s (scaled with the slowest WinRM connect). Root cause — proven by instrumentation after **six** disproven theories — was **serial thread-pool worker injection on a low-core box** (default min workers = CPU count = 2; ~28 blocking `Task.Run(runspace.Open)` opens injected ~1/500ms, serialized behind the slowest connect), **NOT** pool exhaustion / grid / sweep. Fix: raise the min worker floor so the already-bounded opens run in parallel. Full record + the don't-re-chase list + the don't-delete-the-one-liner note in `docs/cold-start-freeze-and-threadpool-findings.md`. 636 tests; cardinal clean.
 - **Stale reboot message never cleared — FIXED** (`3b6d9f3`, on master). The `RebootMessage` field held three
   past-event notices ("Reboot complete — back online {time}", "Back online {time}", "Forced reboot sent") that
   had **no clearer**, so they lingered indefinitely into unrelated later operations (observed: "Reboot complete

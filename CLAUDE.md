@@ -40,6 +40,7 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
 - docs/2016-LCU-lane-spec.md, docs/2016-LCU-panel-spec.md, docs/2016-LCU-red-team-review.md — read before touching the 2016 patch lane
 - docs/vivre-backlog.md — current priorities + what's done
 - docs/vivre-rdp-scaling-and-fcm-findings.md — embedded-RDP scaling/FCM saga; read before touching Cross-Domain RDP scaling
+- docs/cold-start-freeze-and-threadpool-findings.md — the cold-start UI freeze saga; the thread-pool worker-injection cause + the load-bearing ThreadPool.SetMinThreads fix (don't delete it). Read before touching App.OnStartup, the sweep, or large-list load.
 
 ## Layout
 
