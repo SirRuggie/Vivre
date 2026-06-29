@@ -19,13 +19,24 @@ public static class ScheduleTimeFormatter
 {
     /// <summary>
     /// Converts an operator-picked time (treated as the Vivre host's LOCAL wall-clock) to the
-    /// absolute-UTC <c>StartBoundary</c> string, e.g. <c>2026-07-01T18:00:00Z</c>. The Kind is pinned
-    /// to <see cref="DateTimeKind.Local"/> explicitly so a Kind=Unspecified picker value (or any other
-    /// Kind) can't be silently misread; <see cref="DateTime.ToUniversalTime"/> then converts using the
-    /// host zone, and the trailing literal <c>Z</c> makes the instant unambiguous to Task Scheduler.
+    /// absolute-UTC <c>StartBoundary</c> string, e.g. <c>2026-07-01T18:00:00Z</c>.
     /// </summary>
     public static string FormatStartBoundaryUtc(DateTime at) =>
-        DateTime.SpecifyKind(at, DateTimeKind.Local)
-            .ToUniversalTime()
-            .ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);
+        FormatStartBoundaryUtc(at, TimeZoneInfo.Local);
+
+    /// <summary>
+    /// Zone-injectable core. The picked wall-clock digits are interpreted as a time in
+    /// <paramref name="hostZone"/> (NOT trusting the incoming <see cref="DateTimeKind"/> — the picker
+    /// hands us <see cref="DateTimeKind.Unspecified"/>) and converted to the absolute UTC instant. For
+    /// the production call (<paramref name="hostZone"/> = <see cref="TimeZoneInfo.Local"/>) this is
+    /// equivalent to <c>DateTime.SpecifyKind(at, Local).ToUniversalTime()</c>; the zone is a parameter
+    /// only so tests can pin a fixed offset and assert literal UTC digits instead of re-deriving the
+    /// expected value from the host's live zone (which would be circular).
+    /// </summary>
+    internal static string FormatStartBoundaryUtc(DateTime at, TimeZoneInfo hostZone)
+    {
+        DateTime wallClock = DateTime.SpecifyKind(at, DateTimeKind.Unspecified);
+        DateTime utc = new DateTimeOffset(wallClock, hostZone.GetUtcOffset(wallClock)).UtcDateTime;
+        return utc.ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);
+    }
 }

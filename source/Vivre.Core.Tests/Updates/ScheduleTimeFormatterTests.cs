@@ -6,42 +6,58 @@ namespace Vivre.Core.Tests.Updates;
 
 public class ScheduleTimeFormatterTests
 {
-    // The helper intentionally converts using the Vivre HOST's live zone, so the test asserts the
-    // INVARIANT (the emitted Z instant equals the picked wall-clock interpreted as host-local) and
-    // derives the expected digits independently from the host offset. Hard-coding UTC digits would
-    // make the test pass only in one zone — exactly the live-zone dependency we must avoid. This
-    // assertion's outcome is the same on any machine: green when the conversion is correct.
-    [Fact]
-    public void FormatStartBoundaryUtc_emits_absolute_utc_for_host_local_pick()
+    // A fixed, DST-free offset zone so the expected UTC digits below are hand-computed CONSTANTS — they
+    // are NOT derived from any GetUtcOffset/ToUniversalTime call, so the conversion can't be circular,
+    // and every assertion's outcome is identical on any machine regardless of the test box's own zone.
+    private static TimeZoneInfo FixedOffset(double hours)
     {
-        // Mirrors ScheduleWindow: a Kind=Unspecified wall-clock value the operator picked.
-        var picked = new DateTime(2026, 7, 1, 14, 30, 0);
+        string id = "Test UTC" + hours.ToString("+0.##;-0.##", CultureInfo.InvariantCulture);
+        return TimeZoneInfo.CreateCustomTimeZone(id, TimeSpan.FromHours(hours), id, id);
+    }
 
-        string z = ScheduleTimeFormatter.FormatStartBoundaryUtc(picked);
+    [Theory]
+    // A known host-local pick + a fixed host offset → the literal absolute-UTC digits, computed by hand.
+    // The negative-offset rows (host behind UTC) must ADD the offset; the positive row must SUBTRACT it,
+    // so a backwards/symmetric conversion fails at least one row on every machine.
+    [InlineData(2026, 1, 15, 14, 0, -5.0, "2026-01-15T19:00:00Z")] // UTC-5 (US Eastern, winter): 14:00 + 5h
+    [InlineData(2026, 7, 1, 14, 0, -4.0, "2026-07-01T18:00:00Z")]  // UTC-4 (US Eastern, summer): 14:00 + 4h
+    [InlineData(2026, 7, 1, 14, 0, 0.0, "2026-07-01T14:00:00Z")]   // UTC host:                   unchanged
+    [InlineData(2026, 7, 1, 14, 0, 9.5, "2026-07-01T04:30:00Z")]   // UTC+9:30 (ahead of UTC):    14:00 - 9:30
+    public void FormatStartBoundaryUtc_converts_fixed_local_pick_to_fixed_utc_digits(
+        int year, int month, int day, int hour, int minute, double hostOffsetHours, string expectedUtc)
+    {
+        // An explicit wall-clock the operator picked, interpreted in a FIXED host zone.
+        var picked = new DateTime(year, month, day, hour, minute, 0);
 
-        // Trailing-Z absolute form, parseable as UTC.
-        Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$", z);
+        string z = ScheduleTimeFormatter.FormatStartBoundaryUtc(picked, FixedOffset(hostOffsetHours));
 
-        // Independently compute the expected UTC instant (host-local wall-clock minus the host's
-        // offset at that instant) WITHOUT routing through the helper's own conversion, so this
-        // asserts the digits rather than restating the implementation.
-        TimeSpan hostOffset = TimeZoneInfo.Local.GetUtcOffset(DateTime.SpecifyKind(picked, DateTimeKind.Local));
-        string expected = picked.Add(-hostOffset).ToString("yyyy-MM-ddTHH:mm:ss'Z'", CultureInfo.InvariantCulture);
-        Assert.Equal(expected, z);
+        Assert.Equal(expectedUtc, z);
     }
 
     [Fact]
-    public void FormatStartBoundaryUtc_pins_kind_to_host_local_regardless_of_incoming_kind()
+    public void FormatStartBoundaryUtc_interprets_digits_in_host_zone_ignoring_incoming_kind()
     {
-        // Defensive: the picker yields Unspecified, but if a Utc-kind value ever reached the helper,
-        // a missing Kind pin would make ToUniversalTime a no-op and emit the wrong instant. With the
-        // SpecifyKind(Local) pin, the same digits convert identically whatever the incoming Kind.
+        // The picker yields Unspecified; a Local- or Utc-labelled value with the SAME digits must
+        // produce the SAME boundary — the helper anchors the digits to the host zone and never trusts
+        // the incoming Kind. UTC-5 host: 09:00 + 5h = 14:00Z (fixed, hand-computed).
+        TimeZoneInfo zone = FixedOffset(-5.0);
         var wall = new DateTime(2026, 1, 15, 9, 0, 0);
-        string fromUnspecified = ScheduleTimeFormatter.FormatStartBoundaryUtc(DateTime.SpecifyKind(wall, DateTimeKind.Unspecified));
-        string fromLocal = ScheduleTimeFormatter.FormatStartBoundaryUtc(DateTime.SpecifyKind(wall, DateTimeKind.Local));
-        string fromUtcLabelled = ScheduleTimeFormatter.FormatStartBoundaryUtc(DateTime.SpecifyKind(wall, DateTimeKind.Utc));
 
-        Assert.Equal(fromUnspecified, fromLocal);
-        Assert.Equal(fromUnspecified, fromUtcLabelled);
+        Assert.Equal("2026-01-15T14:00:00Z", ScheduleTimeFormatter.FormatStartBoundaryUtc(DateTime.SpecifyKind(wall, DateTimeKind.Unspecified), zone));
+        Assert.Equal("2026-01-15T14:00:00Z", ScheduleTimeFormatter.FormatStartBoundaryUtc(DateTime.SpecifyKind(wall, DateTimeKind.Local), zone));
+        Assert.Equal("2026-01-15T14:00:00Z", ScheduleTimeFormatter.FormatStartBoundaryUtc(DateTime.SpecifyKind(wall, DateTimeKind.Utc), zone));
+    }
+
+    [Fact]
+    public void FormatStartBoundaryUtc_public_overload_anchors_to_host_local_zone()
+    {
+        // Lock the public (production) overload to the tested core fed the machine's own zone, so the
+        // two can't drift. This is intentionally zone-relative (not fixed digits): it proves the public
+        // entry point uses TimeZoneInfo.Local, while the fixed-digit theory above proves the math.
+        var picked = new DateTime(2026, 7, 1, 14, 30, 0);
+
+        Assert.Equal(
+            ScheduleTimeFormatter.FormatStartBoundaryUtc(picked, TimeZoneInfo.Local),
+            ScheduleTimeFormatter.FormatStartBoundaryUtc(picked));
     }
 }
