@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.2 — 2026-06-29
+
 ### Changed
 - **Smoother grid during large patch sweeps.** A per-row update-progress tick (which fires many times a
   second per machine while a download/install runs) now refreshes only the overall progress bar instead of
