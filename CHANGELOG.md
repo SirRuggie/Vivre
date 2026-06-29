@@ -14,6 +14,12 @@ it ships, then gets a dated heading.
   tallies, so the bottom-bar counts stay exact. Responsiveness only; no change to what's shown.
 
 ### Fixed
+- **A multi-second UI freeze when opening a large machine list on a cold start is gone.** The fleet vitals sweep
+  opens a WinRM connection per host on a thread-pool thread; with the pool's default minimum worker count (= CPU
+  count, e.g. 2), those connections were injected only about one every half-second and serialised behind the
+  slowest connect — freezing the UI for as long as the slowest box took to answer. Raising the minimum
+  worker-thread floor at startup lets the already-bounded set of connections run in parallel, so the UI stays
+  responsive and rows fill in as each box reports.
 - **Cold start no longer leaves the shell blank for ~10s when you open a big list.** With "Check vitals on
   load" on, opening a few-hundred-machine list as the first action after launch fired the vitals sweep inline,
   on the UI thread, before the just-loaded grid could paint — so the whole content area sat blank for ~10s.

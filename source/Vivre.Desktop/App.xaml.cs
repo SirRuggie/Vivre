@@ -29,6 +29,15 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
+        // Let the thread pool hand out worker threads immediately for the burst of concurrent WinRM connects a
+        // fleet sweep makes. Each remote runspace open is a synchronous blocking call run on a Task.Run worker
+        // (PSRunspaceHost); the sweep permits ~28 at once, but the pool's default min (= core count, e.g. 2) injects
+        // new workers only ~1-2/sec, so the opens were trickling in serially across the slowest-connect window and
+        // stalling the UI until they cleared. Raising the floor lets all ~28 start at once and run fully overlapped,
+        // off the UI thread. This only speeds thread hand-out for already-throttled work — it does NOT widen any of
+        // the app's concurrency caps (the sweep / monitor / per-host / install throttles still bound how many run).
+        System.Threading.ThreadPool.SetMinThreads(64, 64);
+
 #if DEBUG
         // Catch off-thread writes to a grid live-filtered property (UpdatePhase/RebootRequired → PatchState)
         // loudly, with the offending property name, instead of as an opaque "calling thread cannot access this
