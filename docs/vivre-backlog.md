@@ -89,8 +89,8 @@ down, each "do only if it recurs / when a signal appears."
   byte-count only (no SHA-256 of the package). Real cause: **copy fan-out** — up to the install cap hosts each
   `File.Copy` the SAME workstation-local 1.7 GB source concurrently → N parallel source reads + N concurrent
   1.7 GB SMB uploads → workstation disk + uplink saturation; "sluggish, not frozen" is the per-host UI-thread
-  progress continuations queueing on the single Dispatcher under that pressure. **Concurrency facts (corrects
-  any "hardcoded 10-host cap" notion):** there is NO hardcoded 10 — `PatchOptions.MaxConcurrentHosts = 50`
+  progress continuations queueing on the single Dispatcher under that pressure. **Concurrency facts — NOT A TASK; the "make concurrency configurable" notion is a MYTH (CLOSED),
+  the install/stage cap is already operator-settable:** there is NO hardcoded 10 — `PatchOptions.MaxConcurrentHosts = 50`
   (`PatchOptions.cs:78`), and the install/stage throttle is the operator-settable **Max simultaneous installs**
   (per-tab `_patchThrottle`, default 50; `MaxConcurrentScans = 32` is separate). Cross-tab coupling is
   architectural (one Dispatcher + singleton `PatchService`/`PSRunspaceHost`; scan/monitor/reboot throttles are
@@ -159,10 +159,10 @@ down, each "do only if it recurs / when a signal appears."
     the UI thread, so loading 300+ stutters and 500+ can freeze for seconds. A batched/suppressed add is the fix —
     BUT a naive `Clear`+range/`Reset` skips the per-row `PropertyChanged` re-subscription in `OnComputersChanged`
     (the `Reset` → `NewItems==null` trap), which would break live row updates. Needs a careful design + test. Medium. **Update (1.14.2):** the cold-start *freeze* that was conflated with this is FIXED — its real cause was thread-pool serial worker-injection (see `docs/cold-start-freeze-and-threadpool-findings.md`), NOT the row-add. The row-add cascade itself measured ~65–83ms for 319 rows — small; this stays a minor "smoother load" nicety, not a freeze.
-  - **Fleet-recompute storm — remaining cleanup (rare-event only; the high-frequency progress-tick flood is
+  - **Fleet-recompute storm — remaining cleanup — DEFERRED, do not build without a trigger (rare-event only; the high-frequency progress-tick flood is
     already fixed — see DONE ▸ "Fleet-recompute storm — progress-tick slice shipped").** Now that a per-row
     `UpdateProgress` tick raises just `FleetProgress`, what's left fires ONLY on the rare phase-change events (a
-    handful per row, not the per-tick flood), so the payoff is low. **Update (1.14.2):** the `UpdateProgress`-only → `FleetProgress`-only slice shipped (CHANGELOG "Smoother grid during large patch sweeps"); the remaining `Has*` double-walk + `PatchState`-parse-cache slices are still open. Both still sit in the load-bearing
+    handful per row, not the per-tick flood), so the payoff is low. **Update (1.14.2) — DEFERRED:** the `UpdateProgress`-only → `FleetProgress`-only slice shipped (CHANGELOG "Smoother grid during large patch sweeps"). The remaining `Has*` double-walk + `PatchState`-parse-cache slices are technically still open, but cold-start instrumentation (2026-06-29, 319-box worst-case sweep) measured `FleetRecompute` ticks at ~0ms each — a near-zero gain inside the live-filtered crash zone. **Do not build these without a trigger. Revisit ONLY if** the patch sweep becomes *measurably* janky again, or someone is already editing `WorkspaceViewModel` for another reason and can fold them in cheaply. Both still sit in the load-bearing
     live-filtered grid area — **HANDLE WITH CARE** applies — and each should be its own dependency-verified,
     tested pass if/when it proves worth doing:
     - **`Has*` double-walk cleanup.** `HasFleetSummary`→`FleetSummary`, `HasVitalsFleetSummary`→`VitalsFleetSummary`,
