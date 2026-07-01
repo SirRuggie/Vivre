@@ -14,6 +14,11 @@
 
 ## ▶ DO NEXT — recommended order
 
+**Audit findings (2026-07-01):** a full five-lens read-only audit ran on 1.14.3 — see
+`docs/vivre-audit-findings.md`. No CRITICALs; 2 HIGHs (dead-worker-undetectable WinRM lane;
+one-hung-box-freezes-monitor) + several MEDs, all triaged with a recommended fix order. Pull items
+from there into scoped handoffs; nothing auto-queued.
+
 Nothing queued. The RDP Reconnect button (the previous #1) shipped — see DONE. The 2016 staged-patching
 toggle shipped (see DONE), and **KB auto-population from a scan is closed — manual only** (decision
 recorded under *Settings simplification* below). What remains is the polish / standalone items further
