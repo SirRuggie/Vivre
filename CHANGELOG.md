@@ -14,6 +14,13 @@ it ships, then gets a dated heading.
   Health grid already displayed, and that note stays until the row's next action replaces it.
 
 ### Fixed
+- **Triage now shows stopped auto-services and the logged-on user on Kerberos-broken / WinRM-down
+  machines.** These boxes are read over the DCOM/SMB backup channel, which previously left the
+  "stopped auto-start services" list and the "Users online" indicator blank (the WinRM path filled them,
+  the DCOM path didn't). The DCOM vitals read now populates both — using the same `Win32_Service` and
+  explorer.exe-owner queries the WinRM path uses — so a machine on the backup channel shows the same
+  triage detail as one read over WinRM. Read-only; the 0–100 vitality score is unchanged (stopped
+  services were never scored).
 - **Powered-off machines now read a calm "Offline" instead of a misleading "Offline since [launch time]"
   or a red WinRM/SMB error.** A server that was off the whole time (its management controller or a reused
   IP can still answer a ping) was mistaken for one that had been up and then "went offline", and scanning

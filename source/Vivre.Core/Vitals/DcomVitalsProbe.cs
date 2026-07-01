@@ -250,16 +250,95 @@ public sealed class DcomVitalsProbe : IDcomVitalsReader
             ? null
             : ((ccmReboot ?? false) || (cbsReboot ?? false) || (wuReboot ?? false));
 
+        // --- Stopped auto-start services (StartMode=Auto, not Running) ---
+        // Mirrors VitalsProbe's Win32_Service query. The COUNT is the full match count (never capped, so
+        // it stays truthful); only the display NAMES are capped at 15 — same as WinRM's Select -First 15.
+        int? stoppedCount = null;
+        IReadOnlyList<string> stoppedNames = [];
+        try
+        {
+            var displayNames = new List<string?>();
+            foreach (CimInstance svc in session.QueryInstances(@"root\cimv2", "WQL",
+                         "SELECT DisplayName FROM Win32_Service WHERE StartMode='Auto' AND State<>'Running'",
+                         cimOptions))
+            {
+                using (svc)
+                {
+                    displayNames.Add(svc.CimInstanceProperties["DisplayName"]?.Value as string);
+                }
+            }
+
+            (stoppedCount, stoppedNames) = VitalsShaping.StoppedServices(displayNames);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // denied / absent — leave the count null and the names empty
+        }
+
+        // --- Logged-on interactive users (explorer.exe owners — console AND RDP) ---
+        // Mirrors VitalsProbe: any running explorer.exe means an interactive session; the owners are the
+        // logged-on users. Deliberately explorer-owner, NOT Win32_ComputerSystem.UserName (which is blank
+        // for RDP sessions). GetOwner is a per-instance method wrapped in its OWN try, so a denied
+        // owner-lookup still leaves UserLoggedOn set from the process count — only the names stay empty.
+        bool? userLoggedOn = null;
+        IReadOnlyList<string> loggedOnUsers = [];
+        try
+        {
+            var owners = new List<string?>();
+            int explorerCount = 0;
+            foreach (CimInstance proc in session.QueryInstances(@"root\cimv2", "WQL",
+                         "SELECT Handle, Name FROM Win32_Process WHERE Name='explorer.exe'",
+                         cimOptions))
+            {
+                using (proc)
+                {
+                    explorerCount++;
+                    try
+                    {
+                        using CimMethodResult owner = session.InvokeMethod(@"root\cimv2", proc, "GetOwner", null, cimOptions);
+                        owners.Add(owner.OutParameters?["User"]?.Value as string);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch
+                    {
+                        // owner-lookup denied for this process — keep counting (UserLoggedOn) but skip the name
+                    }
+                }
+            }
+
+            userLoggedOn = explorerCount > 0;
+            loggedOnUsers = VitalsShaping.DistinctSortedOwners(owners);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // denied / absent — leave UserLoggedOn null and the names empty
+        }
+
         return new MachineVitals(
             SystemDriveFreePercent: sysFreePct,
             SystemDriveFreeGb: sysFreeGb,
             MemoryUsedPercent: memUsedPct,
             CpuLoadPercent: cpuLoad,
             LastBootTime: lastBoot,
-            RebootPending: rebootPending)
+            StoppedAutoServiceCount: stoppedCount,
+            RebootPending: rebootPending,
+            UserLoggedOn: userLoggedOn)
         {
             OperatingSystem = operatingSystem,
             Drives = drives,
+            StoppedAutoServices = stoppedNames,
+            LoggedOnUsers = loggedOnUsers,
         };
     }
 
