@@ -62,6 +62,17 @@ public sealed record MachineVitals(
         SystemDriveFreePercent is null && MemoryUsedPercent is null && CpuLoadPercent is null
         && LastBootTime is null && StoppedAutoServiceCount is null
         && RebootPending is null && Drives.Count == 0;
+
+    /// <summary>
+    /// True when this snapshot represents a GENUINE remoting reach — the probe returned at least one real
+    /// OS reading — as opposed to a blank flagged fallback snapshot where BOTH WinRM and the DCOM fallback
+    /// failed and only the transport metadata (<see cref="WinRmHealth"/>) is set. Gates the "we reached it /
+    /// genuinely managed" row writes so a Kerberos-broken box whose DCOM read also failed isn't wrongly
+    /// marked online/managed off an empty read (which would re-trigger the monitor's "Offline since… waiting"
+    /// message on a genuinely-offline box). The negation of <see cref="IsEmpty"/>: a partial DCOM read (some
+    /// data) counts as a reach; a blank flagged snapshot does not.
+    /// </summary>
+    public bool IsGenuineReach => !IsEmpty;
 }
 
 /// <summary>Free-space vitals for a single fixed drive.</summary>

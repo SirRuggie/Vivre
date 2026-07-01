@@ -14,6 +14,14 @@ it ships, then gets a dated heading.
   Health grid already displayed, and that note stays until the row's next action replaces it.
 
 ### Fixed
+- **A powered-off, Kerberos-broken app server no longer flips to a false "online" or a
+  "Offline since … — waiting for it to come back…".** When such a box (one that Vivre reads over the
+  DCOM/SMB backup channel) is actually off, its vitals read comes back empty — and Vivre was treating
+  that empty read as a successful reach, marking the row online and "managed", which re-triggered the
+  reboot-wave "waiting to come back" message on a machine that was simply powered off. An empty vitals
+  read is now treated as the failed read it is: the row reads a calm "Offline" and still keeps its
+  degraded-connection note in Machine Details. A box that actually answers (even partially) over DCOM is
+  unaffected — it stays marked as reached so its reboot tracking still works.
 - **Triage now shows stopped auto-services and the logged-on user on Kerberos-broken / WinRM-down
   machines.** These boxes are read over the DCOM/SMB backup channel, which previously left the
   "stopped auto-start services" list and the "Users online" indicator blank (the WinRM path filled them,

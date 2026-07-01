@@ -4865,8 +4865,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Copies a vitals snapshot onto the row and runs the scorer (the one source of truth).</summary>
     private void ApplyVitals(Computer computer, MachineVitals v)
     {
-        computer.IsOnline = true; // it answered the remoting pull
-        computer.WasConfirmedOnline = true; // genuinely reached over remoting, not just pingable
+        // Mark the row reached/managed ONLY when the snapshot actually carried data. A blank flagged
+        // snapshot (WinRM rejected Kerberos AND the DCOM fallback also failed → IsEmpty) is a FAILED read,
+        // not a reach — marking it online/managed off an empty read wrongly re-triggers the monitor's
+        // "Offline since… waiting" message on a genuinely-offline box. A partial DCOM read (some data) still
+        // counts as a reach. The rest of this method runs regardless, so a Kerberos-broken box still
+        // surfaces its degraded state (WinRmDegraded/caption below).
+        if (v.IsGenuineReach)
+        {
+            computer.IsOnline = true; // it answered the remoting pull
+            computer.WasConfirmedOnline = true; // genuinely reached over remoting, not just pingable
+        }
+
         computer.SystemDriveFreePercent = v.SystemDriveFreePercent;
         computer.MemoryUsedPercent = v.MemoryUsedPercent;
         computer.CpuLoadPercent = v.CpuLoadPercent;
