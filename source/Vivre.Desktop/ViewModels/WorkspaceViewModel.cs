@@ -1854,12 +1854,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     ? await _powerShell.RunLocalAsync(script, token)
                     : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
 
-                // Clear the columns regardless — there's nothing pending from our side now.
+                // Clear the scheduled state (nothing is pending now) but leave a cancel breadcrumb on the
+                // row instead of blanking it: write the SAME text to the Patching "Windows update message"
+                // column as to Fleet Health's "Last status", so both grids read identically. It stays until
+                // the row's next action (scan/install → ApplyStatus) naturally replaces it.
                 computer.ScheduledAction = null;
                 computer.ScheduledNextRun = null;
-                computer.UpdateMessage = null; // drop the stale "… scheduled for …" text the schedule left on the row
                 _scheduledTasks.TryRemove(computer.Name, out _);
-                computer.LastStatus = result.HadErrors ? "Cancel had errors" : "Scheduled task cancelled";
+                string cancelStatus = ScheduledTaskMessage.CancelStatus(result.HadErrors);
+                computer.LastStatus = cancelStatus;
+                computer.UpdateMessage = cancelStatus;
                 _activity.Info(computer.Name, "Cancelled pending scheduled task(s).");
             }
             catch (OperationCanceledException)

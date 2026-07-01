@@ -6,6 +6,13 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **The machine grid now keeps a "Scheduled task cancelled" note after you cancel a scheduled task,
+  instead of blanking the message.** Previously, cancelling a scheduled install or reboot cleared the
+  Windows-update-message cell on the Patching grid, so with the Activity panel closed there was no
+  on-grid sign anything happened. It now shows the same "Scheduled task cancelled" text the Fleet
+  Health grid already displayed, and that note stays until the row's next action replaces it.
+
 ### Fixed
 - **Scheduled installs and reboots now fire at the time you actually picked, on every machine.** The
   one-time task is registered on the remote box, and the trigger time was sent with no time zone — so each
