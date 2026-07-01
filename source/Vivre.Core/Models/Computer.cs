@@ -284,6 +284,17 @@ public partial class Computer : ObservableObject
     /// be reported when it returns. Null when online / never seen down. Not persisted, not bound.</summary>
     public DateTime? WentOfflineAt { get; set; }
 
+    /// <summary>
+    /// True once this box has been genuinely REACHED over remoting this session — a successful health
+    /// check, vitals pull, scan, install, reboot-pending probe, or force-reboot — as opposed to merely
+    /// answering ICMP ping (a powered-off server's BMC/iDRAC can answer ping). Gates the "Offline since
+    /// HH:mm — waiting for it to come back…" reboot-return message so a ping-only box that later drops
+    /// reads a calm "Offline" instead of a false went-offline event. Plain field: NOT observable, bound to
+    /// no column, and deliberately NOT in the grid's live-filtered set — it only feeds message composition.
+    /// Not persisted; a fresh Computer per list load starts it false (no stale carry-over).
+    /// </summary>
+    public bool WasConfirmedOnline { get; set; }
+
     /// <summary>Live install progress 0-100 for the progress bar, null when indeterminate/idle.</summary>
     [ObservableProperty]
     public partial int? UpdateProgress { get; set; }

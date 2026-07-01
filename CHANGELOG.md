@@ -14,6 +14,15 @@ it ships, then gets a dated heading.
   Health grid already displayed, and that note stays until the row's next action replaces it.
 
 ### Fixed
+- **Powered-off machines now read a calm "Offline" instead of a misleading "Offline since [launch time]"
+  or a red WinRM/SMB error.** A server that was off the whole time (its management controller or a reused
+  IP can still answer a ping) was mistaken for one that had been up and then "went offline", and scanning
+  it produced a scary "Can't reach over WinRM or SMB — not manageable right now" error. Vivre now shows a
+  plain "Offline" for a box it never actually reached over remoting this session, and a scan against an
+  offline box reports "Offline" without attempting the doomed remoting. Preserved: a machine that WAS being
+  managed and then drops (e.g. one you rebooted for patching) still shows "Offline since HH:mm — waiting
+  for it to come back…", and a box that answers ping but whose remoting is genuinely broken still shows the
+  real "Can't reach over WinRM or SMB" error.
 - **A failed cleanup of the temporary SMB helper service is now logged instead of vanishing.** On a
   Kerberos-broken box, Vivre creates a per-run helper service (Vivre_WUA_*) and removes it when done; a
   failed removal previously left only a debug line that release builds strip. It now records a warning to

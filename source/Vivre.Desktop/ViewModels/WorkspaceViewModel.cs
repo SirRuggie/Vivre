@@ -2780,6 +2780,28 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
+        // Reachability gate: a WUA scan over WinRM/SMB against a box that's simply offline (powered off /
+        // ping-down) only yields a scary "Can't reach over WinRM or SMB" remoting error. Short-circuit to a
+        // calm "Offline" — for an explicit operator scan too (an offline box is offline either way). A
+        // reachable box (even ping-only/unmanageable) is NOT short-circuited: its scan runs and surfaces the
+        // honest remoting error. IsOnline null (never probed) → probe first so a null can neither slip a
+        // doomed attempt through nor skip a scan without evidence the box is actually down.
+        bool? reachable = computer.IsOnline;
+        if (reachable is null)
+        {
+            (bool online, _) = await ProbeReachabilityAsync(computer, token);
+            reachable = online;
+            computer.IsOnline = online;
+            computer.LastStatus = online ? "Online" : "Offline";
+        }
+        if (ReachabilityGating.ScanShouldShortCircuitOffline(reachable))
+        {
+            computer.UpdateError = null;
+            computer.UpdatePhase = PatchPhase.Idle.ToString();
+            computer.UpdateMessage = "Offline";
+            return;
+        }
+
         // A new operation supersedes any lingering past-event reboot notice (it has no other clearer, so it
         // would otherwise linger in the Reboot-message column across this unrelated op). Current-state notices
         // ("Offline since…" / "WinRM temporarily unavailable…") keep their own clearers — see RebootMessageText.
@@ -2826,6 +2848,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);
             ApplyStatus(computer, status, scopeAtScan);
+            // A scan that got a real answer proves the box's OS responded over WinRM/SMB (managed) — as
+            // opposed to the "Can't reach over WinRM or SMB" both-transports-down failure (Phase.Error).
+            // Mark it so a later reboot/drop shows the "waiting for it to come back" tracking (case 2).
+            if (status.Phase is not PatchPhase.Error) { computer.WasConfirmedOnline = true; }
         }
         catch (OperationCanceledException)
         {
@@ -3117,6 +3143,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 token);
             // Completion: a finished install with any failure is NOT a success — force the red Error pill.
             ApplyStatus(computer, final, failuresAreErrors: true);
+            // An install that got a real answer reached the box's OS over WinRM/SMB (managed), unlike a
+            // both-transports-down "Can't reach" failure (Phase.Error). Mark it so a subsequent reboot/drop
+            // keeps its "waiting for it to come back" tracking (case 2).
+            if (final.Phase is not PatchPhase.Error) { computer.WasConfirmedOnline = true; }
             computer.LastInstallInstalledCount = final.InstalledCount;
             computer.LastInstallFailedCount = final.FailedCount;
 
@@ -4501,14 +4531,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         else
         {
             // Was up, now unreachable — most often a reboot/shutdown. Start the "waiting" clock so the
-            // return trip can be timed. (First-ever-offline, previous null, isn't a reboot — skip.)
-            if (previous == true)
+            // return trip can be timed. Gate on WasConfirmedOnline so a box that only ever answered ICMP
+            // ping (a powered-off server's BMC/iDRAC) reads a calm "Offline" — not a false went-offline
+            // event — while a genuinely-managed box that dropped (a reboot for patching) keeps its tracking.
+            bool trackReturn = ReachabilityGating.ShouldTrackOfflineReturn(previous, computer.WasConfirmedOnline);
+            if (trackReturn)
             {
                 computer.WentOfflineAt = DateTime.Now;
                 computer.RebootMessage = $"Offline since {DateTime.Now:HH:mm} — waiting for it to come back…";
             }
 
-            _activity.Warn(computer.Name, previous is null ? $"Offline — {error}" : $"Went offline — {error}");
+            _activity.Warn(computer.Name, trackReturn ? $"Went offline — {error}" : $"Offline — {error}");
         }
     }
 
@@ -4548,6 +4581,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // (ReportPostRebootOutcomeAsync) calls IsRebootPendingAsync directly at the default
             // (background: false) so it keeps operator priority.
             bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token, background: true);
+            computer.WasConfirmedOnline = true; // reaching here means WinRM answered — genuinely managed
 
             // We got here with no shell-init failure → WinRM is healthy. If this host was flagged
             // degraded, it has recovered: clear the flag + the stale "WinRM temporarily unavailable"
@@ -4691,6 +4725,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             SccmClientInfo health = await _configMgr.GetClientHealthAsync(computer.Name, CurrentPsCredential(), healthPerHost.Token);
             computer.IsOnline = true;
+            computer.WasConfirmedOnline = true; // WinRM/ConfigMgr answered — genuinely managed, not just pingable
             computer.SiteCode = health.SiteCode;
             computer.AgentVersion = health.ClientVersion;
             computer.RebootRequired = health.RebootRequired;
@@ -4722,6 +4757,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // WinRM reached the box but it isn't a ConfigMgr client (or the query was
             // denied) — it's still up.
             computer.IsOnline = true;
+            computer.WasConfirmedOnline = true; // WinRM answered — genuinely managed, not just pingable
             computer.LastStatus = "Online · no ConfigMgr client";
             computer.LastError = ex.Message;
             _activity.Warn(computer.Name, $"No ConfigMgr client — {ex.Message}");
@@ -4830,6 +4866,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private void ApplyVitals(Computer computer, MachineVitals v)
     {
         computer.IsOnline = true; // it answered the remoting pull
+        computer.WasConfirmedOnline = true; // genuinely reached over remoting, not just pingable
         computer.SystemDriveFreePercent = v.SystemDriveFreePercent;
         computer.MemoryUsedPercent = v.MemoryUsedPercent;
         computer.CpuLoadPercent = v.CpuLoadPercent;
@@ -5073,6 +5110,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 else
                 {
                     computer.LastStatus = "Reboot forced — going down";
+                    computer.WasConfirmedOnline = true; // the reboot ran over WinRM — genuinely managed, so track its return
                     computer.RebootMessage = $"Forced reboot sent {DateTime.Now:HH:mm}";
                     _activity.Info(computer.Name, "Forced reboot (shutdown /r /f /t 5)");
                     // Once the machine comes back online the monitor will re-probe reboot-pending status
