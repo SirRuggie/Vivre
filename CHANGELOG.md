@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.3 — 2026-07-01
+
 ### Changed
 - **The machine grid now keeps a "Scheduled task cancelled" note after you cancel a scheduled task,
   instead of blanking the message.** Previously, cancelling a scheduled install or reboot cleared the
