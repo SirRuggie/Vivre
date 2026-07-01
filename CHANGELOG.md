@@ -6,6 +6,13 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **The bottom status bar no longer double-prints the sweep progress.** During a fleet sweep it briefly
+  showed the machine count and timer twice — e.g. "Checking vitals — 65/319 · 00:36" immediately followed
+  by "65/319 machines  00:36". The second copy was a leftover from the removed fleet band; the count and
+  elapsed now show once, in the single narration line. Cosmetic only — no change to the sweep or its
+  progress values.
+
 ## 1.14.3 — 2026-07-01
 
 ### Changed

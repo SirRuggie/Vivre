@@ -1535,7 +1535,7 @@
                                    Visibility="{Binding SelectedTab.HasSelection, Converter={StaticResource BoolToVis}}" />
                     </StackPanel>
 
-                    <!-- Center: idle → FleetSummary; busy → SweepStatus narration + FleetNofM + FleetElapsed -->
+                    <!-- Center: idle → FleetSummary; busy → SweepStatus narration (label + N/M + elapsed, one line) -->
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
 
                         <!-- Idle summary (collapsed when busy) -->
@@ -1567,20 +1567,14 @@
                                     </Style.Triggers>
                                 </Style>
                             </StackPanel.Style>
+                            <!-- SweepStatus already carries the label + N/M count + elapsed in one clean string
+                                 (e.g. "Checking vitals — 65/319 · 00:36"). The separate FleetNofM/FleetElapsed
+                                 TextBlocks that used to sit here were leftovers from the removed fleet band and
+                                 double-printed the same count + timer — removed so it shows once. -->
                             <TextBlock FontSize="12" FontWeight="Medium"
                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}"
                                        Text="{Binding SelectedTab.SweepStatus}"
                                        VerticalAlignment="Center" />
-                            <TextBlock FontSize="12" Margin="10,0,0,0"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Text="{Binding SelectedTab.FleetNofM}"
-                                       VerticalAlignment="Center"
-                                       Visibility="{Binding SelectedTab.FleetNofM, Converter={StaticResource StringToVis}}" />
-                            <TextBlock FontSize="12" Margin="8,0,0,0"
-                                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                                       Text="{Binding SelectedTab.FleetElapsed}"
-                                       VerticalAlignment="Center"
-                                       Visibility="{Binding SelectedTab.FleetElapsed, Converter={StaticResource StringToVis}}" />
                         </StackPanel>
 
                     </StackPanel>
