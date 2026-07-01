@@ -14,6 +14,10 @@ it ships, then gets a dated heading.
   Health grid already displayed, and that note stays until the row's next action replaces it.
 
 ### Fixed
+- **A failed cleanup of the temporary SMB helper service is now logged instead of vanishing.** On a
+  Kerberos-broken box, Vivre creates a per-run helper service (Vivre_WUA_*) and removes it when done; a
+  failed removal previously left only a debug line that release builds strip. It now records a warning to
+  the activity log and rolling log file (the leftover is harmless — the next run reaps it).
 - **Scheduled installs and reboots now fire at the time you actually picked, on every machine.** The
   one-time task is registered on the remote box, and the trigger time was sent with no time zone — so each
   target read your chosen wall-clock as *its own* local time. A box in a different zone (e.g. a UTC Azure VM)

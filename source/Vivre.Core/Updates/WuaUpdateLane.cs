@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Management.Automation;
 using System.Text.Json;
 using Vivre.Core.Credentials;
+using Vivre.Core.Logging;
 using Vivre.Core.PowerShell;
 
 namespace Vivre.Core.Updates;
@@ -38,16 +39,19 @@ public sealed class WuaUpdateLane
     /// <param name="smbLane">The SMB + SCM fallback lane used when a host rejects WinRM/Kerberos
     /// (0x80090322). Defaults to a real <see cref="SmbAgentLane"/> over the same agent bytes; overridden
     /// by tests to assert the lane selection delegates on the typed Kerberos exception.</param>
+    /// <param name="activityLog">Optional sink forwarded to the default <see cref="SmbAgentLane"/> so a
+    /// failed best-effort helper-service teardown is logged rather than swallowed. Null in tests.</param>
     public WuaUpdateLane(
         IPowerShellHost powerShell,
         TimeSpan? watchdogPollInterval = null,
         Func<byte[]>? agentBytesProvider = null,
-        ISmbAgentLane? smbLane = null)
+        ISmbAgentLane? smbLane = null,
+        IActivityLog? activityLog = null)
     {
         _powerShell = powerShell;
         _watchdogPollInterval = watchdogPollInterval ?? TimeSpan.FromSeconds(15);
         _agentBytes = agentBytesProvider ?? ReadAgentBytes;
-        _smb = smbLane ?? new SmbAgentLane(_agentBytes);
+        _smb = smbLane ?? new SmbAgentLane(_agentBytes, activityLog: activityLog);
     }
 
     /// <summary>The SMB/DCOM lane this WUA lane uses, exposed so the sibling 2016 full-package lane

@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
+using Vivre.Core.Logging;
 using Vivre.Core.PowerShell;
 using Vivre.Core.Remoting;
 
@@ -44,17 +45,21 @@ public sealed class SmbAgentLane : ISmbAgentLane
     private readonly Func<byte[]> _agentBytes;
     private readonly TimeSpan _pollInterval;
     private readonly TimeSpan _startupGrace;
+    private readonly IActivityLog? _activity;
 
     /// <param name="agentBytesProvider">Supplies the compiled, signed agent EXE bytes (the same provider
     /// the WinRM lane uses, so both lanes drop byte-identical, integrity-verifiable agents).</param>
     /// <param name="pollInterval">How often the progress tail reads new bytes. Default 500ms; tests shrink it.</param>
     /// <param name="startupGrace">How long to wait for the agent to begin writing progress before declaring
     /// it never launched. Default 2 minutes (matches the WinRM bootstrap).</param>
-    public SmbAgentLane(Func<byte[]> agentBytesProvider, TimeSpan? pollInterval = null, TimeSpan? startupGrace = null)
+    /// <param name="activityLog">Optional sink for the best-effort helper-service teardown: a failed teardown
+    /// is logged (WARN) here rather than swallowed, but never fails the operation. Null in tests.</param>
+    public SmbAgentLane(Func<byte[]> agentBytesProvider, TimeSpan? pollInterval = null, TimeSpan? startupGrace = null, IActivityLog? activityLog = null)
     {
         _agentBytes = agentBytesProvider ?? throw new ArgumentNullException(nameof(agentBytesProvider));
         _pollInterval = pollInterval ?? TimeSpan.FromMilliseconds(500);
         _startupGrace = startupGrace ?? TimeSpan.FromMinutes(2);
+        _activity = activityLog;
     }
 
     // --- public lane operations -------------------------------------------
@@ -264,7 +269,7 @@ public sealed class SmbAgentLane : ISmbAgentLane
             // never leaving behind.
             if (service is not null)
             {
-                await TeardownServiceAsync(service).ConfigureAwait(false);
+                await TeardownServiceAsync(service, host, serviceName).ConfigureAwait(false);
                 service.Dispose();
             }
 
@@ -391,7 +396,7 @@ public sealed class SmbAgentLane : ISmbAgentLane
         return new SmbRunOutcome(last, scanJson);
     }
 
-    private async Task TeardownServiceAsync(RemoteServiceController service)
+    private async Task TeardownServiceAsync(RemoteServiceController service, string host, string serviceName)
     {
         try
         {
@@ -415,9 +420,11 @@ public sealed class SmbAgentLane : ISmbAgentLane
         catch (Exception ex)
         {
             // Teardown is best-effort: a per-run service name means a leftover is harmless and a re-run
-            // reaps it. Surface nothing on the operation result (the caller already has its outcome), but
-            // don't let a teardown hiccup mask the real result.
-            System.Diagnostics.Debug.WriteLine($"SMB agent teardown: {ex.Message}");
+            // reaps it. Don't fold this into the operation result (the caller already has its outcome) and
+            // don't rethrow — but surface it to the activity log + rolling file (WARN, not ERROR) so a
+            // persistent leftover (a stuck Vivre_WUA_* service, a DeleteService denial) is visible instead
+            // of vanishing. Debug.WriteLine here was stripped from Release, so the failure had no trace.
+            _activity?.Warn(host, $"SMB helper-service teardown incomplete — '{serviceName}' may be left behind (harmless; the per-run name is reaped on the next run): {ex.GetType().Name}: {ex.Message}");
         }
     }
 

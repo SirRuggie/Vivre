@@ -64,7 +64,7 @@ public partial class App : Application
         var credentials = new CredentialStore();
         var activity = new ActivityLog();
         var scripts = new ScriptLibrary();
-        var patch = new PatchService(powerShell);
+        var patch = new PatchService(powerShell, activity);
         var vitals = new VitalsProbe(powerShell, new DcomVitalsProbe());
         var remediation = new RemediationService(powerShell);
         var deployment = new DeploymentService(powerShell);

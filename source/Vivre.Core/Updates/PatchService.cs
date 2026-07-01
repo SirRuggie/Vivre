@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Vivre.Core.Credentials;
+using Vivre.Core.Logging;
 using Vivre.Core.PowerShell;
 
 namespace Vivre.Core.Updates;
@@ -35,9 +36,9 @@ public sealed class PatchService : IPatchService
     // stage / cleanup / reboot-wave). Verify is read-only and deliberately not claimed.
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
 
-    public PatchService(IPowerShellHost powerShell)
+    public PatchService(IPowerShellHost powerShell, IActivityLog? activity = null)
     {
-        _wua = new WuaUpdateLane(powerShell);
+        _wua = new WuaUpdateLane(powerShell, activityLog: activity);
         _lcu = new FullPackageLcuLane(_wua.Smb);
         _wave = new RebootWave(new DcomRebootTrigger(), new TcpReachabilityProbe());
     }
