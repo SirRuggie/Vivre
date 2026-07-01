@@ -1386,8 +1386,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         await _remoteSweepThrottle.Active.WaitAsync(token);
         try
         {
-            await CheckRowCoreAsync(computer, token);
-            await CheckVitalsCoreAsync(computer, token);
+            // Skip the vitals half when the health core found the box genuinely offline (unreachable by ping
+            // AND ambient DCOM) — no point paying the vitals timeout on a box we already know is down.
+            if (await CheckRowCoreAsync(computer, token))
+            {
+                await CheckVitalsCoreAsync(computer, token);
+            }
         }
         finally
         {
@@ -1643,6 +1647,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private async Task RunCustomColumnRowAsync(Computer computer, IReadOnlyList<CustomColumnSpec> specs, CancellationToken token)
     {
         using IDisposable permit = await _remoteSweepThrottle.AcquirePassiveAsync(token);
+
+        // Skip the doomed custom-column probe on a genuinely-offline box (unreachable by ping AND ambient
+        // DCOM) — it would only burn a timeout and litter "timed out"/"WinRM n/a" in the cells. Write a clean
+        // "Offline" instead. Per-sweep: a box that answers on a later sweep re-runs and refills normally.
+        if (await IsGenuinelyOfflineAsync(computer.Name, token))
+        {
+            foreach (CustomColumnSpec spec in specs)
+            {
+                computer.CustomValues[spec.Name] = "Offline";
+            }
+
+            return;
+        }
+
         foreach (CustomColumnSpec spec in specs)
         {
             computer.CustomValues[spec.Name] = "…";
@@ -4684,11 +4702,41 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
+    /// <summary>Fresh per-sweep reachability verdict for the Health-grid doomed-probe skip: true when the host
+    /// is unreachable by BOTH ICMP ping AND an ambient DCOM/WMI probe (the identity/channel the DCOM vitals
+    /// fallback uses). Ambient (credential: null), NOT IsOnline/ProbeReachabilityAsync — whose DCOM leg is
+    /// credential-gated and would false-negative a DCOM-reachable box on the ambient login. Recomputed each
+    /// call — never latched — so a box that answers on a later sweep recovers.</summary>
+    private async Task<bool> IsGenuinelyOfflineAsync(string host, CancellationToken token)
+    {
+        bool ping;
+        try
+        {
+            ping = (await _pinger.PingAsync(host, PingTimeoutMs, token)).IsOnline;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            ping = false;
+        }
+
+        if (ping)
+        {
+            return false;
+        }
+
+        bool dcom = (await _hostProbe.CanReachAsync(host, credential: null, cancellationToken: token)).Reachable;
+        return ReachabilityGating.ShouldSkipAsOffline(pingReachable: ping, dcomReachable: dcom);
+    }
+
     // Ping + SCCM client-health pull for one row — the un-throttled core: the CALLER owns the shared
     // _remoteSweepThrottle slot (so Check Vitals holds one slot across health+vitals, and Check All holds one
     // per row). Clears stale fields only once the work actually starts, so a queued row keeps its last-known
     // values until it's refreshed.
-    private async Task CheckRowCoreAsync(Computer computer, CancellationToken token)
+    private async Task<bool> CheckRowCoreAsync(Computer computer, CancellationToken token)
     {
         computer.LastError = null;
         computer.SiteCode = null;
@@ -4714,6 +4762,28 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         catch
         {
             pingOnline = false;
+        }
+
+        // Skip the doomed WinRM health + vitals on a box unreachable by BOTH ping AND an AMBIENT DCOM/WMI
+        // probe (the same identity the DCOM vitals fallback uses). Such a box would only burn a ~20s WinRM
+        // open-timeout (then a vitals DCOM-fallback timeout) before failing — mark it Offline and skip. A box
+        // reachable by ping OR ambient DCOM (e.g. a Kerberos-broken box still readable over DCOM) is NOT
+        // skipped, so it still gets its health/vitals. Ambient (credential: null), NOT IsOnline (whose DCOM
+        // leg is credential-gated and would false-negative a DCOM-reachable box on the ambient login).
+        // Recomputed every sweep, so a box that answers on a later pass recovers.
+        if (!pingOnline)
+        {
+            bool dcomReachable = (await _hostProbe.CanReachAsync(computer.Name, credential: null, cancellationToken: token)).Reachable;
+            if (ReachabilityGating.ShouldSkipAsOffline(pingReachable: pingOnline, dcomReachable: dcomReachable))
+            {
+                ResetVitals(computer);   // drop any stale vitals numbers a prior sweep left in the cells
+                computer.IsOnline = false;
+                computer.VitalityScore = null;
+                computer.VitalityBand = VitalityBand.Offline;
+                computer.VitalityReasons = ["Offline"];
+                computer.LastStatus = "Offline";
+                return false;            // tell the caller (CheckHealthAndVitalsRowAsync) to skip the vitals half
+            }
         }
 
         // Always attempt health, regardless of ping — many servers block ICMP but
@@ -4780,6 +4850,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.LastError = ex.Message;
             _activity.Warn(computer.Name, $"Check failed — {ex.Message}");
         }
+
+        return true; // reachable by ping or ambient DCOM — the caller runs the vitals half
     }
 
     /// <summary>Standalone vitals triage per-row work (right-click ▸ Triage): reads vitals under one

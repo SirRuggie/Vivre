@@ -14,6 +14,12 @@ it ships, then gets a dated heading.
   Health grid already displayed, and that note stays until the row's next action replaces it.
 
 ### Fixed
+- **Offline machines on the Health grid now read "Offline" instantly, instead of sitting on
+  "Reading vitals…" for ~20 seconds and leaving stray "timed out" / "WinRM n/a" cells behind.** When a box
+  is unreachable by both ping and DCOM, Vivre now skips the doomed health, vitals, and custom-column probes
+  (each of which was waiting out a remoting timeout on a machine that's simply off) and marks it Offline
+  directly. A Kerberos-broken box that's still reachable over DCOM is unaffected — it still gets its vitals
+  over the backup channel. Re-checked every sweep, so a box that comes back online is picked up normally.
 - **A powered-off, Kerberos-broken app server no longer flips to a false "online" or a
   "Offline since … — waiting for it to come back…".** When such a box (one that Vivre reads over the
   DCOM/SMB backup channel) is actually off, its vitals read comes back empty — and Vivre was treating

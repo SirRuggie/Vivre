@@ -30,4 +30,18 @@ public static class ReachabilityGating
     /// can't slip a doomed remoting attempt through, nor be skipped without evidence it's actually down.
     /// </summary>
     public static bool ScanShouldShortCircuitOffline(bool? isOnline) => isOnline == false;
+
+    /// <summary>
+    /// Whether the Health sweep should SKIP the doomed WinRM health / vitals / custom-column probes on a box
+    /// and mark it Offline directly, given a FRESH per-sweep reachability check. True ONLY when the box is
+    /// unreachable by BOTH ICMP ping AND an ambient DCOM/WMI probe (the same identity the DCOM vitals
+    /// fallback uses) — no transport those probes rely on can reach it, so attempting them only burns a
+    /// ~20s WinRM open-timeout (and a vitals DCOM-fallback timeout) before failing. A box reachable by ping
+    /// OR ambient DCOM (e.g. a Kerberos-broken box still readable over DCOM) is NOT skipped, so it still
+    /// gets its health/vitals. Deliberately keyed on an AMBIENT DCOM probe, NOT on
+    /// <c>IsOnline</c>/<c>ProbeReachabilityAsync</c> — whose DCOM leg is credential-gated and would
+    /// false-negative a DCOM-reachable box on the ambient login, wrongly skipping it.
+    /// </summary>
+    public static bool ShouldSkipAsOffline(bool pingReachable, bool dcomReachable) =>
+        !pingReachable && !dcomReachable;
 }

@@ -23,4 +23,12 @@ public class ReachabilityGatingTests
     [InlineData(null, false)]   // never probed → do NOT short-circuit; caller must probe first
     public void ScanShouldShortCircuitOffline_only_when_confirmed_offline(bool? isOnline, bool expected) =>
         Assert.Equal(expected, ReachabilityGating.ScanShouldShortCircuitOffline(isOnline));
+
+    [Theory]
+    [InlineData(false, false, true)]   // ping down AND ambient DCOM down → skip the doomed probes, mark Offline
+    [InlineData(false, true, false)]   // ping down but ambient DCOM UP (Kerberos-broken, DCOM-readable) → do NOT skip
+    [InlineData(true, false, false)]   // ping up → do NOT skip
+    [InlineData(true, true, false)]    // both up → do NOT skip
+    public void ShouldSkipAsOffline_only_when_both_ping_and_ambient_dcom_fail(bool ping, bool dcom, bool expected) =>
+        Assert.Equal(expected, ReachabilityGating.ShouldSkipAsOffline(ping, dcom));
 }
