@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using Vivre.Core.Logging;
 using Wpf.Ui.Controls;
 
 namespace Vivre.Desktop;
@@ -89,6 +90,7 @@ internal sealed class AdaptiveLayoutController
     private readonly NavigationView _navView;
     private readonly FrameworkElement _contentHost;
     private readonly AppSettingsStore? _settings;
+    private readonly IActivityLog? _activity;
 
     /// <summary>
     /// Column 0 of the ShellGrid (the nav-pane column).  Setting its <c>Width</c> shifts the
@@ -156,7 +158,8 @@ internal sealed class AdaptiveLayoutController
         Action<bool> setToolbarCompact,
         Func<bool> isPatchingMode,
         FrameworkElement actionCluster,
-        Grid commandBarGrid)
+        Grid commandBarGrid,
+        IActivityLog? activityLog = null)
     {
         _navView            = navView;
         _contentHost        = contentHost;
@@ -166,6 +169,7 @@ internal sealed class AdaptiveLayoutController
         _isPatchingMode     = isPatchingMode;
         _actionCluster      = actionCluster;
         _commandBarGrid     = commandBarGrid;
+        _activity           = activityLog;
     }
 
     /// <summary>
@@ -178,7 +182,7 @@ internal sealed class AdaptiveLayoutController
     {
         // Load saved wide-pane intent (defaults to false — starts compact).
         try   { _wideIntent = _settings?.Load().NavPaneOpen ?? false; }
-        catch (Exception ex) { _wideIntent = false; Serilog.Log.Warning(ex, "AdaptiveLayout: couldn't read NavPaneOpen; starting compact."); }
+        catch (Exception ex) { _wideIntent = false; _activity?.Warn(null, $"AdaptiveLayout: couldn't read NavPaneOpen; starting compact. {ex.GetType().Name}: {ex.Message}"); }
 
         // Apply the correct state for the window's current (startup) size.
         // Force the state machine to treat _state as "unknown" so Evaluate
@@ -621,7 +625,7 @@ internal sealed class AdaptiveLayoutController
         catch (Exception ex)
         {
             // Settings write failure is non-fatal; the preference just won't survive restart.
-            Serilog.Log.Warning(ex, "AdaptiveLayout: couldn't persist NavPaneOpen.");
+            _activity?.Warn(null, $"AdaptiveLayout: couldn't persist NavPaneOpen. {ex.GetType().Name}: {ex.Message}");
         }
     }
 }

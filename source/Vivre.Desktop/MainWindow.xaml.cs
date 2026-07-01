@@ -110,7 +110,8 @@ public partial class MainWindow : FluentWindow
             compact => ToolbarCompact = compact,
             () => Shell?.SelectedTab is WorkspaceViewModel { IsUpdateMode: true },
             ActionCluster,
-            CommandBarGrid);
+            CommandBarGrid,
+            Log);
         _adaptiveLayout.Initialise(this);
 
         // Layout diagnostic probe (permanent, env-gated, zero cost when unset). Launch with
