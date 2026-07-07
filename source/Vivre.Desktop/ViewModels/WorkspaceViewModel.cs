@@ -1719,8 +1719,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private Task ScanUpdatesAsync() => RunPatchSweepAsync([.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
 
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
+    /// <remarks>Install/Uninstall sweeps pass an INFINITE per-host timeout (like 2016 Clean up): the old 3-hour
+    /// wall clock tore down actively-progressing installs mid-run (and its cleanup deleted the progress file
+    /// under the live watcher). The lane's silence watchdog (<see cref="PatchOptions.NoResponseTimeout"/>) is
+    /// the safety net — a box writing progress is never cut off; a dead/hung SESSION still fails fast. Known
+    /// gap: the watchdog can't see AGENT death (the watcher heartbeats on the agent's behalf), so an agent
+    /// killed without a terminal line — crash, EDR, or the task's 6h ExecutionTimeLimit — leaves the row
+    /// running until the operator stops the sweep. Follow-up: a watcher-side task-state probe.</remarks>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
-    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install");
+    private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install",
+        perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan);
 
     /// <summary>Scans the given rows (right-click "Updates ▸ Scan"); empty ⇒ all rows.</summary>
     public Task ScanSelectedAsync(IReadOnlyList<Computer> rows) =>
@@ -1728,7 +1736,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
     public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install");
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install",
+            perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan);
 
     /// <summary>Registers a one-time SYSTEM task on each row to install at <paramref name="at"/>
     /// (instead of now). Populates the "Scheduled task" columns; the monitor clears them once the
@@ -1913,7 +1922,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Installs only the ticked updates on the focused machine (the side panel's "Install checked").</summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanInstallChecked))]
     private Task InstallCheckedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], (c, ct) => InstallRowAsync(c, ct), "Install") : Task.CompletedTask;
+        FocusedComputer is { } c
+            ? RunPatchSweepAsync([c], (c, ct) => InstallRowAsync(c, ct), "Install",
+                perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan)
+            : Task.CompletedTask;
 
     /// <summary>Whether "Install checked" can run: Applicable scope, a focused machine with a scanned
     /// checklist, not held by a running operation, not patching, and NOT with a reboot pending (a
@@ -1943,7 +1955,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanUninstallChecked))]
     public Task UninstallCheckedAsync() =>
-        FocusedComputer is { } c ? RunPatchSweepAsync([c], UninstallRowAsync, "Uninstall") : Task.CompletedTask;
+        FocusedComputer is { } c
+            ? RunPatchSweepAsync([c], UninstallRowAsync, "Uninstall",
+                perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan)
+            : Task.CompletedTask;
 
     /// <summary>Whether "Uninstall checked" can run: Installed scope, the focused row not held by a
     /// running operation, and at least one ticked update that's actually removable. Bound by the
@@ -2498,8 +2513,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         // Scans pass the high scan throttle; install/uninstall default to the current install cap.
         throttle ??= CurrentInstallThrottle();
-        // The Reboot Wave self-bounds at its own hard cap and passes a longer per-host timeout; everything
-        // else uses the shared PatchOptions timeout so a single hung box can't pin the grid.
+        // Per-host timeout by sweep type: Install/Uninstall and 2016 Clean up pass INFINITE (the lane's
+        // silence watchdog is their safety net — see InstallUpdatesAsync's remarks); the Reboot Wave passes
+        // its own hard cap; Scan and the rest default to the shared PatchOptions timeout so a hung box
+        // can't pin the grid.
         TimeSpan hostTimeout = perHostTimeout ?? _patchOptions.PerHostTimeout;
 
         // Derive a sweep narration label from the operation type so the ProgressRing isn't silent.
@@ -2934,7 +2951,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
         computer.UpdateMessage = "Starting uninstall…";
 
-        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        // Same late-line gate as InstallRowAsync: a line draining from the remote pipeline after the
+        // operation resolved must not overwrite the terminal row state (flag stays on the UI context).
+        bool operationEnded = false;
+        var progress = new Progress<HostPatchStatus>(s =>
+        {
+            if (operationEnded)
+            {
+                return;
+            }
+
+            ApplyStatus(computer, s);
+        });
         try
         {
             HostPatchStatus final = await _patch.UninstallAsync(computer.Name, options, _credentials.Current, progress, token);
@@ -2958,6 +2986,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
+            operationEnded = true;
             computer.IsPatching = false;
         }
     }
@@ -3112,8 +3141,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // retry it silently. Normal progress (Scanning/Downloading/Installing) still applies live.
         // Also latch whether install has actually BEGUN this run (see the re-entry guard below).
         bool installBegan = false;
+        // Lines can still drain from the remote pipeline after the operation has resolved (the pipeline
+        // stop is asynchronous) — a late-arriving line must never overwrite the terminal row state. Both
+        // the flag write (finally) and this read run on the captured UI context, so no marshalling needed.
+        bool operationEnded = false;
         var progress = new Progress<HostPatchStatus>(s =>
         {
+            if (operationEnded)
+            {
+                return;
+            }
+
             if (s.Phase is PatchPhase.Installing or PatchPhase.PendingReboot or PatchPhase.Done || s.InstalledCount > 0)
             {
                 installBegan = true;
@@ -3226,6 +3264,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
+            operationEnded = true;
             computer.IsPatching = false;
         }
     }
@@ -3300,7 +3339,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// Express-delta CU is never pushed through WUA; a box with no scan — or whose only pending update IS the CU —
     /// is skipped with a per-row note.</summary>
     public Task InstallMinorOnlyAsync(IReadOnlyList<Computer> boxes) =>
-        RunPatchSweepAsync(boxes, (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true), "Install");
+        RunPatchSweepAsync(boxes, (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true), "Install",
+            perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan);
 
     /// <summary>Pre-dialog "already current this cycle" check for the staged-update decision. For each flagged
     /// 2016 box not yet staged/verified, read its UBR over the SAME path the pre-stage check uses

@@ -963,6 +963,7 @@ public sealed class WuaUpdateLane
                 $started = Get-Date
                 $lastSeen = Get-Date
                 $lastLen = 0L
+                $progressSeen = $false
                 $done = $false
 
                 while (-not $done) {
@@ -987,6 +988,7 @@ public sealed class WuaUpdateLane
                                 # Emit the raw JSON line to the client.
                                 $line
                                 $lastSeen = Get-Date
+                                $progressSeen = $true
                                 # Check for a terminal phase so we know when to stop tailing.
                                 try {
                                     $obj = $line | ConvertFrom-Json
@@ -1011,16 +1013,25 @@ public sealed class WuaUpdateLane
                         $lastSeen = Get-Date
                     }
 
-                    # If the worker never started writing within 2 min, give up — the task
-                    # didn't launch (typically a permission or COM-server issue on the host).
-                    if (-not (Test-Path '{{progressPath}}') -and ((Get-Date) - $started) -gt [TimeSpan]::FromMinutes(2)) {
-                        $err = [PSCustomObject]@{
-                            phase = 'Error'; message = 'Worker did not start writing progress within 2 minutes.'
-                            percent = $null; available = 0; installed = 0; failed = 0
-                            rebootPending = $false; ts = (Get-Date).Ticks
+                    if (-not (Test-Path '{{progressPath}}')) {
+                        if ($progressSeen) {
+                            # The file vanished AFTER progress was relayed. Only cleanup deletes it
+                            # (the client's safety cleanup on cancel) - the worker never does - so
+                            # stop tailing quietly; cleanup owns the teardown. Emitting the startup
+                            # failure here used to mislabel a cancelled mid-run install as "did not
+                            # start".
+                            $done = $true
+                        } elseif (((Get-Date) - $started) -gt [TimeSpan]::FromMinutes(2)) {
+                            # The worker never started writing within 2 min - the task didn't launch
+                            # (typically a permission or COM-server issue on the host).
+                            $err = [PSCustomObject]@{
+                                phase = 'Error'; message = 'Worker did not start writing progress within 2 minutes.'
+                                percent = $null; available = 0; installed = 0; failed = 0
+                                rebootPending = $false; ts = (Get-Date).Ticks
+                            }
+                            Write-Output ($err | ConvertTo-Json -Compress)
+                            $done = $true
                         }
-                        Write-Output ($err | ConvertTo-Json -Compress)
-                        $done = $true
                     }
                 }
             } finally {

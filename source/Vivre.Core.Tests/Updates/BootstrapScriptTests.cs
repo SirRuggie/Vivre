@@ -54,6 +54,47 @@ public class BootstrapScriptTests
     }
 
     [Fact]
+    public void Startup_failure_check_is_latched_behind_progress_seen()
+    {
+        string script = Bootstrap(RunBehavior.InstallNow);
+
+        // The "Worker did not start writing progress" error may only fire while NO progress line has
+        // ever been relayed. Once progress was seen, a vanished file means cleanup deleted it (a client
+        // cancel) — the tail must exit quietly, never emit the startup-failure line. The unlatched check
+        // mislabeled a cancelled 3-hour mid-run install as "did not start".
+        Assert.Contains("$progressSeen = $false", script);
+        Assert.Contains("$progressSeen = $true", script);
+
+        int quietExit = script.IndexOf("if ($progressSeen)", StringComparison.Ordinal);
+        int startupError = script.IndexOf("Worker did not start writing progress", StringComparison.Ordinal);
+        Assert.True(quietExit >= 0, "the tail loop should branch on the latched progressSeen flag");
+        Assert.True(startupError >= 0, "the genuine startup-failure message must remain");
+        Assert.True(quietExit < startupError, "the quiet-exit (progress was seen) branch must gate the startup-failure emit");
+
+        // Pin the shape, not just the ordering: the 2-minute check must be the ELSE branch of the
+        // progressSeen gate, so it is structurally unreachable once progress was relayed.
+        Assert.Contains("} elseif (((Get-Date) - $started) -gt [TimeSpan]::FromMinutes(2)) {", script);
+    }
+
+    [Theory]
+    [InlineData(RunBehavior.InstallNow)]
+    [InlineData(RunBehavior.ScheduleAt)]
+    public void Bootstrap_parses_as_valid_powershell(RunBehavior behavior)
+    {
+        // dotnet build can't catch a syntax error inside the embedded controller script — it only fails
+        // at runtime on the target. Lock parse-validity in here. (The PS7 parser; the 5.1 subset used by
+        // the script is parse-compatible.)
+        string script = Bootstrap(
+            behavior,
+            behavior == RunBehavior.ScheduleAt ? DateTime.Today.AddDays(1).AddHours(1) : null);
+
+        System.Management.Automation.Language.Parser.ParseInput(
+            script, out _, out System.Management.Automation.Language.ParseError[] errors);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
     public void Bootstrap_creates_and_hardens_the_drop_dir_before_writing_the_agent()
     {
         string script = Bootstrap(RunBehavior.InstallNow);
