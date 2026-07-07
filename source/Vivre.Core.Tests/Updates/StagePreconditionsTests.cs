@@ -142,8 +142,9 @@ public class StagePreconditions_UnscannedThisSession_Tests
 
 /// <summary>
 /// Tests for <see cref="StagePreconditions.IsStageTarget"/> / <see cref="StagePreconditions.HasAnyStageTarget"/>
-/// — the "flagged Server 2016 box" rule the panel's Clean up / Stage / Verify act on. When no box qualifies the
-/// View shows the "mark a box for staged patching first" guidance instead of silently no-opping.
+/// — the "flagged Server 2016 box" rule the panel's Stage / Verify act on (Clean up is selection-driven and
+/// staged-independent — see <see cref="ComponentCleanupTargetsTests"/>). When no box qualifies the View shows
+/// the "mark a box for staged patching first" guidance instead of silently no-opping.
 /// </summary>
 public class StagePreconditions_StageTarget_Tests
 {

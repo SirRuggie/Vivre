@@ -32,7 +32,7 @@
                 <!-- What's wrong, in plain terms. No box was touched. (Static text only — no Run.Text binding.) -->
                 <ui:InfoBar Severity="Informational" IsOpen="True" IsClosable="False"
                             Title="None of these Server 2016 boxes are marked for staged patching"
-                            Message="Clean up, Stage, and Verify only act on Server 2016 boxes you've marked for staged patching — so right now they have nothing to do. No machine was touched."
+                            Message="Stage and Verify only act on Server 2016 boxes you've marked for staged patching — so right now they have nothing to do. No machine was touched. (Clean up works on any 2016 box, marked or not.)"
                             Margin="0,0,0,16" />
 
                 <TextBlock Text="How to fix it" FontWeight="SemiBold" Margin="0,0,0,4" />

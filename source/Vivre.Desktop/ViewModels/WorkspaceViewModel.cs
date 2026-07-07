@@ -3250,17 +3250,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// "Staged" pill column visibility (the whole column hides when nothing is flagged).</summary>
     public bool HasStagedServer2016 => StagePreconditions.HasAnyStageTarget(Computers);
 
-    /// <summary>The rows the panel's Stage / Clean up / Verify act on: the selected FLAGGED 2016 rows, or every
+    /// <summary>The rows the panel's Stage / Verify act on: the selected FLAGGED 2016 rows, or every
     /// flagged 2016 row when none are selected. A non-flagged 2016 box patches via Windows Update, so the DISM
-    /// lane never touches it; non-2016 selections are ignored.</summary>
+    /// staging lane never touches it; non-2016 selections are ignored. (Clean up is decoupled from staged-state
+    /// — see <see cref="Clean2016Targets"/>.)</summary>
     private IReadOnlyList<Computer> Server2016Targets()
     {
-        // Staged patching is opt-in per box: the panel's Stage / Clean up / Verify act ONLY on flagged 2016
-        // boxes (StagePreconditions.IsStageTarget). A non-flagged 2016 box patches via Windows Update and is
-        // never touched by the DISM lane.
+        // Staged patching is opt-in per box: the panel's Stage / Verify act ONLY on flagged 2016 boxes
+        // (StagePreconditions.IsStageTarget). A non-flagged 2016 box patches via Windows Update and is never
+        // touched by the DISM staging lane.
         var selected = SelectedComputers.Where(StagePreconditions.IsStageTarget).ToList();
         return selected.Count > 0 ? selected : [.. Computers.Where(StagePreconditions.IsStageTarget)];
     }
+
+    /// <summary>The rows the panel's Clean up acts on: selection-driven and independent of staged-state — the
+    /// selected 2016 boxes, or every 2016 box in the tab when none are selected. DISM component cleanup is
+    /// self-contained and reboot-free, so it runs on ANY 2016 box (flagged or not) to reclaim WinSxS space and
+    /// speed up normal Windows Update. Non-2016 selections are excluded. See <see cref="ComponentCleanupTargets"/>.</summary>
+    private IReadOnlyList<Computer> Clean2016Targets() => ComponentCleanupTargets.Select(SelectedComputers, Computers);
 
     /// <summary>The 2016 Stage targets not yet scanned this session — the View blocks Stage and lists these
     /// until they're scanned. (A post-reboot rescan sets LastScannedApplicable and satisfies this gate.)</summary>
@@ -3413,8 +3420,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             Problem: r.Message);
     }
 
-    /// <summary>Panel button: free component-store space on the targeted 2016 boxes (DISM cleanup as SYSTEM),
-    /// so a tight box has room for the CU. Safe to run any time — the agent refuses if a reboot is pending.</summary>
+    /// <summary>Panel button: free component-store space on the selected 2016 boxes — or every 2016 box in the tab
+    /// when none are selected (<see cref="Clean2016Targets"/>) — via DISM cleanup as SYSTEM. Selection-driven and
+    /// independent of staged-state: it speeds up normal Windows Update on any 2016 box and makes room for a CU.
+    /// Safe to run any time — the agent refuses if a reboot is pending.</summary>
     /// <remarks>Cleanup runs with an INFINITE per-host timeout so the 3-hour <see cref="PatchOptions.PerHostTimeout"/>
     /// never cancels-the-watch + tears down + deletes the progress file mid-cleanup. A backlogged 2016 component
     /// store can take many hours to reclaim; the watch stays alive the whole time. A genuinely dead agent is still
@@ -3424,7 +3433,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// gets a display-only "still going, check the box" flag — never a teardown.</remarks>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private Task CleanUp2016Async() =>
-        RunPatchSweepAsync(Server2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", CurrentInstallThrottle(),
+        RunPatchSweepAsync(Clean2016Targets(), ComponentCleanupLcuRowAsync, "Clean up", CurrentInstallThrottle(),
             // Infinite per-host timeout: RunOnePatchHostAsync's CancelAfter(hostTimeout) never fires for cleanup.
             System.Threading.Timeout.InfiniteTimeSpan);
 

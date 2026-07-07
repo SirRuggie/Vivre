@@ -6,6 +6,14 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **"Clean up" on the Server 2016 bar now works on any 2016 box, not just ones marked for staged patching.**
+  It follows the selection like the rest of the toolbar: with nothing selected it cleans every 2016 box in the
+  tab; with some selected it cleans exactly those (non-2016 selections are ignored). Component cleanup shrinks
+  the Windows Update component store, which speeds up normal Windows Update on any 2016 box and frees space
+  before staging — so it's no longer scoped to the staged subset. Stage and Verify are unchanged (still act on
+  boxes you've marked for staged patching); Clean up never reboots, same as before.
+
 ### Fixed
 - **The bottom status bar no longer double-prints the sweep progress.** During a fleet sweep it briefly
   showed the machine count and timer twice — e.g. "Checking vitals — 65/319 · 00:36" immediately followed

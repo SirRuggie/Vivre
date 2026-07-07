@@ -1078,11 +1078,14 @@ public partial class WorkspaceView : UserControl
         await StagedInstallInteraction.RunStageWorkflowAsync(Window.GetWindow(this), vm, vm.Server2016ActionTargets());
     }
 
-    /// <summary>Clean up (panel button): free component-store space on the flagged 2016 boxes. Gated by
-    /// <see cref="EnsureStageTargets"/> so an empty flagged set shows the guidance dialog instead of no-opping.</summary>
+    /// <summary>Clean up (panel button): free component-store space on the selected 2016 boxes — or all 2016 in
+    /// the tab when none are selected. Selection-driven and independent of staged-state (unlike Stage / Verify),
+    /// so it is NOT gated by <see cref="EnsureStageTargets"/>: component cleanup is self-contained, reboot-free,
+    /// and helps normal Windows Update on any 2016 box. The button is enabled by HasServer2016, so a click always
+    /// has a 2016 box to act on (the command no-ops only if the selection contains no 2016 box).</summary>
     private void OnCleanUp2016(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is not { } vm || !EnsureStageTargets(vm))
+        if (ViewModel is not { } vm)
         {
             return;
         }
@@ -1102,10 +1105,11 @@ public partial class WorkspaceView : UserControl
         vm.Verify2016Command.Execute(null);
     }
 
-    /// <summary>Guards the panel's flagged-2016 actions (Clean up / Stage / Verify): when no box is marked for
-    /// staged patching there is nothing for them to act on, so show the guidance dialog BEFORE any box is
-    /// touched and return false. Returns true when at least one flagged 2016 box exists. This is the
-    /// "doesn't work when nothing's marked" feedback — the buttons used to silently no-op on an empty set.</summary>
+    /// <summary>Guards the panel's flagged-2016 actions (Stage / Verify): when no box is marked for staged
+    /// patching there is nothing for them to act on, so show the guidance dialog BEFORE any box is touched and
+    /// return false. Returns true when at least one flagged 2016 box exists. This is the "doesn't work when
+    /// nothing's marked" feedback — those buttons used to silently no-op on an empty set. (Clean up is decoupled
+    /// from staged-state and no longer routes through this guard.)</summary>
     private bool EnsureStageTargets(WorkspaceViewModel vm)
     {
         if (StagePreconditions.HasAnyStageTarget(vm.Server2016ActionTargets()))

@@ -531,7 +531,7 @@
                                    Margin="0,0,4,0"
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
                                    Click="OnCleanUp2016"
-                                   ToolTip="Clears the Windows update backlog (required for 2016 boxes before staging). Never reboots." />
+                                   ToolTip="Clears the Windows Update component-store backlog on the selected 2016 boxes (or all 2016 if none selected) — speeds up Windows Update and frees space before staging. Works on any 2016 box, staged or not. Never reboots." />
                         <ui:Button Content="Stage"
                                    Icon="{ui:SymbolIcon ArrowDownload24}"
                                    Appearance="Primary"
