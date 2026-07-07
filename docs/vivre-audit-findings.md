@@ -12,6 +12,12 @@
 > class is not reintroduced). The two HIGHs are both "operator sees a calm/green picture while
 > something is wrong" — Vivre's core ethos.
 
+> **Post-audit note (2026-07-07) — not an audit finding, recorded to prevent re-derivation:** the separately
+> investigated "why did only ~30 of 51 boxes clean?" question was **NOT a concurrency/thread-pool bug** — Clean
+> was intentionally gated to Staged (flagged) 2016 boxes, so ~30 of the 51 were flagged and cleaned. It is now
+> RESOLVED by making Clean selection-driven (`9133226`, branch feat/clean-selection-driven — see
+> `docs/vivre-backlog.md`). Do not re-open it as a concurrency mystery.
+
 ## Recommended fix order (advisor triage)
 1. HIGH-1 — dead install worker undetectable (WinRM lane) — highest value, SMB lane has the template.
 2. HIGH-2 — one hung box freezes the whole monitor loop — well-scoped, vitals probe is the template.
