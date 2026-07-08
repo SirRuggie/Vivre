@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using Vivre.Core.Columns;
+using Vivre.Core.Logging;
 using Vivre.Core.Updates;
 
 namespace Vivre.Desktop;
@@ -120,6 +121,12 @@ public sealed class AppSettingsStore
     // corrupt settings.json. The last writer wins (its serialized snapshot is what lands on disk).
     private static readonly object _writeLock = new();
 
+    // Set once at App startup (static like _cache, so every construction site shares it — the store is
+    // new()-constructed in several places). Surfaces a failed background save to the operator: a
+    // silently-lost StagedHosts write would mis-route a 2016 box down the wrong WUA lane on the next
+    // restart, so this must not stay Debug-only (which compiles out of Release).
+    internal static IActivityLog? ActivityLog { get; set; }
+
     public AppSettingsStore()
     {
         string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vivre");
@@ -159,9 +166,10 @@ public sealed class AppSettingsStore
             }
             catch (Exception ex)
             {
-                // No logger here (this is below the activity log); the in-memory cache still holds the
-                // change, so a failed write only means it isn't persisted across restart. Surface it to
-                // the debugger output rather than swallowing silently.
+                // The in-memory cache still holds the change, so a failed write means the change is lost
+                // ONLY across restart — exactly how a StagedHosts flag silently reverts. Error (not Warn):
+                // it is not self-healing and the operator must re-do the action to persist it.
+                ActivityLog?.Error(null, $"Couldn't save settings to {path} — the change will be lost on restart: {ex.GetType().Name}: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"AppSettingsStore.Save: failed to write {path}: {ex.Message}");
             }
         });

@@ -63,6 +63,9 @@ public partial class App : Application
         var rdpCreds = new RdpCredentialStore();
         var credentials = new CredentialStore();
         var activity = new ActivityLog();
+        // Settings-save failures surface through the activity log (a static hook because the store is
+        // new()-constructed in several places — see AppSettingsStore.ActivityLog).
+        AppSettingsStore.ActivityLog = activity;
         var scripts = new ScriptLibrary();
         var patch = new PatchService(powerShell, activity);
         var vitals = new VitalsProbe(powerShell, new DcomVitalsProbe());

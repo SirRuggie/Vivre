@@ -15,6 +15,26 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **One hung machine no longer freezes the fleet monitor for everyone.** The monitor's reboot-pending
+  check had no time limit, so a single box with a wedged SCCM client stalled the whole 20-second refresh
+  pass indefinitely — every machine's online dot froze until Vivre was restarted. The check now gives up
+  after 120 seconds, quietly backs that one box off (retrying every 5 minutes), and the rest of the fleet
+  keeps refreshing. The box's reboot-pending flag keeps its last-known value; nothing is painted as failed
+  just for being slow.
+- **Pressing Stop during a package copy no longer launches the update agent anyway.** A Stop pressed
+  while the (up to ~90-second) file copy to a 2016 box was in flight used to be ignored until after the
+  agent had already started as SYSTEM — only to be torn down seconds later, mid-work. The cancel is now
+  honoured the moment the copy finishes: the agent is never launched and the copied files are cleaned up.
+- **A failed settings save is now reported instead of silently losing the change on restart.** If writing
+  settings.json failed (locked file, disk error), the running session behaved as saved but the change
+  vanished on the next launch — worst case, a 2016 box silently lost its staged-patching flag and was
+  routed down the wrong update lane. A failed save now writes a red activity-log entry naming the file and
+  the reason.
+- **Enable WinRM no longer gets stuck behind one dead machine, and Stop now works on it.** It used to run
+  one machine at a time with no time limit — the exact machines it targets are the sick ones, so one hung
+  box stranded the whole selection forever. It now runs a few machines in parallel, each attempt bounded
+  (~25s worst case), a Stop cancels the rest cleanly (no false "failed" spam for cancelled boxes), and the
+  status bar narrates progress like other operations.
 - **A dead update agent no longer leaves the row spinning "Installing…" forever.** If the agent process
   died without writing a final result (a crash, a security-software kill, or the scheduled task's time
   limit), the remote watcher kept heartbeating on its behalf, so the machine looked busy indefinitely and

@@ -250,6 +250,10 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 }
             }, cancellationToken).ConfigureAwait(false);
 
+            // A Stop pressed during the (possibly ~90s) copy above is only observed once the copy
+            // completes — it must not launch the agent as SYSTEM; the finally cleans the dropped files.
+            cancellationToken.ThrowIfCancellationRequested();
+
             // 2) Create the LocalSystem service and start it. The display name is per-run too: the SCM
             // rejects a duplicate display name (not just a duplicate service name), and concurrent runs
             // against one host (e.g. unserialized Applicable scans) would otherwise collide.

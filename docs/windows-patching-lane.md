@@ -269,6 +269,10 @@ These mechanisms exist because of real production failures. Don't undo them with
   operator-initiated work over background probes) stops several ops stacking shells on one box. The
   shell-init message says it's a temporary hiccup that's been backed off — it **never** tells the user to
   reboot a box that isn't actually reboot-pending (the known `RebootRequired` flag is the only authority).
+  The probe itself is bounded at **120s** (`RebootProbeTimeoutSeconds`, vitals-style linked CTS): the CCM
+  `DetermineIfRebootPending` provider can hang forever on a broken client, and an unbounded probe froze the
+  whole monitor pass fleet-wide (one hung box stalled the pass's `Task.WhenAll` indefinitely). A timeout is
+  swallowed as a quiet degraded back-off — no row-state write, `RebootRequired` keeps its last-known value.
 - **Heartbeat watchdog** — the on-target controller heartbeats every ~15s while the session is alive.
   The client fails a session that goes **fully silent** (no progress **and** no heartbeat) for
   `PatchOptions.NoResponseTimeout` (90s) so a dead/hung session surfaces instead of freezing on stale

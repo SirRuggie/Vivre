@@ -149,6 +149,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int HealthPerHostTimeoutSeconds = 60;
     private const int SoftwarePerHostTimeoutSeconds = 60;
+    // Bounds the monitor's per-host reboot-pending probe: its CCM DetermineIfRebootPending WMI leg can
+    // hang forever on a broken client, and an unbounded await froze the whole monitor pass (HIGH-2).
+    // 120s matches vitals; the 60s health check already runs a superset of this probe's CCM work, so
+    // this is pure headroom against false-degrading a slow-but-healthy box.
+    private const int RebootProbeTimeoutSeconds = 120;
     // A WUA scan is a read-only WUA search; this is the PER-ATTEMPT wall-clock cap (5 min). Each retry
     // attempt inside ScanRowAsync gets its OWN fresh budget (NOT one budget shared across all attempts +
     // backoffs — that shared form would kill attempt 2 before attempt 3 ran), so a slow attempt is bounded
@@ -159,6 +164,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int ScanAttemptTimeoutSeconds = 300;
     // Shared across tabs so a many-machine fleet can't flood WinRM with reboot probes at once.
     private static readonly SemaphoreSlim _rebootProbeThrottle = new(8);
+    // Caps the parallel Enable WinRM fan-out (DCOM, its own channel — no shared gate with the probes).
+    // 8 mirrors the reboot-probe cap: Enable WinRM targets sick boxes, and hammering a degraded target
+    // with a wide burst makes it worse; worst case for an all-hung selection is ceil(N/8) x ~25s.
+    private static readonly SemaphoreSlim _enableWinRmThrottle = new(8);
     // Caps the monitor's per-pass reachability fan-out. The monitor pings (and DCOM-probes) every row
     // every MonitorIntervalSeconds; a 300-box list would otherwise launch 300 concurrent probes at once,
     // and N open tabs would multiply that. Shared across tabs (like _rebootProbeThrottle) so the whole app
@@ -4640,6 +4649,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // continuation must stay on the captured UI context (losing it at the throttle wait would
         // also strand the probe continuation off-thread).
         await _rebootProbeThrottle.WaitAsync(token);
+        // Per-host deadline: declared BEFORE the try so the timeout catch's `when` filter below can see
+        // it. The linked token goes INTO the probe (not just around the await) so the deadline reaches
+        // the WinRM invoke itself — that is what unblocks a hung CCM provider and releases the gate slots.
+        using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+        perHost.CancelAfter(TimeSpan.FromSeconds(RebootProbeTimeoutSeconds));
         try
         {
             bool? was = computer.RebootRequired;
@@ -4647,7 +4661,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // to operator actions on the per-host WinRM shell gate. The operator-triggered reboot-verify
             // (ReportPostRebootOutcomeAsync) calls IsRebootPendingAsync directly at the default
             // (background: false) so it keeps operator priority.
-            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), token, background: true);
+            bool? pending = await _rebootProbe.IsRebootPendingAsync(computer.Name, CurrentPsCredential(), perHost.Token, background: true);
             computer.WasConfirmedOnline = true; // reaching here means WinRM answered — genuinely managed
 
             // We got here with no shell-init failure → WinRM is healthy. If this host was flagged
@@ -4683,6 +4697,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
                     _activity.Info(computer.Name, "Reboot complete — back online, no reboot pending");
                 }
+            }
+        }
+        catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            // Per-host timeout, not a Stop (!token at filter time proves it). Quiet backoff, swallowed —
+            // it must never abort the monitor pass. No row-state write: RebootRequired keeps its
+            // last-known value per this method's contract, and a merely-slow box is never painted failed.
+            bool firstTime = !_degradedHosts.ContainsKey(computer.Name);
+            _degradedHosts[computer.Name] = DateTime.UtcNow + DegradedRetryInterval;
+            if (firstTime)
+            {
+                _activity.Warn(computer.Name,
+                    $"Reboot probe timed out after {RebootProbeTimeoutSeconds}s — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min).");
             }
         }
         catch (OperationCanceledException)
@@ -5188,29 +5215,92 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// Enables WinRM/PSRemoting (over DCOM) on the selected machines. Invoked from the
     /// context menu after the user confirms. Runs regardless of ping state — DCOM is a
     /// different channel, and these are exactly the machines WinRM can't reach yet.
+    /// Parallel (capped at <see cref="_enableWinRmThrottle"/>) with a per-box time bound, so one
+    /// hung box no longer strands the rest of the selection; registered as a PASSIVE operation
+    /// (registerRows: false) so the Stop button cancels it but it never blocks — or is blocked
+    /// by — another running sweep.
     /// </summary>
-    public async Task EnableWinRmSelectedAsync(CancellationToken token = default)
+    public async Task EnableWinRmSelectedAsync()
     {
-        foreach (Computer computer in SelectedComputers.ToList())
+        // No ConfigureAwait(false) anywhere in this method or the per-row helper: LastError is a
+        // live-filtering grid property, so every continuation must stay on the captured UI context.
+        var rows = SelectedComputers.ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        (CancellationTokenSource cts, OperationRecord record) = BeginOperation("Enabling WinRM", rows, registerRows: false);
+        try
+        {
+            Task work = Task.WhenAll(rows.Select(row => EnableWinRmRowAsync(row, record, cts.Token)));
+
+            // Same Stop race as the patch sweep: a Stop frees the UI immediately even while a CIM
+            // call lingers on its background thread; per-row results already applied are kept.
+            Task cancelledTask = Task.Delay(Timeout.Infinite, cts.Token);
+            if (await Task.WhenAny(work, cancelledTask) == work)
+            {
+                await work;
+            }
+            else
+            {
+                _ = work.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop pressed — finished/in-flight rows keep their per-row results.
+        }
+        finally
+        {
+            EndOperation(cts, record);
+        }
+    }
+
+    /// <summary>One Enable WinRM attempt against one box, bounded so a hung DCOM target can't stall
+    /// the batch: the enabler carries its own 20s CIM timeouts, and the 25s WaitAsync belt covers the
+    /// case CIM's timeout can't (the RPC connect to a fully-offline target).</summary>
+    private async Task EnableWinRmRowAsync(Computer computer, OperationRecord record, CancellationToken token)
+    {
+        await _enableWinRmThrottle.WaitAsync(token);
+        try
         {
             computer.LastError = null;
             computer.LastStatus = "Enabling WinRM…";
-            try
-            {
-                computer.LastStatus = await _winRm.EnableAsync(computer.Name, _credentials.Current, token);
-                _activity.Info(computer.Name, computer.LastStatus);
-            }
-            catch (OperationCanceledException)
-            {
-                computer.LastStatus = "Cancelled";
-                throw;
-            }
-            catch (Exception ex)
-            {
-                computer.LastStatus = "Enable WinRM failed";
-                computer.LastError = ex.Message;
-                _activity.Error(computer.Name, $"Enable WinRM failed — {ex.Message}");
-            }
+            Task<string> enable = _winRm.EnableAsync(computer.Name, _credentials.Current, token);
+            // The 25s belt below may abandon this task (a Stop, or an RPC connect that outruns CIM's
+            // own timeout); observe its eventual fault so an abandoned call can't resurface minutes
+            // later as a global "Background task error" line — the same observer idiom as the sweep.
+            _ = enable.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            computer.LastStatus = await enable.WaitAsync(TimeSpan.FromSeconds(25), token);
+            _activity.Info(computer.Name, computer.LastStatus);
+        }
+        catch (OperationCanceledException)
+        {
+            computer.LastStatus = "Cancelled";
+        }
+        catch (TimeoutException)
+        {
+            computer.LastStatus = "Enable WinRM timed out";
+            computer.LastError = "No response from DCOM within 25s";
+            _activity.Warn(computer.Name, $"Enable WinRM timed out on {computer.Name} — no DCOM response within 25s.");
+        }
+        catch (Exception) when (token.IsCancellationRequested)
+        {
+            // CIM cancellation surfaces as CimException → WinRmEnableException, not OCE — a Stop
+            // must read "Cancelled", never "failed" (and never spray Error log lines).
+            computer.LastStatus = "Cancelled";
+        }
+        catch (Exception ex)
+        {
+            computer.LastStatus = "Enable WinRM failed";
+            computer.LastError = ex.Message;
+            _activity.Error(computer.Name, $"Enable WinRM failed — {ex.Message}");
+        }
+        finally
+        {
+            _enableWinRmThrottle.Release();
+            IncrementSweepCompleted(record);
         }
     }
 

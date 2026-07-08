@@ -11,20 +11,25 @@ public sealed class WinRmEnabler : IWinRmEnabler
     private const string EnableCommand =
         "powershell.exe -NoProfile -ExecutionPolicy Bypass -Command \"Enable-PSRemoting -Force\"";
 
+    // Matches DcomRebootTrigger's CimTimeout — the other state-changing DCOM action (the read probes
+    // use 8s). Bounds both the session and the InvokeMethod so a hung target's WMI provider can't pin
+    // this call forever; this was the only DCOM site of seven with no timeout and no token on the invoke.
+    private static readonly TimeSpan CimTimeout = TimeSpan.FromSeconds(20);
+
     public Task<string> EnableAsync(string host, ConnectionCredential? credential = null, CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         cancellationToken.ThrowIfCancellationRequested();
 
         // CimSession.InvokeMethod is synchronous; run it off the caller's thread.
-        return Task.Run(() => Enable(host, credential), cancellationToken);
+        return Task.Run(() => Enable(host, credential, cancellationToken), cancellationToken);
     }
 
-    private static string Enable(string host, ConnectionCredential? credential)
+    private static string Enable(string host, ConnectionCredential? credential, CancellationToken cancellationToken)
     {
         try
         {
-            using var options = new DComSessionOptions();
+            using var options = new DComSessionOptions { Timeout = CimTimeout };
             if (credential is not null)
             {
                 options.AddDestinationCredentials(new CimCredential(
@@ -41,8 +46,13 @@ public sealed class WinRmEnabler : IWinRmEnabler
                 CimMethodParameter.Create("CommandLine", EnableCommand, CimFlags.In),
             };
 
+            using var operationOptions = new CimOperationOptions
+            {
+                Timeout = CimTimeout,
+                CancellationToken = cancellationToken,
+            };
             using CimMethodResult result =
-                session.InvokeMethod(@"root\cimv2", "Win32_Process", "Create", arguments);
+                session.InvokeMethod(@"root\cimv2", "Win32_Process", "Create", arguments, operationOptions);
 
             uint returnValue = Convert.ToUInt32(result.ReturnValue.Value);
             if (returnValue != 0)

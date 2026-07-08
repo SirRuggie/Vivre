@@ -337,6 +337,7 @@ public static class HelpContent
             [
                 "Select the machine(s), right-click ▸ Enable WinRM (PSRemoting)…, and confirm.",
                 "It runs Enable-PSRemoting over DCOM — a different channel — so it works on boxes WinRM can't reach yet.",
+                "Machines run in parallel (a few at a time), and a box that doesn't answer times out after ~25 seconds instead of holding up the rest. The Stop button cancels whatever hasn't finished.",
             ],
         },
         new HelpTopic
