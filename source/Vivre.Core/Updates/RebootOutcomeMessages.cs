@@ -9,15 +9,21 @@ namespace Vivre.Core.Updates;
 public static class RebootOutcomeMessages
 {
     /// <summary>The box came back online and the rescan shows it is fully up to date.</summary>
-    /// <param name="installed">Number of updates confirmed installed.</param>
-    public static string BackOnlineUpToDate(int installed) =>
-        $"Back online · installed {installed} · up to date";
+    /// <param name="installed">Number of updates confirmed installed; null when no un-consumed
+    /// install ran this session — the "installed N" clause is omitted rather than claiming 0.</param>
+    public static string BackOnlineUpToDate(int? installed) =>
+        installed is null
+            ? "Back online · up to date"
+            : $"Back online · installed {installed} · up to date";
 
     /// <summary>The box came back online but more updates remain after the reboot.</summary>
-    /// <param name="installed">Number of updates confirmed installed this pass.</param>
+    /// <param name="installed">Number of updates confirmed installed this pass; null when no
+    /// un-consumed install ran this session (clause omitted).</param>
     /// <param name="remaining">Number of updates still applicable after the reboot.</param>
-    public static string BackOnlineRemaining(int installed, int remaining) =>
-        $"Back online · installed {installed} · {remaining} remaining";
+    public static string BackOnlineRemaining(int? installed, int remaining) =>
+        installed is null
+            ? $"Back online · {remaining} remaining"
+            : $"Back online · installed {installed} · {remaining} remaining";
 
     /// <summary>The box came back online but some updates failed; optionally some remain.</summary>
     /// <param name="installed">Number of updates successfully installed.</param>
@@ -45,4 +51,13 @@ public static class RebootOutcomeMessages
     /// <summary>The box came back online but the post-reboot rescan could not run — reported honestly, never a clean result.</summary>
     public static string BackOnlineRescanFailed() =>
         "Back online · couldn't rescan — re-check";
+
+    /// <summary>The box came back online but the reboot-pending probe couldn't answer (Kerberos,
+    /// WinRM failure, or a 120s probe timeout) — reported honestly, never a clean result.</summary>
+    /// <param name="installed">Number of updates confirmed installed this session; null when no
+    /// un-consumed install ran (clause omitted).</param>
+    public static string BackOnlineRebootUnknown(int? installed) =>
+        installed is null
+            ? "Back online · couldn't confirm reboot state — re-check"
+            : $"Back online · installed {installed} · couldn't confirm reboot state — re-check";
 }

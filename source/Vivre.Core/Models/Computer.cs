@@ -235,13 +235,16 @@ public partial class Computer : ObservableObject
     /// persisted, not observable — only the install router and the planner read it.</summary>
     public bool LcuVerifiedThisSession { get; set; }
 
-    /// <summary>Installed-update count from the most recent install attempt this session (0 if none).
-    /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
-    public int LastInstallInstalledCount { get; set; }
+    /// <summary>Installed-update count from the most recent MEANINGFUL install this session; null when
+    /// none (or already consumed). Stamped by InstallRowAsync only for a real install outcome
+    /// (Done/PendingReboot with a nonzero installed-or-failed count, never a ScheduleAt registration
+    /// or a failed/unreachable attempt); consumed (nulled) by the post-reboot outcome so a later wave
+    /// never re-claims counts already reported once. Runtime-only, not persisted, not observable.</summary>
+    public int? LastInstallInstalledCount { get; set; }
 
-    /// <summary>Failed-update count from the most recent install attempt this session (0 if none).
-    /// Written by InstallRowAsync; read later by the post-reboot outcome message. Runtime-only, not persisted, not observable.</summary>
-    public int LastInstallFailedCount { get; set; }
+    /// <summary>Failed-update count paired with <see cref="LastInstallInstalledCount"/> — same stamp
+    /// and consume rules. Runtime-only, not persisted, not observable.</summary>
+    public int? LastInstallFailedCount { get; set; }
 
     /// <summary>The full vitals snapshot behind the score — the Machine Details triage panel's per-drive /
     /// per-reading breakdown binds THROUGH this (e.g. <c>Vitals.Drives</c>, <c>Vitals.SystemDriveFreePercent</c>,

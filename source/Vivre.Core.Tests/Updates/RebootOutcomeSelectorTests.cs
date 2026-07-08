@@ -107,4 +107,94 @@ public class RebootOutcomeSelectorTests
 
         Assert.Equal("Back online · couldn't rescan — re-check", result);
     }
+
+    // ── probe-unknown (rebootStillPending: null) — the false-green fix ────────
+
+    [Fact]
+    public void Unknown_probe_on_a_clean_box_is_never_up_to_date()
+    {
+        // The load-bearing case: a failed/timed-out probe used to collapse to false and render
+        // "up to date" — it must now read as an honest couldn't-confirm.
+        string result = RebootOutcomeSelector.Select(installed: 3, failed: 0, remaining: 0,
+            rebootStillPending: null, scanFailed: false);
+
+        Assert.Equal("Back online · installed 3 · couldn't confirm reboot state — re-check", result);
+    }
+
+    [Fact]
+    public void Unknown_probe_with_no_install_omits_the_count_clause()
+    {
+        string result = RebootOutcomeSelector.Select(installed: null, failed: null, remaining: 0,
+            rebootStillPending: null, scanFailed: false);
+
+        Assert.Equal("Back online · couldn't confirm reboot state — re-check", result);
+    }
+
+    [Fact]
+    public void Unknown_probe_does_not_hide_remaining()
+    {
+        // Real actionable data keeps winning: unknown only replaces the false-green up-to-date.
+        string result = RebootOutcomeSelector.Select(installed: 2, failed: 0, remaining: 4,
+            rebootStillPending: null, scanFailed: false);
+
+        Assert.Equal("Back online · installed 2 · 4 remaining", result);
+    }
+
+    [Fact]
+    public void Unknown_probe_does_not_hide_failed()
+    {
+        string result = RebootOutcomeSelector.Select(installed: 2, failed: 1, remaining: 0,
+            rebootStillPending: null, scanFailed: false);
+
+        Assert.Equal("Back online · installed 2 · 1 failed", result);
+    }
+
+    [Fact]
+    public void ScanFailed_beats_unknown_probe()
+    {
+        string result = RebootOutcomeSelector.Select(installed: null, failed: null, remaining: 0,
+            rebootStillPending: null, scanFailed: true);
+
+        Assert.Equal("Back online · couldn't rescan — re-check", result);
+    }
+
+    [Fact]
+    public void Confirmed_clean_probe_is_not_treated_as_unknown()
+    {
+        // false means the probe RAN and confirmed no pending reboot — the green path must survive.
+        string result = RebootOutcomeSelector.Select(installed: null, failed: null, remaining: 0,
+            rebootStillPending: false, scanFailed: false);
+
+        Assert.Equal("Back online · up to date", result);
+    }
+
+    [Fact]
+    public void Confirmed_pending_beats_remaining()
+    {
+        string result = RebootOutcomeSelector.Select(installed: 1, failed: 0, remaining: 4,
+            rebootStillPending: true, scanFailed: false);
+
+        Assert.Equal("Back online · reboot still pending — re-check", result);
+    }
+
+    // ── null install counts (no un-consumed install this session) ─────────────
+
+    [Fact]
+    public void Null_counts_up_to_date_omits_the_installed_clause()
+    {
+        // A standalone Reboot & verify with no prior install must not claim "installed 0".
+        string result = RebootOutcomeSelector.Select(installed: null, failed: null, remaining: 0,
+            rebootStillPending: false, scanFailed: false);
+
+        Assert.Equal("Back online · up to date", result);
+    }
+
+    [Fact]
+    public void Null_counts_with_remaining_omits_the_installed_clause()
+    {
+        string result = RebootOutcomeSelector.Select(installed: null, failed: null, remaining: 3,
+            rebootStillPending: false, scanFailed: false);
+
+        Assert.Equal("Back online · 3 remaining", result);
+    }
 }

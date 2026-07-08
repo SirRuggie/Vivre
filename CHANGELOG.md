@@ -15,6 +15,18 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **The message after "Reboot & verify" is now honest in all three ways it could quietly lie.**
+  (1) If the post-reboot "is a reboot still pending?" check couldn't answer (broken WinRM/Kerberos,
+  or a hung SCCM client), the row used to read a green "Back online · installed N · up to date" —
+  indistinguishable from a genuinely clean box. It now reads "Back online · couldn't confirm reboot
+  state — re-check" with a grey "?" in the Pending Reboot column, and is never shown as up to date.
+  (2) That check also had no time limit — a hung SCCM client could pin the row for up to ~4¾ hours;
+  it now gives up after 2 minutes into the same honest "couldn't confirm" outcome. (3) The
+  "installed N" number used to come from whatever install ran last on that machine this session —
+  a standalone reboot claimed "installed 0", a failed later attempt erased the real count, and an
+  old failure could resurface as this reboot's outcome. The count now appears only when this
+  session's install actually installed or failed something, is reported once, and is dropped from
+  the message entirely otherwise.
 - **Cancelling a scheduled task now tells the truth.** If the machine failed to remove the task
   (access denied, Task Scheduler not answering), the row used to drop its Scheduled marker anyway —
   so a scheduled reboot the operator believed cancelled could still fire. The cancel now verifies the

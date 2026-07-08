@@ -3238,8 +3238,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // both-transports-down "Can't reach" failure (Phase.Error). Mark it so a subsequent reboot/drop
             // keeps its "waiting for it to come back" tracking (case 2).
             if (final.Phase is not PatchPhase.Error) { computer.WasConfirmedOnline = true; }
-            computer.LastInstallInstalledCount = final.InstalledCount;
-            computer.LastInstallFailedCount = final.FailedCount;
+            // Stamp the post-reboot outcome counts ONLY for a real install outcome: a
+            // failed/unreachable/deferred attempt or a ScheduleAt registration must not clobber the
+            // counts of the install that actually set up the pending reboot, and an
+            // installed-nothing pass has nothing to report ("installed 0" was the bug).
+            if (scheduleAt is null
+                && final.Phase is PatchPhase.Done or PatchPhase.PendingReboot
+                && (final.InstalledCount > 0 || final.FailedCount > 0))
+            {
+                computer.LastInstallInstalledCount = final.InstalledCount;
+                computer.LastInstallFailedCount = final.FailedCount;
+            }
 
             // Scheduled (not run now): record the schedule and surface it as the row message. An exhausted
             // reach failure (Unreachable) is NOT a successful schedule — exclude it alongside Error.
@@ -4022,11 +4031,22 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         int remaining = computer.ApplicableCount ?? 0;
 
         // ── c) reboot-still-pending probe (best-effort; never PendingFileRenameOperations) ───────
-        bool rebootStillPending = false;
+        // Bounded like the monitor's probe (HIGH-2): a wedged CCM provider must cost ~120s and an
+        // honest "couldn't confirm", not the wave's 4h45m per-host cap. Declared before the try so
+        // the catch filter below can see it; the linked token goes INTO the probe so the deadline
+        // reaches the WinRM invoke. background stays default (false): operator priority on the gate.
+        using var perCall = CancellationTokenSource.CreateLinkedTokenSource(token);
+        perCall.CancelAfter(TimeSpan.FromSeconds(RebootProbeTimeoutSeconds));
+        bool? rebootStillPending = null; // null = probe couldn't answer — never rendered clean
         try
         {
-            bool? p = await _rebootProbe.IsRebootPendingAsync(name, CurrentPsCredential(), token);
-            rebootStillPending = p == true;
+            rebootStillPending = await _rebootProbe.IsRebootPendingAsync(name, CurrentPsCredential(), perCall.Token);
+        }
+        catch (OperationCanceledException) when (perCall.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            // Probe timeout, not a Stop — unknown. MUST NOT rethrow: an OCE from here would read as
+            // a wave cancel at RebootWaveRowAsync's catch and mark the whole sweep cancelled. This
+            // is a one-shot operator action, not the monitor loop: no degraded backoff either.
         }
         catch (OperationCanceledException)
         {
@@ -4034,13 +4054,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch
         {
-            // Kerberos, WinRM, or any other probe failure → treat as "don't know", not pending.
-            rebootStillPending = false;
+            // Kerberos, WinRM, or any other probe failure — unknown, never clean/pending.
         }
 
-        // ── d) install counts from the last install pass ──────────────────────────────────────────
-        int installed = computer.LastInstallInstalledCount;
-        int failed    = computer.LastInstallFailedCount;
+        // ── d) install counts from the last meaningful install, consumed once ─────────────────────
+        int? installed = computer.LastInstallInstalledCount;
+        int? failed    = computer.LastInstallFailedCount;
+        // Consume: this wave reports them once; a second wave must not re-claim them. (Every
+        // cancellation path above throws BEFORE this point, so a cancelled wave keeps the counts
+        // for a retry wave.)
+        computer.LastInstallInstalledCount = null;
+        computer.LastInstallFailedCount = null;
 
         // ── e/f) write outcome ────────────────────────────────────────────────────────────────────
         if (!is2016)

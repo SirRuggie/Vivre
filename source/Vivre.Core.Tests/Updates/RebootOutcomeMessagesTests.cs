@@ -58,4 +58,32 @@ public class RebootOutcomeMessagesTests
     {
         Assert.Equal("Rebooting · waiting for it to come back…", RebootOutcomeMessages.StillRebooting());
     }
+
+    [Fact]
+    public void BackOnlineUpToDate_null_omits_the_installed_clause()
+    {
+        Assert.Equal("Back online · up to date", RebootOutcomeMessages.BackOnlineUpToDate(null));
+    }
+
+    [Fact]
+    public void BackOnlineRemaining_null_omits_the_installed_clause()
+    {
+        Assert.Equal("Back online · 4 remaining", RebootOutcomeMessages.BackOnlineRemaining(null, 4));
+    }
+
+    [Fact]
+    public void BackOnlineRebootUnknown_with_count()
+    {
+        Assert.Equal(
+            "Back online · installed 5 · couldn't confirm reboot state — re-check",
+            RebootOutcomeMessages.BackOnlineRebootUnknown(5));
+    }
+
+    [Fact]
+    public void BackOnlineRebootUnknown_without_count()
+    {
+        Assert.Equal(
+            "Back online · couldn't confirm reboot state — re-check",
+            RebootOutcomeMessages.BackOnlineRebootUnknown(null));
+    }
 }

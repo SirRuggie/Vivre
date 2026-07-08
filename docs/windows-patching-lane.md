@@ -410,11 +410,19 @@ After `RebootWave.RebootAndCommitAsync` returns `Done`, `ReportPostRebootOutcome
 
 1. **Applicable rescan** — `PatchService.ScanAsync(scope=Applicable)` only. This is
    **strictly read-only**: no Install, no Uninstall, no further Reboot is ever called here.
-2. **Reboot-still-pending probe** — `IRebootPendingProbe.IsRebootPendingAsync` (best-effort;
-   failure → treat as "don't know", never as pending).
-3. **Outcome selection** — `RebootOutcomeSelector.Select(installed, failed, remaining,
-   rebootStillPending, scanFailed)` → one of the `RebootOutcomeMessages` format strings
-   (now fully wired — see below).
+2. **Reboot-still-pending probe** — `IHostRebootProbe.IsRebootPendingAsync`, bounded at **120s**
+   (`RebootProbeTimeoutSeconds`, same linked-CTS pattern as the monitor's probe — a wedged CCM
+   provider costs ~2 min, not the wave's 4h45m per-host cap). The result is a genuine
+   **tri-state**: true = confirmed pending, false = confirmed clean, and unknown (a probe failure,
+   Kerberos rejection, or the 120s timeout) renders an honest *"couldn't confirm reboot state —
+   re-check"* with a grey "?" reboot dot — NEVER a green "up to date". A probe timeout is swallowed
+   into the unknown state (never rethrown — an OCE here would falsely cancel the whole wave).
+3. **Outcome selection** — `RebootOutcomeSelector.Select(installed?, failed?, remaining,
+   rebootStillPending?, scanFailed)` → one of the `RebootOutcomeMessages` format strings. The
+   install counts are nullable and consume-once: stamped only by a REAL install outcome
+   (Done/PendingReboot with a nonzero count, never a schedule registration or a failed attempt),
+   nulled after the wave reports them, and the *"installed N"* clause is omitted entirely when
+   absent — a standalone Reboot & verify never claims "installed 0".
 
 For non-2016 boxes the outcome string replaces `UpdateMessage` as the primary result.
 For 2016 boxes the wave's UBR Done message is kept as primary; the rescan appends a
@@ -432,11 +440,12 @@ supplementary note (e.g. "· up to date" or "· N update(s) still applicable —
 
 ### `RebootOutcomeMessages` — now wired
 
-`RebootOutcomeMessages.cs` defines seven format methods (BackOnlineUpToDate, BackOnlineRemaining,
-BackOnlineFailed, InstalledNoReboot, RebootStillPending, BackOnlineRescanFailed, StillRebooting).
-`RebootOutcomeSelector.Select` calls five of them (InstalledNoReboot and StillRebooting are
-excluded — wrong semantic context). The selector is called from `ReportPostRebootOutcomeAsync`
-in `WorkspaceViewModel`, closing the full reboot-and-verify loop.
+`RebootOutcomeMessages.cs` defines eight format methods (BackOnlineUpToDate, BackOnlineRemaining,
+BackOnlineFailed, InstalledNoReboot, RebootStillPending, BackOnlineRescanFailed,
+BackOnlineRebootUnknown, StillRebooting). `RebootOutcomeSelector.Select` calls six of them
+(InstalledNoReboot and StillRebooting are excluded — wrong semantic context). The selector is
+called from `ReportPostRebootOutcomeAsync` in `WorkspaceViewModel`, closing the full
+reboot-and-verify loop.
 
 ---
 
