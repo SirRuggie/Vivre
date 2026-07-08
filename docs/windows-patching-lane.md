@@ -162,8 +162,9 @@ whole operation**, so the protected on-box agent is untouched for the retry itse
 budget shared across all attempts + backoffs. The shared form (the original bug) killed attempt 2 before
 attempt 3 ran. A per-attempt timeout — distinguished from a user Stop by the linked-CTS check — is itself
 treated as a transient → retry. **Worst case for a fully-stuck box ≈ 24 min** (4 × 300s + 3 × ~75s
-backoffs), showing *"retrying…"* throughout, then *"Can't reach WU."* Install is unchanged — its 3h
-per-host budget already dwarfs the retry.
+backoffs), showing *"retrying…"* throughout, then *"Can't reach WU."* Install is unaffected — it runs
+with **no client-side wall clock at all** (the old 3h per-host budget was removed; the silence
+watchdog + agent-death probe are its safety nets — see the reliability constraints below).
 
 **(c) Install re-entry guard.** Once install has **begun** (`Installing`/`PendingReboot`/`Done` or
 `InstalledCount > 0`), a late transient does **not** re-run — a re-search would find 0 applicable, report
@@ -277,7 +278,13 @@ These mechanisms exist because of real production failures. Don't undo them with
   The client fails a session that goes **fully silent** (no progress **and** no heartbeat) for
   `PatchOptions.NoResponseTimeout` (90s) so a dead/hung session surfaces instead of freezing on stale
   progress. It keys off heartbeat **liveness**, not percent, so it never trips on a slow-but-working
-  update.
+  update. **This watchdog (plus the agent-death probe below) is now the ONLY Install/Uninstall safety
+  net** — the old 3-hour client-side wall clock was REMOVED: it tore down actively-progressing installs
+  mid-run, and its cleanup deleted the progress file under the live watcher, mislabeling a cancelled
+  mid-run install as a startup failure. Install/Uninstall sweeps pass an infinite per-host timeout
+  (like 2016 Clean up); Scan/Schedule/Stage/Verify keep their bounds. The watcher's own 2-minute
+  startup check is latched behind `$progressSeen`, so "did not start" can only fire before any
+  progress was ever relayed.
 - **Agent-death probe** — the heartbeat proves the **session**, not the agent (the controller
   synthesizes it even if the agent process is gone). Agent death is caught separately: during a quiet
   stretch the controller also probes the scheduled task's state (`Get-ScheduledTask`, in-session — no
@@ -286,7 +293,11 @@ These mechanisms exist because of real production failures. Don't undo them with
   SMB lane's `service.Query()` guard). Fail-open: a failed/null state query is never treated as death,
   and any drained progress line disarms a pending alarm. This covers **immediate** install/uninstall
   runs only — a ScheduleAt task fires later with no watcher attached, so it keeps the tighter 6h task
-  `ExecutionTimeLimit` (run-now uses 12h, purely as the wedged-WUA backstop).
+  `ExecutionTimeLimit` (run-now uses 12h, purely as the wedged-WUA backstop). Belt on the client side:
+  if the stream ever ends WITHOUT a terminal status (the progress log vanished mid-run, or the agent's
+  final line was dropped), the lane converts the mid-run last status into an honest *"ended without a
+  final result — re-scan to confirm"* failure — a mid-run phase is never presented as the final
+  outcome, and the message is pinned non-transient so the retry runner can't re-dispatch the install.
 - **Typed remoting exceptions** — `PSRunspaceHost.TranslateRemotingException` maps raw failures to
   `RemoteSessionLostException` / `RemoteShellInitException` (at both the connect and invoke phases),
   so the UI shows actionable messages, never "The pipeline has been stopped." or the raw

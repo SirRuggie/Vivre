@@ -3,26 +3,46 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-01** (scheduled-task timezone fix DONE + live-verified;
-> cancel breadcrumb; SMB teardown + AdaptiveLayout logging; off-from-start "Offline" messaging, DCOM
-> vitals gaps filled, offline-probe skip — all this session; **released 1.14.3**). Everything below is on
-> `master`. **Commit hashes in the DONE list predate a history rewrite and may not all resolve — `git
-> log` is the authoritative restore-point list, and the per-entry test counts are point-in-time only
-> (current suite is ~666 green).**
+> not a mandate). Last refreshed: **2026-07-08** (audit-fix session: `12a5e36` install wall-clock
+> removed + watcher startup latch; `852662d` dead-agent detection, closes audit HIGH-1; `7e2102c`
+> monitor reboot-probe bound closes HIGH-2 + three MEDs; `289878f` honest cancel chip + SCCM
+> ClientSDK sentinel + settings/enabler guards — both audit HIGHs and five MEDs now closed).
+> Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
+> not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
+> are point-in-time only (current suite is 699 green).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01):** a full five-lens read-only audit ran on 1.14.3 — see
-`docs/vivre-audit-findings.md`. No CRITICALs; 2 HIGHs (dead-worker-undetectable WinRM lane;
-one-hung-box-freezes-monitor) + several MEDs, all triaged with a recommended fix order. Pull items
-from there into scoped handoffs; nothing auto-queued.
+**Audit findings (2026-07-01) — status as of 2026-07-08:** the full five-lens audit record is
+`docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** — HIGH-1
+dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`). **Five
+audit MEDs closed:** Stop-during-SMB-copy (`7e2102c`), settings-save-invisible-in-Release
+(`7e2102c`), Enable-WinRM no-timeout/sequential (`7e2102c`), cancel-clears-chip-on-failed-unregister
+(`289878f`), SCCM-ClientSDK-false-green (`289878f`) — plus the audit-adjacent install
+wall-clock/mislabeled-teardown incident (`12a5e36`).
+**Audit items still open** (recommended order):
+1. **Post-reboot cluster** — the audit MED "post-reboot probe failure renders as green 'up to date'"
+   (`RebootOutcomeSelector` has no probe-failed state; systematic false-green on Kerberos-cached
+   hosts) + this session's find that `ReportPostRebootOutcomeAsync` (~:3993) calls
+   `IsRebootPendingAsync` with **no per-call timeout** (the same gap HIGH-2 just fixed in the monitor
+   — same 120s linked-CTS wrap applies) + the existing "post-reboot message shows the wrong install
+   count" item (hunt cluster below). Fold all three into one pass. **HANDLE WITH CARE** —
+   WorkspaceViewModel.
+2. **Credentialed WinRM blocked by ambient Kerberos rejection** — `RoutingPowerShellHost.cs:59`
+   fast-fails before the credential parameter is consulted; the cache has no eviction or credential
+   dimension. Research-first, remoting-cache zone.
+3. **Install re-entry guard's `installBegan` flag** can be read on the runner thread before the
+   dispatcher-posted write lands. Narrow trigger. **HANDLE WITH CARE** — concurrency.
+4. **Orphan `Vivre_Reboot_*` service** (audit LOW, flagged UP — reboot-adjacent). Needs an operator
+   decision before building.
+5. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
 
-Nothing queued. The RDP Reconnect button (the previous #1) shipped — see DONE. The 2016 staged-patching
-toggle shipped (see DONE), and **KB auto-population from a scan is closed — manual only** (decision
-recorded under *Settings simplification* below). What remains is the polish / standalone items further
-down, each "do only if it recurs / when a signal appears."
+The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
+(see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
+*Settings simplification* below). Beyond the audit items above, what remains is the polish /
+standalone items further down, each "do only if it recurs / when a signal appears."
 
 ---
 
@@ -93,7 +113,7 @@ down, each "do only if it recurs / when a signal appears."
   selection-driven.** The "only ~30 of 51 boxes cleaned" observation was **NOT a bug and NOT a thread-pool /
   concurrency ceiling** — Clean was intentionally gated to Staged (flagged) 2016 boxes via
   `StagePreconditions.IsStageTarget` (the same selector Stage/Verify use). ~30 of the 51 were flagged, so ~30
-  cleaned. Working as designed. **Now CHANGED:** `feat/clean-selection-driven` (`9133226`, not yet merged) makes
+  cleaned. Working as designed. **Now CHANGED:** `feat/clean-selection-driven` (`9133226`, merged to master) makes
   Clean selection-driven and staged-state-agnostic — nothing selected → all 2016; some selected → those; non-2016
   excluded; cardinal rule intact (Clean still never reboots). Clean targets `Clean2016Targets()`; Stage/Verify
   still use `Server2016Targets()` (flagged-only), unchanged. **Confirmed accurate and retained:** Clean rides
@@ -112,13 +132,25 @@ down, each "do only if it recurs / when a signal appears."
   forcing full-width measure. (Measured in the 1.14.2 cold-start hunt: the Auto-width column measure is ~120–180ms/pass — real but minor, NOT a freeze cause.)
 - **Scan-timeout edge** — 5-min cap (a997642) may be short for the very worst first-scan boxes; bump to
   10 min (600s) ONLY if real "Scan timed out" false-positives appear.
-- **SMB-agent teardown is a silent swallow in Release builds** — `SmbAgentLane.TeardownServiceAsync`
-  (`SmbAgentLane.cs` ~414) reports a failed teardown only via `Debug.WriteLine`, which the compiler strips
-  from Release builds — so in the shipped build a teardown failure (a leftover per-run helper service, a
-  `DeleteService` error) disappears with no trace, against the "no empty catch / surface failures" rule. Low
-  severity: the per-run-named service is harmless and the next run reaps it. Fix: inject an `IActivityLog`
-  (or Serilog) into `SmbAgentLane` and log at trace/warn instead of `Debug.WriteLine`, keeping the
-  "don't replace the operation result" intent. (Found in the 2026-06-23 audit.)
+- **TriggerScheduleAsync (SCCM client actions) has the same sequential/untimed shape Enable WinRM had**
+  (`WorkspaceViewModel.cs` ~:5147) — a plain foreach with no per-host timeout. Candidate for the same
+  parallel + per-call-bound + passive-BeginOperation pattern `7e2102c` gave Enable WinRM. It IS a
+  cancellable command already, so Stop mitigates — low priority until it causes a real problem.
+- **Two schedules on one box overwrite the host-keyed `_scheduledTasks` entry** while the target
+  accumulates uniquely-named `Vivre_WUA_{runId}`/`Vivre_Reboot` tasks — the chip's time and a surviving
+  task's trigger can diverge (e.g. after a partial cancel). Pre-existing, narrow; found during the
+  `289878f` cancel-chip red-team. Fix would key tracking per task, not per host.
+- **Settings save is not atomic** — `File.WriteAllText` truncates then writes, so a crash/power loss
+  mid-write corrupts settings.json (the corrupt-read RESILIENCE shipped in `289878f`; this is the
+  write-side prevention). Fix: temp file + `File.Replace`. Small, standalone.
+- **Health script's `LastBootTime` read sits in a bare catch** (`ConfigMgrClient.cs` ~:126) — an
+  independent failure silently blanks real data, same pattern family the ClientSDK sentinel
+  (`289878f`) fixed for update state. Low / cosmetic.
+- **No Desktop test project** — three of the four `7e2102c` fixes have no unit-test home (the 120s
+  reboot-probe timeout, the settings ActivityLog hook, parallel Enable WinRM), and every per-host
+  timeout in the app (incl. the existing vitals/health ones) is trust-the-pattern. A
+  `Vivre.Desktop.Tests` project + a delaying `IPowerShellHost` fake would unlock coverage for all of
+  them at once. Recurring theme across three sessions — worth doing when test appetite is high.
 
 > **HANDLE WITH CARE — read before touching anything in the two hunt clusters below.** These items
 > (especially the live-filtered grid, the load-bearing `PatchState`, the bulk-add path, and the per-row
@@ -219,8 +251,73 @@ down, each "do only if it recurs / when a signal appears."
 
 ## DONE (committed) — recent
 
-- **Clean decoupled from the Staged gate — now selection-driven — DONE** (`9133226`, on branch
-  feat/clean-selection-driven, not yet merged). Clean (DISM component cleanup) was gated to Staged/flagged 2016
+- **Honest cancel chip + SCCM ClientSDK sentinel + settings/enabler guards — DONE** (`289878f`, on
+  master). Four items, investigated + red-teamed first. (1) **Cancel scheduled task verifies by
+  absence** (unregister `Vivre_*` then re-query; emits `REMOVED`/`REMAINING: <names>`): the chip
+  clears ONLY on `!HadErrors` + an exact trimmed full-line `REMOVED` (new pure Core classifier
+  `ScheduledTaskCancelOutcome`, 7 tests incl. the name-contains-REMOVED trap); on failure the chip
+  stays, the row reads "Cancel failed — task may still fire", and the surviving task is named in the
+  activity log — a failed unregister of a `Vivre_Reboot` task can no longer hide behind a false
+  "cancelled" (audit MED, reboot-adjacent). (2) **SCCM ClientSDK sentinel** (audit MED): a
+  corrupt/denied `ROOT\ccm\ClientSDK` used to render as fully compliant (empty queries → green
+  "Updates Missing" check + "Healthy"); `CCM_SoftwareUpdate` now fails loudly into a
+  `ClientSdkFailed` flag → grey "?" cells + "ClientSDK unavailable" + the Errors filter, never
+  false-green; `CCM_Application`/`CCM_Program` deliberately stay SilentlyContinue (legacy class can be
+  absent on healthy clients) and the reboot method keeps its isolated catch (isolation now pinned by
+  an ordering test). (3) **WinRmEnabler null result code** now throws instead of reading as success
+  (`InterpretCreateReturn`, table-tested; also closes a raw-NRE escape). (4) **Corrupt settings.json
+  resilience**: `ReadFromDisk` seats defaults + rethrows once on content-shaped failures only —
+  fixes a previously-undiagnosed STARTUP CRASH (the unguarded WorkspaceViewModel ctor Load ran before
+  `window.Show()`) and the session-long re-throw cascade; transient IO locks deliberately propagate
+  unseated so an AV lock can never end with defaults overwriting the real file. Review pass
+  empirically verified the two riskiest PS assumptions against real 5.1. **699 tests** (+18).
+  Cardinal clean.
+- **Monitor reboot-probe bounded (audit HIGH-2 CLOSED) + three MEDs — DONE** (`7e2102c`, on master).
+  (1) **HIGH-2:** the monitor's reboot-pending probe was the ONLY unbounded remote await in the
+  per-box monitor work — a wedged CCM `DetermineIfRebootPending` provider froze every pass's
+  `Task.WhenAll` fleet-wide, forever. Now a 120s linked CTS (vitals template) with the token threaded
+  INTO the probe (so the invoke unblocks and both gate slots release); a timeout is swallowed quietly
+  — degraded 5-min back-off + one Warn, NO row-state write (a slow box is never painted failed).
+  (2) **Stop during the SMB copy no longer launches the SYSTEM agent** —
+  `ThrowIfCancellationRequested` between copy-complete and `service.Create`; the null-guarded finally
+  cleans the dropped files (audit MED). (3) **Settings-save failures surface in Release** — static
+  `IActivityLog` hook on `AppSettingsStore` (covers all five construction sites), Error-level entry;
+  previously Debug-only, compiled out (audit MED). (4) **Enable WinRM**: 20s CIM timeouts (session +
+  operation + token) + a 25s caller-side belt, 8-parallel under a new throttle, registered as a
+  PASSIVE operation so Stop cancels it without blocking other sweeps; a Stop reads "Cancelled" —
+  never "failed" — because CIM cancellation surfaces as CimException, not OCE (audit MED). Accepted
+  behavior change: the monitor pauses during an Enable run like every tracked op. **681 tests.**
+  Cardinal clean.
+- **Dead update agent detected in the WinRM watcher (audit HIGH-1 CLOSED) — DONE** (`852662d`, on
+  master). With the wall-clock gone (`12a5e36`), an agent that died WITHOUT writing a terminal line
+  (crash, EDR kill, task time limit) left the watcher heartbeating on its behalf forever — the row
+  spun "Installing…" and held an install slot until Stop. Now: (1) **watcher-side task-state death
+  probe** — during a quiet stretch (the existing 15s heartbeat gate) the watcher probes
+  `Get-ScheduledTask` in-session (zero extra WinRM shells); a not-Running observation arms
+  `$taskGone`, the next tick's drain + re-probe confirms (any drained line disarms — proof of life),
+  then it emits a terminal "stopped without reporting a result" error ~16s after last output; fail-
+  open on a null query, gated on `$progressSeen` so pre-start stays owned by the 2-minute startup
+  check. Mirrors the SMB lane's `service.Query()` guard. (2) **Lane-side non-terminal-final guard**
+  — a stream that ends without a terminal status returns an honest "ended without a final result"
+  failure instead of freezing on a mid-run phase (message pinned non-transient so the runner can't
+  re-dispatch). (3) **ExecutionTimeLimit split** — 12h for watched run-now installs (wedge backstop
+  only), 6h kept for ScheduleAt runs, which execute with no watcher attached. **681 tests** (+4 incl.
+  PS parse-validity for both bootstrap variants). Cardinal clean.
+- **Install wall-clock timeout removed + watcher startup check latched — DONE** (`12a5e36`, on
+  master). The 3-hour per-host wall clock cut off actively-progressing installs mid-run (two live
+  boxes at 80%/32%), and its teardown deleted the progress file under the still-running watcher —
+  whose unlatched 2-minute startup check then painted "Worker did not start writing progress within
+  2 minutes" over the honest "Timed out" (while the install actually kept running as an orphaned
+  SYSTEM process). Fixes: (1) Install/Uninstall sweeps pass an INFINITE per-host timeout (like 2016
+  Clean up); the 90s silence watchdog remains the session safety net (agent-death detection followed
+  in `852662d`). Scan/Schedule/Stage/Verify keep their bounds. (2) The watcher startup check is
+  latched behind `$progressSeen` — "did not start" can only fire before any progress was ever
+  relayed; a file deleted mid-run by cleanup exits the tail quietly. (3) `operationEnded` late-line
+  gate in InstallRowAsync/UninstallRowAsync — lines draining from a stopping pipeline can no longer
+  overwrite the terminal row state. Validated under real PowerShell 5.1 (parse harness). **676
+  tests** (+4). Cardinal clean.
+- **Clean decoupled from the Staged gate — now selection-driven — DONE** (`9133226`, merged to
+  master). Clean (DISM component cleanup) was gated to Staged/flagged 2016
   boxes only (via `StagePreconditions.IsStageTarget`, shared with Stage/Verify, plus a second gate in the button
   handler's `EnsureStageTargets`). Research confirmed the gate was incidental product-scoping, NOT a safety
   dependency — DISM `/startcomponentcleanup` is self-contained (no staged package/marker/flag needed), and the

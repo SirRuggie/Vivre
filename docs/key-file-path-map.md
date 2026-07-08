@@ -203,7 +203,7 @@ reading at once.
 **Before making ANY `Computer.cs` property observable, run this 2-question safety check** (the `7d8abd4`
 cross-thread crash was an off-thread write to a *live-filtered* property re-shaping the grid's CollectionView
 on the wrong thread):
-1. **Is the property in the live-filtered set?** (the predicate inputs in `WorkspaceViewModel.cs` ~828-834:
+1. **Is the property in the live-filtered set?** (the predicate inputs in `WorkspaceViewModel.cs` ~846-853:
    `Name`, `IsOnline`, `PatchState`, `RebootRequired`, `LastError`, `UpdateError`, `UpdatesAvailable`,
    `MissingUpdates`, `VitalityBand`, `OsBuild`, `UpdatePhase`, `ScheduledNextRun`.) If YES, a change re-shapes
    the grid → it MUST be written on the UI thread (marshal, or route via `IProgress`).
@@ -240,7 +240,7 @@ Extracted UI/IO-free predicates, each unit-tested:
 - `ComponentCleanupClassifier` / `ComponentCleanupMessages` — 2016 component-cleanup outcomes, incl. the `CleanedFilesLocked` access-denied case (DISM exit 5 = EDR/AV holding WinSxS handles → neutral **Cleaned**, not red).
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **~600 green** as of the 2026-06-23 audit — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **699 green** (as of 2026-07-08) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
