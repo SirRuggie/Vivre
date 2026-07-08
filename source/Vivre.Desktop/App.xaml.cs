@@ -113,7 +113,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            activity.Warn(null, $"Couldn't read settings — using defaults. {ex.Message}");
+            activity.Error(null, $"Couldn't read settings — using defaults for this session (staged-patching flags may be missing until the file is fixed). {ex.Message}");
             settings = new AppSettings();
         }
 

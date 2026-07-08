@@ -1879,7 +1879,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     public async Task CancelScheduledTaskSelectedAsync(IReadOnlyList<Computer> rows, CancellationToken token = default)
     {
-        const string script = "Get-ScheduledTask -TaskName 'Vivre_*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false; 'OK'";
+        // Verify by absence: after the unregister, re-query and report what survived — the chip may
+        // only clear on the explicit REMOVED proof. Two layers, BOTH load-bearing (do not remove
+        // either): the REMOVED/REMAINING output proves what actually remains on the box, and the
+        // !HadErrors gate in Classify catches a failed enumeration too — a suppressed
+        // -EA SilentlyContinue error still sets HadErrors, while a genuine wildcard no-match sets
+        // nothing (verified against real 5.1), so a broken Task Scheduler can't fake a REMOVED.
+        // Unregister keeps its default error action so its failures land in HadErrors/Errors.
+        const string script = "Get-ScheduledTask -TaskName 'Vivre_*' -ErrorAction SilentlyContinue | Unregister-ScheduledTask -Confirm:$false; $rem = @(Get-ScheduledTask -TaskName 'Vivre_*' -ErrorAction SilentlyContinue); if ($rem.Count -gt 0) { 'REMAINING: ' + ($rem.TaskName -join ', ') } else { 'REMOVED' }";
         foreach (Computer computer in (rows.Count > 0 ? rows : [.. SelectedComputers]).ToList())
         {
             computer.LastError = null;
@@ -1890,17 +1897,36 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     ? await _powerShell.RunLocalAsync(script, token)
                     : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
 
-                // Clear the scheduled state (nothing is pending now) but leave a cancel breadcrumb on the
-                // row instead of blanking it: write the SAME text to the Patching "Windows update message"
-                // column as to Fleet Health's "Last status", so both grids read identically. It stays until
-                // the row's next action (scan/install → ApplyStatus) naturally replaces it.
-                computer.ScheduledAction = null;
-                computer.ScheduledNextRun = null;
-                _scheduledTasks.TryRemove(computer.Name, out _);
-                string cancelStatus = ScheduledTaskMessage.CancelStatus(result.HadErrors);
-                computer.LastStatus = cancelStatus;
-                computer.UpdateMessage = cancelStatus;
-                _activity.Info(computer.Name, "Cancelled pending scheduled task(s).");
+                ScheduledTaskCancelOutcome outcome = ScheduledTaskCancelOutcome.Classify(
+                    result.HadErrors,
+                    [.. result.Output.Select(static o => o?.BaseObject?.ToString() ?? o?.ToString() ?? string.Empty)],
+                    result.Errors);
+
+                if (outcome.Cleared)
+                {
+                    // Verified: no Vivre_* task remains. Clear the scheduled state but leave a cancel
+                    // breadcrumb on the row instead of blanking it: write the SAME text to the Patching
+                    // "Windows update message" column as to Fleet Health's "Last status", so both grids
+                    // read identically. It stays until the row's next action naturally replaces it.
+                    computer.ScheduledAction = null;
+                    computer.ScheduledNextRun = null;
+                    _scheduledTasks.TryRemove(computer.Name, out _);
+                    string cancelStatus = ScheduledTaskMessage.CancelStatus(hadErrors: false);
+                    computer.LastStatus = cancelStatus;
+                    computer.UpdateMessage = cancelStatus;
+                    _activity.Info(computer.Name, "Cancelled pending scheduled task(s).");
+                }
+                else
+                {
+                    // The unregister failed or couldn't be verified — a task (worst case Vivre_Reboot)
+                    // may still fire, so the Scheduled chip and tracking stay honest (kept; the monitor
+                    // still time-clears them at trigger time). The activity log is the durable record:
+                    // the monitor nulls LastError on the next pass for an online box.
+                    computer.LastStatus = outcome.Status;
+                    computer.UpdateMessage = "Cancel failed — task may still fire";
+                    computer.LastError = outcome.Detail;
+                    _activity.Error(computer.Name, $"Cancel scheduled task failed — {outcome.Detail}");
+                }
             }
             catch (OperationCanceledException)
             {
@@ -4875,12 +4901,30 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.SiteCode = health.SiteCode;
             computer.AgentVersion = health.ClientVersion;
             computer.RebootRequired = health.RebootRequired;
-            computer.MissingUpdates = health.MissingUpdates;
-            computer.RunningUpdates = health.RunningUpdates;
-            computer.UserLoggedOn = health.UserLoggedOn;
-            computer.LastBootTime = health.LastBootTime;
-            computer.LastStatus = SummarizeHealth(health);
-            _activity.Info(computer.Name, $"Health: {computer.LastStatus}");
+            if (health.ClientSdkFailed)
+            {
+                // The ClientSDK namespace didn't answer (corrupt/denied WMI): Missing/Running
+                // updates are UNKNOWN, not compliant — null renders the grey "?" instead of a
+                // false green check on exactly the damaged client this check exists to catch.
+                // RebootRequired above still carries the registry CBS/WU legs (the same
+                // degradation the reboot probe has on a broken ClientSDK).
+                computer.MissingUpdates = null;
+                computer.RunningUpdates = null;
+                computer.UserLoggedOn = health.UserLoggedOn;
+                computer.LastBootTime = health.LastBootTime;
+                computer.LastStatus = "SCCM ClientSDK unavailable — updates state unknown";
+                computer.LastError = "SCCM ClientSDK didn't answer — Missing/Running updates unknown; the client likely needs repair.";
+                _activity.Warn(computer.Name, computer.LastError);
+            }
+            else
+            {
+                computer.MissingUpdates = health.MissingUpdates;
+                computer.RunningUpdates = health.RunningUpdates;
+                computer.UserLoggedOn = health.UserLoggedOn;
+                computer.LastBootTime = health.LastBootTime;
+                computer.LastStatus = SummarizeHealth(health);
+                _activity.Info(computer.Name, $"Health: {computer.LastStatus}");
+            }
         }
         catch (OperationCanceledException) when (healthPerHost.IsCancellationRequested && !token.IsCancellationRequested)
         {

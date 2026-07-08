@@ -54,12 +54,7 @@ public sealed class WinRmEnabler : IWinRmEnabler
             using CimMethodResult result =
                 session.InvokeMethod(@"root\cimv2", "Win32_Process", "Create", arguments, operationOptions);
 
-            uint returnValue = Convert.ToUInt32(result.ReturnValue.Value);
-            if (returnValue != 0)
-            {
-                throw new WinRmEnableException(
-                    $"Win32_Process.Create on '{host}' returned {returnValue} ({DescribeReturn(returnValue)}).");
-            }
+            InterpretCreateReturn(host, result.ReturnValue?.Value);
 
             object? processId = result.OutParameters["ProcessId"]?.Value;
             return processId is null
@@ -70,6 +65,29 @@ public sealed class WinRmEnabler : IWinRmEnabler
         {
             throw new WinRmEnableException($"DCOM call to '{host}' failed: {ex.Message}", ex);
         }
+    }
+
+    /// <summary>Interprets Win32_Process.Create's result code. A null code is a FAILURE: a
+    /// successful Create always returns an explicit 0, and Convert.ToUInt32(null) would coerce a
+    /// never-populated result to 0 — reporting a start that can't be confirmed. (Reading via
+    /// <c>ReturnValue?.Value</c> at the call site also keeps a null ReturnValue parameter from
+    /// escaping as a raw NRE past the CimException translation.)</summary>
+    internal static uint InterpretCreateReturn(string host, object? rawReturnValue)
+    {
+        if (rawReturnValue is null)
+        {
+            throw new WinRmEnableException(
+                $"Win32_Process.Create on '{host}' returned no result code — can't confirm Enable-PSRemoting started.");
+        }
+
+        uint returnValue = Convert.ToUInt32(rawReturnValue);
+        if (returnValue != 0)
+        {
+            throw new WinRmEnableException(
+                $"Win32_Process.Create on '{host}' returned {returnValue} ({DescribeReturn(returnValue)}).");
+        }
+
+        return returnValue;
     }
 
     private static string DescribeReturn(uint code) => code switch

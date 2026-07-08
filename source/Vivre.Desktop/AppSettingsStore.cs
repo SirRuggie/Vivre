@@ -138,13 +138,27 @@ public sealed class AppSettingsStore
 
     private AppSettings ReadFromDisk()
     {
-        AppSettings settings = File.Exists(_path)
-            ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
-            : new AppSettings();
-        // A JSON round-trip resets HashSet/Dictionary comparers to ordinal — rebuild with
-        // OrdinalIgnoreCase so case-insensitive lookups always work after deserialization.
-        settings.StagedHosts = StagedHostMatching.Normalize(settings.StagedHosts);
-        return settings;
+        try
+        {
+            AppSettings settings = File.Exists(_path)
+                ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
+                : new AppSettings();
+            // A JSON round-trip resets HashSet/Dictionary comparers to ordinal — rebuild with
+            // OrdinalIgnoreCase so case-insensitive lookups always work after deserialization.
+            settings.StagedHosts = StagedHostMatching.Normalize(settings.StagedHosts);
+            return settings;
+        }
+        catch (Exception ex) when (ex is not IOException and not UnauthorizedAccessException)
+        {
+            // Content-shaped failure (corrupt JSON / bad shape): it can never self-heal, so seat
+            // defaults so later Loads — including the startup-critical WorkspaceViewModel ctor
+            // Load — stop re-throwing for the whole session. Still throw ONCE so the guarded
+            // first Load logs it (the class contract). Transient IO failures (an AV lock) are
+            // deliberately NOT seated: the next Load retries the intact file, and seating
+            // defaults here would let a later Save overwrite the real settings.json.
+            _cache = new AppSettings();
+            throw;
+        }
     }
 
     public void Save(AppSettings settings)

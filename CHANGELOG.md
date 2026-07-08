@@ -15,6 +15,25 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **Cancelling a scheduled task now tells the truth.** If the machine failed to remove the task
+  (access denied, Task Scheduler not answering), the row used to drop its Scheduled marker anyway —
+  so a scheduled reboot the operator believed cancelled could still fire. The cancel now verifies the
+  tasks are actually gone before clearing anything; on failure the Scheduled marker stays, the row
+  reads "Cancel failed — task may still fire" with the surviving task named in the activity log, and
+  the cancel can simply be run again.
+- **A machine with a broken SCCM client no longer shows a green "no updates missing" check.** When the
+  client's ClientSDK data couldn't be read at all, the health check used to render the empty answer as
+  fully compliant ("Healthy", green checks) — hiding exactly the damaged machines it exists to catch.
+  Those cells now show a grey "?" with "SCCM ClientSDK unavailable — updates state unknown" and the
+  row surfaces under the Errors filter. Healthy machines, including ones with genuinely zero missing
+  updates, look exactly the same as before.
+- **A corrupt settings file no longer breaks the whole session (or the next launch).** A damaged
+  settings.json used to make Vivre fail at startup, and any later settings read could error too. It
+  now falls back to defaults once, with a red activity-log entry warning that staged-patching flags
+  may be missing until the file is fixed. A merely-locked (not corrupt) file is retried instead, so a
+  passing antivirus scan can never cause your saved settings to be overwritten with defaults.
+- **Enable WinRM no longer reports success when the machine never answered properly.** A response with
+  no result code used to read as "started" — it now reports an honest failure asking you to retry.
 - **One hung machine no longer freezes the fleet monitor for everyone.** The monitor's reboot-pending
   check had no time limit, so a single box with a wedged SCCM client stalled the whole 20-second refresh
   pass indefinitely — every machine's online dot froze until Vivre was restarted. The check now gives up

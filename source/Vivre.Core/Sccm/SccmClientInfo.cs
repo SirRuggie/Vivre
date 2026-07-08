@@ -14,6 +14,10 @@ namespace Vivre.Core.Sccm;
 /// <param name="RunningUpdates">An app/program/update install is in progress.</param>
 /// <param name="UserLoggedOn">An interactive user session (explorer.exe) is present.</param>
 /// <param name="LastBootTime">Last OS boot time (Win32_OperatingSystem.LastBootUpTime); null if unknown.</param>
+/// <param name="ClientSdkFailed">The ROOT\ccm\ClientSDK namespace didn't answer, so
+/// <see cref="MissingUpdates"/>/<see cref="RunningUpdates"/> are UNKNOWN — the false flags here are
+/// fabricated from empty queries, not real compliance. The consumer must render them
+/// indeterminate, never as a green "compliant".</param>
 public sealed record SccmClientInfo(
     string? ClientVersion,
     string? SiteCode,
@@ -21,8 +25,10 @@ public sealed record SccmClientInfo(
     bool MissingUpdates,
     bool RunningUpdates,
     bool UserLoggedOn,
-    DateTime? LastBootTime = null)
+    DateTime? LastBootTime = null,
+    bool ClientSdkFailed = false)
 {
-    /// <summary>True when nothing needs attention (no reboot, no missing updates, no running install).</summary>
-    public bool IsHealthy => !(RebootRequired || MissingUpdates || RunningUpdates);
+    /// <summary>True when nothing needs attention (no reboot, no missing updates, no running install).
+    /// A ClientSDK failure is never healthy — the update state is unknown, not clean.</summary>
+    public bool IsHealthy => !ClientSdkFailed && !(RebootRequired || MissingUpdates || RunningUpdates);
 }

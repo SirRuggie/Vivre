@@ -101,6 +101,60 @@ public class ConfigMgrClientTests
         Assert.Contains("Access denied", ex.Message);
     }
 
+    [Fact]
+    public async Task A_broken_clientsdk_is_never_healthy()
+    {
+        // The false-green fix: a corrupt/denied ROOT\ccm\ClientSDK used to yield empty query
+        // results -> MissingUpdates=false -> IsHealthy=true. The script now flags the failure,
+        // and a flagged result must never read healthy — the update state is unknown, not clean.
+        var obj = HealthObject(version: "5.00.9132.1000", site: "PS1", sdkFailed: true);
+        var client = new ConfigMgrClient(new FakeHost(ResultFrom(obj)));
+
+        SccmClientInfo info = await client.GetClientHealthAsync("localhost");
+
+        Assert.True(info.ClientSdkFailed);
+        Assert.False(info.IsHealthy);
+        Assert.Equal("5.00.9132.1000", info.ClientVersion);
+        Assert.False(info.MissingUpdates); // fabricated flag parses as-is; the consumer renders it unknown
+    }
+
+    [Fact]
+    public void Health_script_parses_as_valid_powershell()
+    {
+        // dotnet build can't catch a syntax error in the embedded script — lock parse-validity in.
+        System.Management.Automation.Language.Parser.ParseInput(
+            ConfigMgrClient.HealthScript, out _, out System.Management.Automation.Language.ParseError[] errors);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Health_script_keeps_the_sentinel_shape()
+    {
+        string script = ConfigMgrClient.HealthScript;
+
+        // The authoritative CCM_SoftwareUpdate query must FAIL LOUDLY (the broken-namespace
+        // sentinel); the optional CCM_Application/CCM_Program stay silent (the legacy class can
+        // be absent on healthy clients); the reboot method keeps its own isolated catch so its
+        // independent failure never blanks update state.
+        Assert.Contains("CCM_SoftwareUpdate -ErrorAction Stop", script);
+        Assert.Contains("CCM_Application -ErrorAction SilentlyContinue", script);
+        Assert.Contains("CCM_Program -ErrorAction SilentlyContinue", script);
+        Assert.Contains("ClientSdkFailed = [bool]$clientSdkFailed", script);
+        Assert.Contains("DetermineIfRebootPending -ErrorAction Stop", script);
+
+        // Pin the ISOLATION, not just presence: the reboot probe's own bare catch must sit fully
+        // BEFORE the update-sentinel block. Folding the reboot method into the CCM_SoftwareUpdate
+        // try would make an independent reboot-method failure blank the real update state — under
+        // a fold-in, the first bare catch in the script would move past the sentinel declaration
+        // and this ordering fails.
+        int reboot = script.IndexOf("DetermineIfRebootPending", StringComparison.Ordinal);
+        int isolatedCatch = script.IndexOf("} catch { }", StringComparison.Ordinal);
+        int sentinelDecl = script.IndexOf("$clientSdkFailed = $false", StringComparison.Ordinal);
+        Assert.True(reboot >= 0 && isolatedCatch > reboot && sentinelDecl > isolatedCatch,
+            "the reboot probe must keep its own bare catch, fully before the update-sentinel block");
+    }
+
     private static PSExecutionResult ResultFrom(PSObject row) =>
         new([row], [], [], HadErrors: false);
 
@@ -110,7 +164,8 @@ public class ConfigMgrClientTests
         bool reboot = false,
         bool missing = false,
         bool running = false,
-        bool user = false)
+        bool user = false,
+        bool sdkFailed = false)
     {
         var o = new PSObject();
         o.Properties.Add(new PSNoteProperty("ClientVersion", version));
@@ -119,6 +174,7 @@ public class ConfigMgrClientTests
         o.Properties.Add(new PSNoteProperty("MissingUpdates", missing));
         o.Properties.Add(new PSNoteProperty("RunningUpdates", running));
         o.Properties.Add(new PSNoteProperty("UserLoggedOn", user));
+        o.Properties.Add(new PSNoteProperty("ClientSdkFailed", sdkFailed));
         return o;
     }
 

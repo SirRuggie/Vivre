@@ -73,7 +73,8 @@ public sealed class ConfigMgrClient : IConfigMgrClient
             MissingUpdates: GetBool(row, "MissingUpdates"),
             RunningUpdates: GetBool(row, "RunningUpdates"),
             UserLoggedOn: GetBool(row, "UserLoggedOn"),
-            LastBootTime: GetDateTime(row, "LastBootTime"));
+            LastBootTime: GetDateTime(row, "LastBootTime"),
+            ClientSdkFailed: GetBool(row, "ClientSdkFailed"));
     }
 
     private static DateTime? GetDateTime(PSObject row, string name) =>
@@ -94,7 +95,7 @@ public sealed class ConfigMgrClient : IConfigMgrClient
     // object instead of the old semicolon-delimited string. SMS_Client is queried with
     // -ErrorAction Stop so a non-ConfigMgr target produces a terminating error (caught
     // by the host as HadErrors / no output) rather than silently returning blanks.
-    private const string HealthScript = """
+    internal const string HealthScript = """
         $client = Get-CimInstance -Namespace 'ROOT\ccm' -ClassName SMS_Client -ErrorAction Stop
 
         # Site code: read SMS_Authority.Name ("SMS:<site>") rather than calling
@@ -112,7 +113,16 @@ public sealed class ConfigMgrClient : IConfigMgrClient
             $ccmHardReboot = [bool]$r.IsHardRebootPending
         } catch { }
 
-        $updates = @(Get-CimInstance -Namespace 'ROOT\ccm\ClientSDK' -ClassName CCM_SoftwareUpdate -ErrorAction SilentlyContinue)
+        # CCM_SoftwareUpdate is the authoritative MissingUpdates source AND the broken-namespace
+        # sentinel: -ErrorAction Stop so a corrupt/denied ClientSDK is a detected failure, never a
+        # silent empty result that false-greens the row. (A valid class with zero instances returns
+        # empty WITHOUT error, so a healthy zero-update client is unaffected.) CCM_Application /
+        # CCM_Program stay SilentlyContinue - the legacy CCM_Program class can be legitimately
+        # absent on healthy clients, and a broken NAMESPACE is already caught by the probe above.
+        $clientSdkFailed = $false
+        $updates = @()
+        try { $updates = @(Get-CimInstance -Namespace 'ROOT\ccm\ClientSDK' -ClassName CCM_SoftwareUpdate -ErrorAction Stop) }
+        catch { $clientSdkFailed = $true }
         $apps    = @(Get-CimInstance -Namespace 'ROOT\ccm\ClientSDK' -ClassName CCM_Application -ErrorAction SilentlyContinue)
         $progs   = @(Get-CimInstance -Namespace 'ROOT\ccm\ClientSDK' -ClassName CCM_Program -ErrorAction SilentlyContinue)
 
@@ -135,13 +145,14 @@ public sealed class ConfigMgrClient : IConfigMgrClient
         $userLoggedOn = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue).Count -gt 0
 
         [PSCustomObject]@{
-            ClientVersion  = $client.ClientVersion
-            SiteCode       = $site
-            RebootRequired = [bool]$rebootRequired
-            MissingUpdates = [bool]$missingUpdates
-            RunningUpdates = [bool]$runningUpdates
-            UserLoggedOn   = [bool]$userLoggedOn
-            LastBootTime   = $lastBoot
+            ClientVersion   = $client.ClientVersion
+            SiteCode        = $site
+            RebootRequired  = [bool]$rebootRequired
+            MissingUpdates  = [bool]$missingUpdates
+            RunningUpdates  = [bool]$runningUpdates
+            UserLoggedOn    = [bool]$userLoggedOn
+            LastBootTime    = $lastBoot
+            ClientSdkFailed = [bool]$clientSdkFailed
         }
         """;
 }
