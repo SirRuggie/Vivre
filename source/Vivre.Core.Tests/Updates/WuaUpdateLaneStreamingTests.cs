@@ -26,15 +26,32 @@ public class WuaUpdateLaneStreamingTests
     public async Task Heartbeat_lines_dont_report_or_regress_the_phase()
     {
         var reports = new List<HostPatchStatus>();
-        var lane = new WuaUpdateLane(new ScriptedStreamingHost([Installing, Heartbeat]), agentBytesProvider: () => StubAgent);
+        var lane = new WuaUpdateLane(new ScriptedStreamingHost([Installing, Heartbeat, Done]), agentBytesProvider: () => StubAgent);
 
         HostPatchStatus final = await lane.InstallAsync("NYC-SRV1", new PatchOptions(), credential: null, Sink(reports), CancellationToken.None);
 
         // The heartbeat must NOT produce a report (so it can't regress the UI back to "Searching…")
-        // — only the initial Scanning + the Installing line do.
-        Assert.Equal(2, reports.Count);
-        Assert.Equal(PatchPhase.Installing, final.Phase);
-        Assert.Equal(50, final.Percent);
+        // — only the initial Scanning, the Installing line, and the terminal Done do. A 4th report
+        // would mean the heartbeat leaked through the filter.
+        Assert.Equal(3, reports.Count);
+        Assert.Equal(PatchPhase.Installing, reports[1].Phase);
+        Assert.Equal(PatchPhase.Done, final.Phase);
+    }
+
+    [Fact]
+    public async Task A_stream_that_ends_without_a_terminal_line_surfaces_an_unknown_outcome_failure()
+    {
+        // The remote pipeline completed but the last relayed status was still mid-run (the progress
+        // log vanished under the watcher, or the agent's final line was dropped) — the lane must
+        // never present a mid-run phase as the final result, and the honest failure must never be
+        // transient-classified (that would silently re-dispatch the whole install).
+        var lane = new WuaUpdateLane(new ScriptedStreamingHost([Installing]), agentBytesProvider: () => StubAgent);
+
+        HostPatchStatus final = await lane.InstallAsync("NYC-SRV1", new PatchOptions(), credential: null, Sink([]), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Error, final.Phase);
+        Assert.Contains("without a final result", final.Message);
+        Assert.False(TransientWuaError.IsTransient(final.Message));
     }
 
     [Fact]

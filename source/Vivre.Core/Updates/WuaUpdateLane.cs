@@ -272,6 +272,18 @@ public sealed class WuaUpdateLane
                 return failed;
             }
 
+            if (!IsTerminal(last.Phase))
+            {
+                // The stream ended cleanly but the last relayed status was still mid-run — the
+                // progress log vanished under the watcher (third-party deletion) or the agent's
+                // final line was dropped. The outcome is unknown; never present a mid-run phase
+                // as the final result.
+                var unknown = HostPatchStatus.Failed(
+                    "The update stream ended without a final result - the agent outcome is unknown. Re-scan to confirm what was installed.");
+                progress.Report(unknown);
+                return unknown;
+            }
+
             return last;
         }
         catch (KerberosWrongPrincipalException)
@@ -653,6 +665,12 @@ public sealed class WuaUpdateLane
         _ => PatchPhase.Scanning,
     };
 
+    /// <summary>Phases that end a run — mirrors the bootstrap tail loop's terminal set and
+    /// <c>SmbAgentLane.IsTerminal</c>. Rebooting is deliberately excluded: the agent never emits
+    /// it, so a Rebooting last-line can only be a stray, never a final outcome.</summary>
+    private static bool IsTerminal(PatchPhase phase) =>
+        phase is PatchPhase.Done or PatchPhase.Error or PatchPhase.PendingReboot or PatchPhase.Deferred;
+
     // --- embedded scripts -------------------------------------------------
 
     private static string BuildScanScript(UpdateSource source, bool includeDrivers, UpdateScope scope)
@@ -895,6 +913,12 @@ public sealed class WuaUpdateLane
 
         string runNow = options.RunBehavior == RunBehavior.ScheduleAt ? "$false" : "$true";
 
+        // Run-now installs are watched live and the watcher detects a dead agent, so the task-level
+        // ceiling is generous (12h) - it exists only as the backstop against a truly wedged WUA.
+        // A ScheduleAt run fires later with NO watcher attached (no death detection), so it keeps
+        // the tighter 6h bound on that unobserved window.
+        int executionTimeLimitHours = options.RunBehavior == RunBehavior.ScheduleAt ? 6 : 12;
+
         return $$"""
             $ErrorActionPreference = 'Stop'
 
@@ -935,7 +959,7 @@ public sealed class WuaUpdateLane
             {{trigger}}
             $action    = New-ScheduledTaskAction -Execute '{{exePath}}' -Argument '"{{configPath}}"'
             $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
-            $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours 6)
+            $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours {{executionTimeLimitHours}})
             Register-ScheduledTask -TaskName '{{taskName}}' -Action $action -Principal $principal -Settings $settings {{registerTrigger}}-Force | Out-Null
 
             $runNow = {{runNow}}
@@ -964,6 +988,7 @@ public sealed class WuaUpdateLane
                 $lastSeen = Get-Date
                 $lastLen = 0L
                 $progressSeen = $false
+                $taskGone = $false
                 $done = $false
 
                 while (-not $done) {
@@ -989,6 +1014,8 @@ public sealed class WuaUpdateLane
                                 $line
                                 $lastSeen = Get-Date
                                 $progressSeen = $true
+                                # Any drained line is ironclad proof of life - disarm the death probe.
+                                $taskGone = $false
                                 # Check for a terminal phase so we know when to stop tailing.
                                 try {
                                     $obj = $line | ConvertFrom-Json
@@ -1001,6 +1028,28 @@ public sealed class WuaUpdateLane
                         }
                     }
 
+                    # Death confirm: armed by the silence-gated probe below when the task left
+                    # 'Running'. THIS tick's drain above has already relayed anything the agent
+                    # wrote before exiting (the agent flushes its terminal line to disk before
+                    # the process ends), so still-armed + still-not-Running + no terminal line
+                    # means the agent died without reporting a result (crash, external kill, or
+                    # the task time limit). Mirrors the SMB lane's service-stopped guard.
+                    if (-not $done -and $taskGone) {
+                        $t2 = Get-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue
+                        if ($t2 -and $t2.State -eq 'Running') {
+                            $taskGone = $false
+                        } elseif ($t2 -and $t2.State -ne 'Running') {
+                            $dead = [PSCustomObject]@{
+                                phase = 'Error'; message = 'The update agent stopped without reporting a result - it may have crashed, been killed by security software, or hit the scheduled task time limit. Re-scan to confirm what was installed.'
+                                percent = $null; available = 0; installed = 0; failed = 0
+                                rebootPending = $false; ts = (Get-Date).Ticks
+                            }
+                            Write-Output ($dead | ConvertTo-Json -Compress)
+                            $done = $true
+                        }
+                        # $t2 null = query error: stay armed and keep waiting (fail open).
+                    }
+
                     # Heartbeat — 15s of silence emits a synthetic line so a quiet stretch (a
                     # long single-update install) never looks identical to a hung channel.
                     if (-not $done -and ((Get-Date) - $lastSeen) -gt [TimeSpan]::FromSeconds(15)) {
@@ -1011,6 +1060,16 @@ public sealed class WuaUpdateLane
                         }
                         Write-Output ($hb | ConvertTo-Json -Compress)
                         $lastSeen = Get-Date
+
+                        # Silence-gated death probe - heartbeat FIRST (above), so a slow Task
+                        # Scheduler query can never stall the liveness signal the client's 90s
+                        # watchdog depends on. Armed only after progress was seen: pre-start
+                        # failures stay owned by the 2-minute startup check below. Fail open:
+                        # a $null query result is a query error, never death.
+                        if ($progressSeen -and -not $taskGone) {
+                            $t = Get-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue
+                            if ($t -and $t.State -ne 'Running') { $taskGone = $true }
+                        }
                     }
 
                     if (-not (Test-Path '{{progressPath}}')) {

@@ -76,6 +76,60 @@ public class BootstrapScriptTests
         Assert.Contains("} elseif (((Get-Date) - $started) -gt [TimeSpan]::FromMinutes(2)) {", script);
     }
 
+    [Fact]
+    public void Death_probe_is_silence_gated_progress_latched_and_fails_open()
+    {
+        string script = Bootstrap(RunBehavior.InstallNow);
+
+        // The death probe arms only after progress was seen (pre-start stays owned by the 2-minute
+        // startup check) and only concludes death on a DEFINITE non-Running state — a $null query
+        // result (RPC hiccup) must never count as death, and a Running re-probe must disarm.
+        Assert.Contains("if ($progressSeen -and -not $taskGone)", script);
+        Assert.Contains("$t -and $t.State -ne 'Running'", script);
+        Assert.Contains("$t2 -and $t2.State -eq 'Running'", script);
+        // The confirm branch's death condition must stay an explicit guarded elseif — a bare
+        // 'else' would declare death on a $null query result (RPC hiccup), breaking fail-open.
+        Assert.Contains("$t2 -and $t2.State -ne 'Running'", script);
+
+        // The probe lives INSIDE the tail loop: after the drain's progress latch, before the finally.
+        int latch = script.IndexOf("$progressSeen = $true", StringComparison.Ordinal);
+        int probe = script.IndexOf("if ($progressSeen -and -not $taskGone)", StringComparison.Ordinal);
+        int finallyBlock = script.IndexOf("} finally {", StringComparison.Ordinal);
+        Assert.True(latch >= 0 && probe > latch, "the death probe must sit after the drain's progress latch");
+        Assert.True(finallyBlock > probe, "the death probe must be inside the tail loop, before the finally");
+
+        // The death message is present, distinct from the startup-failure text, and never
+        // transient-classified (a transient match would silently re-run the whole install).
+        int death = script.IndexOf("stopped without reporting a result", StringComparison.Ordinal);
+        Assert.True(death >= 0, "the death message must be present");
+        int lineStart = script.LastIndexOf('\n', death) + 1;
+        int lineEnd = script.IndexOf('\n', death);
+        string deathLine = script[lineStart..(lineEnd < 0 ? script.Length : lineEnd)];
+        Assert.False(TransientWuaError.IsTransient(deathLine));
+        Assert.DoesNotContain("Worker did not start writing progress", deathLine);
+
+        // The startup-latch test's quiet-exit anchor stays unique: the probe's gate deliberately
+        // does not contain the literal "if ($progressSeen)" that test pins.
+        Assert.Equal(
+            script.IndexOf("if ($progressSeen)", StringComparison.Ordinal),
+            script.LastIndexOf("if ($progressSeen)", StringComparison.Ordinal));
+    }
+
+    [Theory]
+    [InlineData(RunBehavior.InstallNow, 12)]
+    [InlineData(RunBehavior.ScheduleAt, 6)]
+    public void Execution_time_limit_is_split_by_run_behavior(RunBehavior behavior, int hours)
+    {
+        // Run-now installs are watched (the death probe reports a killed agent), so their task-level
+        // ceiling is the generous wedge backstop; a ScheduleAt run fires later with no watcher, so it
+        // keeps the tighter bound on that unobserved window.
+        string script = Bootstrap(
+            behavior,
+            behavior == RunBehavior.ScheduleAt ? DateTime.Today.AddDays(1).AddHours(1) : null);
+
+        Assert.Contains($"-ExecutionTimeLimit (New-TimeSpan -Hours {hours})", script);
+    }
+
     [Theory]
     [InlineData(RunBehavior.InstallNow)]
     [InlineData(RunBehavior.ScheduleAt)]

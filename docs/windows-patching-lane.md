@@ -274,6 +274,15 @@ These mechanisms exist because of real production failures. Don't undo them with
   `PatchOptions.NoResponseTimeout` (90s) so a dead/hung session surfaces instead of freezing on stale
   progress. It keys off heartbeat **liveness**, not percent, so it never trips on a slow-but-working
   update.
+- **Agent-death probe** — the heartbeat proves the **session**, not the agent (the controller
+  synthesizes it even if the agent process is gone). Agent death is caught separately: during a quiet
+  stretch the controller also probes the scheduled task's state (`Get-ScheduledTask`, in-session — no
+  extra WinRM shell) and, once the task has left `Running` with no terminal line written, emits a
+  terminal "stopped without reporting a result" error (~16s after the agent's last output; mirrors the
+  SMB lane's `service.Query()` guard). Fail-open: a failed/null state query is never treated as death,
+  and any drained progress line disarms a pending alarm. This covers **immediate** install/uninstall
+  runs only — a ScheduleAt task fires later with no watcher attached, so it keeps the tighter 6h task
+  `ExecutionTimeLimit` (run-now uses 12h, purely as the wedged-WUA backstop).
 - **Typed remoting exceptions** — `PSRunspaceHost.TranslateRemotingException` maps raw failures to
   `RemoteSessionLostException` / `RemoteShellInitException` (at both the connect and invoke phases),
   so the UI shows actionable messages, never "The pipeline has been stopped." or the raw

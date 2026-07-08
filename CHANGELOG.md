@@ -15,15 +15,24 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **A dead update agent no longer leaves the row spinning "Installing…" forever.** If the agent process
+  died without writing a final result (a crash, a security-software kill, or the scheduled task's time
+  limit), the remote watcher kept heartbeating on its behalf, so the machine looked busy indefinitely and
+  held an install slot until Stop. The watcher now checks the scheduled task's state during quiet stretches
+  and, when the agent is gone with no result written, the row turns red with "The update agent stopped
+  without reporting a result… Re-scan to confirm what was installed" within about 16 seconds. A stream that
+  ends without a final result is likewise reported honestly instead of freezing on the last mid-run status.
+  The task-level time limit is now 12 hours for watched (run-now) installs and stays 6 hours for scheduled
+  ones, which run unwatched.
 - **Long installs are no longer cut off by a 3-hour ceiling, and a cut-off install can no longer mislabel
   itself "Worker did not start writing progress within 2 minutes."** Two boxes mid-install (80% and 32%)
   hit the old wall-clock: Vivre tore the watch down, its cleanup deleted the progress log under the still-live
   remote watcher, and the watcher's unlatched startup check then painted the startup-failure message over the
   honest "Timed out" — while the install actually kept running on the box. Install/Uninstall now run with no
   wall-clock in Vivre (like 2016 Clean up); the 90-second silence watchdog remains the safety net, so a box
-  writing progress is never cut off by Vivre and a dead session still fails fast. (The target-side scheduled
-  task still carries its own 6-hour execution limit, and an agent that dies without reporting a result is not
-  yet detected — a watcher-side probe for that is queued as a follow-up.) The watcher now only reports "did
+  writing progress is never cut off by Vivre and a dead session still fails fast. (An agent that dies without
+  reporting a result is caught by the watcher's task-state probe — see the entry above.) The watcher now only
+  reports "did
   not start" when nothing was ever written, and a line arriving after an operation has finished can no longer
   overwrite the row's final state.
 - **The bottom status bar no longer double-prints the sweep progress.** During a fleet sweep it briefly

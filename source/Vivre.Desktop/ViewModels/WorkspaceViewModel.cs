@@ -1721,11 +1721,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Downloads + installs applicable updates on every row (via a one-time SYSTEM task per host).</summary>
     /// <remarks>Install/Uninstall sweeps pass an INFINITE per-host timeout (like 2016 Clean up): the old 3-hour
     /// wall clock tore down actively-progressing installs mid-run (and its cleanup deleted the progress file
-    /// under the live watcher). The lane's silence watchdog (<see cref="PatchOptions.NoResponseTimeout"/>) is
-    /// the safety net — a box writing progress is never cut off; a dead/hung SESSION still fails fast. Known
-    /// gap: the watchdog can't see AGENT death (the watcher heartbeats on the agent's behalf), so an agent
-    /// killed without a terminal line — crash, EDR, or the task's 6h ExecutionTimeLimit — leaves the row
-    /// running until the operator stops the sweep. Follow-up: a watcher-side task-state probe.</remarks>
+    /// under the live watcher). Two nets replace it: the lane's silence watchdog
+    /// (<see cref="PatchOptions.NoResponseTimeout"/>) fails a dead/hung SESSION fast, and the watcher's
+    /// task-state death probe reports an agent that dies without a terminal line (crash, EDR kill, or the
+    /// task's 12h ExecutionTimeLimit) within ~16s — so a box writing progress is never cut off, and a dead
+    /// one never spins forever.</remarks>
     [RelayCommand(AllowConcurrentExecutions = true, CanExecute = nameof(CanStartSweep))]
     private Task InstallUpdatesAsync() => RunPatchSweepAsync([.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install",
         perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan);
