@@ -1,3 +1,5 @@
+using Vivre.Core.IO;
+
 namespace Vivre.Core.Computers;
 
 /// <summary>
@@ -49,7 +51,9 @@ public sealed class ComputerListStore : IComputerListStore
             .Where(m => m.Length > 0)
             .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        File.WriteAllLines(PathFor(name), cleaned);
+        // Same one-machine-per-line format File.WriteAllLines produced (every line newline-terminated),
+        // but written crash-safe via the atomic temp-file swap so a crash mid-write can't corrupt the list.
+        AtomicFileWriter.Write(PathFor(name), string.Concat(cleaned.Select(m => m + Environment.NewLine)));
     }
 
     public void Delete(string name)

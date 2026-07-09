@@ -15,6 +15,9 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **Saving a machine list is now crash-safe.** Like settings, a named list was written by overwriting its
+  file in place, so a crash or power loss mid-save could corrupt the list. It now uses the same atomic
+  temp-file swap, so the previous good list always survives a failed save.
 - **SCCM client actions no longer hang the whole batch on one stuck machine — and Stop now works on them.**
   Client actions (Machine Policy, Hardware Inventory, Update Scan, …) used to run one machine at a time
   with no time limit: one hung box stalled every machine after it, some failures aborted the rest of the
