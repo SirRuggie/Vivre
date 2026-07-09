@@ -3181,8 +3181,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // the scalar property updates, so the grid stays current as the SYSTEM task reports in.
         // Suppress a TRANSIENT reach error mid-stream so the row never flashes red — the runner will
         // retry it silently. Normal progress (Scanning/Downloading/Installing) still applies live.
-        // Also latch whether install has actually BEGUN this run (see the re-entry guard below).
-        bool installBegan = false;
         // Lines can still drain from the remote pipeline after the operation has resolved (the pipeline
         // stop is asynchronous) — a late-arriving line must never overwrite the terminal row state. Both
         // the flag write (finally) and this read run on the captured UI context, so no marshalling needed.
@@ -3194,11 +3192,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 return;
             }
 
-            if (s.Phase is PatchPhase.Installing or PatchPhase.PendingReboot or PatchPhase.Done || s.InstalledCount > 0)
-            {
-                installBegan = true;
-            }
-
             if (s.Phase == PatchPhase.Error && TransientWuaError.IsTransient(s.Message))
             {
                 return;
@@ -3206,6 +3199,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             ApplyStatus(computer, s);
         });
+        // Latch "install began" PRODUCER-SIDE (synchronously, on the streaming thread) rather than in
+        // the posted Progress callback above: on retry attempts the re-entry guard below reads the flag
+        // on a thread-pool continuation, and it raced the UI-posted write (the audit MED) — the queued
+        // post could still be undrained when the guard read, re-running an install that had begun.
+        var install = new InstallBeganLatch(progress);
         try
         {
             // Wrap the WHOLE install (service-registration → search → download → install): a transient
@@ -3215,14 +3213,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             HostPatchStatus final = await TransientRetryRunner.RunAsync(
                 attempt: async ct =>
                 {
-                    HostPatchStatus r = await _patch.InstallAsync(computer.Name, options, _credentials.Current, progress, ct);
+                    HostPatchStatus r = await _patch.InstallAsync(computer.Name, options, _credentials.Current, install, ct);
 
                     // RE-ENTRY GUARD: once install has BEGUN, a late transient must NOT trigger a re-run —
                     // the re-search would find 0 applicable (already installed) and report a false "up to
                     // date"/zero, silently dropping the installed count and reboot-pending. Surface it as a
                     // terminal error (no transient HRESULT in the text, so the runner won't retry) telling
                     // the operator to re-scan. Search/download transients (install never began) still retry.
-                    if (installBegan && r.Phase == PatchPhase.Error && TransientWuaError.IsTransient(r.Message))
+                    if (install.Began && r.Phase == PatchPhase.Error && TransientWuaError.IsTransient(r.Message))
                     {
                         return HostPatchStatus.Failed(
                             $"Install was interrupted after it began on {computer.Name} — some updates may have installed. Re-scan to confirm; not retried, to avoid dropping the installed count.");
@@ -3236,6 +3234,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // the runner's post-ConfigureAwait(false) context — a thread-pool thread, NOT this UI sweep
                 // continuation — so it must NOT write UI-bound/live-filtered state directly; route via the
                 // UI-built IProgress or marshal. SetTransientRetryingState marshals to the Dispatcher itself.
+                // The re-entry guard's began-flag is safe to read on the pool thread — InstallBeganLatch
+                // latches it synchronously on the producing thread, so no UI post is in its path.
                 onRetrying: n => SetTransientRetryingState(computer, n),
                 buildExhausted: msg => HostPatchStatus.Unreachable(BuildUnreachableMessage(msg)),
                 token);

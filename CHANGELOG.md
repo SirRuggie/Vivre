@@ -15,6 +15,12 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **A rare timing gap could make a retried install misreport "up to date" and drop the installed count.**
+  When an install hit a transient Windows Update hiccup, was retried, actually began installing on the
+  retry, and then hit a second hiccup, Vivre could in a narrow window forget the install had begun and
+  re-run it — the re-check would then find nothing left to do and report a false "up to date", losing the
+  real installed count and the pending-reboot flag. The install-began signal is now recorded the instant
+  the machine reports it, closing the gap. (Never observed in the field; found by code audit.)
 - **Saving a machine list is now crash-safe.** Like settings, a named list was written by overwriting its
   file in place, so a crash or power loss mid-save could corrupt the list. It now uses the same atomic
   temp-file swap, so the previous good list always survives a failed save.
