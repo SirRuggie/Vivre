@@ -78,6 +78,9 @@ public partial class App : Application
         var catalogSize = new MicrosoftUpdateCatalogService();
         // Session-only, shared across tabs (consistent with the in-memory credential model).
         var patchOptions = new PatchOptions();
+        // Reaps orphaned Vivre_Reboot_* services left when the SMB/SCM reboot fallback's best-effort
+        // delete lost the race with the reboot; swept per host on list load (once per session).
+        var reaper = new OrphanRebootServiceReaper(pinger, activity);
 
         // Global safety net: never die silently. Unhandled exceptions (e.g. from an async void
         // event handler) are logged to the activity log + rolling file instead of taking the app
@@ -120,7 +123,7 @@ public partial class App : Application
         ApplyTheme(settings.Theme);
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize);
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper);
 
         // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.
         // The nav section's DataContext binds to ShellViewModel.RdpViewModel.

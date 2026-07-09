@@ -50,7 +50,8 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
     `0x80090322` rejection it flips the host to the SMB/DCOM path via the session-scoped
     `HostTransportCache`, and Vitals scores the degradation — see docs/windows-patching-lane.md ▸ "Kerberos-broken
     hosts"), `Sccm` (`ConfigMgrClient`, client actions),
-    `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`), `Credentials`, `Computers` (named-list
+    `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`, `OrphanRebootServiceReaper` — reaps orphaned
+    `Vivre_Reboot_*` services on list load), `Credentials`, `Computers` (named-list
     store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see docs/windows-patching-lane.md),
     `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score),
     `Remediation` (`RemediationService` — start a service / free disk / end a process from the Vitals triage view),

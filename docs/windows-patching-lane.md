@@ -51,6 +51,14 @@ credential prompt): `Vivre.Core/Updates/SmbAgentLane.cs` + `Remoting/RemoteServi
    JSON update array.
 4. **Teardown:** stop → wait for stopped → `DeleteService` → delete the per-run drop files.
 
+The **reboot fallback** rides the same channel: when DCOM `Win32Shutdown` is rejected, the wave
+creates a one-shot demand-start `Vivre_Reboot_<guid>` service whose image runs `shutdown.exe`
+(`DcomRebootTrigger.RebootViaSmbScm`). Its best-effort delete can lose the race with the reboot,
+leaving a Stopped orphan behind — the **list-load reaper** (`Remoting/OrphanRebootServiceReaper`,
+gated by *auto-check on load*) enumerates each loaded host once per session over the same SCM channel
+and deletes exact `Vivre_Reboot_*` matches that are fully stopped (never anything running, never
+`Vivre_WUA_*`; it binds no start primitive at all, so it cannot fire anything).
+
 **Selection lives in `WuaUpdateLane`** (not the routing decorator): Scan / Install / Uninstall try
 WinRM first and, on the typed `KerberosWrongPrincipalException`, transparently route here. **Scan
 additionally** falls back to this lane on a `RemoteSessionLostException` (any WinRM session drop, not

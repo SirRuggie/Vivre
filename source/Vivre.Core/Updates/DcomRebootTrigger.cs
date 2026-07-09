@@ -195,7 +195,8 @@ public sealed class DcomRebootTrigger : IRebootTrigger
             // Best-effort delete: the box is going down, so this SCM delete may race the reboot and throw.
             // A leftover demand-start one-shot service never runs again on its own — harmless. (A blocked
             // graceful + its 8-min-later forced attempt can each leave one, since each uses a unique name;
-            // up to two harmless orphans, reaped manually or ignored.)
+            // up to two harmless orphans — the list-load reaper (OrphanRebootServiceReaper) removes them
+            // next time the host is loaded.)
             try { service.Delete(); }
             catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Reboot-service cleanup on {host}: {ex.Message}"); }
             service.Dispose();

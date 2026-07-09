@@ -6,6 +6,15 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- **Leftover one-shot reboot services are now cleaned up automatically.** On the machines that need
+  the SMB reboot fallback, the tiny helper service Vivre creates to fire the reboot could survive if
+  its cleanup lost the race with the reboot itself. When a list loads, Vivre now quietly removes any
+  of these leftovers on the loaded machines (only exact `Vivre_Reboot_*` names, only when fully
+  stopped — never anything running), notes each removal in the activity dock, and honors the
+  "auto-check on load" setting. The leftover was inert on its own, but removing it closes the door on
+  anything else ever starting it.
+
 ### Changed
 - **"Clean up" on the Server 2016 bar now works on any 2016 box, not just ones marked for staged patching.**
   It follows the selection like the rest of the toolbar: with nothing selected it cleans every 2016 box in the

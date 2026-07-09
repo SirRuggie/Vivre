@@ -120,6 +120,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly ISoftwareProbe _software;
     private readonly ICustomColumnProbe _customColumns;
     private readonly ICatalogSizeService _catalogSize;
+    private readonly OrphanRebootServiceReaper _reaper;
     private readonly AppSettingsStore _appSettings = new();
 
     /// <summary>User-defined custom columns (machine mode), loaded from settings; the view builds a grid
@@ -804,7 +805,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -835,6 +836,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _software = software;
         _customColumns = customColumns;
         _catalogSize = catalogSize;
+        _reaper = reaper;
         LoadColumnLayout();
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
@@ -1292,6 +1294,23 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             else
             {
                 _ = dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, (Action)KickAutoCheck);
+            }
+
+            // Reap any orphaned Vivre_Reboot_* services on the just-loaded hosts — leftovers of the
+            // SMB/SCM reboot fallback's best-effort delete losing the race with the reboot. Inside the
+            // auto-check gate deliberately: it is the app's "may Vivre reach out to every box on load?"
+            // consent switch. ApplicationIdle (below the vitals Background kickoff): the reaper has zero
+            // first-paint value and must not compete with the vitals burst. ReapAsync owns all its
+            // faults (never throws) and dedups per session, so tab churn never re-sweeps.
+            string[] toReap = [.. added.Select(c => c.Name)];
+            if (dispatcher is null)
+            {
+                _ = _reaper.ReapAsync(toReap);
+            }
+            else
+            {
+                _ = dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.ApplicationIdle,
+                    (Action)(() => _ = _reaper.ReapAsync(toReap)));
             }
         }
     }

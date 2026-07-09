@@ -35,8 +35,9 @@ wall-clock/mislabeled-teardown incident (`12a5e36`).
    dimension. Research-first, remoting-cache zone.
 3. **Install re-entry guard's `installBegan` flag** can be read on the runner thread before the
    dispatcher-posted write lands. Narrow trigger. **HANDLE WITH CARE** — concurrency.
-4. **Orphan `Vivre_Reboot_*` service** (audit LOW, flagged UP — reboot-adjacent). Needs an operator
-   decision before building.
+4. **Orphan `Vivre_Reboot_*` service** — **DONE (2026-07-09)**: operator approved the list-load
+   reaper; `OrphanRebootServiceReaper` + `RebootServiceReapPolicy` delete Stopped exact-name orphans
+   once per host per session (gated by auto-check on load; read-enumerate-query-delete only).
 5. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
