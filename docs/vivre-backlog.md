@@ -3,46 +3,42 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-08** (audit-fix session: `12a5e36` install wall-clock
-> removed + watcher startup latch; `852662d` dead-agent detection, closes audit HIGH-1; `7e2102c`
-> monitor reboot-probe bound closes HIGH-2 + three MEDs; `289878f` honest cancel chip + SCCM
-> ClientSDK sentinel + settings/enabler guards — both audit HIGHs and five MEDs now closed).
+> not a mandate). Last refreshed: **2026-07-09** (release **1.14.4** cut. The session's eleven commits:
+> `12a5e36` install wall-clock removed + watcher startup latch; `852662d` dead-agent detection (audit
+> HIGH-1); `7e2102c` monitor reboot-probe bound (HIGH-2) + three MEDs; `289878f` honest cancel chip +
+> SCCM ClientSDK sentinel + settings/enabler guards; `1db69d2` doc sync; `f965b29` honest post-reboot
+> outcome (tri-state probe + 120s cap + consume-once counts); `d600009` parallel Stop-cancellable
+> client actions + atomic settings save + LastBootTime note; `1add64f` atomic computer-list save;
+> `832aa7f` install-began producer-side latch; `a008747` orphan reboot-service reaper; `f26a7c4`
+> users-online honest unknown. **Both audit HIGHs and every actionable MED are now closed.**)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 699 green).**
+> are point-in-time only (current suite is 750 green).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-08:** the full five-lens audit record is
-`docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** — HIGH-1
-dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`). **Five
-audit MEDs closed:** Stop-during-SMB-copy (`7e2102c`), settings-save-invisible-in-Release
-(`7e2102c`), Enable-WinRM no-timeout/sequential (`7e2102c`), cancel-clears-chip-on-failed-unregister
-(`289878f`), SCCM-ClientSDK-false-green (`289878f`) — plus the audit-adjacent install
-wall-clock/mislabeled-teardown incident (`12a5e36`).
-**Audit items still open** (recommended order):
-1. **Post-reboot cluster** — the audit MED "post-reboot probe failure renders as green 'up to date'"
-   (`RebootOutcomeSelector` has no probe-failed state; systematic false-green on Kerberos-cached
-   hosts) + this session's find that `ReportPostRebootOutcomeAsync` (~:3993) calls
-   `IsRebootPendingAsync` with **no per-call timeout** (the same gap HIGH-2 just fixed in the monitor
-   — same 120s linked-CTS wrap applies) + the existing "post-reboot message shows the wrong install
-   count" item (hunt cluster below). Fold all three into one pass. **HANDLE WITH CARE** —
-   WorkspaceViewModel.
-2. **Credentialed WinRM blocked by ambient Kerberos rejection** — `RoutingPowerShellHost.cs:59`
+**Audit findings (2026-07-01) — status as of 2026-07-09 (release 1.14.4):** the full five-lens audit
+record is `docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
+HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
+**and every actionable MED is closed too:** Stop-during-SMB-copy + settings-save-invisible-in-Release
++ Enable-WinRM no-timeout/sequential (`7e2102c`), cancel-clears-chip-on-failed-unregister +
+SCCM-ClientSDK-false-green (`289878f`), the post-reboot false-green cluster (`f965b29`), the install
+re-entry `installBegan` race (`832aa7f`), and the orphan `Vivre_Reboot_*` service (`a008747`) — plus
+the audit-adjacent install wall-clock incident (`12a5e36`), the TriggerSchedule / atomic-settings /
+LastBootTime trio (`d600009`), the atomic computer-list save (`1add64f`), and the session-found
+users-online false-green (`f26a7c4`).
+
+**Still open** (neither is day-to-day work — no urgent items remain):
+1. **Credentialed WinRM blocked by ambient Kerberos rejection** — `RoutingPowerShellHost.cs:59`
    fast-fails before the credential parameter is consulted; the cache has no eviction or credential
-   dimension. Research-first, remoting-cache zone.
-3. **Install re-entry guard's `installBegan` flag** can be read on the runner thread before the
-   dispatcher-posted write lands. Narrow trigger. **HANDLE WITH CARE** — concurrency.
-4. **Orphan `Vivre_Reboot_*` service** — **DONE (2026-07-09)**: operator approved the list-load
-   reaper; `OrphanRebootServiceReaper` + `RebootServiceReapPolicy` delete Stopped exact-name orphans
-   once per host per session (gated by auto-check on load; read-enumerate-query-delete only).
-5. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
+   dimension. Research-first, remoting-cache zone. PARKED until it bites in practice.
+2. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
-*Settings simplification* below). Beyond the audit items above, what remains is the polish /
+*Settings simplification* below). Beyond the two items above, what remains is the polish /
 standalone items further down, each "do only if it recurs / when a signal appears."
 
 ---
@@ -133,20 +129,10 @@ standalone items further down, each "do only if it recurs / when a signal appear
   forcing full-width measure. (Measured in the 1.14.2 cold-start hunt: the Auto-width column measure is ~120–180ms/pass — real but minor, NOT a freeze cause.)
 - **Scan-timeout edge** — 5-min cap (a997642) may be short for the very worst first-scan boxes; bump to
   10 min (600s) ONLY if real "Scan timed out" false-positives appear.
-- **TriggerScheduleAsync (SCCM client actions) has the same sequential/untimed shape Enable WinRM had**
-  (`WorkspaceViewModel.cs` ~:5147) — a plain foreach with no per-host timeout. Candidate for the same
-  parallel + per-call-bound + passive-BeginOperation pattern `7e2102c` gave Enable WinRM. It IS a
-  cancellable command already, so Stop mitigates — low priority until it causes a real problem.
 - **Two schedules on one box overwrite the host-keyed `_scheduledTasks` entry** while the target
   accumulates uniquely-named `Vivre_WUA_{runId}`/`Vivre_Reboot` tasks — the chip's time and a surviving
   task's trigger can diverge (e.g. after a partial cancel). Pre-existing, narrow; found during the
   `289878f` cancel-chip red-team. Fix would key tracking per task, not per host.
-- **Settings save is not atomic** — `File.WriteAllText` truncates then writes, so a crash/power loss
-  mid-write corrupts settings.json (the corrupt-read RESILIENCE shipped in `289878f`; this is the
-  write-side prevention). Fix: temp file + `File.Replace`. Small, standalone.
-- **Health script's `LastBootTime` read sits in a bare catch** (`ConfigMgrClient.cs` ~:126) — an
-  independent failure silently blanks real data, same pattern family the ClientSDK sentinel
-  (`289878f`) fixed for update state. Low / cosmetic.
 - **No Desktop test project** — three of the four `7e2102c` fixes have no unit-test home (the 120s
   reboot-probe timeout, the settings ActivityLog hook, parallel Enable WinRM), and every per-host
   timeout in the app (incl. the existing vitals/health ones) is trust-the-pattern. A
@@ -170,15 +156,6 @@ standalone items further down, each "do only if it recurs / when a signal appear
 > - **One at a time.** Tackle a SINGLE item, verify it (build + full tests + a visual check in the running app
 >   at fleet scale), and COMMIT it on its own before starting the next. Do not batch these.
 - **From the 2026-06-23 drift/stale hunt — not yet fixed (the easy 8 were done; these need more thought):**
-  - **Post-reboot message shows the wrong install count.** `ReportPostRebootOutcomeAsync` (`WorkspaceViewModel.cs`
-    ~3780) reads `LastInstall*` from the most recent install this session, not from the operation that triggered
-    the wave — so a standalone Reboot & verify reads "installed 0", and two installs report the second's counts.
-    The pill is correct; only the message text. Fix needs deciding how to tie counts to the wave (reset after
-    use, or carry per-operation). Medium.
-  - **DCOM vitals omit stopped-services + logged-on user.** `DcomVitalsProbe` doesn't populate
-    `StoppedAutoServices` / `StoppedAutoServiceCount` / `UserLoggedOn` / `LoggedOnUsers`, so a Kerberos-broken /
-    WinRM-down box shows an empty stopped-services list in triage (and blank Users-Online from a Vitals-only
-    run). Needs new DCOM/WMI queries. Medium.
   - **Stale reboot-pending dot on DCOM-only boxes (narrow edge).** `ApplyVitals` only clears `RebootRequired`
     when `v.RebootPending` is non-null; `DcomVitalsProbe` returns null when all three reboot reads fail, so a
     Kerberos-broken box in Health mode can keep an amber dot after it rebooted (Check All clears it). Low.
@@ -252,6 +229,69 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **Users Online honest unknown — DONE** (`f26a7c4`, on master; the last 1.14.4 commit). The health
+  script's `$userLoggedOn` collapsed a FAILED `Win32_Process` query into a definite false
+  (`-ErrorAction SilentlyContinue` + `@().Count -gt 0`) — rendering a green ✓ "No" (the "safe to
+  reboot, nobody's on" signal) on a box whose query merely failed. Now the vitals pattern: `$null`
+  seed + `-ErrorAction Stop` in an isolated try/catch + uncast emission; `SccmClientInfo.UserLoggedOn`
+  is `bool?` via a new `GetNullableBool`; a failed read renders the grey "?" "Unknown" while a
+  genuinely user-free box keeps its definite green "No" (the false-vs-unknown boundary + script-shape
+  pins locked by tests). IsHealthy untouched; zero VM/XAML change (`Computer.UserLoggedOn` was already
+  `bool?`, converters already tri-state). Help gained the grey-"?" clause. **750 tests** (+4).
+  Cardinal clean.
+- **Orphan `Vivre_Reboot_*` service reaper — DONE** (`a008747`, on master). The SMB/SCM reboot
+  fallback's best-effort delete can lose the race with the reboot, leaving a Stopped demand-start
+  LocalSystem `Vivre_Reboot_<32hex>` service (`cmd /c shutdown …`) with zero trace (the failure went
+  to a Release-stripped `Debug.WriteLine`). New list-load reaper: `OrphanRebootServiceReaper` (own
+  minimal advapi32 set — NO StartService/ControlService/CreateService extern, handles opened WITHOUT
+  `SERVICE_START`, so starting anything is impossible by construction) sweeps each loaded host once
+  per session over the same ambient-NTLM SCM channel (ping-gated, 10s-bounded, cap 8, ApplicationIdle,
+  gated by auto-check-on-load) and deletes only exact-name + confirmed-Stopped matches
+  (`RebootServiceReapPolicy`, pure, lowercase-hex-anchored). Investigation premise corrections: the
+  in-app Vitals-triage start vector was ALREADY closed (the triage list is Auto-start-only; the orphan
+  is demand-start) — the reaper is defense-in-depth vs GPO healing / manual `sc start`. **746 tests**
+  (+21 cases). Cardinal clean, triple-locked.
+- **`installBegan` race closed — producer-side latch — DONE** (`832aa7f`, on master; backlog #3 /
+  audit MED). The install re-entry guard's flag was written only inside the UI-posted `Progress<T>`
+  callback while RETRY attempts read it on a thread-pool continuation — on a double-transient install
+  the guard could read a stale false and re-dispatch an install that had begun (false "up to date",
+  dropped count). Barrier-only fixes rejected: the write was scheduling-delayed (not yet executed),
+  not merely invisible. New Core `InstallBeganLatch : IProgress<HostPatchStatus>` latches
+  synchronously on the PRODUCING thread before `InstallAsync`'s task completes, then forwards to the
+  UI `Progress<T>`; the guard reads `latch.Began` — race eliminated by ordering. Honest framing: WUA's
+  `IsInstalled=0` filter + the agent's `BootBusyGuard` already made a true double-APPLY vanishingly
+  unlikely; the harm was the reporting lie. **725 tests** (+8 cases incl. the
+  synchronous-set-on-the-reporting-thread contract). Cardinal clean.
+- **Computer-list save crash-safe — DONE** (`1add64f`, on master). `ComputerListStore.Save` wrote the
+  named list in place (`File.WriteAllLines`); a crash mid-write corrupted it. Now writes via
+  `AtomicFileWriter` with a format-preserving lines→string conversion (the existing Save→Load
+  round-trip tests cover it). **717 tests.**
+- **Parallel Stop-cancellable client actions + atomic settings save + LastBootTime note — DONE**
+  (`d600009`, on master). Three items, investigated + red-teamed. (1) **SCCM client actions**
+  (Machine Policy / Heartbeat / Inventory / Update Scan / Update Eval) were a sequential foreach with
+  a DEAD RelayCommand token (never in `_activeCts` — Stop couldn't cancel and might not even light)
+  and an unbounded execute phase — one hung box stalled the rest, and an escaping
+  `RemoteShellInitException` aborted the whole sweep. Now the Enable-WinRM template, WinRM-adapted:
+  parallel per-row on the shared `_remoteSweepThrottle` (passive acquire), per-row linked-CTS **60s**
+  (red-team-corrected from 30s — the per-host WinRM gate wait counts against the budget), passive
+  `BeginOperation` so Stop works, full catch ladder incl. a typed `RemoteShellInitException` →
+  "WinRM busy" Warn and a catch-all. (2) **settings.json write is atomic** — new Core
+  `AtomicFileWriter` (same-dir temp + `File.Replace`; `File.Exists`-guarded `File.Move` first-write
+  fallback; 3 branch tests) behind `AppSettingsStore.Save`'s unchanged lock/catch — a crash mid-write
+  can no longer torn-write away `StagedHosts`. (3) **LastBootTime bare catch** — premise corrected
+  (isolated to one cosmetic field, honest null, not in the verdict): documenting comments + the
+  previously-missing positive `GetDateTime` parse tests. **717 tests** (+5). Cardinal clean.
+- **Honest post-reboot outcome — DONE** (`f965b29`, on master; audit MED cluster). Three connected
+  fixes to "Reboot & verify"'s message: (1) tri-state `bool?` reboot-pending probe — a probe
+  failure/timeout now reads "Back online · couldn't confirm reboot state — re-check" with a grey "?",
+  never a green "up to date"; (2) a 120s per-call cap on the previously-UNBOUNDED
+  `IsRebootPendingAsync` call (a hung SCCM client could pin the row ~4¾ hours); (3) consume-once
+  nullable install counts — "installed N" appears only when THIS session's install actually
+  installed/failed something, is reported once, and is omitted otherwise (a standalone reboot no
+  longer claims "installed 0"; an old failure can't resurface). **712 tests** (+13). Cardinal clean.
+- **Docs synced to the 2026-07-08 audit-fix session — DONE** (`1db69d2`, on master). Backlog,
+  key-file-path-map, and windows-patching-lane aligned with `12a5e36`/`852662d`/`7e2102c`/`289878f`
+  (docs only, no code).
 - **Honest cancel chip + SCCM ClientSDK sentinel + settings/enabler guards — DONE** (`289878f`, on
   master). Four items, investigated + red-teamed first. (1) **Cancel scheduled task verifies by
   absence** (unregister `Vivre_*` then re-query; emits `REMOVED`/`REMAINING: <names>`): the chip

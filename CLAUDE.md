@@ -52,7 +52,8 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
     hosts"), `Sccm` (`ConfigMgrClient`, client actions),
     `Remoting` (`WinRmEnabler` DCOM, `HostRebootProbe`, `OrphanRebootServiceReaper` — reaps orphaned
     `Vivre_Reboot_*` services on list load), `Credentials`, `Computers` (named-list
-    store), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see docs/windows-patching-lane.md),
+    store), `IO` (`AtomicFileWriter` — crash-safe temp+swap writes behind the settings and list
+    stores), `Scripts` (script library), `Logging`, `Updates` (the WUA lane — see docs/windows-patching-lane.md),
     `Vitals` (`VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score),
     `Remediation` (`RemediationService` — start a service / free disk / end a process from the Vitals triage view),
     `Deploy` (`DeploymentService` — **stage** a package: copy a file/folder to a temp dir on the

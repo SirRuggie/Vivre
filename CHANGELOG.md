@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.4 — 2026-07-09
+
 ### Added
 - **Leftover one-shot reboot services are now cleaned up automatically.** On the machines that need
   the SMB reboot fallback, the tiny helper service Vivre creates to fire the reboot could survive if
