@@ -323,10 +323,12 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I run an SCCM client action?",
-            Keywords = "client action machine policy hardware inventory update scan trigger schedule",
+            Keywords = "client action machine policy hardware inventory update scan trigger schedule stop cancel timed out busy",
             Lines =
             [
                 "Select the machines, then right-click ▸ Client actions ▸ and pick one (Machine Policy, Hardware Inventory, Update Scan, …).",
+                "Actions run on all selected machines at once; each row shows its own result, and Stop cancels the batch.",
+                "A box that doesn't answer shows \"Timed out\" (after 60s), \"WinRM busy\" (try again shortly), or \"WinRM unavailable\" — the rest of the selection is unaffected.",
             ],
         },
         new HelpTopic

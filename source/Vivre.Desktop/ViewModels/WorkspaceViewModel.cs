@@ -142,6 +142,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     //   • Reserved pool = Math.Min(4, total − 1): guaranteed for passive fills; active sweeps may NEVER
     //     touch it.  Passive fills may ALSO borrow from the active pool when it has room (idle-system
     //     column fill still runs at full width).  Worst-case in-flight = (total−reserve) + reserve = total.
+    //     Two passive users share the reserve: custom-column fills AND user-fired ConfigMgr client actions
+    //     — both short-lived and must not be starved behind a saturated sweep's FIFO queue.
     // Sized on first construction (see ctor). No lock needed: WorkspaceViewModel is constructed only on
     // the UI thread, so first-tab-wins is deterministic.
     private static SplitThrottle? _remoteSweepThrottleBacking;
@@ -149,6 +151,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int VitalsPerHostTimeoutSeconds = 120;
     private const int HealthPerHostTimeoutSeconds = 60;
     private const int SoftwarePerHostTimeoutSeconds = 60;
+    // Bounds one client-action trigger inside RunRemoteAsync: the per-host WinRM gate wait
+    // (a client action can queue behind an in-flight probe on the same box), the 20s connect,
+    // and the Invoke-CimMethod call. Only the app-wide _remoteSweepThrottle queue is excluded
+    // (the CTS starts after that acquire). 60s matches HealthPerHostTimeoutSeconds.
+    private const int ClientActionPerHostTimeoutSeconds = 60;
     // Bounds the monitor's per-host reboot-pending probe: its CCM DetermineIfRebootPending WMI leg can
     // hang forever on a broken client, and an unbounded await froze the whole monitor pass (HIGH-2).
     // 120s matches vitals; the 60s health check already runs a superset of this probe's CCM work, so
@@ -5234,48 +5241,117 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         SelectedComputers.Count > 0 ? InstallSelectedAsync([.. SelectedComputers]) : InstallUpdatesAsync();
 
     /// <summary>
-    /// Fires <paramref name="action"/> against every selected online row. Source-generated
-    /// as <c>TriggerScheduleCommand</c>; bound to each right-click menu item with the
-    /// action as the command parameter.
+    /// Fires <paramref name="action"/> against every selected row in parallel on the shared WinRM
+    /// budget, bounded per box so one hung target can't stall the batch. Source-generated as
+    /// <c>TriggerScheduleCommand</c>; bound to each right-click menu item with the action as the
+    /// command parameter. Registered as a PASSIVE operation (registerRows: false) so the Stop button
+    /// cancels it but it never blocks — or is blocked by — another running sweep.
     /// </summary>
     [RelayCommand]
-    private async Task TriggerScheduleAsync(ScheduleAction? action, CancellationToken token)
+    private async Task TriggerScheduleAsync(ScheduleAction? action)
     {
+        // No ConfigureAwait(false) anywhere in this method or the per-row helper: LastError is a
+        // live-filtering grid property, so every continuation must stay on the captured UI context.
         if (action is null)
         {
             return;
         }
 
-        foreach (Computer computer in SelectedComputers.ToList())
+        var rows = SelectedComputers.ToList();
+        if (rows.Count == 0)
+        {
+            return;
+        }
+
+        (CancellationTokenSource cts, OperationRecord record) = BeginOperation(action.Label, rows, registerRows: false);
+        try
+        {
+            Task work = Task.WhenAll(rows.Select(row => TriggerScheduleRowAsync(row, action, record, cts.Token)));
+
+            // Same Stop race as Enable WinRM: a Stop frees the UI immediately even while a CIM call
+            // lingers on its background thread; per-row results already applied are kept.
+            Task cancelledTask = Task.Delay(Timeout.Infinite, cts.Token);
+            if (await Task.WhenAny(work, cancelledTask) == work)
+            {
+                await work;
+            }
+            else
+            {
+                _ = work.ContinueWith(static t => _ = t.Exception, TaskScheduler.Default);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop pressed — finished/in-flight rows keep their per-row results.
+        }
+        finally
+        {
+            EndOperation(cts, record);
+        }
+    }
+
+    /// <summary>One client-action trigger against one box, bounded so a hung box can't stall the batch:
+    /// the linked CTS drives cancellation into PSRunspaceHost, which stops/abandons and observes its own
+    /// task — no belt needed on the WinRM path, unlike the DCOM enabler.</summary>
+    private async Task TriggerScheduleRowAsync(Computer computer, ScheduleAction action, OperationRecord record, CancellationToken token)
+    {
+        using IDisposable slot = await _remoteSweepThrottle.AcquirePassiveAsync(token);
+        using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token); // before try — the catch filters need it in scope
+        perHost.CancelAfter(TimeSpan.FromSeconds(ClientActionPerHostTimeoutSeconds));
+        try
         {
             computer.LastError = null;
             computer.LastStatus = $"{action.Label}…";
-            try
-            {
-                computer.LastStatus = await _configMgr.TriggerScheduleAsync(computer.Name, action, CurrentPsCredential(), token);
-                _activity.Info(computer.Name, computer.LastStatus);
-            }
-            catch (SccmQueryException ex)
-            {
-                computer.LastStatus = "Action failed";
-                computer.LastError = ex.Message;
-                _activity.Error(computer.Name, $"{action.Label} failed — {ex.Message}");
-            }
-            catch (OperationCanceledException)
-            {
-                computer.LastStatus = "Cancelled";
-                throw;
-            }
-            catch (Exception ex) when (ex.IsWinRmUnavailable())
-            {
-                // WinRM is broken on this box (Kerberos/SPN or service down) — the ConfigMgr action can't
-                // run over WinRM here. Show a plain message and CONTINUE the loop so one broken box doesn't
-                // abort the action on the rest. (This typed exception previously escaped the
-                // SccmQueryException-only catch and aborted the whole sweep.)
-                computer.LastStatus = "WinRM unavailable";
-                computer.LastError = $"WinRM is broken on this box, so {action.Label} can't run remotely here.";
-                _activity.Warn(computer.Name, $"{action.Label} skipped — WinRM unavailable on this box.");
-            }
+            computer.LastStatus = await _configMgr.TriggerScheduleAsync(
+                computer.Name, action, CurrentPsCredential(), perHost.Token);
+            _activity.Info(computer.Name, computer.LastStatus);
+        }
+        catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+        {
+            computer.LastStatus = "Timed out";
+            computer.LastError = $"{action.Label} timed out after {ClientActionPerHostTimeoutSeconds}s";
+            _activity.Warn(computer.Name, $"{action.Label} timed out on {computer.Name} after {ClientActionPerHostTimeoutSeconds}s.");
+        }
+        catch (OperationCanceledException)
+        {
+            computer.LastStatus = "Cancelled";
+        }
+        catch (Exception) when (token.IsCancellationRequested)
+        {
+            // A Stop racing a failure must read "Cancelled", never "failed" — the remote call may
+            // surface cancellation as a wrapped SDK exception, not an OCE (and never spray Error lines).
+            computer.LastStatus = "Cancelled";
+        }
+        catch (SccmQueryException ex)
+        {
+            computer.LastStatus = "Action failed";
+            computer.LastError = ex.Message;
+            _activity.Error(computer.Name, $"{action.Label} failed — {ex.Message}");
+        }
+        catch (RemoteShellInitException ex)
+        {
+            // Transient shell-init (MaxShellsPerUser / busy box) — calm retry message, Warn not Error.
+            computer.LastStatus = "WinRM busy";
+            computer.LastError = ex.Message;
+            _activity.Warn(computer.Name, $"{action.Label} skipped — {ex.Message}");
+        }
+        catch (Exception ex) when (ex.IsWinRmUnavailable())
+        {
+            computer.LastStatus = "WinRM unavailable";
+            computer.LastError = $"WinRM is broken on this box, so {action.Label} can't run remotely here.";
+            _activity.Warn(computer.Name, $"{action.Label} skipped — WinRM unavailable on this box.");
+        }
+        catch (Exception ex)
+        {
+            // One degraded box must never abort the action on the rest of the selection — this closes
+            // the old RemoteShellInitException escape that aborted the whole sweep.
+            computer.LastStatus = "Action failed";
+            computer.LastError = ex.Message;
+            _activity.Error(computer.Name, $"{action.Label} failed — {ex.Message}");
+        }
+        finally
+        {
+            IncrementSweepCompleted(record);
         }
     }
 

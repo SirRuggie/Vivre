@@ -119,6 +119,28 @@ public class ConfigMgrClientTests
     }
 
     [Fact]
+    public async Task LastBootTime_round_trips_when_present()
+    {
+        var when = new DateTime(2026, 7, 1, 8, 30, 0);
+        var client = new ConfigMgrClient(new FakeHost(ResultFrom(HealthObject(lastBoot: when))));
+
+        SccmClientInfo info = await client.GetClientHealthAsync("localhost");
+
+        Assert.Equal(when, info.LastBootTime);
+    }
+
+    [Fact]
+    public async Task LastBootTime_is_null_when_absent()
+    {
+        // The default fixture omits the property — a missing cosmetic field stays blank, never fabricated.
+        var client = new ConfigMgrClient(new FakeHost(ResultFrom(HealthObject())));
+
+        SccmClientInfo info = await client.GetClientHealthAsync("localhost");
+
+        Assert.Null(info.LastBootTime);
+    }
+
+    [Fact]
     public void Health_script_parses_as_valid_powershell()
     {
         // dotnet build can't catch a syntax error in the embedded script — lock parse-validity in.
@@ -165,7 +187,8 @@ public class ConfigMgrClientTests
         bool missing = false,
         bool running = false,
         bool user = false,
-        bool sdkFailed = false)
+        bool sdkFailed = false,
+        DateTime? lastBoot = null)
     {
         var o = new PSObject();
         o.Properties.Add(new PSNoteProperty("ClientVersion", version));
@@ -175,6 +198,7 @@ public class ConfigMgrClientTests
         o.Properties.Add(new PSNoteProperty("RunningUpdates", running));
         o.Properties.Add(new PSNoteProperty("UserLoggedOn", user));
         o.Properties.Add(new PSNoteProperty("ClientSdkFailed", sdkFailed));
+        if (lastBoot is not null) { o.Properties.Add(new PSNoteProperty("LastBootTime", lastBoot.Value)); }
         return o;
     }
 

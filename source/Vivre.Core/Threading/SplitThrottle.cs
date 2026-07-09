@@ -3,7 +3,7 @@ namespace Vivre.Core.Threading;
 /// <summary>
 /// A shared concurrency budget split into two pools: an <em>active</em> pool used by registered
 /// sweeps (vitals, health, update scans, software checks) and a <em>reserved</em> pool guaranteed
-/// for passive fills (custom-column sweeps).
+/// for passive fills (custom-column sweeps and user-fired ConfigMgr client actions).
 ///
 /// <para>
 /// <b>Why this exists — FIFO starvation fix.</b>  Before this class, every operation drew from a

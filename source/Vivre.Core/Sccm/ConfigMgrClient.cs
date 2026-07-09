@@ -107,6 +107,7 @@ public sealed class ConfigMgrClient : IConfigMgrClient
 
         $ccmReboot = $false
         $ccmHardReboot = $false
+        # Deliberately isolated so an independent failure here never blanks the update state below.
         try {
             $r = Invoke-CimMethod -Namespace 'ROOT\ccm\ClientSDK' -ClassName CCM_ClientUtilities -MethodName DetermineIfRebootPending -ErrorAction Stop
             $ccmReboot = [bool]$r.RebootPending
@@ -132,6 +133,9 @@ public sealed class ConfigMgrClient : IConfigMgrClient
                           (@($progs | Where-Object { $_.EvaluationState -eq 14 }).Count -gt 0) -or `
                           (@($updates | Where-Object { $_.EvaluationState -in 2,3,4,5,6,7,11 }).Count -gt 0)
 
+        # Best-effort cosmetic field — deliberately isolated. A Win32_OperatingSystem failure
+        # leaves $lastBoot = $null (rendered blank in the grid), never a wrong value, and
+        # LastBootTime is not part of the health verdict.
         $lastBoot = $null
         try { $lastBoot = (Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop).LastBootUpTime } catch { }
 

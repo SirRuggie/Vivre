@@ -15,6 +15,21 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **SCCM client actions no longer hang the whole batch on one stuck machine — and Stop now works on them.**
+  Client actions (Machine Policy, Hardware Inventory, Update Scan, …) used to run one machine at a time
+  with no time limit: one hung box stalled every machine after it, some failures aborted the rest of the
+  selection outright, and the Stop button couldn't cancel any of it. They now run on all selected machines
+  at once (on the same shared connection budget as the other checks), each machine gets 60 seconds before
+  its row honestly reads "Timed out", one broken box can never abort the others (its row reads "WinRM busy"
+  or "WinRM unavailable" instead), and Stop cancels the batch.
+- **A crash can no longer corrupt Vivre's saved settings.** Settings — including which 2016 boxes are
+  marked for staged patching — were written by overwriting settings.json in place, so a crash, power loss,
+  or full disk mid-write left a truncated file and silently dropped those flags on the next launch. The
+  file is now written to a temp file first and atomically swapped in, so a crash mid-write always leaves
+  the previous good settings intact.
+- **The health check's "last boot time" read is now documented as deliberately best-effort** (an isolated
+  failure shows a blank cell — never a wrong value, and it doesn't affect the health verdict), and its
+  parsing gained the test coverage it was missing.
 - **The message after "Reboot & verify" is now honest in all three ways it could quietly lie.**
   (1) If the post-reboot "is a reboot still pending?" check couldn't answer (broken WinRM/Kerberos,
   or a hung SCCM client), the row used to read a green "Back online · installed N · up to date" —

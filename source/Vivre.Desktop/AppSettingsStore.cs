@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text.Json;
 using Vivre.Core.Columns;
+using Vivre.Core.IO;
 using Vivre.Core.Logging;
 using Vivre.Core.Updates;
 
@@ -104,7 +105,8 @@ public sealed class MonthlyCu
 /// <summary>
 /// Reads/writes <see cref="AppSettings"/> as <c>%APPDATA%\Vivre\settings.json</c>. Load returns
 /// defaults when the file is absent; a corrupt file or an IO error throws so the caller can log it
-/// (no silent swallow).
+/// (no silent swallow). The write is atomic (temp file + File.Replace swap) — a crash mid-write
+/// leaves the prior good file intact, so Vivre can no longer produce a torn settings.json itself.
 /// </summary>
 public sealed class AppSettingsStore
 {
@@ -118,7 +120,9 @@ public sealed class AppSettingsStore
     private static AppSettings? _cache;
 
     // Serializes the background disk writes so two near-simultaneous Save() calls can't interleave and
-    // corrupt settings.json. The last writer wins (its serialized snapshot is what lands on disk).
+    // corrupt settings.json. The last writer wins (its serialized snapshot is what lands on disk). The
+    // write itself is atomic (temp file + File.Replace swap), so a crash mid-write leaves the prior good
+    // file intact rather than a torn settings.json.
     private static readonly object _writeLock = new();
 
     // Set once at App startup (static like _cache, so every construction site shares it — the store is
@@ -175,7 +179,7 @@ public sealed class AppSettingsStore
             {
                 lock (_writeLock)
                 {
-                    File.WriteAllText(path, json);
+                    AtomicFileWriter.Write(path, json);
                 }
             }
             catch (Exception ex)
