@@ -184,6 +184,7 @@ public static class HelpContent
             [
                 "Click Check Vitals. For each machine it pulls SCCM client health — site code, agent version, last reboot, the health dots — and its Vitals score in the same pass (see the Vitals topic).",
                 "Health dots (green = good, red = needs attention): Reboot pending · Updates missing · Install running · Users online.",
+                "A grey ? means that reading couldn't be taken — treat it as unknown, not good.",
                 "By default this happens automatically when you load a list — Vivre pings + checks vitals on those machines so the grid fills itself, and Monitor keeps online/reboot live. Turn it off in Settings (left navigation) ▸ Auto-check on load for a frozen snapshot; the buttons (Ping All / Check Vitals) re-check on demand either way. It only ever touches the machines you loaded, never the wider network.",
             ],
             Tip = "Triggering health/actions usually needs admin rights on the target — set credentials in Settings if you see \"access denied\".",

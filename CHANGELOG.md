@@ -24,6 +24,10 @@ it ships, then gets a dated heading.
   boxes you've marked for staged patching); Clean up never reboots, same as before.
 
 ### Fixed
+- **The Users Online dot no longer shows a green "No" when the check couldn't actually read the machine.**
+  A failed read now shows a grey "?" (unknown), while a machine that genuinely has nobody logged on
+  still shows the green "No". The wrong green was on exactly the signal an operator checks before
+  rebooting a box — it read "safe, nobody's on" when the real answer was "couldn't tell".
 - **A rare timing gap could make a retried install misreport "up to date" and drop the installed count.**
   When an install hit a transient Windows Update hiccup, was retried, actually began installing on the
   retry, and then hit a second hiccup, Vivre could in a narrow window forget the install had begun and

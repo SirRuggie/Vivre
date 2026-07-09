@@ -141,6 +141,56 @@ public class ConfigMgrClientTests
     }
 
     [Fact]
+    public async Task UserLoggedOn_is_null_when_the_probe_fails()
+    {
+        // A failed Win32_Process query emits a present-but-null property — must parse to
+        // unknown, never a definite false.
+        var client = new ConfigMgrClient(new FakeHost(ResultFrom(HealthObject(user: null))));
+
+        SccmClientInfo info = await client.GetClientHealthAsync("localhost");
+
+        Assert.Null(info.UserLoggedOn);
+    }
+
+    [Fact]
+    public async Task UserLoggedOn_round_trips_true()
+    {
+        var client = new ConfigMgrClient(new FakeHost(ResultFrom(HealthObject(user: true))));
+
+        SccmClientInfo info = await client.GetClientHealthAsync("localhost");
+
+        Assert.NotNull(info.UserLoggedOn);
+        Assert.True(info.UserLoggedOn.Value);
+    }
+
+    [Fact]
+    public async Task UserLoggedOn_round_trips_false()
+    {
+        // The load-bearing boundary — a genuinely user-free box must stay a definite false
+        // (a lazy null-everything fix fails here).
+        var client = new ConfigMgrClient(new FakeHost(ResultFrom(HealthObject(user: false))));
+
+        SccmClientInfo info = await client.GetClientHealthAsync("localhost");
+
+        Assert.NotNull(info.UserLoggedOn);
+        Assert.False(info.UserLoggedOn.Value);
+    }
+
+    [Fact]
+    public void Health_script_isolates_the_user_probe()
+    {
+        string script = ConfigMgrClient.HealthScript;
+
+        Assert.Contains("$userLoggedOn = $null", script);
+        Assert.Contains("Name = 'explorer.exe'\" -ErrorAction Stop", script);
+        // Isolation pin: Stop + the count expression + the wrapping catch in one reformat-tolerant
+        // assertion — a dropped catch would let a cimv2 hiccup kill the WHOLE health script.
+        Assert.Contains("-ErrorAction Stop).Count -gt 0 } catch { }", script);
+        Assert.DoesNotContain("explorer.exe'\" -ErrorAction SilentlyContinue", script); // the old lie
+        Assert.DoesNotContain("[bool]$userLoggedOn", script); // cast left on would silently revive the bug
+    }
+
+    [Fact]
     public void Health_script_parses_as_valid_powershell()
     {
         // dotnet build can't catch a syntax error in the embedded script — lock parse-validity in.
@@ -186,7 +236,7 @@ public class ConfigMgrClientTests
         bool reboot = false,
         bool missing = false,
         bool running = false,
-        bool user = false,
+        bool? user = false,
         bool sdkFailed = false,
         DateTime? lastBoot = null)
     {

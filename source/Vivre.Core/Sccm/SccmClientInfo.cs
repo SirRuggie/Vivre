@@ -12,7 +12,7 @@ namespace Vivre.Core.Sccm;
 /// <param name="RebootRequired">A reboot is pending (CCM, patch, or component-servicing).</param>
 /// <param name="MissingUpdates">One or more required updates are non-compliant.</param>
 /// <param name="RunningUpdates">An app/program/update install is in progress.</param>
-/// <param name="UserLoggedOn">An interactive user session (explorer.exe) is present.</param>
+/// <param name="UserLoggedOn">An interactive user session (explorer.exe) is present; null when the probe failed (unknown).</param>
 /// <param name="LastBootTime">Last OS boot time (Win32_OperatingSystem.LastBootUpTime); null if unknown.</param>
 /// <param name="ClientSdkFailed">The ROOT\ccm\ClientSDK namespace didn't answer, so
 /// <see cref="MissingUpdates"/>/<see cref="RunningUpdates"/> are UNKNOWN — the false flags here are
@@ -24,7 +24,7 @@ public sealed record SccmClientInfo(
     bool RebootRequired,
     bool MissingUpdates,
     bool RunningUpdates,
-    bool UserLoggedOn,
+    bool? UserLoggedOn,
     DateTime? LastBootTime = null,
     bool ClientSdkFailed = false)
 {

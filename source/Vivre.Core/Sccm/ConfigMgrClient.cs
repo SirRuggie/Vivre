@@ -72,7 +72,7 @@ public sealed class ConfigMgrClient : IConfigMgrClient
             RebootRequired: GetBool(row, "RebootRequired"),
             MissingUpdates: GetBool(row, "MissingUpdates"),
             RunningUpdates: GetBool(row, "RunningUpdates"),
-            UserLoggedOn: GetBool(row, "UserLoggedOn"),
+            UserLoggedOn: GetNullableBool(row, "UserLoggedOn"),
             LastBootTime: GetDateTime(row, "LastBootTime"),
             ClientSdkFailed: GetBool(row, "ClientSdkFailed"));
     }
@@ -88,6 +88,9 @@ public sealed class ConfigMgrClient : IConfigMgrClient
 
     private static bool GetBool(PSObject row, string name) =>
         row.Properties[name]?.Value is bool b && b;
+
+    private static bool? GetNullableBool(PSObject row, string name) =>
+        row.Properties[name]?.Value is bool b ? b : null;
 
     // Modernized from the legacy cm12 HealthCheck.ps.txt: Get-WmiObject -> CIM cmdlets
     // (Get-WmiObject doesn't exist in PowerShell 7, which the SDK host runs). Adds the
@@ -146,7 +149,13 @@ public sealed class ConfigMgrClient : IConfigMgrClient
         $wuReboot = Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'
 
         $rebootRequired = $ccmReboot -or $ccmHardReboot -or $patchReboot -or $componentReboot -or $wuReboot
-        $userLoggedOn = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction SilentlyContinue).Count -gt 0
+        # Isolated like $lastBoot — but the FAILED-query case must stay distinguishable from the
+        # healthy zero-result: -ErrorAction Stop makes a real WMI failure throw (leaving the $null
+        # seed = unknown, the grey "?"), while a successful query with no explorer.exe still yields
+        # an honest $false ("genuinely nobody logged on"). SilentlyContinue collapsed both into a
+        # definite false — a false green on exactly the signal checked before rebooting a box.
+        $userLoggedOn = $null
+        try { $userLoggedOn = @(Get-CimInstance -ClassName Win32_Process -Filter "Name = 'explorer.exe'" -ErrorAction Stop).Count -gt 0 } catch { }
 
         [PSCustomObject]@{
             ClientVersion   = $client.ClientVersion
@@ -154,7 +163,7 @@ public sealed class ConfigMgrClient : IConfigMgrClient
             RebootRequired  = [bool]$rebootRequired
             MissingUpdates  = [bool]$missingUpdates
             RunningUpdates  = [bool]$runningUpdates
-            UserLoggedOn    = [bool]$userLoggedOn
+            UserLoggedOn    = $userLoggedOn
             LastBootTime    = $lastBoot
             ClientSdkFailed = [bool]$clientSdkFailed
         }
