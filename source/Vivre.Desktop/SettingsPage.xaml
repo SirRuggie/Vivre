@@ -184,7 +184,7 @@
                                 LostFocus="OnWugServerChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,16"
-                                  Text="Used by right-click ▸ WhatsUp Gold maintenance… to put machines in or out of monitoring maintenance. Hostname or IP; connects over HTTPS with the credentials you enter in that dialog." />
+                                  Text="Used by right-click ▸ WhatsUp Gold maintenance… (set) and ▸ Check WhatsUp Gold state… (read) for monitoring maintenance. Hostname or IP; connects over HTTPS with the credentials you enter in that dialog." />
 
                     <!-- Package library folder -->
                     <ui:TextBlock Text="Package library folder" Margin="0,0,0,4" />

@@ -610,6 +610,11 @@ public partial class WorkspaceView : UserControl
         wugMaintenance.Click += OnWugMaintenance;
         _gridMenu.Items.Add(wugMaintenance);
 
+        // Read-only sibling of the maintenance action — check current WUG state without changing it.
+        var wugState = WithIcon(new MenuItem { Header = "Check WhatsUp Gold state…" }, SymbolRegular.Search24);
+        wugState.Click += OnCheckWugState;
+        _gridMenu.Items.Add(wugState);
+
         // ---- Grid setup (machine mode only) ----
         if (vm.IsMachineMode)
         {
@@ -777,6 +782,26 @@ public partial class WorkspaceView : UserControl
         }
 
         new MaintenanceWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+    }
+
+    private void OnCheckWugState(object sender, RoutedEventArgs e)
+    {
+        if (ViewModel is not { } vm)
+        {
+            return;
+        }
+
+        // Target the selection, else every machine in the tab (matches Install/Scan scoping).
+        IReadOnlyList<Computer> targets = vm.SelectedComputers.Count > 0
+            ? [.. vm.SelectedComputers]
+            : [.. vm.Computers];
+
+        if (targets.Count == 0)
+        {
+            return;
+        }
+
+        new WugStateWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
     }
 
     /// <summary>Opens the Stage software window for the selection, else every machine in the tab

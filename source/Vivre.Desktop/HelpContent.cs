@@ -365,7 +365,7 @@ public static class HelpContent
                 "The window closes right away and the work runs in the background: each machine's row shows progress, with a summary in the activity log — handy to silence monitoring while you patch, then resume after.",
                 "It matches your machine names to WUG devices (by name, then by IP) and calls out any that didn't match a WUG device.",
                 "Not sure it'll connect? Click Test connection first — it checks the server and your login. If the WhatsUp Gold PowerShell module isn't installed yet, an Install module button appears to add it for you.",
-                "Want to see where things stand first? Click Check state — using the same server + login, it reads each in-scope machine's current WUG state (in maintenance, not in maintenance, not found in WUG, or unknown) without changing anything. Unknown means the state couldn't be read — not that the machine is out of maintenance.",
+                "Want to see where things stand first? Right-click ▸ Check WhatsUp Gold state… (works from both the Health and Patching grids). The server is pre-filled from Settings (read-only) — enter your WUG login and click Check. It reads each in-scope machine's current WUG state without changing anything; results land per row in the Command result column, with a summary in the activity log. Unknown means the state couldn't be read — not that the machine is out of maintenance.",
             ],
             Tip = "Runs on this PC against the WUG server (not on the targets). The WUG login is asked each time and never saved (only the server address is remembered); the WhatsUpGoldPS module auto-installs for your user if it's missing.",
         },

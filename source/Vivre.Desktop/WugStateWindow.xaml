@@ -1,0 +1,74 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.WugStateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
+        mc:Ignorable="d"
+        Title="Check WhatsUp Gold state"
+        SizeToContent="Height" Width="460"
+        MinWidth="420" MaxHeight="640"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner"
+        ResizeMode="NoResize"
+        ShowInTaskbar="False">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Check WhatsUp Gold state"
+                     Icon="{ui:SymbolIcon Search24}" />
+
+        <StackPanel Grid.Row="1" Margin="24,12,24,0">
+            <ui:TextBlock x:Name="Intro" Appearance="Secondary" TextWrapping="Wrap" Margin="0,0,0,16" />
+
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="92" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Server" />
+                <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="ServerBox"
+                              IsReadOnly="True" ToolTip="Set in Settings — read-only here. Select to copy." />
+
+                <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Username" />
+                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserBox"
+                              PlaceholderText="domain\user or user" />
+
+                <ui:TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Password" />
+                <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox" Height="32" VerticalContentAlignment="Center" />
+            </Grid>
+        </StackPanel>
+
+        <!-- Result / error: a read-only box so it's always visible AND selectable (copyable). -->
+        <TextBox Grid.Row="2" x:Name="StatusText"
+                 Margin="24,12,24,0"
+                 IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
+                 BorderThickness="0" Background="Transparent"
+                 MaxHeight="120" VerticalScrollBarVisibility="Auto"
+                 Visibility="Collapsed" />
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
+            <ui:ProgressRing x:Name="Spinner" IsIndeterminate="True" Visibility="Collapsed"
+                             Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" />
+            <ui:Button x:Name="InstallButton" Content="Install module" Click="OnInstallModule"
+                       Visibility="Collapsed" Margin="0,0,8,0" />
+            <ui:Button x:Name="CheckButton" Appearance="Primary" Content="Check" Click="OnCheck" IsDefault="True" />
+            <ui:Button Content="Close" Click="OnClose" IsCancel="True" Margin="8,0,0,0" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

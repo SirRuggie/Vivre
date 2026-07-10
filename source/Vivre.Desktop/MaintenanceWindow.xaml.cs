@@ -1,5 +1,4 @@
 using System.Security;
-using System.Text;
 using System.Windows;
 using Vivre.Core.Models;
 using Vivre.Desktop.ViewModels;
@@ -15,8 +14,7 @@ namespace Vivre.Desktop;
 /// stored; only the server address is remembered.
 ///
 /// <para>A "Test connection" button runs a pre-flight check (module present + server reachable
-/// + credentials valid) so fixable problems are caught inside the dialog before it fires, and a
-/// "Check state" button reads (read-only) each in-scope machine's current WUG maintenance state.
+/// + credentials valid) so fixable problems are caught inside the dialog before it fires.
 /// OnRun also runs the same pre-flight gate and keeps the dialog open on failure.</para>
 /// </summary>
 public partial class MaintenanceWindow : FluentWindow
@@ -56,7 +54,6 @@ public partial class MaintenanceWindow : FluentWindow
     {
         RunButton.IsEnabled = !active;
         TestButton.IsEnabled = !active;
-        CheckStateButton.IsEnabled = !active;
         InstallButton.IsEnabled = !active;
         Spinner.Visibility = active ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -102,104 +99,6 @@ public partial class MaintenanceWindow : FluentWindow
         catch (Exception ex)
         {
             ShowStatus($"Test failed unexpectedly: {ex.Message}");
-        }
-        finally
-        {
-            SetTestingState(false);
-        }
-    }
-
-    // ── Check current maintenance state (read-only) ────────────────────────────────────────────────
-
-    private async void OnCheckState(object sender, RoutedEventArgs e)
-    {
-        try
-        {
-            string server = ServerBox.Text.Trim();
-            string user   = UserBox.Text.Trim();
-            // Capture once — stays valid across awaits while the window is open.
-            SecureString pw = PasswordBox.SecurePassword;
-
-            if (server.Length == 0 || user.Length == 0 || pw.Length == 0)
-            {
-                ShowStatus("Enter the WhatsUp Gold server, username, and password.");
-                return;
-            }
-
-            SetTestingState(true);
-            ShowStatus($"Checking current maintenance state for {_computers.Count} machine(s)…");
-
-            var result = await _vm.GetWugMaintenanceStateAsync([.. _computers.Select(c => c.Name)], server, user, pw);
-
-            if (result.Error is not null)
-            {
-                // Reserve the canned "install the module" prompt for the definite missing-module signal
-                // (the same string OnTestConnection keys on); any other error surfaces verbatim.
-                if (result.Error.Contains("isn't installed", StringComparison.OrdinalIgnoreCase))
-                {
-                    ShowStatus("WhatsUpGoldPS isn't installed. Install it from the PowerShell Gallery? Needs internet/PSGallery.");
-                    InstallButton.Visibility = Visibility.Visible;
-                }
-                else
-                {
-                    ShowStatus(result.Error);
-                    InstallButton.Visibility = Visibility.Collapsed;
-                }
-
-                return;
-            }
-
-            // Bucket every in-scope machine into exactly one state. Unknown = the state couldn't be read
-            // (null, or the machine is absent from the map) — never assumed "not in maintenance".
-            var inMaintenance    = new List<string>();
-            var notInMaintenance = new List<string>();
-            var notFound         = new List<string>();
-            var unknown          = new List<string>();
-            var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
-
-            foreach (Computer c in _computers)
-            {
-                if (unmatched.Contains(c.Name))
-                {
-                    notFound.Add(c.Name);
-                }
-                else if (result.ByName.TryGetValue(c.Name, out bool? state) && state.HasValue)
-                {
-                    (state.Value ? inMaintenance : notInMaintenance).Add(c.Name);
-                }
-                else
-                {
-                    unknown.Add(c.Name);
-                }
-            }
-
-            string summary = $"Current WUG state: {inMaintenance.Count} in maintenance · {notInMaintenance.Count} not in maintenance · "
-                + $"{notFound.Count} not found in WUG · {unknown.Count} unknown";
-
-            // Detail lines only for the actionable buckets; confirmed not-in-maintenance shows in the count only.
-            var details = new List<string>();
-            details.AddRange(inMaintenance.Select(n => $"  {n} — in maintenance"));
-            details.AddRange(notFound.Select(n => $"  {n} — not found in WUG"));
-            details.AddRange(unknown.Select(n => $"  {n} — unknown"));
-
-            const int cap = 15;
-            var sb = new StringBuilder(summary);
-            foreach (string line in details.Take(cap))
-            {
-                sb.Append('\n').Append(line);
-            }
-
-            if (details.Count > cap)
-            {
-                sb.Append('\n').Append($"  +{details.Count - cap} more");
-            }
-
-            InstallButton.Visibility = Visibility.Collapsed;
-            ShowStatus(sb.ToString());
-        }
-        catch (Exception ex)
-        {
-            ShowStatus($"Checking state failed unexpectedly: {ex.Message}");
         }
         finally
         {

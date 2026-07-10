@@ -218,14 +218,15 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
-- **Read WUG maintenance state (not just set it) — DONE** (2026-07-10, on master). The maintenance
-  dialog gained a **Check state** button that reads each in-scope machine's current WhatsUp Gold state
-  (in maintenance / not in maintenance / not found in WUG / unknown) via a read-only `Get-WUGDevice`
-  lookup, under the same 5.1 shell-out + creds/`-IgnoreSSLErrors` invariants (creds never saved; unknown
-  is never faked as not-in-maintenance — a failed/timed-out read fails open). Core:
-  `WugMaintenance.GetMaintenanceStateAsync` + `WugMaintenanceStateResult`; UI:
-  `WorkspaceViewModel.GetWugMaintenanceStateAsync` + `MaintenanceWindow`. Folded in: the Reason field now
-  only shows when entering maintenance (hidden on Exit). Cardinal clean (read-only; no reboot path).
+- **Read WUG maintenance state (not just set it) — DONE** (2026-07-10, on master). A right-click
+  **Check WhatsUp Gold state** action (on both the Health and Patching grids) reads each in-scope
+  machine's current WhatsUp Gold state (in maintenance / not in maintenance / not found in WUG /
+  unknown) via a read-only `Get-WUGDevice` lookup, under the same 5.1 shell-out +
+  creds/`-IgnoreSSLErrors` invariants (creds never saved; unknown is never faked as not-in-maintenance
+  — a failed/timed-out read fails open). Core: `WugMaintenance.GetMaintenanceStateAsync` +
+  `WugMaintenanceStateResult`; UI: `WugStateWindow` + `WorkspaceViewModel.CheckWugStateAsync` (over the
+  reused `GetWugMaintenanceStateAsync` wrapper). Folded in: the Reason field now only shows when
+  entering maintenance (hidden on Exit). Cardinal clean (read-only; no reboot path).
 - **Users Online honest unknown — DONE** (`f26a7c4`, on master; the last 1.14.4 commit). The health
   script's `$userLoggedOn` collapsed a FAILED `Win32_Process` query into a definite false
   (`-ErrorAction SilentlyContinue` + `@().Count -gt 0`) — rendering a green ✓ "No" (the "safe to

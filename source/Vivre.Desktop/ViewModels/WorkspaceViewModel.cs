@@ -5607,6 +5607,97 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>
+    /// Reads the current WhatsUp Gold maintenance state for <paramref name="computers"/> in the
+    /// background (fire-and-forget from the caller). READ-ONLY — it never sets maintenance; it writes
+    /// each machine's current state into its <c>Command result</c> column and adds one activity-log
+    /// summary. <paramref name="password"/> is the WhatsUp Gold login, kept separate from the
+    /// target/remote credential and never stored; it's turned into plaintext only inside the reused
+    /// wrapper (<see cref="GetWugMaintenanceStateAsync"/>).
+    /// </summary>
+    public async Task CheckWugStateAsync(
+        IReadOnlyList<Computer> computers,
+        string server,
+        string username,
+        System.Security.SecureString password,
+        CancellationToken token = default)
+    {
+        if (computers.Count == 0)
+        {
+            return;
+        }
+
+        // Immediate per-row feedback in the grid + a start line in the activity log.
+        foreach (Computer c in computers)
+        {
+            c.CommandResult = "WhatsUp Gold: checking state…";
+        }
+
+        _activity.Info(null, $"WhatsUp Gold: checking maintenance state for {computers.Count} machine(s)…");
+
+        IReadOnlyList<string> names = [.. computers.Select(c => c.Name)];
+
+        Vivre.Core.Wug.WugMaintenanceStateResult result;
+        try
+        {
+            // NO ConfigureAwait(false): the dispatcher continuation is what keeps the post-await
+            // CommandResult writes UI-thread-safe (same mechanism as SetWugMaintenanceAsync). The wrapper
+            // folds all exceptions (including cancellation) into a failure result, so an
+            // OperationCanceledException branch here would be unreachable.
+            result = await GetWugMaintenanceStateAsync(names, server, username, password, token);
+        }
+        catch (Exception ex)
+        {
+            // Belt-and-suspenders parity with SetWugMaintenanceAsync — the wrapper should never throw.
+            foreach (Computer c in computers)
+            {
+                c.CommandResult = $"WhatsUp Gold: failed — {ex.Message}";
+            }
+
+            _activity.Error(null, $"WhatsUp Gold state check failed — {ex.Message}");
+            return;
+        }
+
+        // Bucket each in-scope machine into exactly one state, counting as we go. A whole-read failure
+        // folds into unknown (with the error appended) so it surfaces per-row, not just in the summary.
+        int inMaint = 0, notIn = 0, noMatch = 0, unknown = 0;
+        var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
+        foreach (Computer c in computers)
+        {
+            if (unmatched.Contains(c.Name))
+            {
+                c.CommandResult = "WhatsUp Gold: no matching device (by IP)";
+                noMatch++;
+            }
+            else if (result.ByName.TryGetValue(c.Name, out bool? s) && s == true)
+            {
+                c.CommandResult = "WhatsUp Gold: in maintenance";
+                inMaint++;
+            }
+            else if (s == false)
+            {
+                c.CommandResult = "WhatsUp Gold: not in maintenance";
+                notIn++;
+            }
+            else
+            {
+                c.CommandResult = result.Error is null
+                    ? "WhatsUp Gold: state unknown"
+                    : $"WhatsUp Gold: state unknown — {result.Error}";
+                unknown++;
+            }
+        }
+
+        if (result.Error is null)
+        {
+            _activity.Info(null, $"WhatsUp Gold state: {inMaint} in maintenance, {notIn} not, {noMatch} no matching device, {unknown} unknown");
+        }
+        else
+        {
+            _activity.Error(null, $"WhatsUp Gold state check failed — {result.Error}");
+        }
+    }
+
+    /// <summary>
     /// Tests whether the WhatsUpGoldPS module is installed and whether the supplied credentials can
     /// reach <paramref name="server"/>.  The <paramref name="password"/> is converted to plaintext
     /// only via <see cref="System.Net.NetworkCredential"/> and passed to the child process via the
