@@ -330,7 +330,7 @@ These mechanisms exist because of real production failures. Don't undo them with
 ## UI surfaces
 
 - **Windows Update grid** — Name · Ping · **Status chip** · Reboot message · Windows-update message ·
-  **Progress** · Pending reboot · Command messages (what's scheduled now reads inline in the update
+  **Progress** · Pending reboot · Command result (what's scheduled now reads inline in the update
   message — the dedicated Scheduled-task columns were retired).
 - **Unified bottom dock** (shared, full width) — one tabbed panel with a **Close** button that hands
   the height back to the grid. Tabs:

@@ -15,6 +15,9 @@ it ships, then gets a dated heading.
   only appears when you pick Enter (it's the note WUG records for entering maintenance; Exit doesn't
   need one).
 
+### Changed
+- **The Patching grid's command column header is now "Command result", matching the Health grid.**
+
 ## 1.14.4 — 2026-07-09
 
 ### Added

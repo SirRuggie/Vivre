@@ -1092,7 +1092,7 @@
                 </DataGridTemplateColumn>
                 <!-- Command result (e.g. output of a Run Script / "Restart - force now") — shown here too,
                      since scripts are commonly run from the Patching (Windows Update) section. -->
-                <DataGridTextColumn Header="Command messages" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140">
+                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
