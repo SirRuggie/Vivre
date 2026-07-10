@@ -93,10 +93,15 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
   `Connect-WUGServer` / `Get-WUGDevice` (name/IP → DeviceId) / `Set-WUGDeviceMaintenance`. Runs on
   the **operator's workstation ONLY** — no target/managed box is ever contacted (names map to WUG
   DeviceIds server-side), and there is **NO reboot path**. Holds `RunAsync` (the real set), the
-  pre-flight `TestConnectionAsync` / `InstallModuleAsync`, the shared `RunPreflightProcessAsync`
-  launcher, `ParsePreflight`, the `WritePs51ScriptAsync` BOM-write helper, the `ProgressMarker`, and
-  the `__WUGRESULT__` result-line marker. **Both 5.1 shell-outs strip `PSModulePath` AND write
-  UTF-8-with-BOM** — see the two gotchas above.
+  pre-flight `TestConnectionAsync` / `InstallModuleAsync`, the **read-only state read**
+  `GetMaintenanceStateAsync` (embedded `StateScript` + `ParseMaintenanceState` →
+  `WugMaintenanceStateResult`: a per-input-name, case-insensitive `bool?` tri-state map — null =
+  unknown, never faked as not-in-maintenance. In-maintenance = `bestState`/`worstState` equals
+  "Maintenance"; the fields are presence-checked via `PSObject.Properties` because on PS 5.1 an
+  ABSENT property compares `-eq` to `$false` — a silent false "not in maintenance" otherwise), the
+  shared `RunPreflightProcessAsync` launcher, `ParsePreflight`, the `WritePs51ScriptAsync` BOM-write
+  helper, the `ProgressMarker`, and the `__WUGRESULT__` result-line marker. **All 5.1 shell-outs
+  strip `PSModulePath` AND write UTF-8-with-BOM** — see the two gotchas above.
 - **Result-parse contract (the fix that made errors truthful):** "module missing" is reported ONLY on
   an explicit signal from the script. A timeout / empty output / unparseable output now surfaces the
   **real connection error** instead of a false reinstall prompt. The result line is tagged
@@ -105,12 +110,23 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
   success → "Connected ✓"; bad creds → "username or password was rejected"; unreachable → "Couldn't
   reach WhatsUp Gold at …"; crash → "Pre-flight error …" — every non-success keeps the module marked
   present.
-- `MaintenanceWindow.xaml`(.cs) — the dialog. **Test connection** + (hidden-until-needed) **Install
-  module** buttons. "Set maintenance" runs the pre-flight FIRST and keeps the dialog OPEN until it
-  passes (module present + server reachable + creds valid); only on pass does it close + fire the
-  real per-device set fire-and-forget. Reuses the existing `StatusText` line for inline messages.
-- Caller: `WorkspaceViewModel.SetWugMaintenanceAsync` (+ `TestWugConnectionAsync` /
-  `InstallWugModuleAsync`).
+- `MaintenanceWindow.xaml`(.cs) — the enter/exit dialog. **Test connection** + (hidden-until-needed)
+  **Install module** buttons. "Set maintenance" runs the pre-flight FIRST and keeps the dialog OPEN
+  until it passes (module present + server reachable + creds valid); only on pass does it close +
+  fire the real per-device set fire-and-forget. Reuses the existing `StatusText` line for inline
+  messages. The **Reason** field shows only in Enter mode (`e2946de` — a reason is only meaningful
+  when entering; retained text restores on switch-back).
+- `WugStateWindow.xaml`(.cs) — the right-click **Check WhatsUp Gold state…** dialog (`9569cec`; the
+  item appears on BOTH the Health and Patching grids via the shared context menu). Server is
+  **read-only, pre-filled from Settings** (no save-back), username/password entered per use; same
+  pre-flight gate + Install-module affordance as the maintenance dialog; on pass it fires
+  `WorkspaceViewModel.CheckWugStateAsync` fire-and-forget and closes. Results land per row in the
+  Command result column (in maintenance / not in maintenance / no matching device (by IP) / state
+  unknown — a whole-read failure folds its error into the unknown rows) + one activity-log summary.
+  No `ConfigureAwait(false)` in `CheckWugStateAsync` — the dispatcher continuation is what keeps the
+  post-await per-row writes UI-thread-safe (same mechanism as `SetWugMaintenanceAsync`).
+- Callers: `WorkspaceViewModel.SetWugMaintenanceAsync` + `CheckWugStateAsync` (over the
+  `GetWugMaintenanceStateAsync` wrapper) + `TestWugConnectionAsync` / `InstallWugModuleAsync`.
 - **Credential invariant (DO NOT deviate):** the WUG password is a `SecureString` →
   `new NetworkCredential(string.Empty, pw).Password` plaintext → handed to the child **only** via the
   `VIVRE_WUG_PASS` environment variable — never on the command line, to disk, or in a log.
@@ -168,7 +184,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   path, but useful when a deploy looks off.
 
 ## Desktop / UI
-- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), `UnscannedStageTargets()` (returns 2016 targets that haven't been scanned this session — used by the Stage scan-gate), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
+- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), `UnscannedStageTargets()` (returns 2016 targets that haven't been scanned this session — used by the Stage scan-gate), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `CheckWugStateAsync` / `GetWugMaintenanceStateAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
   - `RebootWaveRowAsync` — per-box reboot-and-verify step (routes by `LcuRouting.RebootVerifyLaneFor`; calls `RebootWaveLcuAsync` or `RebootWaveWuaAsync`; post-wave calls `ReportPostRebootOutcomeAsync`).
   - `ReportPostRebootOutcomeAsync` — post-reboot rescan: read-only `ScanAsync` + reboot-pending probe → `RebootOutcomeSelector.Select` → outcome string. Never triggers Install/Uninstall/Reboot.
   - `_waveThrottle` — static `SemaphoreSlim(256)`; concurrency width for the per-box offline-watch loops. Effectively unbounded so all selected boxes watch in parallel — the reboot-and-verify wave uses this (NOT the install/stage `_patchThrottle`), so a slow box's long commit never blocks a fast box's verify/report.
@@ -242,11 +258,13 @@ Extracted UI/IO-free predicates, each unit-tested:
 - `ComponentCleanupClassifier` / `ComponentCleanupMessages` — 2016 component-cleanup outcomes, incl. the `CleanedFilesLocked` access-denied case (DISM exit 5 = EDR/AV holding WinSxS handles → neutral **Cleaned**, not red).
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **750 green** (as of 2026-07-09, release 1.14.4) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **760 green** (as of 2026-07-10, release 1.14.5) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
-  `PatchPhase.Unreachable`→Error mapping). Includes the wave behavior tests
+  `PatchPhase.Unreachable`→Error mapping; +10 WUG maintenance-state parse tests in `3f8ada1` —
+  `WugMaintenanceStateParseTests`: tri-state true/false/null, single-object `devices` shape, marker
+  extraction, case-insensitive keys, fail-open on malformed/empty output). Includes the wave behavior tests
   (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red,
   **per-box independence**, **reboot-gate enter/release**), the LCU classifier + `RebootVerifyLaneFor`
   routing tests, the `RebootOutcomeSelector` + `ReadyConfirmation` tests, the phase→state mapping tests,

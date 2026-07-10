@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.5 — 2026-07-10
+
 ### Added
 - **You can now see where machines stand before setting WhatsUp Gold maintenance.** A new right-click
   **Check WhatsUp Gold state** action — on both the Health and Patching grids — writes each machine's

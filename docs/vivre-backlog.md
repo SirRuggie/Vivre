@@ -3,17 +3,15 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-09** (release **1.14.4** cut. The session's eleven commits:
-> `12a5e36` install wall-clock removed + watcher startup latch; `852662d` dead-agent detection (audit
-> HIGH-1); `7e2102c` monitor reboot-probe bound (HIGH-2) + three MEDs; `289878f` honest cancel chip +
-> SCCM ClientSDK sentinel + settings/enabler guards; `1db69d2` doc sync; `f965b29` honest post-reboot
-> outcome (tri-state probe + 120s cap + consume-once counts); `d600009` parallel Stop-cancellable
-> client actions + atomic settings save + LastBootTime note; `1add64f` atomic computer-list save;
-> `832aa7f` install-began producer-side latch; `a008747` orphan reboot-service reaper; `f26a7c4`
-> users-online honest unknown. **Both audit HIGHs and every actionable MED are now closed.**)
+> not a mandate). Last refreshed: **2026-07-10** (release **1.14.5** cut. The session's four commits —
+> all WUG/UX: `e2946de` Reason field hidden when exiting WUG maintenance; `3f8ada1` read current WUG
+> maintenance state (the Core read path + parse tests, first surfaced as a dialog button); `9569cec`
+> WUG state check moved to a grid right-click action (new `WugStateWindow`; the interim dialog button
+> removed); `afe4be9` Patching command column header renamed to "Command result". **Suite is 760 green
+> across all four** — the +10 WUG state-parse tests landed in `3f8ada1`; no other commit touched tests.)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 750 green).**
+> are point-in-time only (current suite is 760 green).**
 
 ---
 
@@ -218,15 +216,32 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
-- **Read WUG maintenance state (not just set it) — DONE** (2026-07-10, on master). A right-click
-  **Check WhatsUp Gold state** action (on both the Health and Patching grids) reads each in-scope
-  machine's current WhatsUp Gold state (in maintenance / not in maintenance / not found in WUG /
-  unknown) via a read-only `Get-WUGDevice` lookup, under the same 5.1 shell-out +
-  creds/`-IgnoreSSLErrors` invariants (creds never saved; unknown is never faked as not-in-maintenance
-  — a failed/timed-out read fails open). Core: `WugMaintenance.GetMaintenanceStateAsync` +
-  `WugMaintenanceStateResult`; UI: `WugStateWindow` + `WorkspaceViewModel.CheckWugStateAsync` (over the
-  reused `GetWugMaintenanceStateAsync` wrapper). Folded in: the Reason field now only shows when
-  entering maintenance (hidden on Exit). Cardinal clean (read-only; no reboot path).
+- **`afe4be9` — Patching command column header renamed to "Command result"** (2026-07-10, release
+  1.14.5), matching the Health grid (both columns bind the same per-row command output). Display
+  string only — the Columns manager persists Health-grid headers exclusively, so no saved layout was
+  affected. Tests unchanged (760).
+- **`9569cec` — WUG state check moved to a grid right-click action** (2026-07-10). New right-click
+  **Check WhatsUp Gold state…** on both the Health and Patching grids: a small credential dialog
+  (`WugStateWindow` — server read-only from Settings, pre-flight gated, Install-module affordance)
+  fires `WorkspaceViewModel.CheckWugStateAsync`, which writes each row's state into the Command
+  result column (in maintenance / not in maintenance / no matching device (by IP) / state unknown —
+  a failed read folds its error into unknown, never a false "not in maintenance") plus one
+  activity-log summary. The interim in-dialog Check state button from `3f8ada1` was removed;
+  `MaintenanceWindow` is byte-identical to its pre-button state. Tests unchanged (760).
+- **`3f8ada1` — read current WUG maintenance state (the Core read path)** (2026-07-10).
+  `WugMaintenance` gained `StateScript` (read-only `Get-WUGDevice` lookup; in-maintenance =
+  `bestState`/`worstState` equals "Maintenance", presence-checked via `PSObject.Properties` so an
+  absent field reads unknown — never a false "not in maintenance"), `ParseMaintenanceState`
+  (marker-first, fail-open), `WugMaintenanceStateResult` (per-name `bool?` tri-state,
+  case-insensitive), and `GetMaintenanceStateAsync` (routed through the shared BOM +
+  PSModulePath-safe launcher — same creds/`-IgnoreSSLErrors` invariants, creds never saved). +10
+  parse tests (`WugMaintenanceStateParseTests`) — suite 750 → 760. (First surfaced as a
+  maintenance-dialog button, replaced by the right-click action in `9569cec`.)
+- **`e2946de` — Reason field hidden when exiting WUG maintenance** (2026-07-10). The maintenance
+  dialog shows the Reason field only in Enter mode (a reason is only meaningful when entering;
+  retained text restores on switching back). Exit still sends the retained reason — the proven wire
+  shape; the empty-reason-on-Exit refinement was deliberately dropped pending a live gate. Tests
+  unchanged (750 at that point). Cardinal clean across all four commits (read-only; no reboot path).
 - **Users Online honest unknown — DONE** (`f26a7c4`, on master; the last 1.14.4 commit). The health
   script's `$userLoggedOn` collapsed a FAILED `Win32_Process` query into a definite false
   (`-ErrorAction SilentlyContinue` + `@().Count -gt 0`) — rendering a green ✓ "No" (the "safe to

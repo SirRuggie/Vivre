@@ -66,6 +66,9 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
     Software column; registry-based, read-only),
     `Columns` (`CustomColumnProbe` — run a user PowerShell one-liner per machine → a custom grid column;
     the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData),
+    `Wug` (`WugMaintenance` — WhatsUp Gold maintenance: the enter/exit set plus the read-only
+    per-machine state read, via the WhatsUpGoldPS module shelled out to Windows PowerShell 5.1 —
+    see the two 5.1 gotchas under Conventions; no reboot path),
     `Rdp` (`RdpHostStore` — the Cross-Domain RDP folder/host tree; `RdpCredentialStore` — DPAPI-per-user saved RDP
     logins + the credential-inheritance resolver. UI-free — the embedded RDP ActiveX control + its
     WindowsFormsHost live in Vivre.Desktop only).
