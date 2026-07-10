@@ -357,14 +357,15 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.Wrench24, Title = "How do I put machines into WhatsUp Gold maintenance?",
-            Keywords = "whatsup gold wug maintenance mode monitoring alerts suppress enter exit patching",
+            Keywords = "whatsup gold wug maintenance mode monitoring alerts suppress enter exit patching check state read",
             Lines =
             [
                 "Select the machines (or none = all), right-click ▸ WhatsUp Gold maintenance….",
-                "Pick Enter (suppress alerts) or Exit (resume) — the button label follows your choice — enter the WUG server + your WUG login, then click it.",
+                "Pick Enter (suppress alerts) or Exit (resume) — the button label follows your choice — enter the WUG server + your WUG login, then click it. The Reason field only appears when you pick Enter (it's the note WUG records; Exit doesn't need one).",
                 "The window closes right away and the work runs in the background: each machine's row shows progress, with a summary in the activity log — handy to silence monitoring while you patch, then resume after.",
                 "It matches your machine names to WUG devices (by name, then by IP) and calls out any that didn't match a WUG device.",
                 "Not sure it'll connect? Click Test connection first — it checks the server and your login. If the WhatsUp Gold PowerShell module isn't installed yet, an Install module button appears to add it for you.",
+                "Want to see where things stand first? Click Check state — using the same server + login, it reads each in-scope machine's current WUG state (in maintenance, not in maintenance, not found in WUG, or unknown) without changing anything. Unknown means the state couldn't be read — not that the machine is out of maintenance.",
             ],
             Tip = "Runs on this PC against the WUG server (not on the targets). The WUG login is asked each time and never saved (only the server address is remembered); the WhatsUpGoldPS module auto-installs for your user if it's missing.",
         },

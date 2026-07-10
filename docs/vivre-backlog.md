@@ -81,17 +81,6 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## OPEN — polish / smaller standalone items
 
-- **Check whether a server is currently IN maintenance mode (read it, not just set it).** Vivre can put
-  machines into / out of WhatsUp Gold maintenance (`WugMaintenance` + `MaintenanceWindow`), but there's no way
-  to SEE the current state. Add a read — e.g. a per-row indicator or a status line in the maintenance dialog.
-  **Research first:** (1) confirm what "maintenance mode" should mean here — most likely WUG maintenance, given
-  the existing integration, but it could also mean an SCCM maintenance window, so clarify the intent when picked
-  up; (2) confirm the source even exposes a read — does the `WhatsUpGoldPS` module / WUG REST have a device
-  maintenance-state query (a `Get-WUGDevice` property, or a get-maintenance call)? If yes, surface it; if not,
-  decide whether a direct REST call is worth it. Note the same credential/SSL invariants as the existing WUG
-  path (creds never saved; `-IgnoreSSLErrors`). Files: `WugMaintenance.cs` (the 5.1 shell-out +
-  `Get-WUGDevice` / `Set-WUGDeviceMaintenance`), `MaintenanceWindow.xaml(.cs)`,
-  `WorkspaceViewModel.SetWugMaintenanceAsync`.
 - **Stage copy fan-out I/O contention (UI sluggish during big batch Stage)** — NOT a UI-blocking copy and NOT
   a wrong-thread hash (both were earlier guesses). The 1.7 GB Stage copy already runs OFF the UI thread
   (`SmbAgentLane.cs:230-246` — `File.Copy` inside `Task.Run(...).ConfigureAwait(false)`), and integrity is
@@ -229,6 +218,14 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **Read WUG maintenance state (not just set it) — DONE** (2026-07-10, on master). The maintenance
+  dialog gained a **Check state** button that reads each in-scope machine's current WhatsUp Gold state
+  (in maintenance / not in maintenance / not found in WUG / unknown) via a read-only `Get-WUGDevice`
+  lookup, under the same 5.1 shell-out + creds/`-IgnoreSSLErrors` invariants (creds never saved; unknown
+  is never faked as not-in-maintenance — a failed/timed-out read fails open). Core:
+  `WugMaintenance.GetMaintenanceStateAsync` + `WugMaintenanceStateResult`; UI:
+  `WorkspaceViewModel.GetWugMaintenanceStateAsync` + `MaintenanceWindow`. Folded in: the Reason field now
+  only shows when entering maintenance (hidden on Exit). Cardinal clean (read-only; no reboot path).
 - **Users Online honest unknown — DONE** (`f26a7c4`, on master; the last 1.14.4 commit). The health
   script's `$userLoggedOn` collapsed a FAILED `Win32_Process` query into a definite false
   (`-ErrorAction SilentlyContinue` + `@().Count -gt 0`) — rendering a green ✓ "No" (the "safe to

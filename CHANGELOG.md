@@ -6,6 +6,15 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- **You can now see where machines stand before setting WhatsUp Gold maintenance.** The WhatsUp Gold
+  maintenance window gained a **Check state** button that reads each in-scope machine's current state —
+  in maintenance, not in maintenance, not found in WUG, or unknown (the state couldn't be read) — using
+  the same server + login as the rest of the dialog, without changing anything. "Unknown" means Vivre
+  couldn't read the state, not that the machine is out of maintenance. The **Reason** field now also
+  only appears when you pick Enter (it's the note WUG records for entering maintenance; Exit doesn't
+  need one).
+
 ## 1.14.4 — 2026-07-09
 
 ### Added

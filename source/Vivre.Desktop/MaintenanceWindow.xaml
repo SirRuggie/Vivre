@@ -7,8 +7,8 @@
         xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="WhatsUp Gold maintenance"
-        Height="680" Width="560"
-        MinHeight="520" MinWidth="480"
+        Height="680" Width="600"
+        MinHeight="520" MinWidth="520"
         ExtendsContentIntoTitleBar="True"
         WindowBackdropType="Mica"
         WindowCornerPreference="Round"
@@ -70,6 +70,7 @@
                              Width="20" Height="20" Margin="0,0,8,0" VerticalAlignment="Center" />
             <ui:Button x:Name="InstallButton" Content="Install module" Click="OnInstallModule"
                        Visibility="Collapsed" Margin="0,0,8,0" />
+            <ui:Button x:Name="CheckStateButton" Content="Check state" Click="OnCheckState" Margin="0,0,8,0" />
             <ui:Button x:Name="TestButton" Content="Test connection" Click="OnTestConnection"
                        Margin="0,0,8,0" />
             <ui:Button x:Name="RunButton" Appearance="Primary" Content="Set maintenance" Click="OnRun" IsDefault="True" />

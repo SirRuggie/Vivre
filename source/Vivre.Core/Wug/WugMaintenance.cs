@@ -21,6 +21,19 @@ public sealed record WugMaintenanceResult(
 /// <param name="Error">A human-readable failure reason, or null when fully connected.</param>
 public sealed record WugPreflightResult(bool ModulePresent, bool Connected, string? Error);
 
+/// <summary>The read-only WhatsUp Gold maintenance state of a set of machines.</summary>
+/// <param name="ByName">
+/// Maintenance state keyed by the INPUT machine name (case-insensitive): <c>true</c> = in maintenance,
+/// <c>false</c> = definitively not in maintenance, <c>null</c> = the state couldn't be read (unknown —
+/// never assumed false).
+/// </param>
+/// <param name="Unmatched">Input names that didn't map to a WUG device.</param>
+/// <param name="Error">A human-readable failure reason, or null when the read succeeded.</param>
+public sealed record WugMaintenanceStateResult(
+    IReadOnlyDictionary<string, bool?> ByName,   // null = unknown
+    IReadOnlyList<string> Unmatched,
+    string? Error);
+
 /// <summary>
 /// Sets WhatsUp Gold maintenance mode for a set of machines via the <c>WhatsUpGoldPS</c> module — an
 /// adaptation of the admin's standalone script, supplied the tab's machine names instead of a file.
@@ -350,6 +363,123 @@ public static class WugMaintenance
         Emit $result
         """;
 
+    // ── Maintenance-state read: read-only per-machine "in maintenance?" tri-state ─────────────────
+
+    // Emits ONE JSON line: { ok, devices[{ name, inMaintenance }], unmatched[], error }.
+    // Reads server/user/pass + names from env vars — password NEVER on the command line. Read-only:
+    // it never sets maintenance. No __WUGP__ progress lines (the shared launcher has no progress plumbing).
+    private const string StateScript = """
+        $ErrorActionPreference = 'Stop'
+        # Tag the result line with a unique marker so the host extracts EXACTLY it, immune to any banner /
+        # warning / object text a cmdlet might print to stdout (see ParseMaintenanceState).
+        function Emit($r) { Write-Output ("__WUGRESULT__" + ($r | ConvertTo-Json -Compress -Depth 4)) }
+
+        $names  = @($env:VIVRE_WUG_NAMES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+        $server = $env:VIVRE_WUG_SERVER
+        $result = [ordered]@{ ok = $false; devices = @(); unmatched = @(); error = $null }
+
+        # Backstop: any terminating error OUTSIDE the per-stage try/catch still emits a structured result,
+        # so a downstream failure is never dropped and misread by the host as a definite state.
+        trap { $result.error = "Maintenance-state read error: $($_.Exception.Message)"; Emit $result; exit 0 }
+
+        # 1. Module check — byte-identical signal the dialog string-matches (keep in sync with PreflightScript).
+        if (-not (Get-Module -ListAvailable -Name WhatsUpGoldPS)) {
+            $result.error = "The WhatsUpGoldPS module isn't installed."
+            Emit $result; return
+        }
+
+        # 2. Import
+        try {
+            Import-Module WhatsUpGoldPS -ErrorAction Stop
+        } catch {
+            $result.error = "Couldn't load the WhatsUpGoldPS module: $($_.Exception.Message)."
+            Emit $result; return
+        }
+
+        # 3. Build credential (same pattern as the other scripts)
+        try {
+            $sec  = ConvertTo-SecureString $env:VIVRE_WUG_PASS -AsPlainText -Force
+            $cred = New-Object System.Management.Automation.PSCredential($env:VIVRE_WUG_USER, $sec)
+        } catch {
+            $result.error = "Couldn't build the WhatsUp Gold credential: $($_.Exception.Message)."
+            Emit $result; return
+        }
+
+        # 4. Connect (HTTPS, ignoring the cert as the standalone script does)
+        try {
+            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+        } catch {
+            $result.error = "Couldn't connect to WhatsUp Gold at $server`: $($_.Exception.Message). Check the address, that the server is reachable, and the WUG username/password."
+            Emit $result; return
+        }
+
+        # 5. Resolve each machine to its WUG device with a targeted SearchValue lookup - one call per
+        #    entry, NOT a full inventory pull. SearchValue takes a hostname or IP; on a name miss we
+        #    DNS-resolve and retry by IP. Mirrors the main script's resolution loop.
+        $devices = @()
+        $unmatched = @()
+        try {
+            foreach ($srv in $names) {
+                $match = $null
+
+                $results = @(Get-WUGDevice -SearchValue $srv -View overview -ErrorAction SilentlyContinue)
+                if ($results.Count -gt 0) {
+                    # Prefer an exact hit on name or IP; fall back to the first result.
+                    $match = $results | Where-Object { $_.displayName -eq $srv -or $_.networkAddress -eq $srv } | Select-Object -First 1
+                    if (-not $match) { $match = $results[0] }
+                }
+                elseif ($srv -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') {
+                    # A name with no direct hit - resolve to IP and search again by address.
+                    try {
+                        $ip = [System.Net.Dns]::GetHostAddresses($srv) |
+                              Where-Object AddressFamily -eq 'InterNetwork' |
+                              Select-Object -First 1 -ExpandProperty IPAddressToString
+                    } catch { $ip = $null }
+                    if ($ip) {
+                        $results2 = @(Get-WUGDevice -SearchValue $ip -View overview -ErrorAction SilentlyContinue)
+                        if ($results2.Count -gt 0) {
+                            $match = $results2 | Where-Object { $_.networkAddress -eq $ip } | Select-Object -First 1
+                            if (-not $match) { $match = $results2[0] }
+                        }
+                    }
+                }
+
+                if ($null -ne $match) {
+                    # Tri-state maintenance read. Absent state fields => UNKNOWN ($state stays $null).
+                    # Presence MUST be tested via PSObject.Properties.Name -contains: on PS 5.1 an ABSENT
+                    # property compares -eq 'Maintenance' to $false, silently faking a definite "not in
+                    # maintenance". Only a present, non-empty field decides.
+                    $state = $null
+                    $hasBest  = $match.PSObject.Properties.Name -contains 'bestState'
+                    $hasWorst = $match.PSObject.Properties.Name -contains 'worstState'
+                    $bestSet  = $hasBest  -and -not [string]::IsNullOrWhiteSpace($match.bestState)
+                    $worstSet = $hasWorst -and -not [string]::IsNullOrWhiteSpace($match.worstState)
+                    if ($bestSet -or $worstSet) {
+                        # PS -eq is case-insensitive (free robustness); any non-Maintenance value (Up, Down,
+                        # Warning, ...) correctly reads as not-in-maintenance. The literal is server-version
+                        # dependent, so OR the two fields - they normally agree, and OR biases toward "in
+                        # maintenance".
+                        $state = ($match.bestState -eq 'Maintenance' -or $match.worstState -eq 'Maintenance')
+                    }
+                    # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
+                    $devices += [ordered]@{ name = $srv; inMaintenance = $state }
+                } else {
+                    $unmatched += $srv
+                }
+            }
+        } catch {
+            $result.error = "Connected, but couldn't search WhatsUp Gold devices: $($_.Exception.Message)."
+            Emit $result; return
+        }
+
+        # Keep devices an ARRAY even for a single entry - a bare scalar assignment serializes one device
+        # as a JSON object, not an array.
+        $result.devices = @($devices)
+        $result.unmatched = @($unmatched)
+        $result.ok = $true
+        Emit $result
+        """;
+
     // ── Shared process-launch helper (used by TestConnectionAsync + InstallModuleAsync only) ────
 
     /// <summary>
@@ -520,6 +650,43 @@ public static class WugMaintenance
         }
     }
 
+    /// <summary>
+    /// Reads the current WhatsUp Gold maintenance state for <paramref name="names"/> WITHOUT changing
+    /// anything, keyed back by the input machine name. Bounded by <paramref name="timeout"/>. The
+    /// <paramref name="password"/> reaches the child process via the <c>VIVRE_WUG_PASS</c> environment
+    /// variable only — never on the command line, never written to disk. Fails open: a launch / timeout /
+    /// parse failure yields an empty map plus the reason, never a fabricated "not in maintenance".
+    /// </summary>
+    public static async Task<WugMaintenanceStateResult> GetMaintenanceStateAsync(
+        IReadOnlyList<string> names,
+        string server,
+        string username,
+        string password,
+        TimeSpan timeout,
+        CancellationToken ct = default)
+    {
+        var env = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["VIVRE_WUG_NAMES"]  = string.Join("\n", names),
+            ["VIVRE_WUG_SERVER"] = server,
+            ["VIVRE_WUG_USER"]   = username,
+            ["VIVRE_WUG_PASS"]   = password,   // password reaches the child via env var ONLY
+        };
+
+        try
+        {
+            var (stdout, stderr) = await RunPreflightProcessAsync(StateScript, env, timeout, ct).ConfigureAwait(false);
+            return ParseMaintenanceState(stdout, stderr);
+        }
+        catch (Exception ex)
+        {
+            // A timeout or launch failure says nothing about any machine's state — return unknown for
+            // all (an empty map) carrying the real reason, never a fabricated "not in maintenance".
+            return new WugMaintenanceStateResult(
+                new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase), [], ex.Message);
+        }
+    }
+
     // ── Parse helpers ────────────────────────────────────────────────────────────────────────────
 
     /// <summary>
@@ -572,6 +739,123 @@ public static class WugMaintenance
             string detail = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : "Couldn't parse the pre-flight result: " + json;
             return new WugPreflightResult(ModulePresent: true, Connected: false, Error: detail);
         }
+    }
+
+    /// <summary>
+    /// Parses the single-line JSON the maintenance-state script emits into a per-machine tri-state map.
+    /// FAILS OPEN: on no result line or malformed JSON, returns an empty (case-insensitive) map plus the
+    /// stderr detail as the error — never a fabricated "not in maintenance". Never throws.
+    /// </summary>
+    internal static WugMaintenanceStateResult ParseMaintenanceState(string stdout, string stderr)
+    {
+        var byName = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
+
+        // Prefer the marker-tagged result line (Emit prefixes __WUGRESULT__); fall back to the last
+        // braced line for marker-less input. The marker makes extraction immune to any other stdout a
+        // cmdlet might print before the result.
+        string[] lines = stdout.Split('\n').Select(s => s.Trim()).ToArray();
+        string? marked = lines.LastOrDefault(s => s.StartsWith(PreflightResultMarker, StringComparison.Ordinal));
+        string? json = marked is not null
+            ? marked[PreflightResultMarker.Length..]
+            : lines.LastOrDefault(s => s.Contains('{') && s.Contains('}'));
+
+        // No result line (killed on timeout before emitting, or no output). This is NOT a machine state —
+        // surface it as unknown-with-error, never as "not in maintenance".
+        if (json is null)
+        {
+            string detail = !string.IsNullOrWhiteSpace(stderr)
+                ? stderr.Trim()
+                : "Windows PowerShell returned no result (the maintenance-state read may have timed out).";
+            return new WugMaintenanceStateResult(byName, [], detail);
+        }
+
+        try
+        {
+            int start = json.IndexOf('{');
+            int end = json.LastIndexOf('}');
+            if (start < 0 || end < start)
+            {
+                // A marker line with no JSON body — fail open, never throw.
+                string bad = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : "Couldn't parse the maintenance-state result: " + json;
+                return new WugMaintenanceStateResult(byName, [], bad);
+            }
+
+            using JsonDocument doc = JsonDocument.Parse(json[start..(end + 1)]);
+            JsonElement root = doc.RootElement;
+
+            // devices is normally an array; a one-device result serializes as a single object.
+            if (root.TryGetProperty("devices", out JsonElement devicesEl))
+            {
+                if (devicesEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement dev in devicesEl.EnumerateArray())
+                    {
+                        AddDevice(byName, dev);
+                    }
+                }
+                else if (devicesEl.ValueKind == JsonValueKind.Object)
+                {
+                    AddDevice(byName, devicesEl);
+                }
+            }
+
+            var unmatched = new List<string>();
+            if (root.TryGetProperty("unmatched", out JsonElement uEl))
+            {
+                if (uEl.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (JsonElement item in uEl.EnumerateArray())
+                    {
+                        if (item.ValueKind == JsonValueKind.String)
+                        {
+                            unmatched.Add(item.GetString()!);
+                        }
+                    }
+                }
+                else if (uEl.ValueKind == JsonValueKind.String)
+                {
+                    unmatched.Add(uEl.GetString()!);
+                }
+            }
+
+            string? error = root.TryGetProperty("error", out JsonElement eEl) && eEl.ValueKind == JsonValueKind.String
+                ? eEl.GetString()
+                : null;
+
+            return new WugMaintenanceStateResult(byName, unmatched, error);
+        }
+        catch (JsonException)
+        {
+            string detail = !string.IsNullOrWhiteSpace(stderr) ? stderr.Trim() : "Couldn't parse the maintenance-state result: " + json;
+            return new WugMaintenanceStateResult(byName, [], detail);
+        }
+    }
+
+    // Adds one device entry to the tri-state map: the name must be a string (skip the entry otherwise);
+    // inMaintenance True/False map to true/false, and anything else (absent, null, string, number) to
+    // null — unknown, never assumed false.
+    private static void AddDevice(Dictionary<string, bool?> byName, JsonElement dev)
+    {
+        if (dev.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (!dev.TryGetProperty("name", out JsonElement nameEl) || nameEl.ValueKind != JsonValueKind.String)
+        {
+            return;
+        }
+
+        bool? state = dev.TryGetProperty("inMaintenance", out JsonElement mEl)
+            ? mEl.ValueKind switch
+            {
+                JsonValueKind.True => true,
+                JsonValueKind.False => false,
+                _ => (bool?)null,
+            }
+            : null;
+
+        byName[nameEl.GetString()!] = state;
     }
 
     /// <summary>Parses the single JSON result line the script emits; falls back to stderr on failure.</summary>

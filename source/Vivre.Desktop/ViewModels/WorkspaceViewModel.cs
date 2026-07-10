@@ -5630,6 +5630,34 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>
+    /// Reads the current WhatsUp Gold maintenance state for <paramref name="names"/> without changing
+    /// anything, keyed back by machine name (<c>true</c> = in maintenance, <c>false</c> = not, <c>null</c>
+    /// = unknown).  The <paramref name="password"/> is converted to plaintext only via <see
+    /// cref="System.Net.NetworkCredential"/> and passed to the child process via the <c>VIVRE_WUG_PASS</c>
+    /// environment variable — never on a command line, never stored.
+    /// </summary>
+    public async Task<Vivre.Core.Wug.WugMaintenanceStateResult> GetWugMaintenanceStateAsync(
+        IReadOnlyList<string> names,
+        string server,
+        string username,
+        System.Security.SecureString password,
+        CancellationToken token = default)
+    {
+        try
+        {
+            string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
+            // Per-device lookup cost is pilot-checked; caps at the same 10 min the set run uses.
+            TimeSpan timeout = TimeSpan.FromSeconds(Math.Min(60 + 5 * names.Count, 600));
+            return await Vivre.Core.Wug.WugMaintenance.GetMaintenanceStateAsync(names, server, username, plain, timeout, token).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return new Vivre.Core.Wug.WugMaintenanceStateResult(
+                new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase), [], ex.Message);
+        }
+    }
+
+    /// <summary>
     /// Installs the WhatsUpGoldPS module from the PowerShell Gallery for the current user.
     /// Operator-consented; the silent auto-install inside <c>SetWugMaintenanceAsync</c> is separate.
     /// </summary>
