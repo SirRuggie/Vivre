@@ -42,6 +42,10 @@ public partial class MaintenanceWindow : FluentWindow
         {
             ServerBox.Text = "10.70.25.111"; // a read failure just falls back to the default
         }
+
+        // The initial Checked event during InitializeComponent hits the null-guard, so sync the
+        // mode-dependent UI now rather than trusting the XAML default to match the default mode.
+        OnModeChanged(this, new RoutedEventArgs());
     }
 
     // ── Testing state helpers ─────────────────────────────────────────────────────────────────────
@@ -204,17 +208,20 @@ public partial class MaintenanceWindow : FluentWindow
 
     // ── Misc ──────────────────────────────────────────────────────────────────────────────────────
 
-    // Keep the action button's label in step with the chosen mode (Enter -> "Set maintenance",
-    // Exit -> "Exit maintenance"). EnterRadio's initial IsChecked="True" can raise Checked during
-    // InitializeComponent — before RunButton exists — so guard against the not-yet-realized controls.
+    // Keep the action button's label and the Reason field in step with the chosen mode
+    // (Enter -> "Set maintenance" + Reason shown, Exit -> "Exit maintenance" + Reason hidden).
+    // EnterRadio's initial IsChecked="True" can raise Checked during InitializeComponent — before
+    // RunButton/ReasonSection exist — so guard against the not-yet-realized controls.
     private void OnModeChanged(object sender, RoutedEventArgs e)
     {
-        if (RunButton is null || EnterRadio is null)
+        if (RunButton is null || EnterRadio is null || ReasonSection is null)
         {
             return;
         }
 
-        RunButton.Content = EnterRadio.IsChecked == true ? "Set maintenance" : "Exit maintenance";
+        bool enter = EnterRadio.IsChecked == true;
+        RunButton.Content = enter ? "Set maintenance" : "Exit maintenance";
+        ReasonSection.Visibility = enter ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void ShowStatus(string message)

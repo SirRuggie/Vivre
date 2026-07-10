@@ -49,9 +49,11 @@
                 <ui:TextBlock Text="WhatsUp Gold password" FontTypography="BodyStrong" Margin="0,0,0,4" />
                 <PasswordBox x:Name="PasswordBox" Height="32" VerticalContentAlignment="Center" Margin="0,0,0,12" />
 
-                <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
-                <ui:TextBlock Text="Reason" FontTypography="BodyStrong" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="ReasonBox" Margin="0,0,0,4" />
+                <StackPanel x:Name="ReasonSection">
+                    <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
+                    <ui:TextBlock Text="Reason" FontTypography="BodyStrong" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="ReasonBox" Margin="0,0,0,4" />
+                </StackPanel>
             </StackPanel>
         </ScrollViewer>
 
