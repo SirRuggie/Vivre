@@ -6,6 +6,14 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- **The software check now works on Kerberos-broken boxes.** On a machine where WinRM refuses the
+  fast Kerberos login, "Check software…" no longer just fails — it falls back to the same read-only
+  backup channel the health numbers already use and still fills in the Software column, running on your
+  ambient Windows login (an alternate credential applies to the WinRM path only). If that backup channel
+  also can't read the box, the check reports a real error naming both paths — an unreadable box is never
+  faked as "not found".
+
 ## 1.14.5 — 2026-07-10
 
 ### Added

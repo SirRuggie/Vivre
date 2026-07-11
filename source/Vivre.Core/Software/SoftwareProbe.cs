@@ -11,12 +11,24 @@ namespace Vivre.Core.Software;
 /// binding on the remote path), so a name with awkward characters can't break the script. Results are
 /// emitted as a raw object and read via its properties — never <c>ConvertTo-Json</c> (a JSON string has
 /// no properties to read).
+/// <para>
+/// When an <see cref="IDcomSoftwareReader"/> is supplied and WinRM is rejected with Kerberos error
+/// 0x80090322, the probe falls back to a read-only DCOM registry read (like <see cref="Vitals.VitalsProbe"/>)
+/// so the column shows a real answer on a Kerberos-broken box. If DCOM also fails the error carries both
+/// transports. Kerberos-only by design: any other WinRM failure (e.g.
+/// <see cref="RemoteSessionLostException"/>) propagates unchanged.
+/// </para>
 /// </remarks>
 public sealed class SoftwareProbe : ISoftwareProbe
 {
     private readonly IPowerShellHost _powerShell;
+    private readonly IDcomSoftwareReader? _dcomReader;
 
-    public SoftwareProbe(IPowerShellHost powerShell) => _powerShell = powerShell;
+    public SoftwareProbe(IPowerShellHost powerShell, IDcomSoftwareReader? dcomReader = null)
+    {
+        _powerShell = powerShell;
+        _dcomReader = dcomReader;
+    }
 
     public async Task<SoftwareCheckResult> CheckAsync(
         string host,
@@ -29,10 +41,39 @@ public sealed class SoftwareProbe : ISoftwareProbe
         ArgumentException.ThrowIfNullOrWhiteSpace(query);
 
         string script = BuildScript(PsSingleQuote(query), PsSingleQuote(serviceName?.Trim() ?? string.Empty));
-        PSExecutionResult result = HostName.IsLocal(host)
-            ? await _powerShell.RunLocalAsync(script, cancellationToken).ConfigureAwait(false)
-            : await _powerShell.RunRemoteAsync(host, script, credential, cancellationToken: cancellationToken)
-                .ConfigureAwait(false);
+
+        PSExecutionResult result;
+        try
+        {
+            result = HostName.IsLocal(host)
+                ? await _powerShell.RunLocalAsync(script, cancellationToken).ConfigureAwait(false)
+                : await _powerShell.RunRemoteAsync(host, script, credential, cancellationToken: cancellationToken)
+                    .ConfigureAwait(false);
+        }
+        catch (KerberosWrongPrincipalException) when (_dcomReader is not null && !HostName.IsLocal(host))
+        {
+            // WinRM rejected Kerberos (0x80090322) on this box — the routing host has flipped it to the
+            // SMB/DCOM transport. Read the installed-software answer over the read-only DCOM registry
+            // channel so the column shows a real verdict instead of an error, on the ambient Windows login
+            // (the alternate credential applies to the WinRM path only). Kerberos-only by design: a
+            // non-Kerberos WinRM failure (e.g. RemoteSessionLostException) is NOT caught here and still
+            // propagates to the VM. If DCOM also fails, the error names BOTH transports.
+            try
+            {
+                return await _dcomReader
+                    .CheckAsync(host, query, serviceName?.Trim() is { Length: > 0 } s ? s : null, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception dcomEx)
+            {
+                throw new SoftwareProbeException(
+                    "WinRM rejected Kerberos on this box and the DCOM fallback also failed: " + dcomEx.Message);
+            }
+        }
 
         return Parse(result);
     }

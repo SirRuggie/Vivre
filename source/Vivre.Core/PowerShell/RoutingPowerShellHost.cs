@@ -15,9 +15,9 @@ namespace Vivre.Core.PowerShell;
 /// re-run the call over another transport. On a Kerberos rejection it records the host as SmbDcom so the
 /// next call fast-fails (<c>CachedKerberosRejection</c>) instead of re-paying the ~20s WinRM open timeout,
 /// then rethrows. Re-routing is the CALLER's job: the ops that HAVE a fallback catch the typed exception
-/// and reroute (the WUA scan/install lane → the SMB agent; <c>VitalsProbe</c> → DCOM). Callers WITHOUT a
-/// fallback — ConfigMgr client actions, the reboot probe, the software/custom-column probes, and the Run
-/// Script feature — simply fail; they gate that failure with a plain, actionable message via
+/// and reroute (the WUA scan/install lane → the SMB agent; <c>VitalsProbe</c> → DCOM; <c>SoftwareProbe</c>
+/// → DCOM). Callers WITHOUT a fallback — ConfigMgr client actions, the reboot probe, the custom-column
+/// probe, and the Run Script feature — simply fail; they gate that failure with a plain, actionable message via
 /// <see cref="RemoteFailureClassifier.IsWinRmUnavailable"/> rather than leaking raw SSPI text. The
 /// multi-call WUA install/uninstall orchestration is not wrapped here at all — its transport selection
 /// lives in the lane itself (<c>WuaUpdateLane</c>).

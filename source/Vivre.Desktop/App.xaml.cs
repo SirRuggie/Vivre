@@ -71,7 +71,7 @@ public partial class App : Application
         var vitals = new VitalsProbe(powerShell, new DcomVitalsProbe());
         var remediation = new RemediationService(powerShell);
         var deployment = new DeploymentService(powerShell);
-        var software = new SoftwareProbe(powerShell);
+        var software = new SoftwareProbe(powerShell, new DcomSoftwareReader());
         var customColumns = new CustomColumnProbe(powerShell);
         // One shared catalog-size lookup: its per-KB cache is process-wide, so many machines showing the same
         // KB hit the Microsoft Update Catalog once. Self-contained HTTPS GET; failures fall back silently.

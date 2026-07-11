@@ -95,9 +95,9 @@ public sealed class KerberosWrongPrincipalException : Exception
 /// rejection (<see cref="KerberosWrongPrincipalException"/>, e.g. the Vision boxes whose http SPN is owned
 /// by a service account) or a generic connect-time/transport loss (<see cref="RemoteSessionLostException"/>,
 /// e.g. the WinRM service is down / 0x80338012). Single-call operations that have NO SMB/DCOM fallback
-/// (ConfigMgr client actions, the software/custom-column probes, Run Script) use this to gate the failure
-/// with a plain, actionable message instead of leaking raw SSPI text. Vitals and the scan/install lanes
-/// catch the typed exceptions directly and reroute, so they don't go through this.
+/// (ConfigMgr client actions, the custom-column probe, Run Script) use this to gate the failure
+/// with a plain, actionable message instead of leaking raw SSPI text. Vitals, the software probe, and the
+/// scan/install lanes catch the typed exceptions directly and reroute, so they don't go through this.
 /// </summary>
 public static class RemoteFailureClassifier
 {

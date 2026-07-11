@@ -305,7 +305,7 @@ public static class HelpContent
                 "Click the Software column header to sort — e.g. the machines missing it (or amber) to the top.",
                 "Need a report for your boss? After a check, right-click ▸ Export ▸ Software report (CSV)… saves a per-machine CSV (machine, product, version, installed, service running). On-demand only — checking never writes a file by itself.",
             ],
-            Tip = "It searches the registry's installed-programs list (fast, and won't trigger an MSI repair the way Win32_Product can), plus the service list when asked. Handy to confirm an agent actually landed AND is running after a deploy. Read-only — it never changes the machine.",
+            Tip = "It searches the registry's installed-programs list (fast, and won't trigger an MSI repair the way Win32_Product can), plus the service list when asked. Handy to confirm an agent actually landed AND is running after a deploy. It even works on Kerberos-broken (WinRM-rejected) boxes — it falls back to the same read-only DCOM backup channel the health numbers use, running on your ambient Windows login (an explicit alternate credential applies to the WinRM path only). Read-only — it never changes the machine.",
         },
         new HelpTopic
         {
