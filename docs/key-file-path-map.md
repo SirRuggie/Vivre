@@ -251,7 +251,7 @@ direction from the crash.
 
 ## Cross-Domain RDP
 - `source/Vivre.Desktop/RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded RDP host; owns control creation,
-  `LocalScale()` (pinned to `(100,100)` for the FCM fix, `1ce1abf`), the framebuffer (`DesktopWidth/Height`),
+  `LocalScale()` (pinned to `(100,100)` for the FCM fix, `a7b8833`), the framebuffer (`DesktopWidth/Height`),
   `SmartSizing`, `Dock`, and the host panel. Control stack: WPF → `WindowsFormsHost` (`RdpHostElement`) →
   WinForms `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
 - `source/Vivre.Desktop/ViewModels/RdpSessionViewModel.cs`, `ViewModels/CrossDomainRdpViewModel.cs` — the RDP
@@ -259,7 +259,7 @@ direction from the crash.
 - `source/Vivre.Desktop/CrossDomainRdpView.xaml`(`.cs`) — the Cross-Domain RDP UI (host tree + session tabs);
   per-host settings resolve via `_creds.Resolve(host, RdpTree.AncestorsOf(_tree, host))` in `ConnectTo` — the
   hook a future per-host scale setting would use.
-- **Note:** the Failover Cluster Manager context-menu fix is the 100%-scale pin (`1ce1abf`); embedded-RDP
+- **Note:** the Failover Cluster Manager context-menu fix is the 100%-scale pin (`a7b8833`); embedded-RDP
   magnification (matching mRemoteNG's bigger image) is **parked** — see `vivre-rdp-scaling-and-fcm-findings.md`.
 
 ## Settings / data
