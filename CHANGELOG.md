@@ -14,6 +14,12 @@ it ships, then gets a dated heading.
   also can't read the box, the check reports a real error naming both paths — an unreadable box is never
   faked as "not found".
 
+### Changed
+- **When an action can't run because WinRM is broken on a Kerberos-rejected box, the error message now
+  points out that the software check still works there.** Health checks, custom columns, SCCM client
+  actions and scripts add a short note that "Check software…" reads over the DCOM backup channel on
+  these boxes — so you're pointed at what still works instead of a plain dead-end.
+
 ## 1.14.5 — 2026-07-10
 
 ### Added

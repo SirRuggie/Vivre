@@ -237,7 +237,7 @@ public static class HelpContent
                 "Most common (0x80090322): the host runs a web app under a domain service account — e.g. SSRS on the Deltek Vision servers — and that account owns the host's HTTP SPN for report single sign-on. Kerberos can't hand the same hostname to WinRM too, so WinRM is rejected. This is BY DESIGN — don't 'fix' the SPN or you'll break the app's SSO. Vivre just uses the DCOM/SMB backup; nothing to do.",
                 "Other causes: the box genuinely isn't domain-joined / has no SPN (0x80090303) → join it / register the SPN only if you need WinRM; or the WinRM service isn't running → run \"winrm quickconfig\" on the host; or a one-off dropped session, which usually clears itself on the next Check Vitals.",
             ],
-            Tip = "This is health-channel only — scans, installs and other actions still just work on these machines (over the same backup channel where needed); they don't show any \"degraded\" wording. The amber flag is only there so you know the box could use a WinRM fix when you have time.",
+            Tip = "This is health-channel only — scans, installs and other actions still just work on these machines (over the same backup channel where needed); they don't show any \"degraded\" wording — and the Check software action reads over that same backup channel, so it works on these boxes too. The amber flag is only there so you know the box could use a WinRM fix when you have time.",
         },
         new HelpTopic
         {
@@ -329,7 +329,7 @@ public static class HelpContent
             [
                 "Select the machines, then right-click ▸ Client actions ▸ and pick one (Machine Policy, Hardware Inventory, Update Scan, …).",
                 "Actions run on all selected machines at once; each row shows its own result, and Stop cancels the batch.",
-                "A box that doesn't answer shows \"Timed out\" (after 60s), \"WinRM busy\" (try again shortly), or \"WinRM unavailable\" — the rest of the selection is unaffected.",
+                "A box that doesn't answer shows \"Timed out\" (after 60s), \"WinRM busy\" (try again shortly), or \"WinRM unavailable\" (for installed software on that box, Software ▸ Check software… still works) — the rest of the selection is unaffected.",
             ],
         },
         new HelpTopic

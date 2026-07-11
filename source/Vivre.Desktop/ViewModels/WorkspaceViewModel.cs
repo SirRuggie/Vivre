@@ -1732,8 +1732,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.CustomValues[spec.Name] = "WinRM n/a";
             }
 
-            computer.LastError = "WinRM is broken on this box, so custom columns can't run remotely here.";
-            _activity.Warn(computer.Name, "Custom columns skipped — WinRM unavailable on this box.");
+            string swHint = ex is KerberosWrongPrincipalException ? WinRmDeadEnd.SoftwareRedirect : string.Empty;
+            computer.LastError = "WinRM is broken on this box, so custom columns can't run remotely here." + swHint;
+            _activity.Warn(computer.Name, $"Custom columns skipped — WinRM unavailable on this box.{swHint}");
         }
         catch (Exception ex)
         {
@@ -5009,8 +5010,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // text. (Vitals still reads over DCOM; the detail Connection callout explains the specifics.)
             computer.IsOnline = pingOnline;
             computer.LastStatus = pingOnline ? "Online · WinRM unavailable" : "Offline";
-            computer.LastError = "WinRM is broken on this box, so the health check can't run remotely here.";
-            _activity.Warn(computer.Name, "Health check skipped — WinRM unavailable on this box.");
+            string swHint = ex is KerberosWrongPrincipalException ? WinRmDeadEnd.SoftwareRedirect : string.Empty;
+            computer.LastError = "WinRM is broken on this box, so the health check can't run remotely here." + swHint;
+            _activity.Warn(computer.Name, $"Health check skipped — WinRM unavailable on this box.{swHint}");
         }
         catch (Exception ex)
         {
@@ -5356,9 +5358,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (Exception ex) when (ex.IsWinRmUnavailable())
         {
+            string swHint = ex is KerberosWrongPrincipalException ? WinRmDeadEnd.SoftwareRedirect : string.Empty;
             computer.LastStatus = "WinRM unavailable";
-            computer.LastError = $"WinRM is broken on this box, so {action.Label} can't run remotely here.";
-            _activity.Warn(computer.Name, $"{action.Label} skipped — WinRM unavailable on this box.");
+            computer.LastError = $"WinRM is broken on this box, so {action.Label} can't run remotely here." + swHint;
+            _activity.Warn(computer.Name, $"{action.Label} skipped — WinRM unavailable on this box.{swHint}");
         }
         catch (Exception ex)
         {

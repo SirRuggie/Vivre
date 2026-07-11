@@ -152,8 +152,11 @@ public partial class ScriptRunnerViewModel : ObservableObject
                 {
                     // WinRM is broken on this box (Kerberos/SPN, or the service is down). Scripts run over
                     // WinRM and there is no remote alternative here, so name the honest one (RDP) instead of
-                    // dumping the raw SSPI text. No new execution channel is introduced.
-                    machineOutput = "WinRM is broken on this box (Kerberos/SPN), so scripts can't run here remotely — RDP into the box to run them. (For a reboot, use the Reboot Wave.)";
+                    // dumping the raw SSPI text. No new execution channel is introduced. On a Kerberos
+                    // rejection the software check's DCOM fallback still works, so point at it too.
+                    machineOutput = ex is KerberosWrongPrincipalException
+                        ? "WinRM is broken on this box (Kerberos/SPN), so scripts can't run here remotely — RDP into the box to run them. (For installed software, use Software ▸ Check software…; for a reboot, use the Reboot Wave.)"
+                        : "WinRM is broken on this box (Kerberos/SPN), so scripts can't run here remotely — RDP into the box to run them. (For a reboot, use the Reboot Wave.)";
                     _activity.Warn(target.Name, "Script skipped — WinRM unavailable (RDP to run scripts on this box).");
                 }
                 catch (Exception ex)
