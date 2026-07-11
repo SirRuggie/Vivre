@@ -28,6 +28,11 @@ it ships, then gets a dated heading.
   cell text lines up with the column headers.
 
 ### Fixed
+- **Removing a custom column while it's still filling now stops that fill.** Deleting a custom column
+  cancels the running fill for it; a fill that still covers other columns keeps going and finishes
+  those. Pressing **Stop** during a custom-column fill now freezes the progress counter where it was
+  instead of letting it race to the end, and cells that were still filling when you stopped show
+  "cancelled" rather than being left mid-fill.
 - **A software check against a box that is fully offline now shows "Offline" instead of "WinRM
   unavailable".** The box is down, not broken — the check no longer burns a connection timeout to
   report a misleading remoting error, and the box gets a real answer the next time it's checked.

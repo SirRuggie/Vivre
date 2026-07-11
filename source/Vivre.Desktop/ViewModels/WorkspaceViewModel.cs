@@ -228,9 +228,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // add + scan a new machine while another machine is mid-install.
     // INVARIANT: UI-thread-only. BeginOperation/EndOperation/Stop are reached from [RelayCommand]
     // handlers whose sweeps await WITHOUT ConfigureAwait(false), so their continuations resume on
-    // the UI context — this plain List needs no locking only because of that. If you ever add
-    // ConfigureAwait(false) to a sweep's own awaits, switch this to a ConcurrentDictionary/lock.
+    // the UI context — this plain List (and _customColumnSweeps below) needs no locking only
+    // because of that. If you ever add ConfigureAwait(false) to a sweep's own awaits, switch this
+    // to a ConcurrentDictionary/lock.
     private readonly List<CancellationTokenSource> _activeCts = [];
+    // Live custom-column sweeps: the sweep's CTS + the spec names it captured at launch, so
+    // RemoveCustomColumn can cancel a sweep whose every spec is gone. UI-thread-only, like
+    // _activeCts.
+    private readonly List<(CancellationTokenSource Cts, IReadOnlyList<string> SpecNames)> _customColumnSweeps = [];
     // Install/uninstall throttle (heavy SYSTEM-task operations; per-tab). Non-readonly so
     // CurrentInstallThrottle() can swap it when the operator changes "Max simultaneous installs"
     // in Settings. In-flight sweeps capture the old semaphore reference at sweep-start and keep
@@ -1634,6 +1639,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             CustomColumns.Remove(existing);
             SaveColumnLayout();
+
+            // Cancel any running custom-column sweep whose EVERY captured spec is now gone (partial
+            // removal keeps the sweep running for its remaining columns). Known limitation (accepted
+            // at red-team): remove-then-re-add of the same name while the old sweep unwinds — or an
+            // AddCustomColumn replace — can transiently race a stale value into the cell; it
+            // self-heals on the next refresh.
+            var live = CustomColumns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach ((CancellationTokenSource cts, IReadOnlyList<string> names) in _customColumnSweeps.ToArray())
+            {
+                if (!names.Any(n => live.Contains(n)))
+                {
+                    try { cts.Cancel(); }
+                    catch (ObjectDisposedException) { /* sweep ended between snapshot and here */ }
+                }
+            }
         }
     }
 
@@ -1663,7 +1683,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// and is never blocked by concurrent vitals/scan/install operations. Stop still cancels it.
     /// Uses the shared app-wide <see cref="_remoteSweepThrottle"/> reserved-priority budget — guaranteed progress
     /// even when the active pool is saturated by a concurrent vitals/scan sweep.</summary>
-    public Task RunCustomColumnsSelectedAsync(IReadOnlyList<Computer> rows)
+    public async Task RunCustomColumnsSelectedAsync(IReadOnlyList<Computer> rows)
     {
         // Custom columns are a Health-grid feature: SyncColumns targets ComputerGrid only and
         // UpdateGrid has no custom-column rendering path, so running fills on a Patching tab
@@ -1672,27 +1692,56 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // does nothing ("Custom columns 0/N").
         if (IsUpdateMode || CustomColumns.Count == 0)
         {
-            return Task.CompletedTask;
+            return;
         }
 
         IReadOnlyList<CustomColumnSpec> specs = [.. CustomColumns];
-        return RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, specs, ct), "Custom columns", passive: true);
+        List<string> specNames = [.. specs.Select(s => s.Name)];
+        CancellationTokenSource? mine = null;
+        try
+        {
+            await RunSweepAsync(rows.Count > 0 ? rows : [.. Computers],
+                (c, ct) => RunCustomColumnRowAsync(c, specs, ct), "Custom columns", passive: true,
+                onBegin: cts => { mine = cts; _customColumnSweeps.Add((cts, specNames)); });
+        }
+        finally
+        {
+            if (mine is not null) { _customColumnSweeps.RemoveAll(e => ReferenceEquals(e.Cts, mine)); }
+        }
     }
 
     /// <summary>Runs a single custom column's script across the rows (empty ⇒ all) — used when a column is
     /// added, so only the new column fills and the others' already-fetched values aren't re-run.
     /// Runs in passive mode (see <see cref="RunCustomColumnsSelectedAsync"/>).</summary>
-    public Task RunCustomColumnAsync(IReadOnlyList<Computer> rows, CustomColumnSpec spec)
+    public async Task RunCustomColumnAsync(IReadOnlyList<Computer> rows, CustomColumnSpec spec)
     {
         // Custom columns are a Health-grid feature; the Patching grid (UpdateGrid) never renders
         // them, so skip the fill entirely on update-mode tabs.
         if (IsUpdateMode)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return RunSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => RunCustomColumnRowAsync(c, [spec], ct), "Custom columns", passive: true);
+        IReadOnlyList<CustomColumnSpec> specs = [spec];
+        List<string> specNames = [spec.Name];
+        CancellationTokenSource? mine = null;
+        try
+        {
+            await RunSweepAsync(rows.Count > 0 ? rows : [.. Computers],
+                (c, ct) => RunCustomColumnRowAsync(c, specs, ct), "Custom columns", passive: true,
+                onBegin: cts => { mine = cts; _customColumnSweeps.Add((cts, specNames)); });
+        }
+        finally
+        {
+            if (mine is not null) { _customColumnSweeps.RemoveAll(e => ReferenceEquals(e.Cts, mine)); }
+        }
     }
+
+    // Skip cells whose column was removed mid-sweep (the sweep iterates a launch-time
+    // snapshot). Safe to read CustomColumns here: this method's continuations resume on the
+    // UI thread (no ConfigureAwait(false)), the same thread that mutates the collection.
+    private bool IsLiveCustomColumn(string name) =>
+        CustomColumns.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
 
     // Per-row: one combined custom-column call, bounded by the scan throttle with a per-host timeout.
     // Uses AcquirePassiveAsync so the reserved pool guarantees prompt access even when the active pool
@@ -1708,6 +1757,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
+                if (!IsLiveCustomColumn(spec.Name)) { continue; }
                 computer.CustomValues[spec.Name] = "Offline";
             }
 
@@ -1716,6 +1766,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         foreach (CustomColumnSpec spec in specs)
         {
+            if (!IsLiveCustomColumn(spec.Name)) { continue; }
             computer.CustomValues[spec.Name] = "…";
         }
 
@@ -1727,6 +1778,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 await _customColumns.RunAsync(computer.Name, specs, CurrentPsCredential(), perHost.Token);
             foreach (CustomColumnSpec spec in specs)
             {
+                if (!IsLiveCustomColumn(spec.Name)) { continue; }
                 computer.CustomValues[spec.Name] = values.TryGetValue(spec.Name, out string? v) ? v : null;
             }
         }
@@ -1734,6 +1786,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
+                if (!IsLiveCustomColumn(spec.Name)) { continue; }
                 computer.CustomValues[spec.Name] = "timed out";
             }
 
@@ -1741,12 +1794,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            foreach (CustomColumnSpec spec in specs)
+            {
+                if (IsLiveCustomColumn(spec.Name)) { computer.CustomValues[spec.Name] = "cancelled"; }
+            }
+
             throw;
         }
         catch (Exception ex) when (ex.IsWinRmUnavailable())
         {
             foreach (CustomColumnSpec spec in specs)
             {
+                if (!IsLiveCustomColumn(spec.Name)) { continue; }
                 computer.CustomValues[spec.Name] = "WinRM n/a";
             }
 
@@ -1758,6 +1817,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
+                if (!IsLiveCustomColumn(spec.Name)) { continue; }
                 computer.CustomValues[spec.Name] = "error";
             }
 
@@ -2447,7 +2507,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// sweep). A CTS is still created (Stop cancels it) and an <see cref="OperationRecord"/> is still
     /// registered (narration / N-of-M stays honest). Used for the custom-column fill, which is purely
     /// read-only and must not block or be blocked by any patch/scan/vitals operation on the same rows.</param>
-    private async Task RunSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation, string? label = null, bool passive = false)
+    /// <param name="onBegin">Invoked once with the sweep's CTS right after it's created, so a caller can register it (custom-column fills track theirs so a column removal can cancel them).</param>
+    private async Task RunSweepAsync(IReadOnlyList<Computer> rows, Func<Computer, CancellationToken, Task> operation, string? label = null, bool passive = false, Action<CancellationTokenSource>? onBegin = null)
     {
         // No targets at all (e.g. Ping All on an empty tab) → silent no-op, exactly as before the
         // registry existed. The zero-ELIGIBLE message below is for "all targets busy" only.
@@ -2505,6 +2566,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
 
         (CancellationTokenSource cts, OperationRecord record) = BeginOperation(label, eligible, registerRows: !passive);
+        onBegin?.Invoke(cts);
         try
         {
             Task work = Task.WhenAll(eligible.Select(row => WrapWithCompletion(operation, row, record, cts.Token)));
@@ -2535,16 +2597,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>Wraps a per-row sweep task so the completion counter is incremented after it finishes
-    /// (success or handled failure). The increment is thread-safe via <see cref="IncrementSweepCompleted"/>.</summary>
+    /// (success or handled failure). The increment is thread-safe via <see cref="IncrementSweepCompleted"/>.
+    /// Cancelled rows are NOT counted as completed — on Stop the counter freezes where it was rather than
+    /// racing to N.</summary>
     private async Task WrapWithCompletion(Func<Computer, CancellationToken, Task> operation, Computer row, OperationRecord record, CancellationToken token)
     {
+        bool cancelled = false;
         try
         {
             await operation(row, token);
         }
+        catch (OperationCanceledException)
+        {
+            cancelled = true;
+            throw;
+        }
         finally
         {
-            IncrementSweepCompleted(record);
+            if (!cancelled) { IncrementSweepCompleted(record); }
         }
     }
 
