@@ -45,7 +45,23 @@ public sealed class RdpPopoutSpike : Form
     [DllImport("user32.dll")]
     private static extern IntPtr SetThreadDpiAwarenessContext(IntPtr dpiContext);
 
+    // The truthful per-window diagnostics. Control.DeviceDpi CANNOT detect the window's context:
+    // it returns the process-cached system DPI (ScaleHelper.InitialSystemDpi, 144 on a 150% box)
+    // regardless of this window's awareness — verified in the dotnet/winforms source. That lie is
+    // what sank the first spike run. GetDpiForWindow returns 96 for an UNAWARE window.
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetWindowDpiAwarenessContext(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool AreDpiAwarenessContextsEqual(IntPtr dpiContextA, IntPtr dpiContextB);
+
     private static readonly IntPtr DpiContextUnaware = new(-1);          // DPI_AWARENESS_CONTEXT_UNAWARE
+    private static readonly IntPtr DpiContextSystemAware = new(-2);      // DPI_AWARENESS_CONTEXT_SYSTEM_AWARE
+    private static readonly IntPtr DpiContextPerMonitor = new(-3);       // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE
+    private static readonly IntPtr DpiContextPerMonitorV2 = new(-4);     // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
     private static readonly IntPtr DpiContextUnawareGdiScaled = new(-5); // DPI_AWARENESS_CONTEXT_UNAWARE_GDISCALED
 
     private readonly string _hostName;
@@ -55,6 +71,7 @@ public sealed class RdpPopoutSpike : Form
     private readonly Panel _hostPanel;
     private readonly FormsTimer _resizeTimer;
     private AxMsRdpClient9NotSafeForScripting? _rdp;
+    private readonly bool _contextSwitchFailed;
     private bool _connectStarted;
     private bool _closing; // tearing the control down ourselves — ignore its own disconnect event
 
@@ -76,15 +93,17 @@ public sealed class RdpPopoutSpike : Form
 
         IntPtr previous = IntPtr.Zero;
         bool switched = options.Context != SpikeDpiContext.InheritSystemAware;
+        bool switchFailed = false;
         if (switched)
         {
             previous = SetThreadDpiAwarenessContext(
                 options.Context == SpikeDpiContext.Unaware ? DpiContextUnaware : DpiContextUnawareGdiScaled);
+            switchFailed = previous == IntPtr.Zero; // NULL return = the switch itself failed — surface it
         }
 
         try
         {
-            var form = new RdpPopoutSpike(hostName, settings, options);
+            var form = new RdpPopoutSpike(hostName, settings, options, switchFailed);
             form.Show(); // creates the HWND under the chosen context; WndProc auto-switches thereafter
         }
         finally
@@ -96,11 +115,12 @@ public sealed class RdpPopoutSpike : Form
         }
     }
 
-    private RdpPopoutSpike(string hostName, RdpConnectionSettings settings, RdpPopoutSpikeOptions options)
+    private RdpPopoutSpike(string hostName, RdpConnectionSettings settings, RdpPopoutSpikeOptions options, bool contextSwitchFailed)
     {
         _hostName = hostName;
         _settings = settings;
         _options = options;
+        _contextSwitchFailed = contextSwitchFailed;
 
         Text = $"{hostName} — pop-out spike (connecting…)";
         StartPosition = FormStartPosition.CenterScreen;
@@ -205,19 +225,42 @@ public sealed class RdpPopoutSpike : Form
     }
 
     /// <summary>
-    /// The framebuffer to request, in this window's own coordinate space. An UNAWARE window reports
-    /// virtualized (96-DPI) units and <c>DeviceDpi</c> = 96, so both toggles coincide there — that IS
-    /// the mechanism under test. In a System-Aware window <c>ClientSize</c> is physical device pixels,
-    /// so "physical" = ClientSize as-is (today's shipping baseline, the control variant) and
-    /// "logical" = ClientSize ÷ (DeviceDpi/96) (the old ÷1.5 experiment).
+    /// The framebuffer to request, in this window's own coordinate space, using the window's OWN DPI
+    /// (<c>GetDpiForWindow</c>). An UNAWARE window's coordinates are already virtualized and its
+    /// window DPI reads 96, so scale = 1 and both toggles coincide at ClientSize as-is — that IS the
+    /// mechanism under test. In the System-Aware control variant <c>ClientSize</c> is physical device
+    /// pixels and window DPI = the real system DPI (144), so "physical" = ClientSize as-is (today's
+    /// shipping baseline) and "logical" = ClientSize ÷ 1.5. First spike run's bug: this used
+    /// <c>Control.DeviceDpi</c>, which reports the process-cached system DPI regardless of this
+    /// window's context, double-shrinking the framebuffer in the unaware variants.
     /// </summary>
     private (int Width, int Height) Framebuffer()
     {
         Size client = _hostPanel.ClientSize;
-        double scale = DeviceDpi / 96.0;
+        double scale = WindowDpi() / 96.0;
         int width = _options.LogicalFramebuffer ? (int)Math.Round(client.Width / scale) : client.Width;
         int height = _options.LogicalFramebuffer ? (int)Math.Round(client.Height / scale) : client.Height;
         return (Math.Max(640, width), Math.Max(480, height));
+    }
+
+    /// <summary>The window's own DPI: 96 for an UNAWARE window, the system DPI for System-Aware.</summary>
+    private uint WindowDpi() => IsHandleCreated ? GetDpiForWindow(Handle) : 96u;
+
+    /// <summary>The window HWND's actual awareness context, by name — the ground truth the retest reads.</summary>
+    private string WindowContextName()
+    {
+        if (!IsHandleCreated)
+        {
+            return "no-hwnd";
+        }
+
+        IntPtr context = GetWindowDpiAwarenessContext(Handle);
+        if (AreDpiAwarenessContextsEqual(context, DpiContextUnaware)) return "UNAWARE";
+        if (AreDpiAwarenessContextsEqual(context, DpiContextUnawareGdiScaled)) return "UNAWARE_GDISCALED";
+        if (AreDpiAwarenessContextsEqual(context, DpiContextSystemAware)) return "SYSTEM_AWARE";
+        if (AreDpiAwarenessContextsEqual(context, DpiContextPerMonitorV2)) return "PER_MONITOR_V2";
+        if (AreDpiAwarenessContextsEqual(context, DpiContextPerMonitor)) return "PER_MONITOR";
+        return "unknown";
     }
 
     private void OnResizeSettled(object? sender, EventArgs e)
@@ -249,8 +292,10 @@ public sealed class RdpPopoutSpike : Form
     private void UpdateReadout(int framebufferWidth, int framebufferHeight)
     {
         OnUi(() => _readout.Text =
-            $"{VariantText}  |  ClientSize={ClientSize.Width}x{ClientSize.Height}  panel={_hostPanel.ClientSize.Width}x{_hostPanel.ClientSize.Height}  " +
-            $"DeviceDpi={DeviceDpi}  |  framebuffer {framebufferWidth}x{framebufferHeight}");
+            $"{(_contextSwitchFailed ? "CONTEXT SWITCH FAILED!  " : string.Empty)}{VariantText}  |  " +
+            $"hwndCtx={WindowContextName()}  windowDpi={WindowDpi()}  DeviceDpi={DeviceDpi}  |  " +
+            $"ClientSize={ClientSize.Width}x{ClientSize.Height}  panel={_hostPanel.ClientSize.Width}x{_hostPanel.ClientSize.Height}  |  " +
+            $"framebuffer {framebufferWidth}x{framebufferHeight}");
     }
 
     private void OnRdpLoginComplete(object? sender, EventArgs e) =>
