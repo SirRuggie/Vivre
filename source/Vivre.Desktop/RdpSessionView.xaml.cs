@@ -30,6 +30,12 @@ public partial class RdpSessionView : UserControl
     private bool _closing;   // tearing the control down ourselves — ignore its own disconnect event
     private readonly System.Windows.Threading.DispatcherTimer _resizeTimer;
 
+    // SPIKE-0B - REMOVE: embedded ZoomLevel verification state (Step 0b). Default zoom is derived
+    // from the actual display scale in OnLoaded (150 on the jump box).
+    private uint _spikeZoom = 100;
+    private string _spikeRefit = "refit=none";
+    private string _spikeZoomStatus = "zoom=none";
+
     public RdpSessionView()
     {
         InitializeComponent();
@@ -55,6 +61,9 @@ public partial class RdpSessionView : UserControl
         _closing = false;
         _connected = false;
         _connectStarted = false;
+
+        // SPIKE-0B - REMOVE: derive the default zoom from the actual display scale.
+        _spikeZoom = (uint)Math.Round(System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX * 100);
 
         CreateControl();
 
@@ -157,10 +166,9 @@ public partial class RdpSessionView : UserControl
             // credentials instead of rejecting delegated/saved ones (the cross-domain 0x2107 rejection).
             _rdp.AdvancedSettings9.EnableCredSspSupport = s.NlaEnabled;
 
-            // SmartSizing scales the remote image to the control (and to the monitor in full-screen): smooth
-            // live resize with NO reconnect. Reconnecting on resize triggers a protocol-error disconnect on
-            // some servers, so we scale instead. The control owns full-screen (toolbar / Ctrl+Alt+Break).
-            _rdp.AdvancedSettings9.SmartSizing = true;
+            // SPIKE-0B - REMOVE: SmartSizing OFF — mutually exclusive with ZoomLevel (Microsoft docs).
+            // The shipping value is true; restore it when the hack is dropped.
+            _rdp.AdvancedSettings9.SmartSizing = false;
             _rdp.AdvancedSettings9.ContainerHandledFullScreen = 0;
 
             // Let the client transparently recover a transient drop (brief network blip) on its own before we
@@ -186,6 +194,7 @@ public partial class RdpSessionView : UserControl
 
             _rdp.Connect();
             SetStatus(RdpConnectionState.Connecting, "Connecting…");
+            UpdateSpikeDiag(width, height); // SPIKE-0B - REMOVE
         }
         catch (Exception ex)
         {
@@ -236,6 +245,10 @@ public partial class RdpSessionView : UserControl
         _resizeTimer.Stop();
         (int width, int height) = RemotePixelSize();
         ResizeRemote(width, height);
+
+        // SPIKE-0B - REMOVE: re-apply the current zoom after the re-fit send and refresh the strip.
+        ApplySpikeZoom(_spikeZoom);
+        UpdateSpikeDiag(width, height);
     }
 
     /// <summary>Live resolution change (RDP 8.1+): the remote desktop reflows to the new size with NO reconnect
@@ -243,7 +256,9 @@ public partial class RdpSessionView : UserControl
     /// SmartSizing keeps the image scaled to fit instead — so resizing always at least looks right.</summary>
     private void ResizeRemote(int width, int height)
     {
-        if (_rdp is null || _rdp.Connected == 0)
+        // SPIKE-0B: guard is Connected == 1 (shipping code uses == 0) — the OCX reports 2 while
+        // connecting, and a display update sent mid-handshake fails silently (round-2 lesson).
+        if (_rdp is null || _rdp.Connected != 1)
         {
             return;
         }
@@ -252,10 +267,12 @@ public partial class RdpSessionView : UserControl
         try
         {
             _rdp.UpdateSessionDisplaySettings((uint)width, (uint)height, 0, 0, 0, desktopScale, deviceScale);
+            _spikeRefit = "refit=OK"; // SPIKE-0B - REMOVE (submitted, not proven applied — read session=)
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             // Pre-8.1 / unsupported server — SmartSizing scales the image instead.
+            _spikeRefit = $"refit=FAILED {ex.GetType().Name}"; // SPIKE-0B - REMOVE
         }
     }
 
@@ -281,14 +298,17 @@ public partial class RdpSessionView : UserControl
         }
     }
 
-    /// <summary>The pane size in physical pixels — the remote desktop resolution to request (the control
-    /// renders in device pixels; WPF sizes are DIPs).</summary>
+    /// <summary>SPIKE-0B: the pane size in LOGICAL units (DIPs as-is, NOT multiplied by the DPI
+    /// scale) — the ZoomLevel design's framebuffer. The floor is scaled down (ceil(640/scale) x
+    /// ceil(480/scale)) so the zoomed minimum footprint matches the shipping 640x480 physical.
+    /// SHIPPING BODY (restore when the hack is dropped): DIPs x DpiScaleX/Y, floors 640/480.
+    /// MonitorPixelSize (full-screen) stays PHYSICAL and unchanged.</summary>
     private (int Width, int Height) RemotePixelSize()
     {
         var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
         return (
-            Math.Max(640, (int)Math.Round(HostContainer.ActualWidth * dpi.DpiScaleX)),
-            Math.Max(480, (int)Math.Round(HostContainer.ActualHeight * dpi.DpiScaleY)));
+            Math.Max((int)Math.Ceiling(640 / dpi.DpiScaleX), (int)Math.Round(HostContainer.ActualWidth)),
+            Math.Max((int)Math.Ceiling(480 / dpi.DpiScaleY), (int)Math.Round(HostContainer.ActualHeight)));
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -321,6 +341,24 @@ public partial class RdpSessionView : UserControl
     {
         _connected = true;
         SetStatus(RdpConnectionState.Connected, "Connected.");
+
+        // SPIKE-0B - REMOVE: apply client-side zoom post-login (documented as settable after the
+        // connection starts) and kick one settle so a resize that happened mid-connect (skipped by
+        // the Connected==1 guard) is applied now. Marshaled per the file's rule (events can arrive
+        // off the UI thread); the deferred body re-checks teardown state before touching COM.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null)
+            {
+                return;
+            }
+
+            ApplySpikeZoom(_spikeZoom);
+            (int width, int height) = RemotePixelSize();
+            UpdateSpikeDiag(width, height);
+            _resizeTimer.Stop();
+            _resizeTimer.Start();
+        });
     }
 
     private void OnRdpDisconnected(object? sender, IMsTscAxEvents_OnDisconnectedEvent e)
@@ -463,6 +501,60 @@ public partial class RdpSessionView : UserControl
             _vm.State = state;
             _vm.StatusText = text;
         });
+    }
+
+    // SPIKE-0B - REMOVE: sets ZoomLevel via the extended settings, then READS IT BACK — the strip
+    // reports request->read-back, never the submission alone (the refit lesson). Never throws.
+    private void ApplySpikeZoom(uint percent)
+    {
+        if (_rdp is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_rdp.GetOcx() is IMsRdpExtendedSettings ext)
+            {
+                object zoom = percent;
+                ext.set_Property("ZoomLevel", ref zoom);
+                object readBack = ext.get_Property("ZoomLevel");
+                _spikeZoomStatus = $"zoom={percent}->{readBack ?? "null"}";
+                _spikeZoom = percent;
+            }
+            else
+            {
+                _spikeZoomStatus = "zoom=FAILED no-IMsRdpExtendedSettings";
+            }
+        }
+        catch (Exception ex)
+        {
+            _spikeZoomStatus = $"zoom={percent}->FAILED {ex.GetType().Name}";
+        }
+    }
+
+    // SPIKE-0B - REMOVE: refreshes the diagnostic strip. session= is the OCX's own
+    // DesktopWidth/Height report read live — never the value we submitted.
+    private void UpdateSpikeDiag(int framebufferWidth, int framebufferHeight)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            string session = _rdp is null ? "?" : $"{_rdp.DesktopWidth}x{_rdp.DesktopHeight}";
+            SpikeDiag.Text =
+                $"paneDIPs={(int)HostContainer.ActualWidth}x{(int)HostContainer.ActualHeight}  " +
+                $"fb={framebufferWidth}x{framebufferHeight}  session={session}  {_spikeRefit}  {_spikeZoomStatus}";
+        });
+    }
+
+    // SPIKE-0B - REMOVE: live zoom-value probe (Q4) — ZoomLevel is documented changeable after connect.
+    private void OnSpikeApplyZoom(object sender, RoutedEventArgs e)
+    {
+        if (SpikeZoomCombo.SelectedItem is ComboBoxItem { Content: string s } && uint.TryParse(s, out uint percent))
+        {
+            ApplySpikeZoom(percent);
+            (int width, int height) = RemotePixelSize();
+            UpdateSpikeDiag(width, height);
+        }
     }
 
     /// <summary>Disconnects and tears the control down (called via Unloaded — see the ctor).</summary>

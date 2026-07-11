@@ -29,6 +29,24 @@
             </StackPanel>
         </Border>
 
+        <!-- SPIKE-0B - REMOVE: temporary diagnostic strip for the embedded ZoomLevel verification.
+             Docked ABOVE the host (WPF cannot render over the hosted HWND — airspace). -->
+        <Border DockPanel.Dock="Top" Padding="8,3" Background="#FFFFF3C4">
+            <DockPanel LastChildFill="True">
+                <ComboBox x:Name="SpikeZoomCombo" DockPanel.Dock="Right" Width="70" SelectedIndex="3">
+                    <ComboBoxItem Content="100" />
+                    <ComboBoxItem Content="125" />
+                    <ComboBoxItem Content="133" />
+                    <ComboBoxItem Content="150" />
+                    <ComboBoxItem Content="175" />
+                    <ComboBoxItem Content="225" />
+                </ComboBox>
+                <Button DockPanel.Dock="Right" Content="Apply zoom" Click="OnSpikeApplyZoom" Margin="6,0" Padding="8,2" />
+                <TextBlock x:Name="SpikeDiag" VerticalAlignment="Center" FontFamily="Consolas" FontSize="11"
+                           Foreground="#FF333333" Text="spike-0b: waiting for connect…" TextTrimming="CharacterEllipsis" />
+            </DockPanel>
+        </Border>
+
         <Grid x:Name="HostContainer" SizeChanged="OnHostContainerSizeChanged">
             <wfi:WindowsFormsHost x:Name="RdpHostElement" />
         </Grid>
