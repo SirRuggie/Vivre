@@ -36,7 +36,7 @@ public class SoftwareProbeRoutingTests
             new SoftwareProbe(host, reader).CheckAsync("NYC-FP1", "CrowdStrike", null, null, CancellationToken.None));
 
         // The message names BOTH transports so the operator sees the full picture — never a silent Found=false.
-        Assert.Contains("Kerberos", ex.Message);
+        Assert.Contains("WinRM", ex.Message);
         Assert.Contains("DCOM", ex.Message);
     }
 
@@ -74,14 +74,42 @@ public class SoftwareProbeRoutingTests
     }
 
     [Fact]
-    public async Task Non_kerberos_session_loss_does_not_reroute()
+    public async Task Session_loss_falls_back_to_dcom_and_surfaces_its_result()
     {
         var host = new ThrowingHost(new RemoteSessionLostException("NYC-FP1", new InvalidOperationException("dropped")));
-        var reader = new FakeReader { Result = new SoftwareCheckResult(true, "X", null, null) };
+        var reader = new FakeReader { Result = new SoftwareCheckResult(true, "CrowdStrike Windows Sensor", "7.18.0", "Running") };
+
+        SoftwareCheckResult r = await new SoftwareProbe(host, reader)
+            .CheckAsync("NYC-FP1", "CrowdStrike", "CSFalconService", null, CancellationToken.None);
+
+        Assert.True(reader.Called);
+        Assert.True(r.Found);
+        Assert.Equal("CrowdStrike Windows Sensor", r.Name);
+        Assert.Equal("7.18.0", r.Version);
+        Assert.Equal("Running", r.ServiceState);
+    }
+
+    [Fact]
+    public async Task Session_loss_then_dcom_failure_throws_naming_both_transports()
+    {
+        var host = new ThrowingHost(new RemoteSessionLostException("NYC-FP1", new InvalidOperationException("dropped")));
+        var reader = new ThrowingReader(new SoftwareProbeException("StdRegProv GetStringValue returned 5"));
+
+        SoftwareProbeException ex = await Assert.ThrowsAsync<SoftwareProbeException>(() =>
+            new SoftwareProbe(host, reader).CheckAsync("NYC-FP1", "CrowdStrike", null, null, CancellationToken.None));
+
+        // The message names BOTH transports so the operator sees the full picture — never a silent Found=false.
+        Assert.Contains("WinRM", ex.Message);
+        Assert.Contains("DCOM", ex.Message);
+    }
+
+    [Fact]
+    public async Task Session_loss_with_no_reader_propagates_unchanged()
+    {
+        var host = new ThrowingHost(new RemoteSessionLostException("NYC-FP1", new InvalidOperationException("dropped")));
 
         await Assert.ThrowsAsync<RemoteSessionLostException>(() =>
-            new SoftwareProbe(host, reader).CheckAsync("NYC-FP1", "X", null, null, CancellationToken.None));
-        Assert.False(reader.Called);
+            new SoftwareProbe(host).CheckAsync("NYC-FP1", "CrowdStrike", null, null, CancellationToken.None));
     }
 
     private static PSExecutionResult Row(params (string Name, object? Value)[] properties)

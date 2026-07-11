@@ -15,6 +15,10 @@ it ships, then gets a dated heading.
   faked as "not found".
 
 ### Changed
+- **The software check's backup channel now covers any WinRM failure, not just Kerberos.** If WinRM is
+  unavailable for any reason — service stopped, misconfigured, session dropped, or Kerberos-rejected —
+  "Check software…" falls back to the same read-only DCOM channel and still fills in the Software column.
+  The answer is identical no matter which transport responds; you never see which one was used.
 - **When an action can't run because WinRM is broken on a Kerberos-rejected box, the error message now
   points out that the software check still works there.** Health checks, custom columns, SCCM client
   actions and scripts add a short note that "Check software…" reads over the DCOM backup channel on

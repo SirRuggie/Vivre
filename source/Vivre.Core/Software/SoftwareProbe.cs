@@ -12,11 +12,11 @@ namespace Vivre.Core.Software;
 /// emitted as a raw object and read via its properties — never <c>ConvertTo-Json</c> (a JSON string has
 /// no properties to read).
 /// <para>
-/// When an <see cref="IDcomSoftwareReader"/> is supplied and WinRM is rejected with Kerberos error
-/// 0x80090322, the probe falls back to a read-only DCOM registry read (like <see cref="Vitals.VitalsProbe"/>)
-/// so the column shows a real answer on a Kerberos-broken box. If DCOM also fails the error carries both
-/// transports. Kerberos-only by design: any other WinRM failure (e.g.
-/// <see cref="RemoteSessionLostException"/>) propagates unchanged.
+/// When an <see cref="IDcomSoftwareReader"/> is supplied and WinRM is unavailable — any failure the
+/// <see cref="RemoteFailureClassifier.IsWinRmUnavailable"/> classifier matches (a Kerberos 0x80090322
+/// rejection, WinRM stopped/misconfigured, or a lost session) — the probe falls back to a read-only DCOM
+/// registry read (like <see cref="Vitals.VitalsProbe"/>) so the column shows a real answer instead of an
+/// error. If DCOM also fails the error names both transports.
 /// </para>
 /// </remarks>
 public sealed class SoftwareProbe : ISoftwareProbe
@@ -50,14 +50,15 @@ public sealed class SoftwareProbe : ISoftwareProbe
                 : await _powerShell.RunRemoteAsync(host, script, credential, cancellationToken: cancellationToken)
                     .ConfigureAwait(false);
         }
-        catch (KerberosWrongPrincipalException) when (_dcomReader is not null && !HostName.IsLocal(host))
+        catch (Exception ex) when (ex.IsWinRmUnavailable() && _dcomReader is not null && !HostName.IsLocal(host))
         {
-            // WinRM rejected Kerberos (0x80090322) on this box — the routing host has flipped it to the
-            // SMB/DCOM transport. Read the installed-software answer over the read-only DCOM registry
-            // channel so the column shows a real verdict instead of an error, on the ambient Windows login
-            // (the alternate credential applies to the WinRM path only). Kerberos-only by design: a
-            // non-Kerberos WinRM failure (e.g. RemoteSessionLostException) is NOT caught here and still
-            // propagates to the VM. If DCOM also fails, the error names BOTH transports.
+            // WinRM is unavailable on this box — any failure the IsWinRmUnavailable classifier matches (a
+            // Kerberos 0x80090322 rejection, WinRM stopped/misconfigured, or a lost session) reroutes here.
+            // Read the installed-software answer over the read-only DCOM registry channel so the column shows
+            // a real verdict instead of an error, on the ambient Windows login (the alternate credential
+            // applies to the WinRM path only). The result is identical to a healthy WinRM read — the operator
+            // never sees which transport answered. OperationCanceledException rethrows first; if DCOM also
+            // fails, the error names BOTH transports.
             try
             {
                 return await _dcomReader
@@ -71,7 +72,7 @@ public sealed class SoftwareProbe : ISoftwareProbe
             catch (Exception dcomEx)
             {
                 throw new SoftwareProbeException(
-                    "WinRM rejected Kerberos on this box and the DCOM fallback also failed: " + dcomEx.Message);
+                    "WinRM was unavailable on this box and the DCOM fallback also failed: " + dcomEx.Message);
             }
         }
 
