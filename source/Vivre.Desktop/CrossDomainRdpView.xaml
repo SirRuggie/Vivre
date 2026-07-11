@@ -72,6 +72,8 @@
                             <MenuItem Header="Connect" Click="OnContextConnect">
                                 <MenuItem.Icon><ui:SymbolIcon Symbol="PlugConnected24" /></MenuItem.Icon>
                             </MenuItem>
+                            <!-- SPIKE - REMOVE (Path 2 step 0): temporary pop-out DPI spike launcher. -->
+                            <MenuItem Header="Connect (pop-out spike)" Click="OnContextConnectSpike" />
                             <Separator />
                             <MenuItem Header="New folder" Click="OnAddFolder">
                                 <MenuItem.Icon><ui:SymbolIcon Symbol="FolderAdd24" /></MenuItem.Icon>

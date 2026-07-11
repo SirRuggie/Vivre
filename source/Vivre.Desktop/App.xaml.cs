@@ -38,6 +38,10 @@ public partial class App : Application
         // the app's concurrency caps (the sweep / monitor / per-host / install throttles still bound how many run).
         System.Threading.ThreadPool.SetMinThreads(64, 64);
 
+        // Required for the RDP pop-out (Path 2): forwards keyboard messages to modeless WinForms
+        // Forms opened from this WPF app (the spike window; later the real session windows).
+        System.Windows.Forms.Integration.WindowsFormsHost.EnableWindowsFormsInterop();
+
 #if DEBUG
         // Catch off-thread writes to a grid live-filtered property (UpdatePhase/RebootRequired → PatchState)
         // loudly, with the offending property name, instead of as an opaque "calling thread cannot access this

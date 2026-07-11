@@ -146,6 +146,39 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         return true;
     }
 
+    // SPIKE - REMOVE (Path 2 step 0): resolves a host's connection settings for the throwaway
+    // pop-out DPI spike, mirroring ConnectTo's resolve/error handling without opening a session
+    // tab. The spike window receives the already-resolved bundle — resolution stays HERE.
+    public (RdpConnectionSettings Settings, string Name)? ResolveForSpike(RdpHostNodeViewModel hostNode)
+    {
+        RdpHost host = hostNode.Host;
+        if (string.IsNullOrWhiteSpace(host.Server))
+        {
+            _activity.Warn(null, $"{hostNode.Name} has no server address — edit it first.");
+            return null;
+        }
+
+        RdpConnectionSettings? settings;
+        try
+        {
+            settings = _creds.Resolve(host, RdpTree.AncestorsOf(_tree, host));
+        }
+        catch (Exception ex)
+        {
+            _activity.Error(host.Server, $"Couldn't read saved credentials for {hostNode.Name}: {ex.Message}");
+            return null;
+        }
+
+        if (settings is null)
+        {
+            _activity.Warn(host.Server, $"No saved credentials for '{hostNode.Name}' — right-click the host and choose Edit… to add a login.");
+            return null;
+        }
+
+        _activity.Info(host.Server, $"Opening pop-out spike to {hostNode.Name} ({host.Server}).");
+        return (settings, hostNode.Name);
+    }
+
     private bool HasSelectedSession => SelectedSession is not null;
 
     [RelayCommand(CanExecute = nameof(HasSelectedSession))]

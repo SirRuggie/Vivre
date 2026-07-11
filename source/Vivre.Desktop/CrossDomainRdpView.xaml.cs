@@ -72,6 +72,18 @@ public partial class CrossDomainRdpView : UserControl
         }
     }
 
+    // SPIKE - REMOVE (Path 2 step 0): launches the throwaway pop-out DPI spike window for the
+    // selected host, reusing the VM's existing credential resolution (no-creds/errors go to the
+    // activity log; no dialog for the spike).
+    private void OnContextConnectSpike(object sender, RoutedEventArgs e)
+    {
+        if (Vm is { SelectedNode: RdpHostNodeViewModel host }
+            && Vm.ResolveForSpike(host) is { } resolved)
+        {
+            Rdp.RdpPopoutSpike.Launch(resolved.Name, resolved.Settings);
+        }
+    }
+
     /// <summary>
     /// Calls <see cref="CrossDomainRdpViewModel.ConnectTo"/> and, when it returns false (no saved
     /// credentials), shows a message box pointing the user to the Edit… menu item.
