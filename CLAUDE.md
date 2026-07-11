@@ -63,7 +63,9 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
     version was dropped — watching an install over a session that EDR agents tear down mid-install
     proved unreliable; delivering files and letting the admin's scripts install is robust),
     `Software` (`SoftwareProbe` — check whether a named product is installed per machine → the grid's
-    Software column; registry-based, read-only),
+    Software column; registry-based, read-only. On any WinRM-unavailable failure it falls back to a
+    read-only StdRegProv/DCOM read (`DcomSoftwareReader`, ambient login) — see
+    docs/key-file-path-map.md ▸ "Software check" for the load-bearing RV rules),
     `Columns` (`CustomColumnProbe` — run a user PowerShell one-liner per machine → a custom grid column;
     the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData),
     `Wug` (`WugMaintenance` — WhatsUp Gold maintenance: the enter/exit set plus the read-only

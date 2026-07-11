@@ -137,6 +137,24 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
 - **Live-confirmed end to end** (10.70.25.111): Test connection → "Connected ✓"; Set → row narrates
   "WhatsUp Gold: maintenance ON/OFF"; and the device shows **Maintenance** state in WUG's own console.
 
+## Software check (installed-software column) — WinRM + DCOM fallback
+- `source/Vivre.Core/Software/SoftwareProbe.cs` — the WinRM-first probe (registry Uninstall hives via
+  a PS script; never `Win32_Product`). On ANY `IsWinRmUnavailable` failure (Kerberos 0x80090322,
+  WinRM stopped, session lost) it reroutes to the injected `IDcomSoftwareReader` (à la `VitalsProbe`);
+  if DCOM also fails it throws naming BOTH transports — never a fabricated "not found".
+- `DcomSoftwareReader.cs` — read-only StdRegProv-over-DCOM read of the SAME Uninstall hives, ambient
+  login only. **Load-bearing RV rules (do NOT copy `DcomLcuBuildReader.InvokeRegRead`, which lumps
+  RV=5 into null):** EnumKey RV=0 → enumerate (null `sNames` = benign empty), RV=2 → hive absent
+  (benign), RV=5/other → THROW; `Found=false` is legal only when every hive ∈ {0,2} with ≥1
+  enumerated. OperationCanceledException rethrows FIRST at every layer (a timeout must surface as
+  "check timed out", never "both transports failed"). Structure = `DcomLcuBuildReader`, NEVER
+  `DcomVitalsProbe`'s swallow-to-null (Found is a bool that paints the cell red).
+- `SoftwareShaping.cs` — pure parity seams: `Match` (DisplayName-OR-Publisher ordinal contains,
+  DisplayName-sorted first), `MatchAcrossHives` (first hive with any match wins — never concat+sort),
+  `NormalizeServiceState` (Win32_Service "Start Pending" → Get-Service "StartPending").
+- VM: `CheckSoftwareRowAsync` gates on `IsGenuinelyOfflineAsync` first (both ping AND ambient DCOM
+  dead → clean "Offline" cell, no connection attempt).
+
 ## On-box agent
 - `source/Vivre.UpdateAgent/Program.cs` — the agent. `AddPackage` mode (DISM-add as SYSTEM, stream %, RebootPending success-check) and `Cleanup` mode. **REBOOT-FREE at the root** — the latent self-reboot + RebootAfter/RebootBehavior plumbing was excised; a grep finds zero shutdown/restart calls.
 - `BootBusyGuard.cs`, `BootServicingState.cs`, `Callbacks.cs` — agent boot/servicing-state helpers.
@@ -184,7 +202,7 @@ stale/empty, so the test box launched OLD code while everyone believed it was fr
   path, but useful when a deploy looks off.
 
 ## Desktop / UI
-- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), `UnscannedStageTargets()` (returns 2016 targets that haven't been scanned this session — used by the Stage scan-gate), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `CheckWugStateAsync` / `GetWugMaintenanceStateAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too.
+- `ViewModels/WorkspaceViewModel.cs` — the big VM. `InstallRowAsync` (routing inserts at the top), the LCU panel commands, `RebootAndVerifyCommand` (fleet-wide reboot-and-verify on the selected boxes — routes per box via `LcuRouting.RebootVerifyLaneFor`), `UnscannedStageTargets()` (returns 2016 targets that haven't been scanned this session — used by the Stage scan-gate), the filter enum/predicate, the two-bucket completion summary, `_appSettings` access. Also `OnIsUpdateModeChanged` (Health/Patching mode flip + the patch-only-filter reset when entering Health). WUG callers `SetWugMaintenanceAsync` / `CheckWugStateAsync` / `GetWugMaintenanceStateAsync` / `TestWugConnectionAsync` / `InstallWugModuleAsync` live here too. Custom-column sweeps register in `_customColumnSweeps` (CTS + captured spec names, via `RunSweepAsync`'s `onBegin` callback) so `RemoveCustomColumn` cancels a sweep whose every spec is gone; `WrapWithCompletion` does not count cancelled rows (the N/M counter freezes on Stop).
   - `RebootWaveRowAsync` — per-box reboot-and-verify step (routes by `LcuRouting.RebootVerifyLaneFor`; calls `RebootWaveLcuAsync` or `RebootWaveWuaAsync`; post-wave calls `ReportPostRebootOutcomeAsync`).
   - `ReportPostRebootOutcomeAsync` — post-reboot rescan: read-only `ScanAsync` + reboot-pending probe → `RebootOutcomeSelector.Select` → outcome string. Never triggers Install/Uninstall/Reboot.
   - `_waveThrottle` — static `SemaphoreSlim(256)`; concurrency width for the per-box offline-watch loops. Effectively unbounded so all selected boxes watch in parallel — the reboot-and-verify wave uses this (NOT the install/stage `_patchThrottle`), so a slow box's long commit never blocks a fast box's verify/report.
@@ -252,19 +270,24 @@ direction from the crash.
 
 ## Pure decision helpers (Vivre.Core/Updates)
 Extracted UI/IO-free predicates, each unit-tested:
+- `SoftwareShaping` (Vivre.Core/Software) — the software check's match/sort/service-state parity seams (see the Software check section above).
 - `RebootVerifyMenu.ShouldOfferRebootVerify(Computer, bool isUpdateMode)` — per-row visibility of the right-click **Reboot & verify…** item.
 - `Lcu2016RowState` — maps terminal/in-flight agent status onto a 2016 staged-patching grid row; enforces the load-bearing **Deferred ≠ Staged** invariant.
 - `ScopeToggleRule` — on the Applicable/Installed scope-toggle, preserves a row's existing message for terminal + in-flight states instead of swapping in the target scope's cached scan message.
 - `ComponentCleanupClassifier` / `ComponentCleanupMessages` — 2016 component-cleanup outcomes, incl. the `CleanedFilesLocked` access-denied case (DISM exit 5 = EDR/AV holding WinSxS handles → neutral **Cleaned**, not red).
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **760 green** (as of 2026-07-10, release 1.14.5) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **786 green** (as of 2026-07-11, release 1.14.6) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
   `PatchPhase.Unreachable`→Error mapping; +10 WUG maintenance-state parse tests in `3f8ada1` —
   `WugMaintenanceStateParseTests`: tri-state true/false/null, single-object `devices` shape, marker
-  extraction, case-insensitive keys, fail-open on malformed/empty output). Includes the wave behavior tests
+  extraction, case-insensitive keys, fail-open on malformed/empty output; +26 software-DCOM-fallback
+  tests in `f4fad69`/`fa837e6` — `SoftwareShapingTests` (name/publisher match, cross-match-type sort,
+  hive precedence, empty-≠-failed, service-state normalization) + `SoftwareProbeRoutingTests`
+  (Kerberos AND session-loss reroute to DCOM, double-failure throws naming both transports — never a
+  false Found=false, OCE propagates unwrapped, no-reader passthrough)). Includes the wave behavior tests
   (graceful→forced, not-ready refusal, rollback=red, late-return-still-verifies-green, never-returns=red,
   **per-box independence**, **reboot-gate enter/release**), the LCU classifier + `RebootVerifyLaneFor`
   routing tests, the `RebootOutcomeSelector` + `ReadyConfirmation` tests, the phase→state mapping tests,

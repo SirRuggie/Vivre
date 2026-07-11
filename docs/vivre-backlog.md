@@ -3,15 +3,16 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-10** (release **1.14.5** cut. The session's four commits —
-> all WUG/UX: `e2946de` Reason field hidden when exiting WUG maintenance; `3f8ada1` read current WUG
-> maintenance state (the Core read path + parse tests, first surfaced as a dialog button); `9569cec`
-> WUG state check moved to a grid right-click action (new `WugStateWindow`; the interim dialog button
-> removed); `afe4be9` Patching command column header renamed to "Command result". **Suite is 760 green
-> across all four** — the +10 WUG state-parse tests landed in `3f8ada1`; no other commit touched tests.)
+> not a mandate). Last refreshed: **2026-07-11** (release **1.14.6** cut. The session's seven commits:
+> `f4fad69` software check falls back to DCOM on Kerberos-broken boxes (+24 tests); `50a0ab4` WinRM
+> dead-end messages point at the software check (Kerberos-gated); `1d19298` software check shows
+> "Offline" on genuinely-offline boxes; `fa837e6` the DCOM fallback broadened to ANY WinRM-unavailable
+> failure (+2 tests); `b534c6b` 8px horizontal cell padding in both fleet grids; `7b1f5d1`
+> custom-column sweep cancels on removal + honest Stop counting; `413fb9d` full in-app-guide accuracy
+> sweep. **Suite is 786 green** (760 → 784 in `f4fad69`, → 786 in `fa837e6`).)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 760 green).**
+> are point-in-time only (current suite is 786 green).**
 
 ---
 
@@ -28,11 +29,16 @@ the audit-adjacent install wall-clock incident (`12a5e36`), the TriggerSchedule 
 LastBootTime trio (`d600009`), the atomic computer-list save (`1add64f`), and the session-found
 users-online false-green (`f26a7c4`).
 
-**Still open** (neither is day-to-day work — no urgent items remain):
+**Still open** (none is day-to-day work — no urgent items remain):
 1. **Credentialed WinRM blocked by ambient Kerberos rejection** — `RoutingPowerShellHost.cs:59`
    fast-fails before the credential parameter is consulted; the cache has no eviction or credential
    dimension. Research-first, remoting-cache zone. PARKED until it bites in practice.
 2. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
+3. **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — the toolbar
+   Stop's `IsEnabled="{Binding SelectedTab.IsBusy}"` (MainWindow.xaml:436) defeats `CanStop()`'s
+   monitor-only intent, and the Monitor tooltip repeats the claim ("Stop halts it"). The help now
+   documents the truth (the Monitor toggle is the only way to pause monitoring); the app-side fix
+   (rebind Stop's IsEnabled to the command, or reword the tooltip) is a separate decision. PARKED.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
@@ -216,6 +222,46 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **`413fb9d` — in-app guide accuracy sweep** (2026-07-11, release 1.14.6). Four-worker audit of every
+  Help topic against the code: mode-specific filter-chip lists, the bottom panel's toggle-only opening,
+  real button labels (Scan all / Install all, full client-action names), honest install targeting
+  ("No updates selected" skip), the vitality rubric's −12 WinRM-degraded penalty + amber floor, the
+  reboot-wave truth (8/20-min escalation, ~4½-h no-longer-tracking cap, flagged-only UBR verify, two
+  missing outcome strings), Monitor on-by-default (and Stop doesn't stop it), custom-column cancel +
+  reboot-service housekeeping now covered. Also fixed the stale "Actions ▾" code comment and the
+  MaintenanceWindow intro (name-then-IP). Tests unchanged (786).
+- **`7b1f5d1` — custom-column sweep cancels on removal and counts honestly** (2026-07-11; 3 workers +
+  1 red-team). Root causes: `RemoveCustomColumn` had no cancellation path (the snapshot sweep ran to
+  completion) and `WrapWithCompletion` counted cancelled rows (counter raced to N on Stop). Now: a
+  `_customColumnSweeps` registry (CTS + captured spec names via `RunSweepAsync`'s new `onBegin`
+  callback; unregistered by reference identity) lets removal cancel any sweep whose EVERY spec is gone
+  (partial removal keeps filling the rest); a live-spec guard stops writes to removed columns; stopped
+  cells show "cancelled"; and cancelled rows no longer increment any sweep's counter (freezes on Stop —
+  display-only, red-team-verified). No Desktop test home; tests unchanged (786).
+- **`b534c6b` — horizontal cell padding in the fleet grids** (2026-07-11). One shared `GridCellStyle`
+  (BasedOn the WPF-UI default, Padding 8,0 — the library default is 6,0 and its cell template binds
+  Padding) on both grids; cell text now aligns with the 8px-padded headers. Zero persistence risk (the
+  Columns manager keys off ComputerGrid headers only). Tests unchanged (786).
+- **`fa837e6` — software DCOM fallback covers ALL WinRM failures** (2026-07-11). The `f4fad69` catch
+  broadened from Kerberos-only to the full `IsWinRmUnavailable` classifier (service stopped, session
+  lost); the double-failure message generalized to "WinRM was unavailable…". +2 routing tests — suite
+  784 → 786. Smoke target: AZRADMANPLUS (WinRM dead, DCOM alive).
+- **`1d19298` — software check shows "Offline" on genuinely-offline boxes** (2026-07-11). The check
+  gates on `IsGenuinelyOfflineAsync` (fresh ping + ambient DCOM — never stale `IsOnline`) like the
+  custom-columns probe: both channels dead → clean "Offline" cell, no connection timeout, no misleading
+  "WinRM unavailable"; refills normally on the next check. Tests unchanged (784).
+- **`50a0ab4` — WinRM dead-end messages point at the software check** (2026-07-11). Custom columns,
+  health checks and SCCM client actions (LastError + activity line — never the status cells) and Run
+  Script (type-conditional) gain the `WinRmDeadEnd.SoftwareRedirect` suffix, gated to
+  `KerberosWrongPrincipalException` only (session-loss is transient; a broad gate could point at a
+  co-failing feature). Tests unchanged (784).
+- **`f4fad69` — software check falls back to DCOM on Kerberos-broken boxes** (2026-07-11; 5 workers +
+  2 red-teams). New pure `SoftwareShaping` (Match / MatchAcrossHives / NormalizeServiceState parity
+  seams) + `DcomSoftwareReader` (StdRegProv over DCOM against the SAME Uninstall hives the WinRM script
+  reads; `DcomLcuBuildReader` structure — never the vitals swallow-to-null: RV=0 enumerate, RV=2
+  benign-absent, RV=5/other THROWS; Found=false only when every hive ∈ {0,2} with ≥1 enumerated; OCE
+  rethrows first at every layer) injected into `SoftwareProbe` à la `VitalsProbe`; ambient login only,
+  `Win32_Product` stays banned. +24 tests (18 shaping + 6 routing) — suite 760 → 784.
 - **`afe4be9` — Patching command column header renamed to "Command result"** (2026-07-10, release
   1.14.5), matching the Health grid (both columns bind the same per-row command output). Display
   string only — the Columns manager persists Health-grid headers exclusively, so no saved layout was

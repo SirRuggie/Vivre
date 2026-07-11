@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.14.6 — 2026-07-11
+
 ### Added
 - **The software check now works on Kerberos-broken boxes.** On a machine where WinRM refuses the
   fast Kerberos login, "Check software…" no longer just fails — it falls back to the same read-only
