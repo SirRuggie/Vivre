@@ -23,6 +23,9 @@ it ships, then gets a dated heading.
   points out that the software check still works there.** Health checks, custom columns, SCCM client
   actions and scripts add a short note that "Check software…" reads over the DCOM backup channel on
   these boxes — so you're pointed at what still works instead of a plain dead-end.
+- **Grid text now has a little breathing room from the cell edges in the Health and Patching grids.**
+  Adjacent columns (Software, Command result, Last error, …) no longer read as one run-on line, and
+  cell text lines up with the column headers.
 
 ### Fixed
 - **A software check against a box that is fully offline now shows "Offline" instead of "WinRM

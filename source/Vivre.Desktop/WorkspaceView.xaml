@@ -30,6 +30,13 @@
         <Style x:Key="GridRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource DefaultDataGridRowStyle}">
             <Setter Property="MinHeight" Value="36" />
         </Style>
+        <!-- 8px horizontal cell padding: gives text breathing room from the cell edge (the WPF-UI
+             default is 6,0) and aligns cell text with the 8px-padded headers. BasedOn keeps the
+             library's cell template + selection visuals; its template binds Padding, so this value
+             actually renders. -->
+        <Style x:Key="GridCellStyle" TargetType="DataGridCell" BasedOn="{StaticResource DefaultDataGridCellStyle}">
+            <Setter Property="Padding" Value="8,0" />
+        </Style>
         <Style x:Key="GridColumnHeaderStyle" TargetType="DataGridColumnHeader">
             <Setter Property="HorizontalContentAlignment" Value="Left" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
@@ -614,6 +621,7 @@
                      HeadersVisibility="Column"
                      RowStyle="{StaticResource GridRowStyle}"
                      ColumnHeaderStyle="{StaticResource GridColumnHeaderStyle}"
+                     CellStyle="{StaticResource GridCellStyle}"
                      SelectionMode="Extended"
                      SelectionUnit="FullRow"
                      ClipboardCopyMode="IncludeHeader"
@@ -778,6 +786,7 @@
                      HorizontalGridLinesBrush="{DynamicResource DividerStrokeColorDefaultBrush}"
                      RowStyle="{StaticResource GridRowStyle}"
                      ColumnHeaderStyle="{StaticResource GridColumnHeaderStyle}"
+                     CellStyle="{StaticResource GridCellStyle}"
                      HeadersVisibility="Column"
                      SelectionMode="Extended"
                      SelectionUnit="FullRow"
