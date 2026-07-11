@@ -29,8 +29,12 @@ internal enum SpikeDpiContext
     UnawareGdiScaled,
 }
 
-/// <summary>The pre-launch toggles. Context is fixed at HWND creation, so all are chosen before launch.</summary>
-internal sealed record RdpPopoutSpikeOptions(SpikeDpiContext Context, bool LogicalFramebuffer, bool SmartSizing);
+/// <summary>The pre-launch toggles. Context is fixed at HWND creation, so all are chosen before launch.
+/// <see cref="ZoomLevel150"/> is the round-4 variant: the OCX's own documented client-side Zoom
+/// (mstsc's System-menu Zoom) at 150% in a plain System-Aware window — no DPI trickery. It is
+/// mutually exclusive with SmartSizing per the Microsoft docs, and only meaningful with
+/// <see cref="SpikeDpiContext.InheritSystemAware"/> (the chooser enforces both).</summary>
+internal sealed record RdpPopoutSpikeOptions(SpikeDpiContext Context, bool LogicalFramebuffer, bool SmartSizing, bool ZoomLevel150);
 
 /// <summary>
 /// SPIKE - REMOVE (Path 2 step 0): a bare top-level WinForms window hosting the RDP OCX, connect
@@ -75,6 +79,7 @@ public sealed class RdpPopoutSpike : Form
     private bool _connectStarted;
     private bool _closing; // tearing the control down ourselves — ignore its own disconnect event
     private string _refitStatus = "refit=none"; // last UpdateSessionDisplaySettings outcome, shown on the strip
+    private string _zoomStatus = "zoom=off";    // last ZoomLevel set + READ-BACK outcome, shown on the strip
 
     /// <summary>Shows the variant chooser, then creates the spike window under the chosen thread
     /// DPI context and restores the context immediately after. Called from the temporary tree
@@ -295,11 +300,19 @@ public sealed class RdpPopoutSpike : Form
             _refitStatus = $"refit=FAILED {ex.GetType().Name} 0x{ex.HResult:X8}";
         }
 
+        // Re-assert the zoom after a re-fit (idempotent) so a session resize can't silently drop it,
+        // and re-read it back so the strip stays truthful.
+        if (_options.ZoomLevel150)
+        {
+            ApplyZoom();
+        }
+
         UpdateReadout(width, height);
     }
 
     private string VariantText =>
-        $"ctx={_options.Context}  fb={(_options.LogicalFramebuffer ? "logical" : "physical")}  smart={(_options.SmartSizing ? "on" : "off")}";
+        $"ctx={_options.Context}  fb={(_options.LogicalFramebuffer ? "logical" : "physical")}  smart={(_options.SmartSizing ? "on" : "off")}  " +
+        $"zoom={(_options.ZoomLevel150 ? "150" : "off")}";
 
     private void UpdateReadout(int framebufferWidth, int framebufferHeight)
     {
@@ -308,11 +321,14 @@ public sealed class RdpPopoutSpike : Form
             // session= is the OCX's own DesktopWidth/Height read-back — "framebuffer" is only what
             // we REQUESTED (round 2 conflated the two); the visual is still the arbiter of fill.
             string session = _rdp is null ? "session=?" : $"session={_rdp.DesktopWidth}x{_rdp.DesktopHeight}";
+            // With zoom active, session STAYING at the logical size while the IMAGE fills the
+            // physical window is the SIGNATURE OF SUCCESS (client-side scale), not a stale session.
+            string zoomNote = _options.ZoomLevel150 ? "  [session=logical is EXPECTED with zoom — image at 1.5x = SUCCESS]" : string.Empty;
             _readout.Text =
                 $"{(_contextSwitchFailed ? "CONTEXT SWITCH FAILED!  " : string.Empty)}{VariantText}  |  " +
                 $"hwndCtx={WindowContextName()}  windowDpi={WindowDpi()}  DeviceDpi={DeviceDpi}  |  " +
                 $"ClientSize={ClientSize.Width}x{ClientSize.Height}  panel={_hostPanel.ClientSize.Width}x{_hostPanel.ClientSize.Height}  |  " +
-                $"framebuffer {framebufferWidth}x{framebufferHeight}  {session}  {_refitStatus}";
+                $"framebuffer {framebufferWidth}x{framebufferHeight}  {session}  {_refitStatus}  {_zoomStatus}{zoomNote}";
         });
     }
 
@@ -320,12 +336,49 @@ public sealed class RdpPopoutSpike : Form
         OnUi(() =>
         {
             Text = $"{_hostName} — pop-out spike (connected)";
+            // ZoomLevel is documented as settable AFTER the connection starts — apply it post-login.
+            if (_options.ZoomLevel150)
+            {
+                ApplyZoom();
+            }
+
             // Kick one settle now that Connected == 1: applies any resize that happened during the
             // connect handshake (which the settle guard correctly skips), and exercises the re-fit
             // once per run so refit=OK/FAILED always appears on the strip.
             _resizeTimer.Stop();
             _resizeTimer.Start();
         });
+
+    /// <summary>Sets ZoomLevel=150 via the extended settings, then READS IT BACK — the refit lesson:
+    /// a call returning cleanly only means "submitted", so the strip reports the read-back value,
+    /// never the submission. Sets <see cref="_zoomStatus"/>; the caller refreshes the readout.</summary>
+    private void ApplyZoom()
+    {
+        if (_rdp is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_rdp.GetOcx() is not IMsRdpExtendedSettings ext)
+            {
+                _zoomStatus = "zoom=FAILED no-IMsRdpExtendedSettings";
+                return;
+            }
+
+            object zoom = 150u;
+            ext.set_Property("ZoomLevel", ref zoom);
+            object readBack = ext.get_Property("ZoomLevel");
+            _zoomStatus = readBack is uint applied && applied == 150u
+                ? "zoom=OK(reads-back 150)"
+                : $"zoom=SET-BUT-READS-BACK({readBack ?? "null"})";
+        }
+        catch (Exception ex)
+        {
+            _zoomStatus = $"zoom=FAILED {ex.GetType().Name} 0x{ex.HResult:X8}";
+        }
+    }
 
     private void OnRdpDisconnected(object? sender, IMsTscAxEvents_OnDisconnectedEvent e)
     {
@@ -416,6 +469,7 @@ internal sealed class RdpPopoutSpikeChooser : Form
     private readonly RadioButton _unawareGdi;
     private readonly CheckBox _logical;
     private readonly CheckBox _smartSizing;
+    private readonly CheckBox _zoom;
 
     public RdpPopoutSpikeChooser()
     {
@@ -424,29 +478,45 @@ internal sealed class RdpPopoutSpikeChooser : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(360, 250);
+        ClientSize = new Size(360, 280);
 
         var contextLabel = new Label { Text = "Thread DPI context (at window creation):", Left = 12, Top = 12, Width = 330 };
         _inherit = new RadioButton { Text = "Inherit (System-Aware) — control variant", Left = 24, Top = 34, Width = 320 };
-        _unaware = new RadioButton { Text = "UNAWARE — the mRemoteNG analog", Left = 24, Top = 57, Width = 320, Checked = true };
-        _unawareGdi = new RadioButton { Text = "UNAWARE_GDISCALED", Left = 24, Top = 80, Width = 320 };
+        _unaware = new RadioButton { Text = "UNAWARE (dead end — kept until verdict)", Left = 24, Top = 57, Width = 320 };
+        _unawareGdi = new RadioButton { Text = "UNAWARE_GDISCALED (dead end — kept until verdict)", Left = 24, Top = 80, Width = 320 };
 
         _logical = new CheckBox { Text = "Logical framebuffer (ClientSize in the window's units)", Left = 12, Top = 112, Width = 340, Checked = true };
         _smartSizing = new CheckBox { Text = "SmartSizing", Left = 12, Top = 137, Width = 340, Checked = false };
+        // Round 4: the OCX's own documented client-side Zoom. Mutually exclusive with SmartSizing
+        // (Microsoft docs) and only meaningful in a System-Aware window — enforced below.
+        _zoom = new CheckBox { Text = "ZoomLevel = 150 (client-side zoom; System-Aware, no SmartSizing)", Left = 12, Top = 162, Width = 340, Checked = true };
+        _inherit.Checked = true; // default = the round-4 zoom variant
+
+        _zoom.CheckedChanged += (_, _) =>
+        {
+            if (_zoom.Checked)
+            {
+                _inherit.Checked = true;
+                _smartSizing.Checked = false;
+            }
+
+            _unaware.Enabled = _unawareGdi.Enabled = _smartSizing.Enabled = !_zoom.Checked;
+        };
+        _unaware.Enabled = _unawareGdi.Enabled = _smartSizing.Enabled = false; // zoom is checked by default
 
         var note = new Label
         {
             Text = "Session scale is pinned to 100% in every variant (FCM-safe).",
-            Left = 12, Top = 165, Width = 340, Height = 30,
+            Left = 12, Top = 192, Width = 340, Height = 30,
             ForeColor = SystemColors.GrayText,
         };
 
-        var ok = new Button { Text = "Launch", DialogResult = DialogResult.OK, Left = 184, Top = 205, Width = 80 };
-        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 272, Top = 205, Width = 80 };
+        var ok = new Button { Text = "Launch", DialogResult = DialogResult.OK, Left = 184, Top = 235, Width = 80 };
+        var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel, Left = 272, Top = 235, Width = 80 };
         AcceptButton = ok;
         CancelButton = cancel;
 
-        Controls.AddRange([contextLabel, _inherit, _unaware, _unawareGdi, _logical, _smartSizing, note, ok, cancel]);
+        Controls.AddRange([contextLabel, _inherit, _unaware, _unawareGdi, _logical, _smartSizing, _zoom, note, ok, cancel]);
     }
 
     public RdpPopoutSpikeOptions Options => new(
@@ -454,5 +524,6 @@ internal sealed class RdpPopoutSpikeChooser : Form
         : _unawareGdi.Checked ? SpikeDpiContext.UnawareGdiScaled
         : SpikeDpiContext.InheritSystemAware,
         _logical.Checked,
-        _smartSizing.Checked);
+        _smartSizing.Checked,
+        _zoom.Checked);
 }
