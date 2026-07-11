@@ -74,6 +74,7 @@ public sealed class RdpPopoutSpike : Form
     private readonly bool _contextSwitchFailed;
     private bool _connectStarted;
     private bool _closing; // tearing the control down ourselves — ignore its own disconnect event
+    private string _refitStatus = "refit=none"; // last UpdateSessionDisplaySettings outcome, shown on the strip
 
     /// <summary>Shows the variant chooser, then creates the spike window under the chosen thread
     /// DPI context and restores the context immediately after. Called from the temporary tree
@@ -126,6 +127,10 @@ public sealed class RdpPopoutSpike : Form
         StartPosition = FormStartPosition.CenterScreen;
         ClientSize = new Size(1280, 800);
         MinimumSize = new Size(700, 500);
+        // Open MAXIMIZED so the connect-time framebuffer is the final size (mRemoteNG's
+        // fixed-at-connect Fit-To-Panel semantics) — round 2's non-fill was the session stuck at
+        // the small pre-maximize resolution after the post-maximize re-fit silently failed.
+        WindowState = FormWindowState.Maximized;
 
         // Readout strip: the numbers the operator pastes back per variant.
         _readout = new Label
@@ -266,7 +271,12 @@ public sealed class RdpPopoutSpike : Form
     private void OnResizeSettled(object? sender, EventArgs e)
     {
         _resizeTimer.Stop();
-        if (_rdp is null || _rdp.Connected == 0)
+
+        // Connected == 1 ONLY: the OCX reports 2 while still connecting, and a display update sent
+        // mid-handshake throws — round 2's bug: the old `== 0` guard let the mid-connect call
+        // through, the catch ate it, and nothing ever retried (OnRdpLoginComplete now kicks one
+        // settle so a resize during connect is applied after login).
+        if (_rdp is null || _rdp.Connected != 1)
         {
             return;
         }
@@ -276,11 +286,13 @@ public sealed class RdpPopoutSpike : Form
         {
             // Scale factors stay pinned at (100,100) on every re-fit — same rule as connect.
             _rdp.UpdateSessionDisplaySettings((uint)width, (uint)height, 0, 0, 0, 100u, 100u);
+            _refitStatus = "refit=OK";
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            // Pre-8.1 / unsupported server — SmartSizing (if on) scales the image instead;
-            // otherwise the session stays at its connect-time resolution.
+            // Surfaced on the strip — whether the re-fit works AT ALL in an unaware window is the
+            // load-bearing question for the real build's live resize.
+            _refitStatus = $"refit=FAILED {ex.GetType().Name} 0x{ex.HResult:X8}";
         }
 
         UpdateReadout(width, height);
@@ -291,15 +303,29 @@ public sealed class RdpPopoutSpike : Form
 
     private void UpdateReadout(int framebufferWidth, int framebufferHeight)
     {
-        OnUi(() => _readout.Text =
-            $"{(_contextSwitchFailed ? "CONTEXT SWITCH FAILED!  " : string.Empty)}{VariantText}  |  " +
-            $"hwndCtx={WindowContextName()}  windowDpi={WindowDpi()}  DeviceDpi={DeviceDpi}  |  " +
-            $"ClientSize={ClientSize.Width}x{ClientSize.Height}  panel={_hostPanel.ClientSize.Width}x{_hostPanel.ClientSize.Height}  |  " +
-            $"framebuffer {framebufferWidth}x{framebufferHeight}");
+        OnUi(() =>
+        {
+            // session= is the OCX's own DesktopWidth/Height read-back — "framebuffer" is only what
+            // we REQUESTED (round 2 conflated the two); the visual is still the arbiter of fill.
+            string session = _rdp is null ? "session=?" : $"session={_rdp.DesktopWidth}x{_rdp.DesktopHeight}";
+            _readout.Text =
+                $"{(_contextSwitchFailed ? "CONTEXT SWITCH FAILED!  " : string.Empty)}{VariantText}  |  " +
+                $"hwndCtx={WindowContextName()}  windowDpi={WindowDpi()}  DeviceDpi={DeviceDpi}  |  " +
+                $"ClientSize={ClientSize.Width}x{ClientSize.Height}  panel={_hostPanel.ClientSize.Width}x{_hostPanel.ClientSize.Height}  |  " +
+                $"framebuffer {framebufferWidth}x{framebufferHeight}  {session}  {_refitStatus}";
+        });
     }
 
     private void OnRdpLoginComplete(object? sender, EventArgs e) =>
-        OnUi(() => Text = $"{_hostName} — pop-out spike (connected)");
+        OnUi(() =>
+        {
+            Text = $"{_hostName} — pop-out spike (connected)";
+            // Kick one settle now that Connected == 1: applies any resize that happened during the
+            // connect handshake (which the settle guard correctly skips), and exercises the re-fit
+            // once per run so refit=OK/FAILED always appears on the strip.
+            _resizeTimer.Stop();
+            _resizeTimer.Start();
+        });
 
     private void OnRdpDisconnected(object? sender, IMsTscAxEvents_OnDisconnectedEvent e)
     {
