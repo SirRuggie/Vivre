@@ -1478,6 +1478,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         await _remoteSweepThrottle.Active.WaitAsync(token);
         try
         {
+            // Skip the doomed software check on a genuinely-offline box (unreachable by ping AND ambient
+            // DCOM — the check's only two transports are WinRM and DCOM, so both channels dead means the
+            // check cannot succeed). Write a clean "Offline" instead of burning a timeout into a
+            // misleading "WinRM unavailable". Per-sweep: a box that answers on a later check re-runs
+            // and refills normally.
+            if (await IsGenuinelyOfflineAsync(computer.Name, token))
+            {
+                computer.SoftwareFound = null;
+                computer.SoftwareServiceDown = null;
+                computer.SoftwareCheck = "Offline";
+                computer.SoftwareQuery = query;
+                computer.SoftwareServiceName = string.IsNullOrWhiteSpace(serviceName) ? null : serviceName;
+                computer.SoftwareName = null;
+                computer.SoftwareVersion = null;
+                computer.SoftwareServiceState = null;
+                return;
+            }
+
             computer.SoftwareFound = null;
             computer.SoftwareServiceDown = null;
             computer.SoftwareCheck = $"Checking {query}…";

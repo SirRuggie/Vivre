@@ -20,6 +20,11 @@ it ships, then gets a dated heading.
   actions and scripts add a short note that "Check software…" reads over the DCOM backup channel on
   these boxes — so you're pointed at what still works instead of a plain dead-end.
 
+### Fixed
+- **A software check against a box that is fully offline now shows "Offline" instead of "WinRM
+  unavailable".** The box is down, not broken — the check no longer burns a connection timeout to
+  report a misleading remoting error, and the box gets a real answer the next time it's checked.
+
 ## 1.14.5 — 2026-07-10
 
 ### Added

@@ -301,7 +301,7 @@ public static class HelpContent
                 "1. Select the machines (or none = all), then right-click ▸ Software ▸ Check software….",
                 "2. Type a product name (or part of one) — e.g. CrowdStrike, SentinelOne, Chrome — or tap a quick-pick button, then Check (or press Enter).",
                 "3. Optional: tick \"Also check its service is running\" to confirm the agent is actually live. The service name pre-fills (it's remembered per product — CrowdStrike → CSFalconService) — change it if needed.",
-                "4. Vivre fills the Software column: green = installed (and running), amber = installed but its service isn't running, red = \"<name> — not found\".",
+                "4. Vivre fills the Software column: green = installed (and running), amber = installed but its service isn't running, red = \"<name> — not found\". A box that's fully offline just shows \"Offline\" (no scary WinRM error) and gets a real answer the next time you check it.",
                 "Click the Software column header to sort — e.g. the machines missing it (or amber) to the top.",
                 "Need a report for your boss? After a check, right-click ▸ Export ▸ Software report (CSV)… saves a per-machine CSV (machine, product, version, installed, service running). On-demand only — checking never writes a file by itself.",
             ],
