@@ -15,6 +15,10 @@ it ships, then gets a dated heading.
   faked as "not found".
 
 ### Changed
+- **The in-app guide (Help ▸ How to use Vivre) was swept against the current app.** Chip lists, the
+  bottom-panel behavior, button labels, the vitality rubric and the reboot-wave outcomes now match
+  reality, and the newest behaviors (custom-column cancel, automatic reboot-service housekeeping)
+  are covered.
 - **The software check's backup channel now covers any WinRM failure, not just Kerberos.** If WinRM is
   unavailable for any reason — service stopped, misconfigured, session dropped, or Kerberos-rejected —
   "Check software…" falls back to the same read-only DCOM channel and still fills in the Software column.

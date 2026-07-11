@@ -62,7 +62,7 @@ public static class HelpContent
             Keywords = "add computer paste import names list",
             Lines =
             [
-                "Quick add: type a name in the \"Add computer…\" box (top-right) and press Enter.",
+                "Quick add: type a name in the \"Add computer…\" box (top-right) and press Enter — several at once works too (separate them with commas, semicolons or spaces).",
                 "A list: click the Paste button (clipboard icon, top-right) and paste names, one per line.",
                 "A saved list: click the Lists ▾ button (top-right) ▸ Open list ▸ pick one.",
             ],
@@ -89,8 +89,8 @@ public static class HelpContent
                 "Each tab is independent — its own machine list, selection, and running operations.",
                 "• New tab: the \"+\" by the tabs, or Ctrl+T.",
                 "• Rename: double-click the tab (or F2).",
-                "• Close: the \"✕\" on the tab, or Ctrl+W (it asks first if the tab has machines or a running op).",
-                "• Right-click a tab for Close other tabs / Close tabs to the right (browser-style).",
+                "• Close: the \"✕\" on the tab, middle-click it, or Ctrl+W (it asks first if the tab has machines or a running op).",
+                "• Right-click a tab for Close other tabs / Close tabs to the right (browser-style) — plus Clear this tab and Close all tabs.",
             ],
         },
         new HelpTopic
@@ -100,7 +100,7 @@ public static class HelpContent
             Lines =
             [
                 "1. Open Settings (left navigation) ▸ Remote credentials.",
-                "2. Keep \"Use my Windows login\", or pick \"Use these credentials\" and enter Domain / Username / Password.",
+                "2. Keep \"Use my Windows login\", or pick \"Use these credentials\", enter Domain / Username / Password, then click Apply.",
                 "This is the account Vivre uses to reach your machines — for health checks, patching, Run Script, SCCM client actions, and Enable WinRM.",
             ],
             Tip = "Credentials are held in memory for the session only — never written to disk. Set an admin account here if your login can't reach the targets.",
@@ -129,12 +129,13 @@ public static class HelpContent
         new HelpTopic
         {
             Category = GettingStarted, Icon = SymbolRegular.Filter24, Title = "How do I filter or find machines in a big list?",
-            Keywords = "filter search find chip errors reboot pending offline done updates available subset narrow",
+            Keywords = "filter search find chip errors reboot pending offline done up to date unhealthy not scanned scheduled updates available subset narrow clear",
             Lines =
             [
                 "Use the filter bar above the grid (works in both Machines and Windows Update views).",
                 "• Type in the search box to show only machines whose name contains that text.",
-                "• Click a chip to show only a state: Updates available · Reboot pending · Errors · Offline · Done. Click All to clear.",
+                "• Click a chip to show only a state. The chips differ by view — Health: All · Reboot pending · Errors · Offline · Done · Unhealthy; Patching adds Updates · Up to date · Not scanned · Scheduled (and Server 2016 (N) once a vitals check confirms a 2016 box).",
+                "• Click the lit chip again (or All) to clear the filter; if a filter leaves the grid empty, the overlay offers a Clear filter button.",
                 "The \"Showing N of M\" count tells you how many match. Filters update live — a machine that errors mid-run pops into the Errors chip on its own.",
             ],
             Tip = "Filtering is the fast way to work a large fleet: filter to Errors to see only what failed, or Reboot pending to find what still needs a restart.",
@@ -158,10 +159,10 @@ public static class HelpContent
             Lines =
             [
                 "Right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
-                "Columns: machine, online, status, updates available, update/reboot messages, last error, OS, scheduled task, plus any custom columns you've added.",
+                "Columns: machine, online, status, updates available, update/reboot messages, reboot pending, last error, OS, scheduled task, plus any custom columns you've added.",
                 "Opens cleanly in Excel.",
             ],
-            Tip = "Filter first to scope the report — e.g. filter to Done and export to record exactly what got patched this window.",
+            Tip = "Filter first to scope the report — e.g. filter to Up to date (Done in the Health view) and export to record exactly what got patched this window.",
         },
 
         // ---------------- Machines view ----------------
@@ -171,8 +172,8 @@ public static class HelpContent
             Keywords = "ping reachable online offline status dot",
             Lines =
             [
-                "Click Ping All (or F5). Use the Ping All dropdown ▸ Ping Offline only to re-check just the dark ones.",
-                "The Ping dot shows: green ✓ online · red ✕ offline · grey ? not checked yet.",
+                "Click Ping All (or F5). Use the Ping All dropdown ▸ Ping Offline only to re-check just the offline and never-checked ones.",
+                "The dot (the \"Online\" column in Health; \"Ping\" in Patching) shows: green ✓ online · red ✕ offline · grey ? not checked yet.",
             ],
             Tip = "Ping is ICMP. If you've set explicit credentials, Vivre also tries an authenticated WMI check, so ping-blocked boxes can still show online.",
         },
@@ -185,7 +186,7 @@ public static class HelpContent
                 "Click Check Vitals. For each machine it pulls SCCM client health — site code, agent version, last reboot, the health dots — and its Vitals score in the same pass (see the Vitals topic).",
                 "Health dots (green = good, red = needs attention): Reboot pending · Updates missing · Install running · Users online.",
                 "A grey ? means that reading couldn't be taken — treat it as unknown, not good.",
-                "By default this happens automatically when you load a list — Vivre pings + checks vitals on those machines so the grid fills itself, and Monitor keeps online/reboot live. Turn it off in Settings (left navigation) ▸ Auto-check on load for a frozen snapshot; the buttons (Ping All / Check Vitals) re-check on demand either way. It only ever touches the machines you loaded, never the wider network.",
+                "By default this happens automatically when you load a list — Vivre pings + checks vitals on those machines so the grid fills itself, and Monitor keeps the online dot live (in Patching tabs it also keeps Reboot pending live). Turn it off in Settings (left navigation) ▸ Auto-check on load for a frozen snapshot; the buttons (Ping All / Check Vitals) re-check on demand either way. It only ever touches the machines you loaded, never the wider network.",
             ],
             Tip = "Triggering health/actions usually needs admin rights on the target — set credentials in Settings if you see \"access denied\".",
         },
@@ -196,7 +197,7 @@ public static class HelpContent
             Lines =
             [
                 "Click Check Vitals — the same button that pulls SCCM client health also reads deep OS health: system-drive free space, memory and CPU load, uptime, plus (for context) any stopped auto-start services.",
-                "It rolls the reliable signals (disk, memory, CPU, uptime, reboot-pending) into a 0–100 vitality score shown as a coloured chip in the Vitals column: green = Healthy (80+), amber = Warning (50–79), red = Critical (under 50). Offline/Unknown show grey.",
+                "It rolls the reliable signals (disk, memory, CPU, uptime, reboot-pending) into a 0–100 vitality score shown as a coloured chip in the Vitals column: green = Healthy (80+), amber = Warning (50–79), red = Critical (under 50). Offline/Unknown show grey. A box whose health was read over the WinRM backup channel is floored to amber even with a high number — see the amber-flag topic.",
                 "Stopped auto-start services are shown for triage but NOT scored — they're too noisy (idle-by-design services) to trust on their own; the section only appears when something is actually stopped.",
                 "Hover the chip to see why (the top reasons), or right-click ▸ Details… ▸ Vitals for the full breakdown — drives, plus stopped services by name when present. The bottom bar tallies the fleet, e.g. \"Vitals: Healthy 40 · Warning 6 · Critical 2\".",
                 "Use the Unhealthy filter chip to show just the Warning/Critical/Offline machines, then sort by the Vitals column to put the sickest first.",
@@ -216,13 +217,14 @@ public static class HelpContent
                 "CPU load: above 85% → −6 · above 95% → −15.",
                 "Reboot pending (CBS / Windows Update / SCCM signals) → −10.",
                 "Uptime over 60 days → −5.",
+                "WinRM unusable (health read over the DCOM/SMB backup channel) → −12, and the chip is floored to amber (Warning) even when the number is 80+ — see the amber-flag topic.",
                 "A signal that can't be read is \"unknown\" and is never penalised — a box that only answers some probes still scores fairly.",
                 "The Vitals chip shows the top 3 worst reasons (the highest-penalty problems) as the \"why\" behind the number. Hover the chip to read them; open right-click ▸ Details… ▸ Vitals for the full breakdown and inline triage actions.",
                 "CPU and memory are point-in-time samples taken at check time — a momentary spike during the check can temporarily lower a score. Re-run Check Vitals when the box is idle to clear it.",
                 "The Unhealthy filter chip includes Offline machines — not just Warning/Critical. An offline box counts as unhealthy even though its internals are unknown (you can't read the vitals of a machine that doesn't answer).",
                 "Stopped auto-start services are gathered but deliberately NOT scored — they're dominated by benign noise on healthy boxes (trigger/delayed-start services, updaters), so they appear in Details ▸ Vitals (with a Start button) when any are stopped, but never move the number.",
             ],
-            Tip = "\"Vitality 100 (Healthy)\" means no penalty fired. The only way to score below 80 is for one of the scored signals (disk, memory, CPU, reboot pending, uptime) to exceed its threshold.",
+            Tip = "\"Vitality 100 (Healthy)\" means no penalty fired. The only ways to drop below 80 are a scored signal (disk, memory, CPU, reboot pending, uptime) exceeding its threshold — or the WinRM-degraded penalty.",
         },
         new HelpTopic
         {
@@ -245,22 +247,22 @@ public static class HelpContent
             Keywords = "fix repair remediate triage start service free disk space cleanup end kill process heal",
             Lines =
             [
-                "Open right-click ▸ Details… ▸ Vitals. If vitals haven't been read yet, click Check Vitals in the Vitals tab to read them now — or use the fleet Check Vitals button in the toolbar. The button runs health and vitals for just this machine in one pass. Once vitals are populated, the breakdown lets you act in place:",
+                "Open right-click ▸ Details… ▸ Vitals. If vitals haven't been read yet, click Check Vitals in the Vitals tab — it runs health and vitals for just this machine in one pass (the toolbar's Check Vitals sweeps the whole tab). Once vitals are populated, the breakdown lets you act in place:",
                 "• Stopped auto-start service — click Start next to it to start it now.",
                 "• Low drive — click Free up space… to clear TEMP, the Windows Update cache, and the recycle bin (asks first; reports how much it reclaimed).",
                 "• A hog — click Load under Top processes, then End next to a runaway one (asks first).",
-                "After each action (and after Check Vitals) Vivre re-checks that machine's vitals, so the score and readings update on the spot.",
+                "After Start service and Free up space (and after Check Vitals) Vivre re-checks that machine's vitals, so the score and readings update on the spot.",
             ],
             Tip = "Free up space and End process change the machine, so they confirm first; starting a service is one-click. All actions use your session/admin credential and land in the activity log.",
         },
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.Pulse24, Title = "How do I keep statuses live?",
-            Keywords = "monitor watch continuous auto refresh",
+            Keywords = "monitor watch continuous auto refresh default pause toggle",
             Lines =
             [
-                "Turn on the Monitor toggle — Vivre re-checks online/offline for every machine on a timer.",
-                "Click Stop to halt it (and any other running operation in the tab).",
+                "Monitor is ON by default — Vivre starts watching online/offline the moment a list loads, re-checking every machine on a timer.",
+                "Turn the Monitor toggle off for a frozen snapshot and back on to resume. The toggle is the ONLY way to pause monitoring — the Stop button cancels running operations, not the monitor.",
             ],
         },
         new HelpTopic
@@ -285,7 +287,7 @@ public static class HelpContent
             [
                 "1. Select the machines (or none = all), then right-click ▸ Software ▸ Stage software….",
                 "2. Pick a package: a single .msi/.exe, or a folder of files (an installer plus your own install script).",
-                "   • Pick from the package library dropdown, or Browse… to a file/folder anywhere. (Set package library folder… remembers a folder of packages for next time.)",
+                "   • Pick from the package library dropdown, or Browse file… / Browse folder… to anything anywhere. (Set package library folder… remembers a folder of packages for next time.)",
                 "3. Set where to drop it (default C:\\Windows\\Temp\\VivrePackages). A single file lands right there; a folder gets its own subfolder so its files stay together.",
                 "4. Click Stage. Vivre copies the files to each machine and reports the path per row (Command result): \"staged to C:\\Windows\\Temp\\VivrePackages\\…\".",
                 "5. Install it your way — e.g. right-click ▸ Run script ▸ pointing at the staged path (C:\\Windows\\Temp\\VivrePackages\\<package>\\install.ps1), or your normal batch / Company Portal flow.",
@@ -310,16 +312,17 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.Settings24, Title = "How do I customize the grid columns?",
-            Keywords = "columns custom hide show add column grid layout serial bitlocker script one-liner customize remove tailor probe",
+            Keywords = "columns custom hide show add column grid layout serial script one-liner customize remove tailor probe cancelled stop",
             Lines =
             [
                 "Open it from Settings (left navigation) ▸ Grid columns ▸ Manage columns…, or right-click the grid ▸ Columns… — works even before you've added any machines.",
                 "• Hide columns you don't use — untick them under \"Show columns\" (Name always stays). Saved across launches.",
-                "• Add a predefined column from the gallery (Serial, Model, Days since reboot, Free C: GB, BitLocker, …) — one click.",
+                "• Add a predefined column from the gallery (Serial, Model, Days since reboot, Free C: (GB), Logged-on user, OS) — one click.",
                 "• Add your own — a column name + a PowerShell one-liner. It runs on every machine and whatever it prints fills the cell, e.g. (Get-CimInstance Win32_BIOS).SerialNumber.",
-                "Custom columns sort (numeric-aware) and are included when you Export tab to CSV. Use Refresh values to re-run them.",
+                "Custom columns sort (numeric-aware) and are included when you export (right-click ▸ Export ▸ Shown rows + columns (CSV)…). Use Refresh values to re-run them.",
+                "Stop cancels a running fill — cells still waiting show \"cancelled\" and the progress counter freezes where it was; removing a column mid-fill cancels just that column's fill (other columns keep filling).",
             ],
-            Tip = "Custom columns are read-only — they run your one-liner per machine and show the result, nothing more. A column whose script errors shows \"ERR: …\" for that machine; the rest still fill.",
+            Tip = "Custom columns are read-only — they run your one-liner per machine and show the result, nothing more. A column whose script errors shows \"ERR: …\" for that machine; the rest still fill. A cell can also read \"Offline\", \"timed out\", \"WinRM n/a\" or \"error\" for a box that couldn't be read.",
         },
         new HelpTopic
         {
@@ -327,7 +330,7 @@ public static class HelpContent
             Keywords = "client action machine policy hardware inventory update scan trigger schedule stop cancel timed out busy",
             Lines =
             [
-                "Select the machines, then right-click ▸ Client actions ▸ and pick one (Machine Policy, Hardware Inventory, Update Scan, …).",
+                "Select the machines, then right-click ▸ Client actions ▸ and pick one (Machine Policy Retrieval & Evaluation, Hardware Inventory, Software Update Scan, …).",
                 "Actions run on all selected machines at once; each row shows its own result, and Stop cancels the batch.",
                 "A box that doesn't answer shows \"Timed out\" (after 60s), \"WinRM busy\" (try again shortly), or \"WinRM unavailable\" (for installed software on that box, Software ▸ Check software… still works) — the rest of the selection is unaffected.",
             ],
@@ -350,9 +353,9 @@ public static class HelpContent
             Lines =
             [
                 "Select the machines, right-click ▸ Reboot (force now)…, and confirm (it lists the count + names).",
-                "Runs shutdown /r /f — any unsaved work on those machines is lost.",
+                "Runs shutdown /r /f /t 5 (a 5-second grace so the command returns cleanly) — any unsaved work on those machines is lost.",
             ],
-            Tip = "To reboot at a set time instead, use right-click ▸ Schedule ▸ Reboot….",
+            Tip = "To reboot at a set time instead, use right-click ▸ Schedule ▸ Reboot…. Housekeeping is automatic: when a list loads (with auto-check on load on), Vivre quietly removes any leftover Vivre_Reboot_* helper services an earlier reboot left behind.",
         },
         new HelpTopic
         {
@@ -398,7 +401,7 @@ public static class HelpContent
             [
                 "Right-click ▸ Copy ▸, then choose what to copy:",
                 "• The clicked row's Update message / Reboot message / Command result / Last error.",
-                "• Name(s) or Selected rows (all columns) for the current selection.",
+                "• Name(s) or Selected rows (name, online state, site code, agent version, status, last error, command result) for the current selection.",
                 "• All online devices / All offline devices.",
                 "Everything is copied newline-separated, ready to paste into Excel.",
             ],
@@ -431,10 +434,10 @@ public static class HelpContent
             Keywords = "bottom panel dock tab activity updates close hide collapse",
             Lines =
             [
-                "Both share one panel at the bottom of the window, with tabs:",
-                "• Updates — opens when you click a machine in Windows Update view; shows its Applicable / Installed updates, with a filter box and All / None.",
-                "• Activity — the shared log (also toggled by the Activity log button in the status bar, bottom-right).",
-                "Click a machine to jump straight to its Updates tab. Drag the handle on the panel's top edge (the divider bar) to resize it.",
+                "Both share one panel at the bottom of the window. It opens ONLY via the status-bar toggle (bottom-right) — labelled \"Updates & Activity\" in Patching, \"Activity log\" in Health.",
+                "• Updates — shows the clicked machine's Applicable / Installed updates, with a filter box and All / None.",
+                "• Activity — the shared log.",
+                "While the panel is open, clicking a machine switches it to that machine's Updates tab. Drag the handle on the panel's top edge (the divider bar) to resize it.",
                 "Click Close (top-right of the panel) to dismiss it and hand the grid back the full height.",
             ],
         },
@@ -455,8 +458,8 @@ public static class HelpContent
             Keywords = "scan find applicable available count",
             Lines =
             [
-                "Select machines (or none = all), then click Scan. To scan just one, click it and use the \"Scan this machine\" button in the Updates tab.",
-                "Each row's Status chip and Windows update message show what was found; clicking a machine opens the Updates tab at the bottom, which lists that machine's updates.",
+                "Select machines (or none = all), then click Scan all — or Scan (N) with a selection (right-click: Scan selected (N)).",
+                "Each row's Status chip and Windows update message show what was found. To see a machine's update list, open the bottom panel (the Updates & Activity toggle, bottom-right) and click the machine; a never-scanned machine's Updates tab offers a \"Scan this machine\" button.",
             ],
         },
         new HelpTopic
@@ -465,10 +468,11 @@ public static class HelpContent
             Keywords = "select choose checklist applicable tick tab bottom panel filter size catalog mb download",
             Lines =
             [
-                "Click a machine — its Updates tab opens at the bottom. On the Applicable tab, tick/untick the updates you want.",
+                "Open the bottom panel (the Updates & Activity toggle, bottom-right), then click a machine — the panel shows its updates. On the Applicable tab, tick/untick the updates you want.",
                 "Use All / None to select quickly, or the filter box to find an update by KB or title.",
-                "Install then targets only the ticked ones (or everything applicable if you don't tick anything).",
+                "Updates come back ticked after a scan — untick what you don't want. Untick everything and that machine is skipped (\"No updates selected\"). A machine that's never been scanned installs everything applicable.",
                 "The Size column shows each update's download size — the size Windows reports, the same as BatchPatch. Once in a while Windows reports a wildly wrong size for a big cumulative update; when that happens Vivre shows the real download size from Microsoft's update catalog instead. A dash (—) means no size was available — usually one of those big updates on a machine that can't reach the catalog (offline or locked-down). It never blocks installing.",
+                "After an install, updates that landed show a session chip (\"Installed\" / \"Installed — reboot pending\") and the header counts \"N installed this session\"; a red banner calls out partial failures, and while a reboot is pending an amber banner shows and Install checked is disabled until the restart.",
             ],
         },
         new HelpTopic
@@ -477,10 +481,12 @@ public static class HelpContent
             Keywords = "install patch download progress reboot pending pre-flight winrm",
             Lines =
             [
-                "Select machines, then click Install (it confirms the count first). Or Ctrl+Enter.",
+                "Select machines, then click Install all — or Install (N) with a selection (the confirm reads \"Install on N\"). Or Ctrl+Enter.",
                 "If any target already has a reboot pending, Install warns first and offers to reboot those before installing — a pending reboot can jam WinRM and fail the install.",
                 "Progress shows live download then install percent; the chip turns green (Done) or amber (reboot pending).",
                 "A required reboot is reported, not forced — reboot when you're ready.",
+                "A box whose OS build is unknown is skipped with \"Unknown OS build — run Check Vitals first so Vivre can pick the right update lane.\"",
+                "Settings ▸ Max simultaneous installs bounds how many boxes install at once (default 50).",
             ],
         },
         new HelpTopic
@@ -504,7 +510,7 @@ public static class HelpContent
                 "Select machines, right-click ▸ Schedule ▸, then:",
                 "• Install updates… — pick a date/time to install.",
                 "• Reboot… — pick a date/time to force-reboot.",
-                "• Cancel scheduled task — clears a pending one; the row then reads 'Scheduled task cancelled' until its next action. If the machine couldn't actually remove the task, the row KEEPS its Scheduled marker and reads 'Cancel failed — task may still fire', so you never mistake a failed cancel for a cancelled task.",
+                "• Cancel scheduled task — clears a pending one; the row then reads 'Scheduled task cancelled' until its next action ('Cancel had errors' if the target reported problems removing it). If the machine couldn't actually remove the task, the row KEEPS its Scheduled marker and reads 'Cancel failed — task may still fire', so you never mistake a failed cancel for a cancelled task.",
                 "The time you pick is YOUR local time (this PC's). Every selected machine runs at that same moment — a box in another time zone (e.g. a UTC cloud VM) still fires at your chosen instant, not its own local clock.",
                 "A scheduled task shows as a neutral 'Scheduled' status pill and a '<action> scheduled for <time> (your time)' message in the Windows update row; the Scheduled filter chip lists those machines. It clears once the time passes.",
             ],
@@ -516,10 +522,10 @@ public static class HelpContent
             Keywords = "chip color status progress bar meaning idle scanning done error reach windows update retry transient",
             Lines =
             [
-                "The Status chip colour: grey = idle · blue = working (scanning/downloading/installing) · steel = updates available · amber = reboot pending · green = done · red = error.",
+                "The Status chip colour: grey = idle · blue = working (scanning/downloading/installing) · accent = updates available · amber = reboot pending · green = up to date (\"Done\" in Health) · red = error. 2016 boxes also show Staging / Cleaning up / Rebooting / Cleaned pills.",
                 "During install the Progress bar fills (download is the first half, install the second).",
-                "When an operation finishes while you're watching, a banner summarises how many succeeded / failed.",
-                "\"Can't reach WU\" (red): the machine couldn't reach Windows Update — usually a brief network blip. Vivre quietly retries a few times first (you'll see \"Couldn't reach Windows Update — retrying…\"); if it still can't get through it stops and tells you, rather than wrongly showing the box as \"Up to date.\" Just run Scan/Install again once the network settles.",
+                "When an operation finishes while you're watching, a banner summarises how many succeeded / failed — and if the window isn't focused, a Windows tray notification announces it instead.",
+                "\"Can't reach WU\" (red): the machine couldn't reach Windows Update — usually a brief network blip. Vivre quietly retries a few times first (you'll see \"Couldn't reach Windows Update — retrying (N/3)…\"); if it still can't get through it stops and tells you, rather than wrongly showing the box as \"Up to date.\" Just run Scan/Install again once the network settles.",
             ],
         },
         new HelpTopic
@@ -532,18 +538,21 @@ public static class HelpContent
                 "1. Select the machines you want to reboot.",
                 "2. Right-click ▸ Reboot & verify…",
                 "3. Review the list and click Reboot & verify to start.",
-                "Each box is rebooted gracefully (lets SQL/services flush). If it doesn't go down within 8 minutes Vivre escalates to a forced reboot to complete the one you ordered.",
-                "While offline, Vivre keeps watching — the row shows how long it's been down. There's no timeout that abandons a box; the clock only flags \"Overdue\" past a ceiling to prompt a console check.",
+                "Reboot & verify… appears only in Patching, on rows that are actually reboot-pending — if you don't see it, the box has nothing pending.",
+                "Each box is rebooted gracefully (lets SQL/services flush). If it doesn't go down within 8 minutes (20 for a staged-2016 box, whose commit is slower) Vivre escalates to a forced reboot to complete the one you ordered.",
+                "While offline, Vivre keeps watching — the row shows how long it's been down, flagging \"Overdue\" past ~90 minutes. After ~4½ hours it stops live-tracking and marks the row red (\"hasn't returned after N min — no longer tracking it live. Use Verify once it's back up.\"); a box that never goes down after the forced reboot is also marked red rather than watched forever.",
                 "When a box comes back online:",
-                "• Server 2016 boxes: the build number (UBR) is read over DCOM and compared to the expected value. If it matches, the update committed — the row turns green. A rolled-back UBR is caught and shown as failed (red).",
+                "• Server 2016 boxes flagged for staged patching: the build number (UBR) is read over DCOM and compared to the expected value. If it matches, the update committed — the row turns green. A rolled-back UBR is caught and shown as failed (red). A non-flagged 2016 box verifies via the normal re-scan like any other box.",
                 "• All other boxes: Vivre re-scans Windows Update (read-only — no installs, no further reboots). The outcome reads \"Back online · installed N · up to date\" (green), \"N remaining\" (if more updates apply), or \"couldn't rescan\" if the scan didn't complete. \"installed N\" only appears when an install in this session actually installed (or failed) something — a standalone reboot never claims \"installed 0\".",
                 "Outcomes at a glance:",
                 "  Back online · installed N · up to date — fully patched.",
                 "  Back online · installed N · N remaining — more updates still apply; run Install again.",
-                "  Back online · reboot still pending — another reboot is needed; run again when ready.",
+                "  Back online · installed N · M failed (· R remaining) — some updates failed; see the activity log.",
+                "  Installed N · up to date — the install needed no reboot at all.",
+                "  Back online · reboot still pending — re-check — another reboot is needed; run again when ready.",
                 "  Back online · couldn't rescan — the re-scan didn't complete; use Scan to re-check.",
                 "  Back online · couldn't confirm reboot state — the reboot-pending check didn't answer (it's bounded at ~2 minutes); the Pending Reboot column shows \"?\" — re-check when convenient. Never shown as \"up to date\".",
-                "If a box doesn't return during the live wave, just re-check it once it's back up — the wave never marks a box failed for being slow. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
+                "If a box outlasts the live watch, re-check it once it's back up — that's exactly what the red no-longer-tracking row is asking for. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
             ],
             Tip = "Reboot & verify reboots ONLY the machines you select and confirm. It never touches the rest of the fleet. To reboot without a post-reboot rescan, use right-click ▸ Reboot (force now).",
         },
@@ -557,13 +566,13 @@ public static class HelpContent
                 "1. Check Vitals on your machines — any confirmed 2016 box makes a \"Server 2016 (N)\" filter chip appear.",
                 "2. Click the chip: the grid filters to those boxes and the 2016 action bar shows the month's CU (e.g. KB5094122 / 9234).",
                 "   Stage and Verify act only on boxes you've marked for staged patching (right-click a row ▸ Mark as Staged patching — see \"staged vs direct\" below). If none are marked, the button shows a reminder instead of doing nothing. Clean up is different — it works on any 2016 box: the selected ones, or all of them when nothing's selected.",
-                "3. Stage (daytime, safe): delivers + installs the CU but does NOT reboot. The row turns amber with \"STAGED — needs Reboot Wave\".",
+                "3. Stage (daytime, safe): delivers + installs the CU but does NOT reboot. The row turns amber with \"STAGED — needs Reboot Wave\". Boxes must have been scanned this session — otherwise Stage shows a \"Scan before staging\" reminder first.",
                 "4. Reboot Wave (night): select the staged boxes, click, and confirm. Each reboots and is tracked until its build confirms the update took.",
                 "5. Verify (any time): re-checks a box's build — use it on anything that came back late.",
                 "Why Clean up? Windows Server 2016 accumulates old update pieces in a hidden store over time. Clean up tells Windows to clear that backlog — it speeds up normal Windows Update on any 2016 box and makes room before you stage a CU (without it, staging can stall or hang). It acts on the selected 2016 boxes, or all of them when none are selected; it never reboots the box and is safe to run any time.",
                 "Clean up on a backlogged box can run for hours. The row shows a live \"Cleaning — 12m\" readout (with a percent when Windows reports one) so you can see it's still working even while the percent sits still; it only flags \"looks stalled (may still be working)\" or \"still going, check the box\" as a heads-up — it won't give up on a working box. When it finishes you'll see one of these results: \"Cleaned — ready to Stage\" (green, good to go), \"Cleaned — reboot-pending\" (amber — reboot before you Stage), \"Cleaned · locked files (see log)\" (green — the backlog cleared, but security software held some files open so Windows couldn't remove the rest; staging isn't blocked, and the activity log explains how to reclaim it), or, if the box already has a reboot waiting, \"Couldn't clean up — reboot to clear the pending state first\" (it didn't run, to avoid clashing with Windows servicing).",
             ],
-            Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update, and drop the Catalog .msu in the CU package folder before staging.",
+            Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update (the card also holds the update-history URL — copy this month's KB/UBR from it — and the architecture), and drop the Catalog .msu in the CU package folder before staging.",
         },
         new HelpTopic
         {
@@ -574,7 +583,7 @@ public static class HelpContent
                 "Most Server 2016 boxes patch fine through normal Windows Update — that's the default now, the same as a 2019 or 2022 box. Only the boxes whose monthly cumulative update keeps failing through Windows Update need the staging lane.",
                 "What the Staged flag means: a box you mark as \"Staged patching\" gets its monthly cumulative update delivered and installed with the full package (DISM) instead of through Windows Update. Flag only the boxes that need it.",
                 "1. Flag a box: right-click its row in a Patching tab ▸ Mark as Staged patching. A small \"Staged\" pill appears on the row. To undo, right-click ▸ Remove Staged flag.",
-                "2. Click Install (or Install all). If the run includes a flagged box whose cumulative update isn't staged yet, Vivre asks what to do:",
+                "2. Click Install (or Install all). If the run includes a flagged box whose cumulative update isn't staged yet, Vivre asks what to do (it also warns when the Settings KB doesn't match what the scan actually found):",
                 "   • Stage CU first (recommended) — delivers + stages this month's cumulative update on those boxes (large, ~30–60 min); you commit it later with the Reboot Wave. Other machines in the run install normally at the same time.",
                 "   • Install minor updates only — installs everything except the cumulative update now (the CU is staged separately). You'll be reminded that minor updates may need a reboot.",
                 "   • Cancel — skips just those flagged boxes for now; the rest of the run still installs.",
@@ -590,7 +599,7 @@ public static class HelpContent
             Lines =
             [
                 "Marking a Server 2016 box for staged patching only changes how its monthly cumulative update is delivered — it doesn't hold back the box's other updates.",
-                "So if you click Install on a flagged box that has no cumulative update waiting (just smaller things like Office, Defender or .NET), Vivre installs those normally through Windows Update — it won't stop to ask you to stage anything.",
+                "So if you click Install on a flagged box that has no cumulative update waiting after a scan this session (just smaller things like Office, Defender or .NET), Vivre installs those normally through Windows Update — it won't stop to ask you to stage anything. (An unscanned flagged box still asks, to be safe.)",
                 "You're only asked to Stage (or to choose \"Install minor updates only\") when a flagged box actually has this month's cumulative update pending.",
             ],
             Tip = "Flagging a box is safe: it never blocks that box's everyday updates — it only routes the monthly cumulative update through the staging lane when one is due.",
@@ -619,7 +628,7 @@ public static class HelpContent
                 "• Right-click is the hub — Reboot, Schedule, Details, Run script, Client actions, Enable WinRM all live there.",
                 "• Select multiple machines with Ctrl+click / Shift+click; the bottom bar shows the selected count.",
                 "• Status dots use colour AND shape (✓ / ✕ / ?), so they're readable at a glance.",
-                "• Buttons and actions show what they'll target — \"Install on 12 machines\", \"Scan selected (3)\".",
+                "• Buttons and actions show what they'll target — \"Install on 12\", \"Scan selected (3)\".",
             ],
         },
 
@@ -640,7 +649,7 @@ public static class HelpContent
             Keywords = "winrm unreachable access denied credentials cannot connect",
             Lines =
             [
-                "• Try right-click ▸ Enable WinRM (over DCOM) to turn on remoting.",
+                "• Try right-click ▸ Enable WinRM (PSRemoting)… — it works over DCOM, a different channel — to turn on remoting.",
                 "• Set an admin account in Settings (left navigation) ▸ Remote credentials if your login can't reach the target.",
                 "• Confirm the box is online (Ping All) and not blocked by firewall.",
             ],

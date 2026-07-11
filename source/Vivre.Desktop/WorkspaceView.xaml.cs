@@ -626,8 +626,8 @@ public partial class WorkspaceView : UserControl
     }
 
     /// <summary>
-    /// Opens the same right-click action menu from the toolbar "Actions ▾" button or the keyboard
-    /// (so nothing is mouse-right-click-only). Anchors the per-field Copy items on the focused /
+    /// Opens the same right-click action menu from the keyboard (Shift+F10 / the Menu key), so
+    /// nothing is mouse-right-click-only. Anchors the per-field Copy items on the focused /
     /// first-selected row.
     /// </summary>
     public void OpenActionsMenu(Control placementTarget)

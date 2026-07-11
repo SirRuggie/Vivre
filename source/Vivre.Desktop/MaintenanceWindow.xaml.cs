@@ -30,8 +30,8 @@ public partial class MaintenanceWindow : FluentWindow
         _computers = computers;
 
         Intro.Text = $"Set WhatsUp Gold maintenance for the {computers.Count} machine(s) in scope. Names are "
-            + "matched to WUG devices by IP. When you click Set, this window closes and progress shows on each "
-            + "row (Command result) and in the activity log.";
+            + "matched to WUG devices by name first, then by IP if no name match is found. When you click Set, "
+            + "this window closes and progress shows on each row (Command result) and in the activity log.";
         ReasonBox.Text = $"SB {DateTime.Now:yyyyMMdd} | OS Updates";
 
         try
