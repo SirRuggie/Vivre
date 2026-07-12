@@ -84,10 +84,9 @@ public partial class RdpSessionView : UserControl
     // 100 = zoom off (SmartSizing stays on — today's behavior on 100% displays).
     private uint _zoomPercent = 100;
 
-    // Auto-reconnect attempts seen since the session was last live. LOAD-BEARING, NOT instrument state:
-    // it is a classifier input (RdpDisconnectClassifier — a logoff code arriving mid-recovery must NOT
-    // close the tab). The throwaway [RDP disc] lines also print it, but the field, its increment, and its
-    // resets all STAY when that instrument is stripped.
+    // Auto-reconnect attempts seen since the session was last live — a classifier input
+    // (RdpDisconnectClassifier: a logoff code arriving mid-recovery must NOT close the tab).
+    // Incremented in OnRdpAutoReconnecting; reset on every path to a live session.
     private int _autoReconnectAttempts;
 
     public RdpSessionView()
@@ -179,7 +178,7 @@ public partial class RdpSessionView : UserControl
         _zoomWarnLatched = false;
         _degraded = false;
         _fullScreen = false;
-        _autoReconnectAttempts = 0; // classifier input — KEEP when the [RDP disc] instrument is stripped
+        _autoReconnectAttempts = 0; // classifier input — reset on every path to a live session
         _verifyTimer.Stop();
 
         _rdp.OnConnecting += OnRdpConnecting;
@@ -802,7 +801,7 @@ public partial class RdpSessionView : UserControl
     private void OnRdpLoginComplete(object? sender, EventArgs e)
     {
         _connected = true;
-        _autoReconnectAttempts = 0; // classifier input — KEEP when the [RDP disc] instrument is stripped
+        _autoReconnectAttempts = 0; // classifier input — reset on every path to a live session
         SetStatus(RdpConnectionState.Connected, "Connected.");
 
         // Marshal per the file's rule (control events can arrive off the UI thread); the deferred body
@@ -824,14 +823,7 @@ public partial class RdpSessionView : UserControl
     // re-assert zoom and re-fit in case the recovery reset either.
     private void OnRdpAutoReconnected(object? sender, EventArgs e)
     {
-        // THROWAWAY sign-out instrument (remove with this arc): the log line ONLY.
-        if (_vm is { } vm)
-        {
-            vm.Log.Info(vm.Title,
-                $"[RDP disc] autoreconnect event=OnAutoReconnected attemptsSeen={_autoReconnectAttempts}");
-        }
-
-        _autoReconnectAttempts = 0; // classifier input — KEEP when the [RDP disc] instrument is stripped
+        _autoReconnectAttempts = 0; // classifier input — reset on every return to a live session
         SetStatus(RdpConnectionState.Connected, "Connected.");
         Dispatcher.BeginInvoke(() =>
         {
@@ -1136,23 +1128,6 @@ public partial class RdpSessionView : UserControl
         RdpDisconnectAction action = RdpDisconnectClassifier.Classify(
             extReason, e.discReason, _connected, _autoReconnectAttempts);
 
-        // THROWAWAY sign-out instrument (remove with this arc): the REAL codes next to the classifier's
-        // verdict — the post-fix verify run reads these same lines to confirm each gesture's class.
-        if (_vm is { } instrVm)
-        {
-            string classified = action switch
-            {
-                RdpDisconnectAction.CloseTab => "signout",
-                RdpDisconnectAction.KeepReconnectPlain => "drop",
-                _ => "error",
-            };
-            instrVm.Log.Info(instrVm.Title,
-                $"[RDP disc] discReason={e.discReason} (0x{e.discReason:X}) extReason={extReason} (0x{extReason:X}) " +
-                $"desc=\"{DescribeDisconnect(e.discReason)}\" autoReconnecting={_autoReconnectAttempts} " +
-                $"connected={(_connected ? 1 : 0)} classified={classified} " +
-                $"action={(action == RdpDisconnectAction.CloseTab ? "closed" : "kept")}");
-        }
-
         if (action == RdpDisconnectAction.CloseTab)
         {
             // Silent (no status write) — the tab just closes, like mstsc's window on logoff. Defer the
@@ -1203,17 +1178,7 @@ public partial class RdpSessionView : UserControl
     // itself when the session comes back, instead of stranding a stale "disconnected" bar over a live desktop.
     private void OnRdpAutoReconnecting(object? sender, IMsTscAxEvents_OnAutoReconnectingEvent e)
     {
-        _autoReconnectAttempts++; // classifier input — KEEP when the [RDP disc] instrument is stripped
-
-        // THROWAWAY sign-out instrument (remove with this arc): the log line ONLY. pArcContinueStatus is
-        // logged as received; this handler does NOT set it — the control's own continue policy applies.
-        if (_vm is { } vm)
-        {
-            vm.Log.Info(vm.Title,
-                $"[RDP disc] autoreconnect event=OnAutoReconnecting attempt={e.attemptCount} " +
-                $"disconnectReason={e.disconnectReason} continueState={e.pArcContinueStatus}");
-        }
-
+        _autoReconnectAttempts++; // classifier input (a logoff code arriving mid-recovery must not close the tab)
         SetStatus(RdpConnectionState.Connecting, "Reconnecting…");
     }
 
