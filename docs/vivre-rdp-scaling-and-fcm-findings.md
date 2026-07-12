@@ -237,16 +237,57 @@ fixed (`f9b014e`):**
   directions (a failed exit would otherwise latch you IN full-screen the same way) so every click
   is a fresh attempt. The latch was latent on master too (clicking Full screen while disconnected
   latched it) — the un-latch fixes that case as well.
-- **Freeze / stuck pointer while resizing** — NOT the UI thread. No blocking primitives exist in
-  the engine (all `DispatcherTimer` + `BeginInvoke`), and the mid-drag synchronous-COM pattern is
-  inherited from the pre-zoom code, which never froze. The regression is what a send now *does*:
-  with SmartSizing OFF, an applied re-fit re-lays out the OCX's client area, and the engine could
-  land several per gesture (retries at 700/1400/2800ms + zoom writes) while a mouse button was
-  still down — a reconfigure under a held button is the stuck-capture trigger. Fixed with a
-  quiet-hands guard at the single send choke point: `TrySendRefit` defers (reschedules, costs no
-  retry budget) while a drag is fresh (<450ms) or any mouse button is down (`GetAsyncKeyState` —
-  WPF's `Mouse` class can't see buttons held inside the OCX's own HWND or during the modal
-  border-resize loop).
+- **Freeze / stuck pointer while resizing** — round 1 shipped a quiet-hands guard at the single
+  send choke point: `TrySendRefit` defers (reschedules, costs no retry budget) while a drag is
+  fresh (<450ms) or any mouse button is down (`GetAsyncKeyState` — WPF's `Mouse` class can't see
+  buttons held inside the OCX's own HWND or during the modal border-resize loop). The guard is
+  CORRECT behavior and stays — but round 2 (below) proved it was NOT the fix, and round 1's two
+  candidate mechanisms (sync COM on the UI thread; a lost button-up in the OCX) were BOTH
+  disproven by instrumentation. Round 1's "NOT the UI thread / inherited from master" reasoning
+  was wrong on both counts — see lying instruments 4 and 5.
+
+**Smoke-test round 2 (2026-07-11) — the freeze diagnosed by instrumentation and fixed (`48eba5b`):**
+
+A throwaway instrument (`RdpFreezeInstrument.cs`, commits `778d627` + `d67979b`, modeled on the
+cold-start poolwatch: a BACKGROUND-thread watchdog that keeps measuring while the UI thread is
+dead, plus per-call COM timings, modal-loop markers, and a Win32-`GetCapture` stuck-capture
+detector) settled it on APVHOP:
+
+| Measured (hard border drag) | Run A (no clicking) | Run B (drag + clicking) |
+|---|---|---|
+| UI-thread block | 12,437 ms | 12,453 ms |
+| COM calls inside the modal drag | 0 | 0 |
+| comMsTotal during the block | 0 | 0 |
+| OCX mutations with a button held | 0 | 0 |
+| `[RDP stuckcapture]` fired | no | no |
+
+- **Sync COM on the UI thread: DEAD.** Zero COM calls during every block; the feared post-settle
+  burst measured 12 calls / 0 ms total. The engine's COM calls cost nothing.
+- **Stuck capture / lost button-up: DEAD.** Never fired; `physBtn=1 captured=1` throughout — the
+  border drag holds capture correctly.
+- **The clicking is irrelevant** (Run A→B delta: 16 ms) — the symptom is just DRAG.
+- **Operator bisection:** no RDP visible → no freeze; session open but its tab switched away → no
+  freeze, switch back → freezes; **master (1.14.6), same session, same long drag → NO freeze.**
+  Round 1's "master has the identical hole — inherited, not a regression" was WRONG: master had
+  never been tested. The freeze was a regression of THIS branch.
+
+**The real mechanism — a RENDER stall, not a call.** A border drag fires `SizeChanged` per mouse
+move; `ApplyHostSize` pushed the new size into the `WindowsFormsHost` per tick; each OCX HWND
+re-layout repaints the control's whole image synchronously on the UI thread inside Windows' modal
+resize loop. On master that repaint is a cheap 1:1 present (SmartSizing ON, no zoom). On this
+branch (SmartSizing OFF + ZoomLevel 150) every repaint rescales the whole framebuffer — dozens of
+times a second = the 12 seconds, with `comCalls=0` throughout because none of that work crosses a
+wrappable call site.
+
+**The fix (`48eba5b`) — defer the host resize until the drag settles.** While the window is inside
+`WM_ENTERSIZEMOVE`..`WM_EXITSIZEMOVE` OR a physical mouse button is held (a **GridSplitter** drag —
+`CrossDomainRdpView.xaml` column 1 — raises no modal messages, so the button is the only signal),
+`ApplyHostSize` STASHES the pending size instead of pushing it; it is applied once on settle via
+three redundant triggers (`WM_EXITSIZEMOVE`, a 200ms button-release poll, the resize settle), then
+one `KickSettle` converges the session through the normal verified engine. Same discipline as the
+send debounce, one layer down. Accepted visual trade: the pane holds a stale image during the drag
+and snaps on release. The fix changes only WHEN the control HWND is resized — never the scale, the
+framebuffer, or the session (pin cardinal untouched).
 
 **Pre-build probe (a/b/c — odd zoom values, FS zoom persistence, compact pulse): results pending;
 the conservative defaults shipped (ladder snap, zoom parked at 100 before full-screen entry,
@@ -255,7 +296,7 @@ them.**
 
 ---
 
-## Three lying instruments — the transferable lesson of this whole arc
+## Lying instruments — the transferable lesson of this whole arc
 
 Every wrong turn in this investigation was an instrument reporting something other than what it
 measured. Burn these in:
@@ -274,6 +315,16 @@ measured. Burn these in:
    bar's 32-DIP collapse as a server-side "height deficit that tracks the request". Split it
    (`fbConnect=` vs `fbNow=`) and the mystery evaporated. Every number on an instrument must say
    what it IS, not what the reader assumes it means.
+4. **"No sleep/wait/lock anywhere" does not prove the UI thread is unblocked.** Every
+   `DispatcherTimer` tick RUNS ON the UI thread, every OCX property get/set is a synchronous call
+   into an STA control, and — the round-2 lesson — a per-tick HWND re-layout can park the thread
+   for 12 seconds without ANY of them. Static code reading is a proxy that cannot observe
+   blocking; only a background-thread liveness watchdog (the cold-start poolwatch pattern)
+   measures it.
+5. **`comCalls=0` does not mean the OCX is idle.** The control's render path (HWND resize →
+   synchronous full repaint) never crosses a wrappable call site — an instrument that times CALLS
+   is structurally blind to work the control does inside the layout/paint pipeline. Pair call
+   timing with a UI-liveness gap measurement, or the biggest cost is invisible.
 
 ### Spike round history (for the record; all on `feat/rdp-popout-window`)
 
