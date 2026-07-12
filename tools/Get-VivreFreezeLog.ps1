@@ -26,7 +26,10 @@ $ErrorActionPreference = 'Stop'
 
 $logDir   = Join-Path $env:LOCALAPPDATA 'Vivre\logs'
 $markFile = Join-Path $env:TEMP        'vivre-rdp-mark.txt'
-$pattern  = '\[RDP (instrument|uithread|com|modal|stuckcapture|landed)\]'
+# 'disc' was MISSING from this list while the disconnect hunt was running — the harvester silently
+# dropped the very lines being hunted (lying instrument #8 in the playbook). When a new [RDP xxx]
+# line family is added to an instrument, add it HERE in the same commit.
+$pattern  = '\[RDP (instrument|uithread|com|modal|stuckcapture|landed|disc)\]'
 
 # ---------------------------------------------------------------- find the newest log
 if (-not (Test-Path $logDir)) { throw "No log folder at $logDir  — is Vivre installed on this box?" }

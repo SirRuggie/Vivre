@@ -42,6 +42,7 @@ Every one of these felt like evidence. Every one was wrong. Catalogue, growing:
 | 5 | `comCalls=0` during the freeze | **our** COM calls into the control | the control **was idle** |
 | 6 | A PS harness writing the test script with `Set-Content -Encoding UTF8` | a file **the harness wrote** (with a BOM) | the file **the app writes** (no BOM) |
 | 7 | A log-summary heuristic counting "slow COM calls" | **every** slow call in the file, including session-open | slow calls **during the block** |
+| 8 | The harvester's line filter | only the `[RDP xxx]` **families listed in its regex** when it was written | **all** instrument lines in the window | 
 
 ### They all have the same shape
 
@@ -233,6 +234,12 @@ first; bisect only if the fix fails.
 call" verdict counts every slow call in the window, including harmless session-open ones. **Read
 `max gapMs` and the stuck-capture flag. Ignore the verdict.** Left in deliberately, as a reminder that
 even the tool you build to catch lies can tell one.
+
+**And #8, which cost a full round of blank results in the disconnect hunt:** the harvester's line
+FILTER only matches the `[RDP xxx]` families it knew when it was written — a new instrument's lines
+are silently dropped until the regex is updated. **Zero matches from a fresh run means CHECK THE
+FILTER before concluding "no data"**, and adding a new line family to an instrument means updating
+the harvester's regex in the same commit.
 
 ---
 
