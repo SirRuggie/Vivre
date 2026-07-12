@@ -25,8 +25,11 @@ it ships, then gets a dated heading.
   went silently dead for the life of that tab. Now the failure is logged to the activity log with the
   control's state, and the button stays clickable — every click is a fresh attempt.
 - **Re-fits now wait for quiet hands.** The engine never changes the session's resolution while you're
-  mid-drag or holding a mouse button — the cause of the brief freeze / stuck-pointer glitch seen when
-  resizing while working in the session.
+  mid-drag or holding a mouse button.
+- **Dragging the window border (or the tree splitter) no longer freezes the app.** The remote image now
+  holds its last frame during the drag and snaps to the new size on release. Previously every drag tick
+  re-laid-out and repainted the zoomed remote image inside the resize loop, freezing the whole app for
+  the length of the drag.
 
 ## 1.14.6 — 2026-07-11
 

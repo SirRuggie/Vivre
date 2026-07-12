@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using AxMSTSCLib;
 using MSTSCLib;
 using Vivre.Core.Rdp;
@@ -53,6 +54,12 @@ public partial class RdpSessionView : UserControl
     private Window? _hostWindow; // for the StateChanged restore kick; null = treat as not minimized
     private readonly RdpFreezeInstrument _instr = new(); // THROWAWAY smoke-round-2 freeze instrument — remove before merge
 
+    // ---- drag-deferred host sizing (see ApplyHostSize) ----
+    private readonly System.Windows.Threading.DispatcherTimer _hostSizePoll; // applies a stashed host size once hands are off
+    private HwndSource? _windowSource;  // fix-owned modal size/move hook — independent of the throwaway instrument
+    private bool _windowSizeMoveLoop;   // inside the window's WM_ENTERSIZEMOVE..WM_EXITSIZEMOVE modal loop
+    private Size? _pendingHostSize;     // host size stashed during a live drag; applied once on settle
+
     // ---- re-fit engine state (per view; counters/latches reset in CreateControl) ----
     private int _refitGeneration;     // bumped by every size intent; cancels the pending verify
     private int _sendSequence;        // stamped per send; queued accelerator bodies bail if outdated
@@ -89,6 +96,10 @@ public partial class RdpSessionView : UserControl
         // so a re-loaded view keeps working (the old unhook-in-Dispose left reloads with a dead timer).
         _verifyTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(VerifyBaseDelayMs) };
         _verifyTimer.Tick += OnVerifyTick;
+        // Applies a drag-stashed host size as soon as hands are off (covers GridSplitter drags, which raise
+        // no modal size/move messages — the button release is the only signal). Hooked here only, like the rest.
+        _hostSizePoll = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(200) };
+        _hostSizePoll.Tick += OnHostSizePollTick;
         // Hidden sessions (keep-alive ItemsControl collapses non-active ones) reconnect/resize against stale
         // layout — kick a re-fit + zoom re-assert when the view becomes visible again.
         IsVisibleChanged += OnViewVisibleChanged;
@@ -120,6 +131,14 @@ public partial class RdpSessionView : UserControl
         if (_hostWindow is not null)
         {
             _hostWindow.StateChanged += OnHostWindowStateChanged;
+
+            // WM_ENTERSIZEMOVE/WM_EXITSIZEMOVE mark the window's modal border-drag loop — the primary
+            // suppress window for ApplyHostSize (the OCX must not be re-laid-out per drag tick).
+            if (PresentationSource.FromVisual(_hostWindow) is HwndSource windowSource)
+            {
+                _windowSource = windowSource;
+                _windowSource.AddHook(OnWindowMessage);
+            }
         }
 
         _instr.Start(vm.Log, vm.Title, _hostWindow); // THROWAWAY freeze instrument
@@ -332,7 +351,7 @@ public partial class RdpSessionView : UserControl
 
     private void OnHostContainerSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        ApplyHostSize();                        // resize the host/control now
+        ApplyHostSize();                        // resize the host/control — or STASH it while a drag is live
         _lastSizeChangedAt = DateTime.UtcNow;   // the verify must not fight a live drag
         BumpIntent();                           // new size intent: supersede any pending verify/retries
         _resizeTimer.Stop();                    // ...and re-fit once resizing settles
@@ -360,6 +379,7 @@ public partial class RdpSessionView : UserControl
     private void OnResizeSettled(object? sender, EventArgs e)
     {
         _resizeTimer.Stop();
+        TryApplyPendingHostSize(); // third apply trigger for a drag-stashed host size (belt and braces)
         TrySendRefit();
     }
 
@@ -933,14 +953,79 @@ public partial class RdpSessionView : UserControl
 
     /// <summary>WindowsFormsHost ignores Stretch and otherwise sizes to the hosted control's default — so set
     /// its size explicitly from its WPF container (DIPs; the host converts to device pixels and sizes the
-    /// Dock=Fill panel/control to match).</summary>
+    /// Dock=Fill panel/control to match).
+    /// <para>THE DRAG RULE: never push a new size into the OCX HWND while the size is still moving. Resizing
+    /// the hosted HWND makes the control repaint its whole image synchronously on the UI thread (with
+    /// client-side zoom, a full rescale of the framebuffer), and a border drag fires SizeChanged dozens of
+    /// times a second — pushing per tick froze the app for the length of the drag (measured: 12.4s blocked,
+    /// ZERO COM calls — a pure render stall; master, which repaints 1:1 with SmartSizing, does not freeze).
+    /// While the window is inside its modal size loop OR a physical mouse button is held (a GridSplitter
+    /// drag raises no modal messages — the button is the only signal), the size is STASHED and applied once
+    /// on settle: the same discipline as the send debounce, one layer down, applied to the control layout
+    /// instead of the session resize. The pane deliberately shows a stale image during the drag and snaps
+    /// on release.</para></summary>
     private void ApplyHostSize()
     {
-        if (HostContainer.ActualWidth > 0 && HostContainer.ActualHeight > 0)
+        if (HostContainer.ActualWidth <= 0 || HostContainer.ActualHeight <= 0)
         {
-            RdpHostElement.Width = HostContainer.ActualWidth;
-            RdpHostElement.Height = HostContainer.ActualHeight;
+            return;
         }
+
+        if (_windowSizeMoveLoop || IsMouseButtonDown())
+        {
+            _pendingHostSize = new Size(HostContainer.ActualWidth, HostContainer.ActualHeight);
+            _hostSizePoll.Start(); // applied on button release; WM_EXITSIZEMOVE and the settle also trigger
+            return;
+        }
+
+        _pendingHostSize = null;
+        RdpHostElement.Width = HostContainer.ActualWidth;
+        RdpHostElement.Height = HostContainer.ActualHeight;
+    }
+
+    /// <summary>Applies the drag-stashed host size once hands are off. Triggered by ALL of: WM_EXITSIZEMOVE,
+    /// the 200ms poll (a GridSplitter/button release has no modal message — the poll is its only trigger),
+    /// and the resize settle — belt and braces, so the OCX is never left stranded at a stale size if one
+    /// trigger misses. Applies the CURRENT container size (always at least as fresh as the stash), then
+    /// kicks one settle so the session converges through the normal verified path.</summary>
+    private void TryApplyPendingHostSize()
+    {
+        if (_pendingHostSize is null)
+        {
+            _hostSizePoll.Stop();
+            return;
+        }
+
+        if (_windowSizeMoveLoop || IsMouseButtonDown())
+        {
+            return; // still dragging — keep polling
+        }
+
+        _hostSizePoll.Stop();
+        _pendingHostSize = null;
+        ApplyHostSize();
+        KickSettle();
+    }
+
+    private void OnHostSizePollTick(object? sender, EventArgs e) => TryApplyPendingHostSize();
+
+    // The window's modal size/move loop markers — the primary suppress window for ApplyHostSize. A pure
+    // title-bar MOVE also raises these; no SizeChanged fires then, so nothing stashes and EXIT is a no-op.
+    private IntPtr OnWindowMessage(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        const int WmEnterSizeMove = 0x0231;
+        const int WmExitSizeMove = 0x0232;
+        if (msg == WmEnterSizeMove)
+        {
+            _windowSizeMoveLoop = true;
+        }
+        else if (msg == WmExitSizeMove)
+        {
+            _windowSizeMoveLoop = false;
+            TryApplyPendingHostSize();
+        }
+
+        return IntPtr.Zero;
     }
 
     /// <summary>Syncs the VM's FullScreen flag (the toolbar sets it true) to the control, in mstsc's own
@@ -1187,6 +1272,9 @@ public partial class RdpSessionView : UserControl
         _instr.Stop(); // THROWAWAY freeze instrument
         _resizeTimer.Stop();
         _verifyTimer.Stop();
+        _hostSizePoll.Stop();
+        _windowSource?.RemoveHook(OnWindowMessage);
+        _windowSource = null;
 
         if (_hostWindow is not null)
         {
