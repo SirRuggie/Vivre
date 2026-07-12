@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.15.0 — 2026-07-12
+
 ### Changed
 - **Cross-Domain RDP sessions are now readable on high-DPI displays.** The embedded remote image is
   magnified to match your display scale (150% on the jump box) using the RDP client's own zoom — the
