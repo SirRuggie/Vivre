@@ -342,7 +342,10 @@ public partial class RdpSessionView : UserControl
         var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
         int width = Math.Max((int)Math.Ceiling(640 / dpi.DpiScaleX), (int)Math.Round(HostContainer.ActualWidth));
         int height = Math.Max((int)Math.Ceiling(480 / dpi.DpiScaleY), (int)Math.Round(HostContainer.ActualHeight));
-        return (width & ~1, height);
+        // BOTH dims floored to even: the spec mandates even WIDTH only, but every mid-session re-fit
+        // ever recorded as APPLIED had an even height too (1280x772), and 1800x1099 (legal per spec)
+        // was dropped — the server's display-control path appears to require even on both axes.
+        return (width & ~1, height & ~1);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -512,7 +515,7 @@ public partial class RdpSessionView : UserControl
             System.Drawing.Rectangle bounds = System.Windows.Forms.Screen.FromControl(_rdp).Bounds;
             if (bounds.Width > 0 && bounds.Height > 0)
             {
-                return (bounds.Width & ~1, bounds.Height);
+                return (bounds.Width & ~1, bounds.Height & ~1);
             }
         }
 
@@ -607,6 +610,12 @@ public partial class RdpSessionView : UserControl
     // fixed at connect time). Switch modes by toggling, then closing and reopening the session.
     private void OnSpikeModeChanged(object sender, RoutedEventArgs e) =>
         _spikeEnableZoomMode = SpikeEnableZoomCheck.IsChecked == true;
+
+    // SPIKE-0B - REMOVE: manual re-fit trigger — the timing discriminator. The post-login re-fit
+    // fires ~450ms after login, possibly before the DisplayControl channel is open (silently
+    // discarded, nothing retries). If the session is stale at connect size but snaps to fb when
+    // this is pressed LATE, the drop was timing — and verify-and-retry is the real build's cure.
+    private void OnSpikeRefit(object sender, RoutedEventArgs e) => OnResizeSettled(this, EventArgs.Empty);
 
     /// <summary>Disconnects and tears the control down (called via Unloaded — see the ctor).</summary>
     public void DisposeSession()

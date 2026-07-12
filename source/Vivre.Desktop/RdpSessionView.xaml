@@ -45,6 +45,7 @@
                     <ComboBoxItem Content="225" />
                 </ComboBox>
                 <Button DockPanel.Dock="Right" Content="Apply zoom" Click="OnSpikeApplyZoom" Margin="6,0" Padding="8,2" />
+                <Button DockPanel.Dock="Right" Content="Re-fit" Click="OnSpikeRefit" Padding="8,2" />
                 <TextBlock x:Name="SpikeDiag" VerticalAlignment="Center" FontFamily="Consolas" FontSize="11"
                            Foreground="#FF333333" Text="spike-0b: waiting for connect…" TextTrimming="CharacterEllipsis" />
             </DockPanel>
