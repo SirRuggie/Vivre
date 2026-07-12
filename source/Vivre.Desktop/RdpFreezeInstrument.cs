@@ -15,9 +15,14 @@ namespace Vivre.Desktop;
 //   (a) UI-thread hard block — a synchronous COM call into the STA OCX parks the UI thread.
 //       Signal: [RDP uithread] gapMs grows large (the UI ticker stopped stamping while the
 //       BACKGROUND sampler kept measuring).
-//   (b) lost button-up / stuck capture — the OS says the button is UP while WPF still believes it
-//       is DOWN. Signal: physBtn=0 wpfBtn=1 with a SMALL gapMs (UI alive, input state wedged).
-//       physBtn and wpfBtn are DIFFERENT quantities; their disagreement IS the (b) signal.
+//   (b) lost button-up / stuck capture — two detectors, both armed:
+//       [RDP stuckcapture]: physBtn=0 AND captured=1 — nobody's finger is on a button, yet
+//       something on the UI thread still holds the mouse (GetCapture() covers WPF, WinForms, AND
+//       the OCX's own HWND). THE definitive (b) signal for the gesture under test — WPF's Mouse
+//       class can't see buttons held inside the OCX HWND or the modal resize loop, so the wpfBtn
+//       mismatch below is structurally blind there; GetCapture() is not.
+//       physBtn=0 wpfBtn=1 with a SMALL gapMs — the OS says UP while WPF still believes DOWN.
+//       physBtn and wpfBtn are DIFFERENT quantities; their disagreement is also a (b) signal.
 //
 // Approach reused from the cold-start freeze hunt (docs/cold-start-freeze-and-threadpool-findings.md):
 // the watchdog samples FROM A BACKGROUND THREAD, so it keeps measuring even while the UI thread is
@@ -52,14 +57,26 @@ internal sealed class RdpFreezeInstrument
     private bool _inBlock;
     private long _blockStartMs;
     private long _lastBlockLineMs;
+    private long _blockComCallsAtOnset;
+    private long _blockComMsAtOnset;
     private int _mismatchStreak;
     private bool _inMismatch;
     private long _mismatchStartMs;
+    private int _stuckStreak;
+    private bool _inStuck;
+    private long _stuckStartMs;
+    private long _lastStuckLineMs;
 
     // Modal-loop COM counters (touched only on the UI thread, where all timed calls run).
     private long _modalEnterMs;
     private int _modalComCalls;
     private long _modalComMsTotal;
+
+    // Monotonic totals of every timed OCX call (written UI-side via Interlocked, read by the
+    // watchdog) — the recovery line reports the delta across a blocked window, so a
+    // death-by-a-thousand-cuts block (hundreds of sub-50ms calls) is visible OUTSIDE modal loops too.
+    private long _globalComCalls;
+    private long _globalComMs;
 
     public RdpFreezeInstrument()
     {
@@ -130,6 +147,9 @@ internal sealed class RdpFreezeInstrument
     /// <summary>For block timings that can't wrap in a lambda (nullable-flow) — same reporting path.</summary>
     public void ReportTimed(string call, long ms)
     {
+        Interlocked.Increment(ref _globalComCalls);
+        Interlocked.Add(ref _globalComMs, ms);
+
         if (_modal)
         {
             _modalComCalls++;
@@ -167,7 +187,9 @@ internal sealed class RdpFreezeInstrument
         bool modal = _modal;
 
         // (a) UI-thread liveness: gapMs large -> the UI thread is blocked. One line at onset, then at
-        // most one per second while it persists, then one recovery line with the total.
+        // most one per second while it persists, then one recovery line carrying the totals of every
+        // timed OCX call that STARTED inside the blocked window — so a block filled with hundreds of
+        // sub-50ms calls is visible even when no single call crosses the [RDP com] line.
         if (gap > GapAnomalyMs)
         {
             if (!_inBlock)
@@ -175,6 +197,8 @@ internal sealed class RdpFreezeInstrument
                 _inBlock = true;
                 _blockStartMs = now - gap;
                 _lastBlockLineMs = 0;
+                _blockComCallsAtOnset = Interlocked.Read(ref _globalComCalls);
+                _blockComMsAtOnset = Interlocked.Read(ref _globalComMs);
             }
 
             if (now - _lastBlockLineMs >= 1000)
@@ -186,13 +210,22 @@ internal sealed class RdpFreezeInstrument
         else if (_inBlock)
         {
             _inBlock = false;
-            Emit($"[RDP uithread] recovered blockedMs={now - _blockStartMs}");
+            long blockComCalls = Interlocked.Read(ref _globalComCalls) - _blockComCallsAtOnset;
+            long blockComMs = Interlocked.Read(ref _globalComMs) - _blockComMsAtOnset;
+            Emit($"[RDP uithread] recovered blockedMs={now - _blockStartMs} comCalls={blockComCalls} comMsTotal={blockComMs}");
         }
 
-        // (b) lost button-up: hardware UP while WPF still believes DOWN. Only meaningful when the UI
-        // thread is alive (wpfBtn fresh); two consecutive samples filter the normal few-ms latency
-        // between the hardware up and WPF processing the message.
-        if (!physBtn && wpfBtn && gap <= GapAnomalyMs)
+        if (gap > GapAnomalyMs)
+        {
+            // wpfBtn/captured are as-of-the-last-completed UI tick — STALE while the UI thread is
+            // blocked. Freeze both input-state detectors (no advance, no spurious clear); a stuck
+            // capture PERSISTS past the block, so it fires within ~500ms of the first fresh tick.
+            return;
+        }
+
+        // (b1) lost button-up mismatch: hardware UP while WPF still believes DOWN. Two consecutive
+        // samples filter the normal few-ms latency between the hardware up and WPF's message.
+        if (!physBtn && wpfBtn)
         {
             _mismatchStreak++;
             if (_mismatchStreak == 2)
@@ -211,6 +244,38 @@ internal sealed class RdpFreezeInstrument
 
             _inMismatch = false;
             _mismatchStreak = 0;
+        }
+
+        // (b2) stuck capture — THE definitive (b) signal: nobody's finger is on any button, yet
+        // something on the UI thread still holds the mouse (GetCapture() sees WPF, WinForms, and the
+        // OCX's own HWND — where WPF's Mouse class is blind). Two consecutive samples debounce the
+        // normal button-up/capture-release transient; one line at onset, at most one per second
+        // while it persists, then a cleared line with the total.
+        if (!physBtn && captured)
+        {
+            _stuckStreak++;
+            if (_stuckStreak == 2)
+            {
+                _inStuck = true;
+                _stuckStartMs = now - SampleMs;
+                _lastStuckLineMs = now;
+                Emit($"[RDP stuckcapture] physBtn=0 captured=1 wpfBtn={Bit(wpfBtn)} heldMs={now - _stuckStartMs} modal={Bit(modal)}");
+            }
+            else if (_inStuck && now - _lastStuckLineMs >= 1000)
+            {
+                _lastStuckLineMs = now;
+                Emit($"[RDP stuckcapture] physBtn=0 captured=1 wpfBtn={Bit(wpfBtn)} heldMs={now - _stuckStartMs} modal={Bit(modal)}");
+            }
+        }
+        else
+        {
+            if (_inStuck)
+            {
+                Emit($"[RDP stuckcapture] cleared afterMs={now - _stuckStartMs}");
+            }
+
+            _inStuck = false;
+            _stuckStreak = 0;
         }
     }
 
