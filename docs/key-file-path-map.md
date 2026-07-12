@@ -252,7 +252,8 @@ direction from the crash.
 ## Cross-Domain RDP
 - `source/Vivre.Desktop/RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded RDP host; owns control creation,
   `LocalScale()` (pinned to `(100,100)` for the FCM fix, `a7b8833` — THE PIN CARDINAL, read at exactly two
-  sites: the connect block and `ResizeRemote`), the client-side **ZoomLevel** magnification (logical
+  sites: the connect block and `ResizeRemote`; gate greps after any RDP commit: `= LocalScale();` → exactly
+  2, `_rdp.UpdateSessionDisplaySettings` → exactly 1), the client-side **ZoomLevel** magnification (logical
   framebuffer, SmartSizing off while zoomed; zoom parks to 100 BEFORE a full-screen entry attempt — mstsc's
   order — and a failed switch is logged + un-latched in both directions), and the **verified re-fit engine**
   (spaced sends, read-back verify + retries, even-both-dims sizes per MS-RDPEDISP, sends deferred while a

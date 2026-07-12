@@ -18,7 +18,7 @@
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-09 (release 1.14.4):** the full five-lens audit
+**Audit findings (2026-07-01) — status as of 2026-07-12 (release 1.14.6, suite 786 green):** the full five-lens audit
 record is `docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
 **and every actionable MED is closed too:** Stop-during-SMB-copy + settings-save-invisible-in-Release
@@ -211,12 +211,16 @@ standalone items further down, each "do only if it recurs / when a signal appear
   arbitrary-script-over-SMB-as-SYSTEM without a strong reason).
 - **Force-reboot-over-RPC/SMB** as an additional wave fallback path — only if the DCOM + SMB reboot
   paths prove insufficient at scale.
-- **Embedded RDP magnification** — the remote renders compact vs mRemoteNG's bigger/readable image. Proved
-  SmartSizing will **NOT** upscale inside `WindowsFormsHost`; mRemoteNG's size comes from pure-WinForms
-  framework DPI scaling its WPF-airspace host can't replicate. Recommended next lever: a **per-host
-  display-scale toggle** (real scale default, force-100% on cluster/FCM boxes). Full findings + all candidate
-  paths in `docs/vivre-rdp-scaling-and-fcm-findings.md`. (The throwaway `[RDP fill diag]` scaffold + the
-  ÷1.5 / undock+explicit-Size experiments are parked in `git stash` for a future Fit-To-Panel attempt.)
+- **Embedded RDP magnification — SOLVED** (branch `feat/rdp-clientside-zoom`, awaiting the operator's
+  final acceptance run + merge). This item's old theory (mRemoteNG = WinForms framework DPI scaling;
+  recommended lever = a **per-host display-scale toggle**) was **DISPROVEN** — mRemoteNG ships
+  DPI-unaware, and any session scale above 100% breaks FCM, so the toggle is a dead lever; do not
+  build it. Shipped answer: the OCX's own **ZoomLevel** (client-side zoom; the session stays at 100% —
+  THE PIN CARDINAL: `LocalScale()` = (100,100); gate greps `= LocalScale();` → exactly 2 and
+  `_rdp.UpdateSessionDisplaySettings` → exactly 1) + the verified re-fit engine + the drag-deferred
+  host resize (the 12s border-drag freeze was a render regression, cracked by instrumentation — tag
+  `instrument/ui-freeze-watchdog`). Full record: `docs/vivre-rdp-scaling-and-fcm-findings.md`;
+  method: `docs/freeze-hunting-playbook.md`.
 
 ---
 
