@@ -6,6 +6,21 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **Cross-Domain RDP sessions are now readable on high-DPI displays.** The embedded remote image is
+  magnified to match your display scale (150% on the jump box) using the RDP client's own zoom — the
+  session itself stays at 100% scale, so Failover Cluster Manager context menus keep working. Full
+  screen still shows the monitor's native resolution (crisp, smaller UI) as before. On a 100% display
+  nothing changes.
+
+### Fixed
+- **Resizing the RDP pane now reliably re-fits the remote session.** Size changes are verified against
+  what the session actually became and retried when the server silently drops them (which it does for
+  back-to-back requests and for odd widths — a protocol rule). Minimizing and restoring the window no
+  longer strands the session at a wrong size, and the brief status-bar space change at connect
+  converges on its own. If a size genuinely won't take, one activity-log warning says exactly what was
+  requested and what the session reports.
+
 ## 1.14.6 — 2026-07-11
 
 ### Added

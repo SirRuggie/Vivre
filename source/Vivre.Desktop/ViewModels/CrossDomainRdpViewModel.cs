@@ -137,7 +137,7 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
             return false;
         }
 
-        var session = new RdpSessionViewModel(hostNode.Name, settings);
+        var session = new RdpSessionViewModel(hostNode.Name, settings, _activity);
         session.CloseRequested += () => CloseSession(session); // e.g. the remote user logs off → close the tab
         Sessions.Add(session);
         OnPropertyChanged(nameof(HasSessions));

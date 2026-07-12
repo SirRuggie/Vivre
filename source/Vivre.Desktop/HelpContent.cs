@@ -697,6 +697,7 @@ public static class HelpContent
                 "• Open it from Cross-Domain RDP in the left navigation.",
                 "• A folder tree of hosts on the left; live, tabbed RDP sessions on the right.",
                 "• Sessions stay connected when you switch to another section and back.",
+                "• The remote image is magnified to match your display scale, so it's readable on high-DPI screens.",
             ],
             Tip = "It's for hosts on other domains — Vivre hands the saved credentials straight to the session.",
         },
@@ -722,9 +723,10 @@ public static class HelpContent
             [
                 "Connect: select a host and click Connect, or just double-click it — it opens a session tab on the right.",
                 "Switch sessions with the tabs above the remote view; switch to a machine tab and back without dropping them.",
-                "Full screen: click Full screen (Ctrl+Alt+Break toggles back out).",
+                "Full screen: click Full screen (Ctrl+Alt+Break toggles back out). Full screen shows the remote at the monitor's native resolution — crisper but smaller than the windowed view; that's deliberate.",
                 "Disconnect: click the ✕ on a session tab, or select it and click Disconnect.",
                 "Dropped connection: if a session drops (network blip, server reboot, idle timeout) it stays open as disconnected — click Reconnect to rebuild it. Signing out inside the remote closes its tab automatically.",
+                "While you drag-resize, the image may show brief borders for a second until it re-fits; on some pane sizes a 1-3 pixel unpainted edge at the right/bottom is normal.",
             ],
         },
     ];

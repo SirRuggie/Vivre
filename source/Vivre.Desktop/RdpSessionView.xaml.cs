@@ -13,15 +13,33 @@ namespace Vivre.Desktop;
 /// WindowsFormsHost for one Cross-Domain RDP session.
 /// </summary>
 /// <remarks>
-/// Sizing follows the proven pattern (Microsoft's RDPinWpf sample + the WindowsFormsHost layout docs): the Ax
-/// control is <c>Dock=Fill</c> inside an intermediate WinForms <see cref="System.Windows.Forms.Panel"/>, and
-/// that Panel is the host's <c>Child</c> — so the host sizes the (flexible) Panel rather than the ActiveX
-/// wrapper, which has a ~150px default it won't shrink below. WindowsFormsHost ignores Stretch, so we set its
-/// Width/Height explicitly from its WPF container on every resize. We never size the Ax control ourselves; we
-/// only reconnect the remote desktop to the new pixel size so it stays pixel-accurate (no scaling/letterbox).
+/// <para><b>Rendering model (client-side zoom):</b> the session renders at 100% scale into a LOGICAL-size
+/// framebuffer (the pane's DIP size), and the OCX's documented ZoomLevel feature magnifies it client-side to
+/// fill the physical pane — readable at high DPI with the session scale untouched. THE PIN CARDINAL:
+/// <see cref="LocalScale"/> stays hardcoded (100,100) and is read at EXACTLY TWO sites (the connect-time
+/// extended-settings block and <see cref="ResizeRemote"/>) — the Failover Cluster Manager context-menu bug
+/// trips at any session scale above 100% (Microsoft won't-fix), and the zoom design additionally REQUIRES the
+/// session at 100%. Never raise it, never remove either read site.</para>
+/// <para><b>Re-fit engine:</b> UpdateSessionDisplaySettings reports success for requests the server silently
+/// drops (proven: requests arriving back-to-back are dropped or land a stale intermediate — the
+/// minimize/restore repro), and MS-RDPEDISP forbids odd display-control widths. So every size change is
+/// VERIFIED: sends go through one choke point with minimum spacing, a one-shot verify timer reads the session
+/// size back (the OCX's DesktopWidth/Height read-back tracked reality faithfully in every recorded
+/// observation) and re-sends until the session matches the CURRENT expectation, with the OCX's
+/// OnRemoteDesktopSizeChange event as the applied-signal accelerator. All sizes are floored to EVEN on both
+/// dimensions (width is protocol law; height is empirical caution) and to the protocol minimum of 200.</para>
+/// <para><b>Hosting:</b> the Ax control is <c>Dock=Fill</c> inside an intermediate WinForms Panel, the Panel is
+/// the host's Child (the ActiveX wrapper has a ~150px default it won't shrink below), and the host's size is
+/// set explicitly from its WPF container on every resize (WindowsFormsHost ignores Stretch).</para>
 /// </remarks>
 public partial class RdpSessionView : UserControl
 {
+    private const int MaxRefitRetries = 3;
+    private const int MinSendSpacingMs = 500;   // back-to-back sends are the proven drop trigger
+    private const int VerifyBaseDelayMs = 700;
+
+    private static readonly uint[] ZoomLadder = [100, 125, 150, 175, 200, 250, 300, 400, 500];
+
     private AxMsRdpClient9NotSafeForScripting? _rdp;
     private System.Windows.Forms.Panel? _hostPanel;
     private RdpSessionViewModel? _vm;
@@ -29,6 +47,32 @@ public partial class RdpSessionView : UserControl
     private bool _connected; // reached the remote desktop at least once (login completed)
     private bool _closing;   // tearing the control down ourselves — ignore its own disconnect event
     private readonly System.Windows.Threading.DispatcherTimer _resizeTimer;
+    private readonly System.Windows.Threading.DispatcherTimer _verifyTimer;
+    private Window? _hostWindow; // for the StateChanged restore kick; null = treat as not minimized
+
+    // ---- re-fit engine state (per view; counters/latches reset in CreateControl) ----
+    private int _refitGeneration;     // bumped by every size intent; cancels the pending verify
+    private int _sendSequence;        // stamped per send; queued accelerator bodies bail if outdated
+    private int _retryCount;          // counts ONLY genuine-drop re-sends (fire-time expected == last sent)
+    private (int Width, int Height) _lastSentSize;
+    private DateTime _lastSendAt = DateTime.MinValue;
+    private DateTime _lastSizeChangedAt = DateTime.MinValue; // verify won't fight a live drag
+    private bool _fullScreen;         // view-side FS flag (synchronous, unlike the marshaled VM property)
+    private bool _refitWarnLatched;
+    private bool _zoomWarnLatched;
+
+    // Zoom failed on this session: zoom off, SmartSizing on, framebuffer = physical (today's
+    // fill-but-compact — never worse than shipping). Reset in CreateControl so Reconnect retries zoom.
+    private bool _degraded;
+
+    // The server threw on UpdateSessionDisplaySettings (pre-RDP-8.1: no dynamic resize). STICKY across
+    // rebuilds (deliberately NOT reset in CreateControl — same server): the session is rebuilt once at the
+    // degraded physical size with SmartSizing, and the engine stays dormant (no sends, no verifies).
+    private bool _legacyServer;
+
+    // Client-side zoom percent, derived from the display scale and snapped DOWN to the mstsc ladder.
+    // 100 = zoom off (SmartSizing stays on — today's behavior on 100% displays).
+    private uint _zoomPercent = 100;
 
     public RdpSessionView()
     {
@@ -36,6 +80,14 @@ public partial class RdpSessionView : UserControl
         // Debounce resizes: re-fit the actual remote resolution to the new pane size once resizing settles.
         _resizeTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(450) };
         _resizeTimer.Tick += OnResizeSettled;
+        // One-shot verify: reads the session size back after a send and re-sends until it matches the CURRENT
+        // expectation. Tick handlers are hooked HERE ONLY and never unhooked — DisposeSession only Stop()s them,
+        // so a re-loaded view keeps working (the old unhook-in-Dispose left reloads with a dead timer).
+        _verifyTimer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(VerifyBaseDelayMs) };
+        _verifyTimer.Tick += OnVerifyTick;
+        // Hidden sessions (keep-alive ItemsControl collapses non-active ones) reconnect/resize against stale
+        // layout — kick a re-fit + zoom re-assert when the view becomes visible again.
+        IsVisibleChanged += OnViewVisibleChanged;
         Loaded += OnLoaded;
         // Unloaded fires only when the session is truly removed (its tab closed, or the Cross-Domain RDP tab closed):
         // the shell uses TabControlEx + an ItemsControl, so a tab/session SWITCH collapses the view, not unload.
@@ -55,6 +107,16 @@ public partial class RdpSessionView : UserControl
         _closing = false;
         _connected = false;
         _connectStarted = false;
+
+        _zoomPercent = DeriveZoomPercent();
+
+        // Minimize→restore can return the window to IDENTICAL bounds, firing no SizeChanged — hook the
+        // window's StateChanged so a restore always kicks one settle (the engine converges from there).
+        _hostWindow = Window.GetWindow(this);
+        if (_hostWindow is not null)
+        {
+            _hostWindow.StateChanged += OnHostWindowStateChanged;
+        }
 
         CreateControl();
 
@@ -81,6 +143,16 @@ public partial class RdpSessionView : UserControl
 
         ApplyHostSize(); // give the host an explicit size now (Stretch is ignored on WindowsFormsHost)
 
+        // Fresh control = fresh engine bookkeeping. _legacyServer deliberately survives (same server).
+        _retryCount = 0;
+        _lastSentSize = default;
+        _lastSendAt = DateTime.MinValue;
+        _refitWarnLatched = false;
+        _zoomWarnLatched = false;
+        _degraded = false;
+        _fullScreen = false;
+        _verifyTimer.Stop();
+
         _rdp.OnConnecting += OnRdpConnecting;
         _rdp.OnConnected += OnRdpConnected;
         _rdp.OnLoginComplete += OnRdpLoginComplete;
@@ -90,6 +162,10 @@ public partial class RdpSessionView : UserControl
         _rdp.OnAutoReconnected += OnRdpAutoReconnected;
         _rdp.OnEnterFullScreenMode += OnEnterFullScreen;
         _rdp.OnLeaveFullScreenMode += OnLeaveFullScreen;
+        // Applied-signal accelerator: the OCX raises this when the session size ACTUALLY changes — run the
+        // verify immediately instead of waiting out the timer. Subscribed per control (a subscribe-once slip
+        // would silently kill it after the first Reconnect); unhooked in TearDownControl with the rest.
+        _rdp.OnRemoteDesktopSizeChange += OnRdpRemoteDesktopSizeChange;
     }
 
     /// <summary>Unsubscribes the control's events (BEFORE disconnecting, so its Disconnect() can't re-enter our
@@ -97,6 +173,8 @@ public partial class RdpSessionView : UserControl
     /// DisposeSession (final teardown).</summary>
     private void TearDownControl()
     {
+        _verifyTimer.Stop();
+
         if (_rdp is null)
         {
             return;
@@ -111,6 +189,7 @@ public partial class RdpSessionView : UserControl
         _rdp.OnAutoReconnected -= OnRdpAutoReconnected;
         _rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
         _rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
+        _rdp.OnRemoteDesktopSizeChange -= OnRdpRemoteDesktopSizeChange;
 
         try
         {
@@ -147,20 +226,21 @@ public partial class RdpSessionView : UserControl
             _rdp.UserName = s.UserName;
             _rdp.Domain = s.Domain ?? string.Empty;
 
-            // Connect at the pane's size in physical pixels so the remote matches it 1:1 (no scaling/letterbox);
-            // we reconnect to the new size on resize (OnResizeSettled). The control bitmap fills via Dock=Fill.
-            (int width, int height) = RemotePixelSize();
+            // Connect at the current expectation: LOGICAL pane size normally (the zoom magnifies it to fill),
+            // or the degraded/legacy PHYSICAL size (SmartSizing fills, compact — today's behavior).
+            (int width, int height) = ExpectedSize();
             _rdp.DesktopWidth = width;
             _rdp.DesktopHeight = height;
+            _lastSentSize = (width, height); // connect counts as a send for spacing/verify bookkeeping
+            _lastSendAt = DateTime.UtcNow;
 
             // NLA via CredSSP: on by default; OFF lets a server on another domain accept the supplied
             // credentials instead of rejecting delegated/saved ones (the cross-domain 0x2107 rejection).
             _rdp.AdvancedSettings9.EnableCredSspSupport = s.NlaEnabled;
 
-            // SmartSizing scales the remote image to the control (and to the monitor in full-screen): smooth
-            // live resize with NO reconnect. Reconnecting on resize triggers a protocol-error disconnect on
-            // some servers, so we scale instead. The control owns full-screen (toolbar / Ctrl+Alt+Break).
-            _rdp.AdvancedSettings9.SmartSizing = true;
+            // SmartSizing and ZoomLevel are mutually exclusive (Microsoft docs): zoom sessions run with
+            // SmartSizing OFF; 100%-scale, degraded, and legacy sessions keep SmartSizing ON (today's model).
+            _rdp.AdvancedSettings9.SmartSizing = _zoomPercent <= 100 || _degraded || _legacyServer;
             _rdp.AdvancedSettings9.ContainerHandledFullScreen = 0;
 
             // Let the client transparently recover a transient drop (brief network blip) on its own before we
@@ -168,8 +248,11 @@ public partial class RdpSessionView : UserControl
             _rdp.AdvancedSettings9.EnableAutoReconnect = true;
             _rdp.AdvancedSettings9.GrabFocusOnConnect = true;
 
-            // Match the remote's display scale to THIS PC's (e.g. 150%) so icons/text aren't tiny on a high-DPI
-            // display — the remote's "Scale and layout". Must be set before Connect, via the extended settings.
+            // THE PIN CARDINAL: the session's display + device scale are pinned to (100,100) — FCM's context
+            // menus collapse at any session scale above 100% (Microsoft won't-fix), and the client-side zoom
+            // REQUIRES the session at 100% (readability comes from ZoomLevel, never from the session scale).
+            // This connect-time block and ResizeRemote are the ONLY two readers of LocalScale(); never remove
+            // either. Must be set before Connect, via the extended settings.
             (uint desktopScale, uint deviceScale) = LocalScale();
             if (_rdp.GetOcx() is IMsRdpExtendedSettings ext)
             {
@@ -224,26 +307,206 @@ public partial class RdpSessionView : UserControl
         Connect();
     }
 
+    // ==================================================================================================
+    // The re-fit engine: verified, spaced, retried size changes.
+    // ==================================================================================================
+
     private void OnHostContainerSizeChanged(object sender, SizeChangedEventArgs e)
     {
-        ApplyHostSize();      // resize the host/control now (SmartSizing scales the image meanwhile)
-        _resizeTimer.Stop();  // ...and re-fit the actual remote resolution once resizing settles
+        ApplyHostSize();                        // resize the host/control now
+        _lastSizeChangedAt = DateTime.UtcNow;   // the verify must not fight a live drag
+        BumpIntent();                           // new size intent: supersede any pending verify/retries
+        _resizeTimer.Stop();                    // ...and re-fit once resizing settles
+        _resizeTimer.Start();
+    }
+
+    /// <summary>A new size INTENT: supersedes pending verifies and their retry budget. Every path that wants
+    /// the session at a (potentially) new size goes through here — settle, kicks, full-screen transitions.</summary>
+    private void BumpIntent()
+    {
+        _refitGeneration++;
+        _retryCount = 0;
+        _verifyTimer.Stop();
+    }
+
+    /// <summary>Kicks one debounced settle (a size intent). Idempotent — used post-login (absorbs the
+    /// status-bar collapse), on auto-reconnect, on visible-change, and on window restore.</summary>
+    private void KickSettle()
+    {
+        BumpIntent();
+        _resizeTimer.Stop();
         _resizeTimer.Start();
     }
 
     private void OnResizeSettled(object? sender, EventArgs e)
     {
         _resizeTimer.Stop();
-        (int width, int height) = RemotePixelSize();
+        TrySendRefit();
+    }
+
+    /// <summary>The one path to a re-fit send. Enforces the guards (connected, not minimized, sane pane) and
+    /// the minimum inter-send spacing (back-to-back sends are the proven drop trigger) — blocked sends
+    /// reschedule the verify instead of dying, so the chain never silently ends.</summary>
+    private void TrySendRefit()
+    {
+        if (_closing || _rdp is null || _legacyServer)
+        {
+            return; // legacy sessions are engine-dormant: connect-time size + SmartSizing, like today
+        }
+
+        if (_rdp.Connected != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
+        {
+            ScheduleVerify(VerifyBaseDelayMs); // re-check later; costs no retry budget
+            return;
+        }
+
+        double sinceLastSend = (DateTime.UtcNow - _lastSendAt).TotalMilliseconds;
+        if (sinceLastSend < MinSendSpacingMs)
+        {
+            ScheduleVerify((int)Math.Max(100, MinSendSpacingMs - sinceLastSend + 50));
+            return;
+        }
+
+        (int width, int height) = ExpectedSize();
+
+        // Already there? The idempotent kicks (login, restore, visible-change, auto-reconnect) mostly land on
+        // an unchanged pane — converge without sending, so kicks never burn send spacing or collide.
+        try
+        {
+            if (_rdp.DesktopWidth == width && _rdp.DesktopHeight == height)
+            {
+                _retryCount = 0;
+                if (!_fullScreen)
+                {
+                    ReassertZoom();
+                }
+
+                return;
+            }
+        }
+        catch (Exception)
+        {
+            // Transient COM state on the read-back — fall through and send; the verify sorts it out.
+        }
+
         ResizeRemote(width, height);
+        if (_rdp is null || _legacyServer)
+        {
+            return; // ResizeRemote threw: the legacy rebuild has been scheduled
+        }
+
+        _lastSentSize = (width, height);
+        _lastSendAt = DateTime.UtcNow;
+        _sendSequence++;
+        if (!_fullScreen)
+        {
+            ReassertZoom(); // send-time re-assert (idempotent; the verified-applied re-assert follows)
+        }
+
+        ScheduleVerify(VerifyBaseDelayMs << Math.Min(_retryCount, 2)); // backoff 700/1400/2800
+    }
+
+    private void ScheduleVerify(int delayMs)
+    {
+        _verifyTimer.Stop();
+        _verifyTimer.Interval = TimeSpan.FromMilliseconds(delayMs);
+        _verifyTimer.Start();
+    }
+
+    private void OnVerifyTick(object? sender, EventArgs e) => VerifyNow();
+
+    /// <summary>Reads the session size back and re-sends until it matches the CURRENT expectation (recomputed
+    /// at fire time — never a value captured at send time, so a stale verify can't re-send a wrong-mode size).
+    /// A re-send costs retry budget ONLY when the expectation still equals the last-sent target (genuine
+    /// evidence of a dropped send); a moved target is a new intent with a fresh budget.</summary>
+    private void VerifyNow()
+    {
+        _verifyTimer.Stop();
+
+        if (_closing || _rdp is null || _legacyServer)
+        {
+            return;
+        }
+
+        if (_rdp.Connected != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
+        {
+            ScheduleVerify(VerifyBaseDelayMs); // guard-skips reschedule; they never consume the cap
+            return;
+        }
+
+        if ((DateTime.UtcNow - _lastSizeChangedAt).TotalMilliseconds < 450)
+        {
+            ScheduleVerify(VerifyBaseDelayMs); // live drag in progress — let the settle own it
+            return;
+        }
+
+        (int expectedWidth, int expectedHeight) = ExpectedSize();
+        int actualWidth;
+        int actualHeight;
+        try
+        {
+            actualWidth = _rdp.DesktopWidth;
+            actualHeight = _rdp.DesktopHeight;
+        }
+        catch (Exception)
+        {
+            ScheduleVerify(VerifyBaseDelayMs); // transient COM state — re-check later
+            return;
+        }
+
+        if (actualWidth == expectedWidth && actualHeight == expectedHeight)
+        {
+            _retryCount = 0;
+            if (!_fullScreen)
+            {
+                ReassertZoom(); // applied-anchored re-assert: zoom re-established only on a landed size
+            }
+
+            return; // converged
+        }
+
+        if ((expectedWidth, expectedHeight) != _lastSentSize)
+        {
+            // The target moved since the last send (pane changed, mode changed): a new intent, not a drop.
+            _retryCount = 0;
+            TrySendRefit();
+            return;
+        }
+
+        if (_retryCount >= MaxRefitRetries)
+        {
+            LatchRefitWarning((expectedWidth, expectedHeight), (actualWidth, actualHeight));
+            return; // engine stops until the next user-driven intent
+        }
+
+        _retryCount++;
+        TrySendRefit();
+    }
+
+    // The OCX raises this when the session size ACTUALLY changes — the applied signal. Queued bodies bail if
+    // any send happened after the event was raised (the verify would be judging a superseded state).
+    private void OnRdpRemoteDesktopSizeChange(object? sender, IMsTscAxEvents_OnRemoteDesktopSizeChangeEvent e)
+    {
+        int sequenceAtEvent = _sendSequence;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null || sequenceAtEvent != _sendSequence)
+            {
+                return;
+            }
+
+            VerifyNow();
+        });
     }
 
     /// <summary>Live resolution change (RDP 8.1+): the remote desktop reflows to the new size with NO reconnect
-    /// (unlike Reconnect(), which protocol-errors on some servers). If the server is too old this throws and
-    /// SmartSizing keeps the image scaled to fit instead — so resizing always at least looks right.</summary>
+    /// (unlike Reconnect(), which protocol-errors on some servers). The ONLY UpdateSessionDisplaySettings call
+    /// site, and one of the two LocalScale() readers (THE PIN CARDINAL — always sends 100,100). A throw means
+    /// the server has no dynamic resize (pre-8.1): the session flips to the sticky legacy mode and is rebuilt
+    /// once at the physical size with SmartSizing — today's fill-but-compact behavior.</summary>
     private void ResizeRemote(int width, int height)
     {
-        if (_rdp is null || _rdp.Connected == 0)
+        if (_rdp is null || _rdp.Connected != 1)
         {
             return;
         }
@@ -255,19 +518,359 @@ public partial class RdpSessionView : UserControl
         }
         catch (Exception)
         {
-            // Pre-8.1 / unsupported server — SmartSizing scales the image instead.
+            OnRefitThrew();
         }
     }
 
-    /// <summary>The remote session's display + device scale, both pinned to 100 (100%). The Failover Cluster
-    /// Manager context-menu bug trips at any session scale above 100% (Microsoft won't-fix), so we never raise
-    /// it. Fill/readability comes from the framebuffer being the pane's own pixel size (see RemotePixelSize) —
-    /// the remote renders at the pane resolution and fills it natively, no scaling. Read by both Connect and the
-    /// resize re-fit, so the session stays at 100% on connect and on every resize.</summary>
+    /// <summary>The remote session's display + device scale, both pinned to 100 (100%). THE PIN CARDINAL: the
+    /// Failover Cluster Manager context-menu bug trips at any session scale above 100% (Microsoft won't-fix),
+    /// and the client-side zoom requires the session at 100% — readability comes from ZoomLevel, never from
+    /// this. Read by the connect-time extended-settings block and by ResizeRemote (every re-fit, including
+    /// verify re-sends), so the session stays at 100% on connect and on every resize.</summary>
     private (uint Desktop, uint Device) LocalScale()
     {
         return (100u, 100u);
     }
+
+    /// <summary>Pre-8.1 server (UpdateSessionDisplaySettings threw): set the sticky legacy flag and rebuild
+    /// ONCE at the degraded physical size with SmartSizing — exactly today's shipping behavior for old servers.
+    /// Because the post-login kick always fires, an old server throws seconds after first connect, so the one
+    /// rebuild happens at session start, not mid-work.</summary>
+    private void OnRefitThrew()
+    {
+        if (_legacyServer)
+        {
+            return; // already known — engine is dormant; nothing sends again
+        }
+
+        _legacyServer = true;
+        _verifyTimer.Stop();
+        if (_vm is { } vm)
+        {
+            (int width, int height) = DegradedPixelSize();
+            vm.Log.Info(vm.Title,
+                $"This server doesn't support live resolution changes (pre-RDP-8.1) — reconnecting once at " +
+                $"{width}x{height} with scale-to-fit. Zoom is off for this session.");
+        }
+
+        // Defer the rebuild so the OCX's COM stack unwinds first (same rule as the deliberate-close path).
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null)
+            {
+                return;
+            }
+
+            TearDownControl();
+            _connected = false;
+            _connectStarted = false;
+            CreateControl();
+            Connect();
+        });
+    }
+
+    // ==================================================================================================
+    // Sizes: the THREE computing sites. The even-both-dims rule and the protocol floors live inside them
+    // so no call site can bypass either. Width MUST NOT be odd and MUST be >= 200 (MS-RDPEDISP) — an odd
+    // width is silently dropped by the server while the API reports success; every applied re-fit ever
+    // recorded also had an even height, so height gets the same floor at zero cost.
+    // ==================================================================================================
+
+    /// <summary>The current size the session SHOULD be, from current state — full-screen, degraded/legacy, or
+    /// normal windowed. The verify recomputes this at fire time, so stale timers can't enforce old targets.</summary>
+    private (int Width, int Height) ExpectedSize() =>
+        _fullScreen ? MonitorPixelSize()
+        : _degraded || _legacyServer ? DegradedPixelSize()
+        : RemotePixelSize();
+
+    /// <summary>Windowed framebuffer: the pane size in LOGICAL units (DIPs as-is) — the session renders at
+    /// 100% into this and ZoomLevel magnifies it to fill the physical pane.</summary>
+    private (int Width, int Height) RemotePixelSize()
+    {
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        int width = Math.Max(Math.Max(200, (int)Math.Ceiling(640 / dpi.DpiScaleX)), (int)Math.Round(HostContainer.ActualWidth));
+        int height = Math.Max(Math.Max(200, (int)Math.Ceiling(480 / dpi.DpiScaleY)), (int)Math.Round(HostContainer.ActualHeight));
+        return (width & ~1, height & ~1);
+    }
+
+    /// <summary>Degraded/legacy framebuffer: the pane size in PHYSICAL pixels (today's shipping model) —
+    /// SmartSizing fills, image is compact, never worse than the pre-zoom baseline.</summary>
+    private (int Width, int Height) DegradedPixelSize()
+    {
+        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
+        int width = Math.Max(640, (int)Math.Round(HostContainer.ActualWidth * dpi.DpiScaleX));
+        int height = Math.Max(480, (int)Math.Round(HostContainer.ActualHeight * dpi.DpiScaleY));
+        return (width & ~1, height & ~1);
+    }
+
+    /// <summary>The pixel size of the monitor the session is on — the resolution to request when full-screen
+    /// (ZoomLevel has no effect in full-screen; it renders crisp-filled-compact, as it always has).</summary>
+    private (int Width, int Height) MonitorPixelSize()
+    {
+        if (_rdp is not null)
+        {
+            System.Drawing.Rectangle bounds = System.Windows.Forms.Screen.FromControl(_rdp).Bounds;
+            if (bounds.Width > 0 && bounds.Height > 0)
+            {
+                return (bounds.Width & ~1, bounds.Height & ~1);
+            }
+        }
+
+        return _degraded || _legacyServer ? DegradedPixelSize() : RemotePixelSize();
+    }
+
+    private bool IsHostWindowMinimized() => _hostWindow?.WindowState == WindowState.Minimized;
+
+    private bool IsPaneDegenerate() =>
+        !_fullScreen && (HostContainer.ActualWidth < 50 || HostContainer.ActualHeight < 50);
+
+    // ==================================================================================================
+    // Client-side zoom (the OCX's documented ZoomLevel — mstsc's System-menu Zoom).
+    // ==================================================================================================
+
+    /// <summary>The zoom percent for this display: the real scale, snapped DOWN to the mstsc ladder (only
+    /// ladder values are field-proven; a rejected value would strand a logical framebuffer un-zoomed).</summary>
+    private uint DeriveZoomPercent()
+    {
+        int raw = (int)Math.Round(System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX * 100);
+        int clamped = Math.Clamp(raw, 100, 500);
+        uint snapped = 100;
+        foreach (uint step in ZoomLadder)
+        {
+            if (step <= clamped)
+            {
+                snapped = step;
+            }
+            else
+            {
+                break;
+            }
+        }
+
+        return snapped;
+    }
+
+    /// <summary>Sets ZoomLevel and VERIFIES it via read-back (a clean return proves nothing — the lesson of
+    /// this feature's whole investigation). Gated INSIDE the helper: no call site can poke ZoomLevel on a
+    /// 100%-scale, degraded, legacy, or full-screen session (SmartSizing and ZoomLevel are mutually
+    /// exclusive). A failed set/read-back degrades the session to today's fill-but-compact model.</summary>
+    private void ReassertZoom()
+    {
+        if (_zoomPercent <= 100 || _degraded || _legacyServer || _fullScreen || _rdp is null || _rdp.Connected != 1)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_rdp.GetOcx() is not IMsRdpExtendedSettings ext)
+            {
+                DegradeZoom("the control exposes no extended settings");
+                return;
+            }
+
+            object zoom = _zoomPercent;
+            ext.set_Property("ZoomLevel", ref zoom);
+            object readBack = ext.get_Property("ZoomLevel");
+            if (readBack is not uint applied || applied != _zoomPercent)
+            {
+                DegradeZoom($"requested {_zoomPercent}, control reports {readBack ?? "null"}");
+            }
+        }
+        catch (Exception ex)
+        {
+            DegradeZoom($"{ex.GetType().Name}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Zoom failed on this session: reset ZoomLevel to 100 FIRST (mutual exclusivity), then enable
+    /// SmartSizing, flag degraded, and re-fit to the physical size — today's fill-but-compact, never worse
+    /// than shipping. One latched warning with the numbers (post-ship forensics).</summary>
+    private void DegradeZoom(string reason)
+    {
+        if (_degraded)
+        {
+            return;
+        }
+
+        _degraded = true;
+
+        if (_rdp is not null)
+        {
+            try
+            {
+                if (_rdp.GetOcx() is IMsRdpExtendedSettings ext)
+                {
+                    object zoom = 100u;
+                    ext.set_Property("ZoomLevel", ref zoom);
+                }
+
+                _rdp.AdvancedSettings9.SmartSizing = true;
+            }
+            catch (Exception)
+            {
+                // Best effort — the degraded re-fit below still moves the framebuffer to physical, and
+                // SmartSizing state only affects how an interim mismatch looks.
+            }
+        }
+
+        if (!_zoomWarnLatched && _vm is { } vm)
+        {
+            _zoomWarnLatched = true;
+            (int width, int height) = DegradedPixelSize();
+            vm.Log.Warn(vm.Title,
+                $"Client-side zoom couldn't be applied ({reason}) — falling back to the compact view " +
+                $"({width}x{height}, pane {(int)HostContainer.ActualWidth}x{(int)HostContainer.ActualHeight} DIPs).");
+        }
+
+        KickSettle(); // the engine re-fits to the degraded (physical) size via the normal verified path
+    }
+
+    private void LatchRefitWarning((int Width, int Height) expected, (int Width, int Height) actual)
+    {
+        if (_refitWarnLatched)
+        {
+            return;
+        }
+
+        _refitWarnLatched = true;
+        if (_vm is { } vm)
+        {
+            vm.Log.Warn(vm.Title,
+                $"The remote session didn't take the new size after {MaxRefitRetries} retries — expected " +
+                $"{expected.Width}x{expected.Height}, session reports {actual.Width}x{actual.Height}, pane " +
+                $"{(int)HostContainer.ActualWidth}x{(int)HostContainer.ActualHeight} DIPs, zoom {_zoomPercent}. " +
+                $"The image may show borders until the window is resized again.");
+        }
+    }
+
+    // ==================================================================================================
+    // Lifecycle kicks: every path that can leave the session at a stale size gets a re-fit + zoom re-assert.
+    // ==================================================================================================
+
+    private void OnRdpLoginComplete(object? sender, EventArgs e)
+    {
+        _connected = true;
+        SetStatus(RdpConnectionState.Connected, "Connected.");
+
+        // Marshal per the file's rule (control events can arrive off the UI thread); the deferred body
+        // re-checks teardown state before touching COM. The kick absorbs the status-bar collapse: the bar
+        // hides on Connected, the pane grows, and the settle re-fits the session to the final size.
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null)
+            {
+                return;
+            }
+
+            ReassertZoom();
+            KickSettle();
+        });
+    }
+
+    // The control's own auto-reconnect recovered a blip WITHOUT the rebuild path — nothing re-negotiated, so
+    // re-assert zoom and re-fit in case the recovery reset either.
+    private void OnRdpAutoReconnected(object? sender, EventArgs e)
+    {
+        SetStatus(RdpConnectionState.Connected, "Connected.");
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null)
+            {
+                return;
+            }
+
+            ReassertZoom();
+            KickSettle();
+        });
+    }
+
+    // Hidden sessions (Visibility-collapsed by the keep-alive ItemsControl) can connect or auto-reconnect
+    // against stale layout — converge when the view becomes visible. The kick runs the DEBOUNCED settle, so
+    // the size is read after the un-hide layout pass.
+    private void OnViewVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (e.NewValue is true && _rdp is not null && _connected && !_closing)
+        {
+            ReassertZoom();
+            KickSettle();
+        }
+    }
+
+    // Minimize→restore to IDENTICAL bounds fires no SizeChanged — this hook is the only converger there.
+    private void OnHostWindowStateChanged(object? sender, EventArgs e)
+    {
+        if (_hostWindow?.WindowState != WindowState.Minimized && _rdp is not null && _connected && !_closing)
+        {
+            KickSettle();
+        }
+    }
+
+    // ==================================================================================================
+    // Full-screen: monitor-physical resolution, zoom parked at 100 (ZoomLevel is inert in full-screen per the
+    // docs, and parking it softens the exit flash from quarter-screen blowup to a compact frame). Zoom is
+    // restored by the verify's applied-anchored re-assert after the leave re-fit lands.
+    // ==================================================================================================
+
+    private void OnEnterFullScreen(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null)
+            {
+                return;
+            }
+
+            _fullScreen = true;
+            BumpIntent();
+            ParkZoomForFullScreen();
+            TrySendRefit(); // expectation is now monitor-physical
+            SetFullScreenFlag(true);
+        });
+    }
+
+    private void OnLeaveFullScreen(object? sender, EventArgs e)
+    {
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (_closing || _rdp is null)
+            {
+                return;
+            }
+
+            _fullScreen = false;
+            BumpIntent();
+            TrySendRefit(); // back to windowed; zoom re-asserts when the verify confirms the size landed
+            SetFullScreenFlag(false);
+        });
+    }
+
+    /// <summary>Best-effort ZoomLevel → 100 on full-screen entry. Failure is harmless (zoom is documented
+    /// inert in full-screen anyway) — this only softens the exit flash, so no degrade, no warning.</summary>
+    private void ParkZoomForFullScreen()
+    {
+        if (_zoomPercent <= 100 || _degraded || _legacyServer || _rdp is null)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_rdp.GetOcx() is IMsRdpExtendedSettings ext)
+            {
+                object zoom = 100u;
+                ext.set_Property("ZoomLevel", ref zoom);
+            }
+        }
+        catch (Exception)
+        {
+            // Inert-in-full-screen either way; the leave path re-asserts through the verified helper.
+        }
+    }
+
+    // ==================================================================================================
+    // WPF host plumbing + status/state handlers (unchanged model).
+    // ==================================================================================================
 
     /// <summary>WindowsFormsHost ignores Stretch and otherwise sizes to the hosted control's default — so set
     /// its size explicitly from its WPF container (DIPs; the host converts to device pixels and sizes the
@@ -279,16 +882,6 @@ public partial class RdpSessionView : UserControl
             RdpHostElement.Width = HostContainer.ActualWidth;
             RdpHostElement.Height = HostContainer.ActualHeight;
         }
-    }
-
-    /// <summary>The pane size in physical pixels — the remote desktop resolution to request (the control
-    /// renders in device pixels; WPF sizes are DIPs).</summary>
-    private (int Width, int Height) RemotePixelSize()
-    {
-        var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
-        return (
-            Math.Max(640, (int)Math.Round(HostContainer.ActualWidth * dpi.DpiScaleX)),
-            Math.Max(480, (int)Math.Round(HostContainer.ActualHeight * dpi.DpiScaleY)));
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -316,12 +909,6 @@ public partial class RdpSessionView : UserControl
 
     private void OnRdpConnected(object? sender, EventArgs e) =>
         SetStatus(RdpConnectionState.Connecting, "Authenticating…");
-
-    private void OnRdpLoginComplete(object? sender, EventArgs e)
-    {
-        _connected = true;
-        SetStatus(RdpConnectionState.Connected, "Connected.");
-    }
 
     private void OnRdpDisconnected(object? sender, IMsTscAxEvents_OnDisconnectedEvent e)
     {
@@ -360,9 +947,6 @@ public partial class RdpSessionView : UserControl
     // itself when the session comes back, instead of stranding a stale "disconnected" bar over a live desktop.
     private void OnRdpAutoReconnecting(object? sender, IMsTscAxEvents_OnAutoReconnectingEvent e) =>
         SetStatus(RdpConnectionState.Connecting, "Reconnecting…");
-
-    private void OnRdpAutoReconnected(object? sender, EventArgs e) =>
-        SetStatus(RdpConnectionState.Connected, "Connected.");
 
     private string DescribeDisconnect(int reason)
     {
@@ -410,37 +994,6 @@ public partial class RdpSessionView : UserControl
         }
     }
 
-    private void OnEnterFullScreen(object? sender, EventArgs e)
-    {
-        SetFullScreenFlag(true);
-        // Reflow the remote to the MONITOR resolution so full-screen is sharp + fully filled (not the smaller
-        // windowed size scaled up).
-        (int width, int height) = MonitorPixelSize();
-        ResizeRemote(width, height);
-    }
-
-    private void OnLeaveFullScreen(object? sender, EventArgs e)
-    {
-        SetFullScreenFlag(false);
-        (int width, int height) = RemotePixelSize(); // back to the embedded pane size
-        ResizeRemote(width, height);
-    }
-
-    /// <summary>The pixel size of the monitor the session is on — the resolution to request when full-screen.</summary>
-    private (int Width, int Height) MonitorPixelSize()
-    {
-        if (_rdp is not null)
-        {
-            System.Drawing.Rectangle bounds = System.Windows.Forms.Screen.FromControl(_rdp).Bounds;
-            if (bounds.Width > 0 && bounds.Height > 0)
-            {
-                return (bounds.Width, bounds.Height);
-            }
-        }
-
-        return RemotePixelSize();
-    }
-
     private void SetFullScreenFlag(bool value)
     {
         if (_vm is not null)
@@ -470,7 +1023,13 @@ public partial class RdpSessionView : UserControl
     {
         _closing = true;
         _resizeTimer.Stop();
-        _resizeTimer.Tick -= OnResizeSettled;
+        _verifyTimer.Stop();
+
+        if (_hostWindow is not null)
+        {
+            _hostWindow.StateChanged -= OnHostWindowStateChanged;
+            _hostWindow = null;
+        }
 
         if (_vm is not null)
         {

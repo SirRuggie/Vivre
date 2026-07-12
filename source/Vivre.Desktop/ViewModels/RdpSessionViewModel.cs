@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using Vivre.Core.Logging;
 using Vivre.Core.Rdp;
 
 namespace Vivre.Desktop.ViewModels;
@@ -18,10 +19,11 @@ public enum RdpConnectionState
 /// </summary>
 public partial class RdpSessionViewModel : ObservableObject
 {
-    public RdpSessionViewModel(string title, RdpConnectionSettings settings)
+    public RdpSessionViewModel(string title, RdpConnectionSettings settings, IActivityLog log)
     {
         Title = title;
         Settings = settings;
+        Log = log;
     }
 
     /// <summary>Session tab header (the host's display name).</summary>
@@ -29,6 +31,10 @@ public partial class RdpSessionViewModel : ObservableObject
 
     /// <summary>The resolved connection bundle the view hands to the RDP control on connect.</summary>
     public RdpConnectionSettings Settings { get; }
+
+    /// <summary>The app-wide activity log — the session view's channel for the (latched) re-fit and zoom
+    /// warnings. Safe to call from any thread (the log marshals internally).</summary>
+    public IActivityLog Log { get; }
 
     [ObservableProperty]
     public partial RdpConnectionState State { get; set; } = RdpConnectionState.Connecting;
