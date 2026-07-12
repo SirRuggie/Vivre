@@ -16,10 +16,14 @@
          wrapped in a Grid (HostContainer) whose size we read to size the WindowsFormsHost explicitly —
          WindowsFormsHost ignores Stretch and otherwise collapses to the hosted control's default size. -->
     <DockPanel LastChildFill="True">
+        <!-- SPIKE-0B - REMOVE: status bar FROZEN VISIBLE so the pane height never changes after
+             connect (connect size == final size == exact-fit, isolating the input question).
+             This is NOT the shipping answer to the re-fit drop — real use resizes the pane.
+             SHIPPING ATTRIBUTE (restore): Visibility="{Binding ShowStatusBar, Converter={StaticResource BoolToVis}}" -->
         <Border DockPanel.Dock="Top" Padding="10,6"
                 Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
                 BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,0,0,1"
-                Visibility="{Binding ShowStatusBar, Converter={StaticResource BoolToVis}}">
+                Visibility="Visible">
             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                 <ui:ProgressRing Width="18" Height="18" IsIndeterminate="True" Margin="0,0,10,0"
                                  Visibility="{Binding IsConnecting, Converter={StaticResource BoolToVis}}" />
@@ -44,8 +48,8 @@
                     <ComboBoxItem Content="175" />
                     <ComboBoxItem Content="225" />
                 </ComboBox>
-                <Button DockPanel.Dock="Right" Content="Apply zoom" Click="OnSpikeApplyZoom" Margin="6,0" Padding="8,2" />
-                <Button DockPanel.Dock="Right" Content="Re-fit" Click="OnSpikeRefit" Padding="8,2" />
+                <ui:Button DockPanel.Dock="Right" Content="Apply zoom" Click="OnSpikeApplyZoom" Margin="6,0" Padding="8,2" />
+                <ui:Button DockPanel.Dock="Right" Content="Re-fit" Click="OnSpikeRefit" Padding="8,2" />
                 <TextBlock x:Name="SpikeDiag" VerticalAlignment="Center" FontFamily="Consolas" FontSize="11"
                            Foreground="#FF333333" Text="spike-0b: waiting for connect…" TextTrimming="CharacterEllipsis" />
             </DockPanel>

@@ -35,6 +35,8 @@ public partial class RdpSessionView : UserControl
     private uint _spikeZoom = 100;
     private string _spikeRefit = "refit=none";
     private string _spikeZoomStatus = "zoom=none";
+    private string _spikeFbConnect = "?";           // EXACTLY what DesktopWidth/Height received at connect
+    private string _spikeManualRefit = string.Empty; // timestamp proof the Re-fit button fired
 
     // SPIKE-0B - REMOVE: fallback-mode toggle (static so a NEW session picks it up — EnableZoom is
     // write-only and NOT changeable after connect, so the mode must be chosen before Connect()).
@@ -170,6 +172,7 @@ public partial class RdpSessionView : UserControl
             (int width, int height) = RemotePixelSize();
             _rdp.DesktopWidth = width;
             _rdp.DesktopHeight = height;
+            _spikeFbConnect = $"{width}x{height}"; // SPIKE-0B - REMOVE: the true connect-time request
 
             // NLA via CredSSP: on by default; OFF lets a server on another domain accept the supplied
             // credentials instead of rejecting delegated/saved ones (the cross-domain 0x2107 rejection).
@@ -584,9 +587,13 @@ public partial class RdpSessionView : UserControl
         {
             string session = _rdp is null ? "?" : $"{_rdp.DesktopWidth}x{_rdp.DesktopHeight}";
             string mode = _spikeEnableZoomMode ? "MODE=EnableZoom+SmartSizing  " : string.Empty;
+            // fbConnect = what connect actually sent; fbNow = the latest recomputed request. The
+            // two were previously conflated as one "fb=", which misread the status-bar collapse as
+            // a 32px server-side deficit. Every number says what it IS, not what we assume.
             SpikeDiag.Text =
                 $"{mode}paneDIPs={(int)HostContainer.ActualWidth}x{(int)HostContainer.ActualHeight}  " +
-                $"fb={framebufferWidth}x{framebufferHeight}  session={session}  {_spikeRefit}  {_spikeZoomStatus}";
+                $"fbConnect={_spikeFbConnect}  fbNow={framebufferWidth}x{framebufferHeight}  session={session}  " +
+                $"{_spikeManualRefit}{_spikeRefit}  {_spikeZoomStatus}";
         });
     }
 
@@ -615,7 +622,11 @@ public partial class RdpSessionView : UserControl
     // fires ~450ms after login, possibly before the DisplayControl channel is open (silently
     // discarded, nothing retries). If the session is stale at connect size but snaps to fb when
     // this is pressed LATE, the drop was timing — and verify-and-retry is the real build's cure.
-    private void OnSpikeRefit(object sender, RoutedEventArgs e) => OnResizeSettled(this, EventArgs.Empty);
+    private void OnSpikeRefit(object sender, RoutedEventArgs e)
+    {
+        _spikeManualRefit = $"manual-refit@{DateTime.Now:HH:mm:ss}  "; // proves the click fired
+        OnResizeSettled(this, EventArgs.Empty);
+    }
 
     /// <summary>Disconnects and tears the control down (called via Unloaded — see the ctor).</summary>
     public void DisposeSession()
