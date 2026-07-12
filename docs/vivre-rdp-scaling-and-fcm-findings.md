@@ -7,6 +7,9 @@
 > collapsing — **SOLVED and shipped**; (2) the remote image rendering small/compact — **SHIPPED
 > via ZoomLevel + the verified re-fit engine** (`feat/rdp-clientside-zoom`; spike history under
 > the `spike/rdp-popout` tag). Nothing here touches the reboot path — RDP rendering only.
+>
+> **General method:** the reusable instrument + protocol distilled from this hunt (and the cold-start
+> freeze) live in [freeze-hunting-playbook.md](freeze-hunting-playbook.md) — this doc is a case file.
 
 ---
 

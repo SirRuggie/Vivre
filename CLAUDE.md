@@ -41,6 +41,9 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
 - docs/vivre-backlog.md — current priorities + what's done
 - docs/vivre-rdp-scaling-and-fcm-findings.md — embedded-RDP scaling/FCM saga; read before touching Cross-Domain RDP scaling
 - docs/cold-start-freeze-and-threadpool-findings.md — the cold-start UI freeze saga; the thread-pool worker-injection cause + the load-bearing ThreadPool.SetMinThreads fix (don't delete it). Read before touching App.OnStartup, the sweep, or large-list load.
+- docs/freeze-hunting-playbook.md — how to hunt a UI-thread freeze / hang / "it's slow": the reusable
+  instrument (background watchdog, input triad, modal hooks), the protocol (predict, control run, fix
+  the read in advance), and the lying-instruments catalogue. Read BEFORE theorizing about a freeze.
 
 ## Layout
 

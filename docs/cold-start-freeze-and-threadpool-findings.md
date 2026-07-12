@@ -6,6 +6,9 @@
 > things future work must NOT re-chase. Modeled on `vivre-rdp-scaling-and-fcm-findings.md`. Shipped
 > in **1.14.2**. Nothing here touches the reboot path — `Win32Shutdown` stays only in
 > `DcomRebootTrigger.cs`.
+>
+> **General method:** the reusable instrument + protocol distilled from this hunt (and the RDP drag
+> freeze) live in [freeze-hunting-playbook.md](freeze-hunting-playbook.md) — this doc is a case file.
 
 ---
 
