@@ -222,9 +222,36 @@ today's fill-but-compact model (zoom off + SmartSizing + physical framebuffer; p
 get one rebuild at session start and the engine goes dormant) with one latched, number-carrying
 activity-log warning per session.
 
+**Smoke-test round 1 (2026-07-11) — probe 96 PASS, FCM PASS, plus two engine-adjacent bugs, both
+fixed (`f9b014e`):**
+
+- **Full screen went dead** — a one-click latch, not an engine fault. The toolbar only ever sets
+  the VM's `FullScreen` flag to *true*; the OCX refused the first entry (prime suspect: ZoomLevel
+  still live at the moment of `FullScreen = true` — the park ran inside `OnEnterFullScreen`, i.e.
+  only after a *successful* entry, backwards relative to mstsc, which resets zoom BEFORE
+  switching); the failure was swallowed by a comment-only catch; and the stuck-true flag made
+  every later click a true→true no-op (the MVVM setter skips unchanged values) — button
+  permanently dead for that tab, surviving Reconnect. Fixed in mstsc's own order: zoom parks
+  BEFORE the entry attempt, a switch that doesn't take is LOGGED (Warn with
+  zoom/SmartSizing/Connected state), and the VM flag reverts to the control's real state in BOTH
+  directions (a failed exit would otherwise latch you IN full-screen the same way) so every click
+  is a fresh attempt. The latch was latent on master too (clicking Full screen while disconnected
+  latched it) — the un-latch fixes that case as well.
+- **Freeze / stuck pointer while resizing** — NOT the UI thread. No blocking primitives exist in
+  the engine (all `DispatcherTimer` + `BeginInvoke`), and the mid-drag synchronous-COM pattern is
+  inherited from the pre-zoom code, which never froze. The regression is what a send now *does*:
+  with SmartSizing OFF, an applied re-fit re-lays out the OCX's client area, and the engine could
+  land several per gesture (retries at 700/1400/2800ms + zoom writes) while a mouse button was
+  still down — a reconfigure under a held button is the stuck-capture trigger. Fixed with a
+  quiet-hands guard at the single send choke point: `TrySendRefit` defers (reschedules, costs no
+  retry budget) while a drag is fresh (<450ms) or any mouse button is down (`GetAsyncKeyState` —
+  WPF's `Mouse` class can't see buttons held inside the OCX's own HWND or during the modal
+  border-resize loop).
+
 **Pre-build probe (a/b/c — odd zoom values, FS zoom persistence, compact pulse): results pending;
-the conservative defaults shipped (ladder snap, zoom parked at 100 in full-screen, re-assert at
-send AND on verified-applied). Record the probe numbers here when the operator runs them.**
+the conservative defaults shipped (ladder snap, zoom parked at 100 before full-screen entry,
+re-assert at send AND on verified-applied). Record the probe numbers here when the operator runs
+them.**
 
 ---
 

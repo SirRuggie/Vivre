@@ -253,9 +253,11 @@ direction from the crash.
 - `source/Vivre.Desktop/RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded RDP host; owns control creation,
   `LocalScale()` (pinned to `(100,100)` for the FCM fix, `a7b8833` — THE PIN CARDINAL, read at exactly two
   sites: the connect block and `ResizeRemote`), the client-side **ZoomLevel** magnification (logical
-  framebuffer, SmartSizing off while zoomed), and the **verified re-fit engine** (spaced sends, read-back
-  verify + retries, even-both-dims sizes per MS-RDPEDISP). Control stack: WPF → `WindowsFormsHost`
-  (`RdpHostElement`) → WinForms `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
+  framebuffer, SmartSizing off while zoomed; zoom parks to 100 BEFORE a full-screen entry attempt — mstsc's
+  order — and a failed switch is logged + un-latched in both directions), and the **verified re-fit engine**
+  (spaced sends, read-back verify + retries, even-both-dims sizes per MS-RDPEDISP, sends deferred while a
+  drag or mouse button is live). Control stack: WPF → `WindowsFormsHost` (`RdpHostElement`) → WinForms
+  `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
 - `source/Vivre.Desktop/ViewModels/RdpSessionViewModel.cs`, `ViewModels/CrossDomainRdpViewModel.cs` — the RDP
   session + host-tree view-models.
 - `source/Vivre.Desktop/CrossDomainRdpView.xaml`(`.cs`) — the Cross-Domain RDP UI (host tree + session tabs);
