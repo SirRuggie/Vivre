@@ -1,12 +1,12 @@
 # Vivre — embedded RDP scaling & Failover Cluster Manager: full findings
 
-> **Project knowledge note — REWRITTEN 2026-07-11 after the Path 2 spike rounds.** This version
-> supersedes the parked 2026-06-17 doc, whose central mRemoteNG explanation turned out to be
-> **wrong** (see "What mRemoteNG actually does" below). Everything here is measured or fetched
-> evidence, labeled. Two problems: (1) FCM context menus collapsing — **SOLVED and shipped**;
-> (2) the remote image rendering small/compact — **SOLVED IN PRINCIPLE via ZoomLevel**, proven by
-> spike on `feat/rdp-popout-window`; the real build is pending design + red-team. Nothing here
-> touches the reboot path — RDP rendering only.
+> **Project knowledge note — REWRITTEN 2026-07-11 after the Path 2 spike rounds; updated same day
+> when the build shipped.** This version supersedes the parked 2026-06-17 doc, whose central
+> mRemoteNG explanation turned out to be **wrong** (see "What mRemoteNG actually does" below).
+> Everything here is measured or fetched evidence, labeled. Two problems: (1) FCM context menus
+> collapsing — **SOLVED and shipped**; (2) the remote image rendering small/compact — **SHIPPED
+> via ZoomLevel + the verified re-fit engine** (`feat/rdp-clientside-zoom`; spike history under
+> the `spike/rdp-popout` tag). Nothing here touches the reboot path — RDP rendering only.
 
 ---
 
@@ -15,14 +15,16 @@
 | Problem | Status |
 |---|---|
 | **FCM context menus collapse** in embedded RDP | **SOLVED** — shipped (master commit `a7b8833`, pin session scale to 100%). |
-| **Magnification** (compact vs mRemoteNG) | **SOLVED IN PRINCIPLE — ZoomLevel.** Proven 2026-07-11 on APPMXHV4: fills, 1.5× bigger, quality acceptable, probe 96, FCM verified on the live cluster. Build pending. |
+| **Magnification** (compact vs mRemoteNG) | **SHIPPED** — client-side zoom + the verified re-fit engine in `RdpSessionView.xaml.cs` (branch `feat/rdp-clientside-zoom`). Step 0b proved it in the embedded tab: exact-fit, fills, 1.5× bigger, clicks land true, probe 96, FCM verified on the live cluster. |
 
-**The winning configuration (spike round 4):** a **System-DPI-Aware window** (no DPI trickery of
-any kind) + **framebuffer = LOGICAL client size** (physical ÷ display scale) + **SmartSizing OFF**
-+ **`ZoomLevel = 150`** set **post-login** via `IMsRdpExtendedSettings` and re-asserted after
-re-fits, with a read-back to verify. The session's own scale stays pinned at **(100,100)** — the
-FCM guarantee — and the OCX scales the rendered image client-side. No pop-out window, no
-per-window DPI context, no thread-context switching is required by the mechanism itself.
+**The shipped configuration:** the EXISTING embedded control (no pop-out, no DPI trickery) +
+**framebuffer = LOGICAL pane size** (DIPs; the session renders at 100%) + **SmartSizing OFF** +
+**`ZoomLevel`** (the OCX's documented client-side zoom, derived from the display scale and snapped
+to the mstsc ladder) applied **post-login** with a **read-back to verify**, re-asserted whenever a
+re-fit is confirmed applied. The session's own scale stays pinned at **(100,100)** — the FCM
+guarantee, now load-bearing twice over — and size changes go through the **verified re-fit engine**
+(below), because `UpdateSessionDisplaySettings` silently drops requests. On 100% displays the zoom
+is skipped and SmartSizing stays on — functionally today's behavior.
 
 **Sha correction:** the earlier doc cited the FCM fix as `1ce1abf`. That commit exists only as an
 orphaned pre-rebase twin; the commit on master is **`a7b8833`** (identical patch, author identity
@@ -50,8 +52,9 @@ WPF  →  WindowsFormsHost (RdpHostElement)  →  WinForms Panel  →  AxMsRdpCl
 **Key files:** `source\Vivre.Desktop\RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded session
 host: control creation, `LocalScale()` (the pin), framebuffer, SmartSizing, reconnect lifecycle.
 Per-host settings resolve via `_creds.Resolve(host, RdpTree.AncestorsOf(_tree, host))` in
-`CrossDomainRdpViewModel.ConnectTo`. The throwaway spike lives on `feat/rdp-popout-window`
-(`source\Vivre.Desktop\Rdp\RdpPopoutSpike.cs` + temporary hooks; never merges).
+`CrossDomainRdpViewModel.ConnectTo`. The throwaway spike (pop-out + Step 0b hacks; never merged)
+is preserved under the `spike/rdp-popout` tag; the `feat/rdp-popout-window` branch is deleted
+after the shipped build's sign-off.
 
 ### The in-session DPI probe (measure, don't guess)
 
@@ -184,6 +187,67 @@ is the mechanism, not a stale session.
 monitor physical resolution: crisp, filled, compact). Accepted by the operator — the windowed view
 is where readability matters.
 
+---
+
+## Step 0b + the re-fit engine (2026-07-11) — SHIPPED
+
+**Step 0b (the embedded verification)** hacked the zoom config into the EXISTING
+`RdpSessionView` on the spike branch and reached exact-fit in the embedded tab:
+`fbConnect == fbNow == session == 1800x1066`, `zoom=150->150` read-back — image fills at 1.5×,
+**clicks land true**, FCM right-click verified on the live cluster, in-session probe **96**.
+The pop-out was thrown away: ZoomLevel works under `WindowsFormsHost`; input was never broken —
+the geometry was (see the lying-instruments section below).
+
+**The reproducible re-fit bug** (found by accident, now the acceptance test): minimize then
+restore the Vivre window → `paneDIPs=951x616 fbConnect=1800x1066 fbNow=950x616 session=930x590`.
+The restore fires a burst of re-fits; the first (intermediate 930x590) LANDED, the final
+(950x616) was silently DROPPED in-flight; a later single drag healed it. So: **re-fits land when
+spaced, drop when back-to-back, and a burst can land a stale intermediate** — worse than a clean
+drop. Additionally, **MS-RDPEDISP protocol law: display-control widths MUST be even and ≥ 200**
+(odd widths are silently rejected while the API returns success — every recorded "refit=OK but
+stale" had an odd width or arrived back-to-back). Reference:
+`https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpedisp/ea2de591-9203-42cd-9908-be7a55237d1c`
+
+**The shipped engine** (in `RdpSessionView.xaml.cs`): one send choke point (`ResizeRemote`, the
+only `UpdateSessionDisplaySettings` call and one of the pin's two readers) + minimum inter-send
+spacing (500ms) + a one-shot verify timer with backoff that reads `DesktopWidth/Height` back (the
+oracle — it tracked reality faithfully in every recorded observation) and re-sends until the
+session matches the expectation **recomputed at fire time** (windowed-logical / full-screen-
+physical / degraded-physical) + the OCX's `OnRemoteDesktopSizeChange` event as the applied-signal
+accelerator + kicks on login, auto-reconnect, visible-change, and window-restore (a restore to
+identical bounds fires no `SizeChanged`). Retries count only genuine drops (expectation unchanged
+since the send); a moved target is a new intent. All sizes floored to EVEN on both dimensions and
+to the ≥200 protocol minimum inside the three size-computing methods. Failure paths degrade to
+today's fill-but-compact model (zoom off + SmartSizing + physical framebuffer; pre-8.1 servers
+get one rebuild at session start and the engine goes dormant) with one latched, number-carrying
+activity-log warning per session.
+
+**Pre-build probe (a/b/c — odd zoom values, FS zoom persistence, compact pulse): results pending;
+the conservative defaults shipped (ladder snap, zoom parked at 100 in full-screen, re-assert at
+send AND on verified-applied). Record the probe numbers here when the operator runs them.**
+
+---
+
+## Three lying instruments — the transferable lesson of this whole arc
+
+Every wrong turn in this investigation was an instrument reporting something other than what it
+measured. Burn these in:
+
+1. **`Control.DeviceDpi` lies about per-window DPI contexts.** It returns the process-cached
+   system DPI (on a non-PerMonitorV2 thread, a static value captured at startup) and never
+   queries the HWND — in a genuinely DPI-unaware window it still reported 144. Use
+   `GetDpiForWindow(hwnd)` (96 = unaware) and `GetWindowDpiAwarenessContext`. This false negative
+   cost a full spike round.
+2. **`UpdateSessionDisplaySettings` returning cleanly means SUBMITTED, not APPLIED.** The server
+   silently drops protocol-invalid (odd-width) and back-to-back requests while the API reports
+   success. The only truth is the read-back (`DesktopWidth/Height`) or the
+   `OnRemoteDesktopSizeChange` event — hence the verify-and-retry engine.
+3. **A diagnostic that conflates two moments lies by construction.** The spike strip's single
+   `fb=` overwrote the connect-time request with later recomputations, which misread the status
+   bar's 32-DIP collapse as a server-side "height deficit that tracks the request". Split it
+   (`fbConnect=` vs `fbNow=`) and the mystery evaporated. Every number on an instrument must say
+   what it IS, not what the reader assumes it means.
+
 ### Spike round history (for the record; all on `feat/rdp-popout-window`)
 
 - **Round 1:** UNAWARE variants rendered tiny-with-borders — a false negative: `DeviceDpi` lied
@@ -202,18 +266,18 @@ is where readability matters.
 - **Path 1 (per-host scale toggle):** viable but **rejected by the operator** (per-box
   configuration; leaves the FCM/cluster boxes — the ones that most need readability — compact).
   Superseded by ZoomLevel, which needs no per-host config.
-- **Path 2 (pop-out WinForms window):** the DPI-unaware premise is **dead**, but ZoomLevel doesn't
-  need a pop-out at all. **The first question of the build design: can ZoomLevel be applied to the
-  EXISTING embedded WindowsFormsHost control?** The embedded control lives in the same
-  System-Aware process, fills today, and hosts the same OCX — if zoom works there, the fix may be
-  a handful of lines in `RdpSessionView.xaml.cs` (logical framebuffer + SmartSizing off +
-  ZoomLevel post-login + verify-and-retry re-fit) with no re-hosting. A pop-out remains a separate
-  UX question (multiple sessions visible at once, multi-monitor), not a rendering necessity.
+- **Path 2 (pop-out WinForms window):** **dead and unnecessary.** The DPI-unaware premise died
+  (mstscax worker-thread incoherence, above), and Step 0b then proved ZoomLevel works in the
+  EXISTING embedded control — the fix shipped inside `RdpSessionView.xaml.cs` with no re-hosting.
+  A pop-out remains only a possible future UX feature (multiple sessions visible at once), never
+  a rendering necessity.
 - **Path 3 (Fit-To-Panel under WindowsFormsHost):** **closed from source** (above).
 
-**Design questions the build must answer (then red-team, then build):** embedded-tab zoom vs
-pop-out; zoom level fixed 150 vs derived from the actual display scale vs settable; full-screen
-fallback confirmation; verify-and-retry live resize; and the (100,100) pin staying exactly as-is.
+**All design questions were answered and the build shipped** (design v3, red-teamed twice):
+embedded-tab zoom; zoom derived from the display scale and snapped to the mstsc ladder;
+full-screen keeps today's crisp-filled-compact fallback; live resize is verify-and-retry (the
+re-fit engine above); and the (100,100) pin stays exactly as-is at its two read sites — the pin
+is the cardinal rule of this arc.
 
 ---
 

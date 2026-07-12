@@ -251,16 +251,19 @@ direction from the crash.
 
 ## Cross-Domain RDP
 - `source/Vivre.Desktop/RdpSessionView.xaml.cs` (+ `.xaml`) — the embedded RDP host; owns control creation,
-  `LocalScale()` (pinned to `(100,100)` for the FCM fix, `a7b8833`), the framebuffer (`DesktopWidth/Height`),
-  `SmartSizing`, `Dock`, and the host panel. Control stack: WPF → `WindowsFormsHost` (`RdpHostElement`) →
-  WinForms `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
+  `LocalScale()` (pinned to `(100,100)` for the FCM fix, `a7b8833` — THE PIN CARDINAL, read at exactly two
+  sites: the connect block and `ResizeRemote`), the client-side **ZoomLevel** magnification (logical
+  framebuffer, SmartSizing off while zoomed), and the **verified re-fit engine** (spaced sends, read-back
+  verify + retries, even-both-dims sizes per MS-RDPEDISP). Control stack: WPF → `WindowsFormsHost`
+  (`RdpHostElement`) → WinForms `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
 - `source/Vivre.Desktop/ViewModels/RdpSessionViewModel.cs`, `ViewModels/CrossDomainRdpViewModel.cs` — the RDP
   session + host-tree view-models.
 - `source/Vivre.Desktop/CrossDomainRdpView.xaml`(`.cs`) — the Cross-Domain RDP UI (host tree + session tabs);
   per-host settings resolve via `_creds.Resolve(host, RdpTree.AncestorsOf(_tree, host))` in `ConnectTo` — the
   hook a future per-host scale setting would use.
 - **Note:** the Failover Cluster Manager context-menu fix is the 100%-scale pin (`a7b8833`); embedded-RDP
-  magnification (matching mRemoteNG's bigger image) is **parked** — see `vivre-rdp-scaling-and-fcm-findings.md`.
+  magnification **shipped** (client-side zoom; the session stays at 100% so FCM keeps working) — see
+  `vivre-rdp-scaling-and-fcm-findings.md` for the full arc, the re-fit engine, and the instrument lessons.
 
 ## Settings / data
 - `AppSettings` (Vivre.Desktop, in `AppSettingsStore.cs`) — LCU package folder (`C:\Vivre\VivrePackages`), This-month's-CU (KB + target UBR), defaults KB5094122 / 9234. Also `WugServer` (the only persisted WUG field — credentials are never saved). **`MonthlyCu.ExpectedSizeMb` was REMOVED** — it was display-only; the package is matched by KB + architecture, never size. **`StagedHosts`** — `HashSet<string>` (OrdinalIgnoreCase) of host names flagged for the 2016 DISM staging lane (the source of truth behind `Computer.RequiresStagedPatching`); **`ReadFromDisk` re-normalizes it via `StagedHostMatching.Normalize`** because a JSON round-trip resets the comparer to ordinal. Pure case-insensitive membership helpers live in `StagedHostMatching` (Vivre.Core/Updates).
