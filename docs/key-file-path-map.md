@@ -259,6 +259,11 @@ direction from the crash.
   (spaced sends, read-back verify + retries, even-both-dims sizes per MS-RDPEDISP, sends deferred while a
   drag or mouse button is live). Control stack: WPF → `WindowsFormsHost` (`RdpHostElement`) → WinForms
   `Panel` → `AxMsRdpClient9NotSafeForScripting` (the v9 OCX).
+- `source/Vivre.Core/Rdp/RdpDisconnectClassifier.cs` — pure, unit-tested disconnect classifier
+  (keep-by-default, close-by-exception): the tab closes ONLY on `ExtendedDisconnectReasonCode` 12
+  (LogoffByUser — measured on both sign-out paths) while connected with no auto-reconnect in flight;
+  codes 4/6 (the old wrong-enum silent closes) and ALL unknown codes KEEP the tab, and
+  `GetErrorDescription` is reachable only for the error outcome (via `Message` — contract test-pinned).
 - `source/Vivre.Desktop/ViewModels/RdpSessionViewModel.cs`, `ViewModels/CrossDomainRdpViewModel.cs` — the RDP
   session + host-tree view-models.
 - `source/Vivre.Desktop/CrossDomainRdpView.xaml`(`.cs`) — the Cross-Domain RDP UI (host tree + session tabs);
