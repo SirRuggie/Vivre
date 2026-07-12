@@ -20,6 +20,13 @@ it ships, then gets a dated heading.
   longer strands the session at a wrong size, and the brief status-bar space change at connect
   converges on its own. If a size genuinely won't take, one activity-log warning says exactly what was
   requested and what the session reports.
+- **A failed full-screen switch no longer permanently kills the Full screen button.** Previously, if the
+  RDP control refused the switch once (or the button was clicked while the session was down), the button
+  went silently dead for the life of that tab. Now the failure is logged to the activity log with the
+  control's state, and the button stays clickable — every click is a fresh attempt.
+- **Re-fits now wait for quiet hands.** The engine never changes the session's resolution while you're
+  mid-drag or holding a mouse button — the cause of the brief freeze / stuck-pointer glitch seen when
+  resizing while working in the session.
 
 ## 1.14.6 — 2026-07-11
 

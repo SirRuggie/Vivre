@@ -27,7 +27,9 @@ namespace Vivre.Desktop;
 /// size back (the OCX's DesktopWidth/Height read-back tracked reality faithfully in every recorded
 /// observation) and re-sends until the session matches the CURRENT expectation, with the OCX's
 /// OnRemoteDesktopSizeChange event as the applied-signal accelerator. All sizes are floored to EVEN on both
-/// dimensions (width is protocol law; height is empirical caution) and to the protocol minimum of 200.</para>
+/// dimensions (width is protocol law; height is empirical caution) and to the protocol minimum of 200.
+/// Sends wait for quiet hands (no live drag, no held mouse button): with SmartSizing off, an applied re-fit
+/// re-lays out the OCX's client area, and doing that under a held button is the proven stuck-pointer trigger.</para>
 /// <para><b>Hosting:</b> the Ax control is <c>Dock=Fill</c> inside an intermediate WinForms Panel, the Panel is
 /// the host's Child (the ActiveX wrapper has a ~150px default it won't shrink below), and the host's size is
 /// set explicitly from its WPF container on every resize (WindowsFormsHost ignores Stretch).</para>
@@ -58,6 +60,7 @@ public partial class RdpSessionView : UserControl
     private DateTime _lastSendAt = DateTime.MinValue;
     private DateTime _lastSizeChangedAt = DateTime.MinValue; // verify won't fight a live drag
     private bool _fullScreen;         // view-side FS flag (synchronous, unlike the marshaled VM property)
+    private bool _syncingFullScreen;  // view→VM FullScreen mirror in progress: don't sync it back to the OCX
     private bool _refitWarnLatched;
     private bool _zoomWarnLatched;
 
@@ -344,9 +347,10 @@ public partial class RdpSessionView : UserControl
         TrySendRefit();
     }
 
-    /// <summary>The one path to a re-fit send. Enforces the guards (connected, not minimized, sane pane) and
-    /// the minimum inter-send spacing (back-to-back sends are the proven drop trigger) — blocked sends
-    /// reschedule the verify instead of dying, so the chain never silently ends.</summary>
+    /// <summary>The one path to a re-fit send. Enforces the guards (connected, not minimized, sane pane,
+    /// hands off — no live drag, no held mouse button) and the minimum inter-send spacing (back-to-back sends
+    /// are the proven drop trigger) — blocked sends reschedule the verify instead of dying, so the chain
+    /// never silently ends.</summary>
     private void TrySendRefit()
     {
         if (_closing || _rdp is null || _legacyServer)
@@ -357,6 +361,15 @@ public partial class RdpSessionView : UserControl
         if (_rdp.Connected != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
         {
             ScheduleVerify(VerifyBaseDelayMs); // re-check later; costs no retry budget
+            return;
+        }
+
+        if ((DateTime.UtcNow - _lastSizeChangedAt).TotalMilliseconds < 450 || IsMouseButtonDown())
+        {
+            // Hands still on: a re-fit reconfigures the OCX's client area (SmartSizing is OFF on zoom
+            // sessions), and reconfiguring under a live drag or a held button is the proven freeze /
+            // stuck-pointer trigger. Defer — costs no retry budget.
+            ScheduleVerify(VerifyBaseDelayMs);
             return;
         }
 
@@ -624,6 +637,17 @@ public partial class RdpSessionView : UserControl
     private bool IsPaneDegenerate() =>
         !_fullScreen && (HostContainer.ActualWidth < 50 || HostContainer.ActualHeight < 50);
 
+    /// <summary>Any mouse button held, anywhere — read via the async key state because the OCX has its own
+    /// HWND (WPF's Mouse class can't see a button held inside the session) and a border drag runs the modal
+    /// resize loop (no WPF input events at all while the border is held still).</summary>
+    private static bool IsMouseButtonDown() =>
+        (GetAsyncKeyState(0x01) & 0x8000) != 0 ||   // VK_LBUTTON
+        (GetAsyncKeyState(0x02) & 0x8000) != 0 ||   // VK_RBUTTON
+        (GetAsyncKeyState(0x04) & 0x8000) != 0;     // VK_MBUTTON
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern short GetAsyncKeyState(int virtualKey);
+
     // ==================================================================================================
     // Client-side zoom (the OCX's documented ZoomLevel — mstsc's System-menu Zoom).
     // ==================================================================================================
@@ -807,9 +831,11 @@ public partial class RdpSessionView : UserControl
     }
 
     // ==================================================================================================
-    // Full-screen: monitor-physical resolution, zoom parked at 100 (ZoomLevel is inert in full-screen per the
-    // docs, and parking it softens the exit flash from quarter-screen blowup to a compact frame). Zoom is
-    // restored by the verify's applied-anchored re-assert after the leave re-fit lands.
+    // Full-screen: monitor-physical resolution, zoom parked at 100 BEFORE entry in the VM sync handler
+    // (mstsc's own order — mstsc resets its zoom before switching, and a live zoom at the moment of entry is
+    // the prime suspect for the OCX refusing to enter at all; ZoomLevel is inert in full-screen per the
+    // docs). Zoom is restored by the verify's applied-anchored re-assert after the leave re-fit lands, or
+    // immediately when an entry attempt fails.
     // ==================================================================================================
 
     private void OnEnterFullScreen(object? sender, EventArgs e)
@@ -823,8 +849,7 @@ public partial class RdpSessionView : UserControl
 
             _fullScreen = true;
             BumpIntent();
-            ParkZoomForFullScreen();
-            TrySendRefit(); // expectation is now monitor-physical
+            TrySendRefit(); // expectation is now monitor-physical (zoom was parked before entry)
             SetFullScreenFlag(true);
         });
     }
@@ -845,8 +870,9 @@ public partial class RdpSessionView : UserControl
         });
     }
 
-    /// <summary>Best-effort ZoomLevel → 100 on full-screen entry. Failure is harmless (zoom is documented
-    /// inert in full-screen anyway) — this only softens the exit flash, so no degrade, no warning.</summary>
+    /// <summary>Best-effort ZoomLevel → 100 BEFORE a full-screen entry attempt (mstsc's own order). A park
+    /// failure doesn't block the attempt and gets no degrade/warning — a refused ENTRY is what's caught,
+    /// logged, and recovered in <see cref="OnViewModelPropertyChanged"/>.</summary>
     private void ParkZoomForFullScreen()
     {
         if (_zoomPercent <= 100 || _degraded || _legacyServer || _rdp is null)
@@ -884,24 +910,105 @@ public partial class RdpSessionView : UserControl
         }
     }
 
+    /// <summary>Syncs the VM's FullScreen flag (the toolbar sets it true) to the control, in mstsc's own
+    /// order: zoom parked to 100 BEFORE the switch. A switch that doesn't take — a throw, a silent refusal,
+    /// or the session being down — is LOGGED (the old silent catch hid a dead full-screen button completely)
+    /// and the flag is put back to the control's real state, so the next click raises a fresh change instead
+    /// of a dead true→true no-op (the one-click latch, guarded in BOTH directions).</summary>
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName != nameof(RdpSessionViewModel.FullScreen) || _rdp is null || _vm is null)
+        if (e.PropertyName != nameof(RdpSessionViewModel.FullScreen) || _rdp is null || _vm is null
+            || _syncingFullScreen)
         {
             return;
         }
 
+        bool wanted = _vm.FullScreen;
         try
         {
-            if (_rdp.Connected != 0)
+            if (_rdp.Connected == 0)
             {
-                _rdp.FullScreen = _vm.FullScreen;
+                SetFullScreenFlag(!wanted); // session down: no switch happened — un-latch for the next click
+                return;
+            }
+
+            if (wanted)
+            {
+                ParkZoomForFullScreen();
+            }
+
+            _rdp.FullScreen = wanted;
+            if (_rdp.FullScreen == wanted)
+            {
+                return; // took — OnEnter/OnLeaveFullScreen drive the re-fit from here
+            }
+
+            OnFullScreenSwitchFailed(wanted, null);
+        }
+        catch (Exception ex)
+        {
+            OnFullScreenSwitchFailed(wanted, ex);
+        }
+    }
+
+    /// <summary>A full-screen switch didn't take: one Warn with the OCX state (zoom / SmartSizing /
+    /// Connected), the VM flag back to the control's real state (the un-latch — both directions), and on a
+    /// failed ENTRY the zoom re-asserted (the park had already dropped it on a still-windowed session).</summary>
+    private void OnFullScreenSwitchFailed(bool wanted, Exception? ex)
+    {
+        if (_vm is { } vm)
+        {
+            string error = ex is null ? "the control refused without an error" : $"{ex.GetType().Name}: {ex.Message}";
+            vm.Log.Warn(vm.Title,
+                $"Full screen {(wanted ? "entry" : "exit")} didn't take ({error}) — {DescribeOcxState()}. " +
+                "Click Full screen to try again.");
+        }
+
+        SetFullScreenFlag(!wanted);
+        if (wanted)
+        {
+            ReassertZoom();
+        }
+    }
+
+    /// <summary>Best-effort OCX state for the full-screen failure Warn — each read independently guarded so
+    /// a dead control still yields a useful line ("?" marks what couldn't be read).</summary>
+    private string DescribeOcxState()
+    {
+        string zoom = "?";
+        string smartSizing = "?";
+        string connected = "?";
+        try
+        {
+            connected = _rdp?.Connected.ToString() ?? "gone";
+        }
+        catch (Exception)
+        {
+            // Best-effort read for the log line only.
+        }
+
+        try
+        {
+            smartSizing = _rdp?.AdvancedSettings9.SmartSizing.ToString() ?? "?";
+        }
+        catch (Exception)
+        {
+            // Best-effort read for the log line only.
+        }
+
+        try
+        {
+            if (_rdp?.GetOcx() is IMsRdpExtendedSettings ext)
+            {
+                zoom = ext.get_Property("ZoomLevel")?.ToString() ?? "null";
             }
         }
         catch (Exception)
         {
-            // The control rejects FullScreen unless connected; ignore transient COM state.
+            // Best-effort read for the log line only.
         }
+
+        return $"zoom {zoom}, SmartSizing {smartSizing}, Connected {connected}";
     }
 
     private void OnRdpConnecting(object? sender, EventArgs e) =>
@@ -994,11 +1101,30 @@ public partial class RdpSessionView : UserControl
         }
     }
 
+    /// <summary>Mirrors the control's REAL full-screen state into the VM (marshaled). The write is
+    /// suppression-flagged: the mirror must never poke the OCX back through the sync handler (a revert after
+    /// a failed switch would otherwise re-enter the very switch that just failed).</summary>
     private void SetFullScreenFlag(bool value)
     {
         if (_vm is not null)
         {
-            Dispatcher.BeginInvoke(() => _vm.FullScreen = value);
+            Dispatcher.BeginInvoke(() =>
+            {
+                if (_vm is null)
+                {
+                    return;
+                }
+
+                _syncingFullScreen = true;
+                try
+                {
+                    _vm.FullScreen = value;
+                }
+                finally
+                {
+                    _syncingFullScreen = false;
+                }
+            });
         }
     }
 
