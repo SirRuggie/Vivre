@@ -51,6 +51,7 @@ public partial class RdpSessionView : UserControl
     private readonly System.Windows.Threading.DispatcherTimer _resizeTimer;
     private readonly System.Windows.Threading.DispatcherTimer _verifyTimer;
     private Window? _hostWindow; // for the StateChanged restore kick; null = treat as not minimized
+    private readonly RdpFreezeInstrument _instr = new(); // THROWAWAY smoke-round-2 freeze instrument — remove before merge
 
     // ---- re-fit engine state (per view; counters/latches reset in CreateControl) ----
     private int _refitGeneration;     // bumped by every size intent; cancels the pending verify
@@ -121,6 +122,8 @@ public partial class RdpSessionView : UserControl
             _hostWindow.StateChanged += OnHostWindowStateChanged;
         }
 
+        _instr.Start(vm.Log, vm.Title, _hostWindow); // THROWAWAY freeze instrument
+
         CreateControl();
 
         _vm.PropertyChanged += OnViewModelPropertyChanged;
@@ -134,6 +137,8 @@ public partial class RdpSessionView : UserControl
     /// one down and rebuilds through this same path, so first-connect and reconnect can't drift.</summary>
     private void CreateControl()
     {
+        var createStopwatch = System.Diagnostics.Stopwatch.StartNew(); // THROWAWAY freeze instrument
+
         // Ax control fills an intermediate WinForms Panel; the Panel (which accepts any size) is the host's
         // Child — NOT the Ax control (whose fixed default size makes the host collapse).
         _hostPanel = new System.Windows.Forms.Panel();
@@ -169,6 +174,8 @@ public partial class RdpSessionView : UserControl
         // verify immediately instead of waiting out the timer. Subscribed per control (a subscribe-once slip
         // would silently kill it after the first Reconnect); unhooked in TearDownControl with the rest.
         _rdp.OnRemoteDesktopSizeChange += OnRdpRemoteDesktopSizeChange;
+
+        _instr.ReportTimed("CreateControl", createStopwatch.ElapsedMilliseconds); // THROWAWAY freeze instrument
     }
 
     /// <summary>Unsubscribes the control's events (BEFORE disconnecting, so its Disconnect() can't re-enter our
@@ -183,22 +190,26 @@ public partial class RdpSessionView : UserControl
             return;
         }
 
-        _rdp.OnConnecting -= OnRdpConnecting;
-        _rdp.OnConnected -= OnRdpConnected;
-        _rdp.OnLoginComplete -= OnRdpLoginComplete;
-        _rdp.OnDisconnected -= OnRdpDisconnected;
-        _rdp.OnFatalError -= OnRdpFatalError;
-        _rdp.OnAutoReconnecting -= OnRdpAutoReconnecting;
-        _rdp.OnAutoReconnected -= OnRdpAutoReconnected;
-        _rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
-        _rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
-        _rdp.OnRemoteDesktopSizeChange -= OnRdpRemoteDesktopSizeChange;
+        AxMsRdpClient9NotSafeForScripting rdp = _rdp; // non-null local so instrument lambdas stay warning-free
+        _instr.Timed("UnhookEvents(teardown)", () =>
+        {
+            rdp.OnConnecting -= OnRdpConnecting;
+            rdp.OnConnected -= OnRdpConnected;
+            rdp.OnLoginComplete -= OnRdpLoginComplete;
+            rdp.OnDisconnected -= OnRdpDisconnected;
+            rdp.OnFatalError -= OnRdpFatalError;
+            rdp.OnAutoReconnecting -= OnRdpAutoReconnecting;
+            rdp.OnAutoReconnected -= OnRdpAutoReconnected;
+            rdp.OnEnterFullScreenMode -= OnEnterFullScreen;
+            rdp.OnLeaveFullScreenMode -= OnLeaveFullScreen;
+            rdp.OnRemoteDesktopSizeChange -= OnRdpRemoteDesktopSizeChange;
+        });
 
         try
         {
-            if (_rdp.Connected != 0)
+            if (_instr.Timed("Connected(teardown)", () => rdp.Connected) != 0)
             {
-                _rdp.Disconnect();
+                _instr.Timed("Disconnect(teardown)", () => { rdp.Disconnect(); });
             }
         }
         catch (Exception)
@@ -207,7 +218,7 @@ public partial class RdpSessionView : UserControl
         }
 
         RdpHostElement.Child = null;
-        _rdp.Dispose();
+        _instr.Timed("Dispose(teardown)", () => { rdp.Dispose(); });
         _rdp = null;
         _hostPanel?.Dispose();
         _hostPanel = null;
@@ -222,6 +233,7 @@ public partial class RdpSessionView : UserControl
 
         _connectStarted = true;
         RdpConnectionSettings s = _vm.Settings;
+        var setupStopwatch = System.Diagnostics.Stopwatch.StartNew(); // THROWAWAY freeze instrument
         try
         {
             _rdp.Server = s.Server;
@@ -271,10 +283,12 @@ public partial class RdpSessionView : UserControl
             }
 
             _rdp.Connect();
+            _instr.ReportTimed("Connect(setup+connect)", setupStopwatch.ElapsedMilliseconds);
             SetStatus(RdpConnectionState.Connecting, "Connecting…");
         }
         catch (Exception ex)
         {
+            _instr.ReportTimed("Connect(setup+connect)", setupStopwatch.ElapsedMilliseconds);
             SetStatus(RdpConnectionState.Failed, $"Couldn't start the session: {ex.Message}");
         }
     }
@@ -292,9 +306,11 @@ public partial class RdpSessionView : UserControl
         // back, so by the time the user clicks Reconnect it may already be live. Rebuilding a still-live control
         // would tear down a working session — so when it's still connected/connecting, just resync the status bar
         // to the control's real state (clears the stale error/overlay); only rebuild when it's actually down.
-        if (_rdp.Connected != 0)
+        AxMsRdpClient9NotSafeForScripting reconnectRdp = _rdp; // non-null local for the instrument lambda
+        int connected = _instr.Timed("Connected(reconnect)", () => reconnectRdp.Connected);
+        if (connected != 0)
         {
-            bool live = _rdp.Connected == 1;
+            bool live = connected == 1;
             SetStatus(live ? RdpConnectionState.Connected : RdpConnectionState.Connecting,
                 live ? "Connected." : "Reconnecting…");
             return;
@@ -358,7 +374,8 @@ public partial class RdpSessionView : UserControl
             return; // legacy sessions are engine-dormant: connect-time size + SmartSizing, like today
         }
 
-        if (_rdp.Connected != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
+        AxMsRdpClient9NotSafeForScripting rdp = _rdp; // non-null local so instrument lambdas stay warning-free
+        if (_instr.Timed("Connected(send-guard)", () => rdp.Connected) != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
         {
             ScheduleVerify(VerifyBaseDelayMs); // re-check later; costs no retry budget
             return;
@@ -386,7 +403,8 @@ public partial class RdpSessionView : UserControl
         // an unchanged pane — converge without sending, so kicks never burn send spacing or collide.
         try
         {
-            if (_rdp.DesktopWidth == width && _rdp.DesktopHeight == height)
+            (int currentWidth, int currentHeight) = _instr.Timed("DesktopWH(send-bail)", () => (rdp.DesktopWidth, rdp.DesktopHeight));
+            if (currentWidth == width && currentHeight == height)
             {
                 _retryCount = 0;
                 if (!_fullScreen)
@@ -441,7 +459,8 @@ public partial class RdpSessionView : UserControl
             return;
         }
 
-        if (_rdp.Connected != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
+        AxMsRdpClient9NotSafeForScripting rdp = _rdp; // non-null local so instrument lambdas stay warning-free
+        if (_instr.Timed("Connected(verify-guard)", () => rdp.Connected) != 1 || IsHostWindowMinimized() || IsPaneDegenerate())
         {
             ScheduleVerify(VerifyBaseDelayMs); // guard-skips reschedule; they never consume the cap
             return;
@@ -458,8 +477,7 @@ public partial class RdpSessionView : UserControl
         int actualHeight;
         try
         {
-            actualWidth = _rdp.DesktopWidth;
-            actualHeight = _rdp.DesktopHeight;
+            (actualWidth, actualHeight) = _instr.Timed("DesktopWH(verify)", () => (rdp.DesktopWidth, rdp.DesktopHeight));
         }
         catch (Exception)
         {
@@ -519,7 +537,7 @@ public partial class RdpSessionView : UserControl
     /// once at the physical size with SmartSizing — today's fill-but-compact behavior.</summary>
     private void ResizeRemote(int width, int height)
     {
-        if (_rdp is null || _rdp.Connected != 1)
+        if (_rdp is not { } rdp || _instr.Timed("Connected(resize)", () => rdp.Connected) != 1)
         {
             return;
         }
@@ -527,7 +545,16 @@ public partial class RdpSessionView : UserControl
         (uint desktopScale, uint deviceScale) = LocalScale();
         try
         {
-            _rdp.UpdateSessionDisplaySettings((uint)width, (uint)height, 0, 0, 0, desktopScale, deviceScale);
+            _instr.RecordLanded($"send {width}x{height}"); // THROWAWAY freeze instrument (manual stopwatch:
+            var sendStopwatch = System.Diagnostics.Stopwatch.StartNew(); // a lambda would rename the receiver
+            try                                                          // and break the cardinal gate grep)
+            {
+                _rdp.UpdateSessionDisplaySettings((uint)width, (uint)height, 0, 0, 0, desktopScale, deviceScale);
+            }
+            finally
+            {
+                _instr.ReportTimed("UpdateSessionDisplaySettings", sendStopwatch.ElapsedMilliseconds);
+            }
         }
         catch (Exception)
         {
@@ -574,6 +601,7 @@ public partial class RdpSessionView : UserControl
                 return;
             }
 
+            _instr.RecordLanded("rebuild(legacy)");
             TearDownControl();
             _connected = false;
             _connectStarted = false;
@@ -680,22 +708,24 @@ public partial class RdpSessionView : UserControl
     /// exclusive). A failed set/read-back degrades the session to today's fill-but-compact model.</summary>
     private void ReassertZoom()
     {
-        if (_zoomPercent <= 100 || _degraded || _legacyServer || _fullScreen || _rdp is null || _rdp.Connected != 1)
+        if (_zoomPercent <= 100 || _degraded || _legacyServer || _fullScreen || _rdp is not { } rdp
+            || _instr.Timed("Connected(zoom-guard)", () => rdp.Connected) != 1)
         {
             return;
         }
 
         try
         {
-            if (_rdp.GetOcx() is not IMsRdpExtendedSettings ext)
+            if (rdp.GetOcx() is not IMsRdpExtendedSettings ext)
             {
                 DegradeZoom("the control exposes no extended settings");
                 return;
             }
 
+            _instr.RecordLanded($"ZoomLevel.set({_zoomPercent}) reassert");
             object zoom = _zoomPercent;
-            ext.set_Property("ZoomLevel", ref zoom);
-            object readBack = ext.get_Property("ZoomLevel");
+            _instr.Timed("ZoomLevel.set(reassert)", () => { ext.set_Property("ZoomLevel", ref zoom); });
+            object readBack = _instr.Timed("ZoomLevel.get(readback)", () => ext.get_Property("ZoomLevel"));
             if (readBack is not uint applied || applied != _zoomPercent)
             {
                 DegradeZoom($"requested {_zoomPercent}, control reports {readBack ?? "null"}");
@@ -719,17 +749,19 @@ public partial class RdpSessionView : UserControl
 
         _degraded = true;
 
-        if (_rdp is not null)
+        if (_rdp is { } rdp)
         {
             try
             {
-                if (_rdp.GetOcx() is IMsRdpExtendedSettings ext)
+                if (rdp.GetOcx() is IMsRdpExtendedSettings ext)
                 {
+                    _instr.RecordLanded("ZoomLevel.set(100) degrade");
                     object zoom = 100u;
-                    ext.set_Property("ZoomLevel", ref zoom);
+                    _instr.Timed("ZoomLevel.set(degrade)", () => { ext.set_Property("ZoomLevel", ref zoom); });
                 }
 
-                _rdp.AdvancedSettings9.SmartSizing = true;
+                _instr.RecordLanded("SmartSizing.set(true) degrade");
+                _instr.Timed("SmartSizing.set(degrade)", () => { rdp.AdvancedSettings9.SmartSizing = true; });
             }
             catch (Exception)
             {
@@ -875,17 +907,18 @@ public partial class RdpSessionView : UserControl
     /// logged, and recovered in <see cref="OnViewModelPropertyChanged"/>.</summary>
     private void ParkZoomForFullScreen()
     {
-        if (_zoomPercent <= 100 || _degraded || _legacyServer || _rdp is null)
+        if (_zoomPercent <= 100 || _degraded || _legacyServer || _rdp is not { } rdp)
         {
             return;
         }
 
         try
         {
-            if (_rdp.GetOcx() is IMsRdpExtendedSettings ext)
+            if (rdp.GetOcx() is IMsRdpExtendedSettings ext)
             {
+                _instr.RecordLanded("ZoomLevel.set(100) park");
                 object zoom = 100u;
-                ext.set_Property("ZoomLevel", ref zoom);
+                _instr.Timed("ZoomLevel.set(park)", () => { ext.set_Property("ZoomLevel", ref zoom); });
             }
         }
         catch (Exception)
@@ -923,10 +956,11 @@ public partial class RdpSessionView : UserControl
             return;
         }
 
+        AxMsRdpClient9NotSafeForScripting rdp = _rdp; // non-null local so instrument lambdas stay warning-free
         bool wanted = _vm.FullScreen;
         try
         {
-            if (_rdp.Connected == 0)
+            if (_instr.Timed("Connected(fs)", () => rdp.Connected) == 0)
             {
                 SetFullScreenFlag(!wanted); // session down: no switch happened — un-latch for the next click
                 return;
@@ -937,8 +971,9 @@ public partial class RdpSessionView : UserControl
                 ParkZoomForFullScreen();
             }
 
-            _rdp.FullScreen = wanted;
-            if (_rdp.FullScreen == wanted)
+            _instr.RecordLanded($"FullScreen.set({wanted})");
+            _instr.Timed("FullScreen.set", () => { rdp.FullScreen = wanted; });
+            if (_instr.Timed("FullScreen.get(readback)", () => rdp.FullScreen) == wanted)
             {
                 return; // took — OnEnter/OnLeaveFullScreen drive the re-fit from here
             }
@@ -980,7 +1015,7 @@ public partial class RdpSessionView : UserControl
         string connected = "?";
         try
         {
-            connected = _rdp?.Connected.ToString() ?? "gone";
+            connected = _instr.Timed("Connected(state)", () => _rdp?.Connected.ToString() ?? "gone");
         }
         catch (Exception)
         {
@@ -989,7 +1024,7 @@ public partial class RdpSessionView : UserControl
 
         try
         {
-            smartSizing = _rdp?.AdvancedSettings9.SmartSizing.ToString() ?? "?";
+            smartSizing = _instr.Timed("SmartSizing.get(state)", () => _rdp?.AdvancedSettings9.SmartSizing.ToString() ?? "?");
         }
         catch (Exception)
         {
@@ -1000,7 +1035,7 @@ public partial class RdpSessionView : UserControl
         {
             if (_rdp?.GetOcx() is IMsRdpExtendedSettings ext)
             {
-                zoom = ext.get_Property("ZoomLevel")?.ToString() ?? "null";
+                zoom = _instr.Timed("ZoomLevel.get(state)", () => ext.get_Property("ZoomLevel")?.ToString() ?? "null");
             }
         }
         catch (Exception)
@@ -1057,14 +1092,15 @@ public partial class RdpSessionView : UserControl
 
     private string DescribeDisconnect(int reason)
     {
-        if (_rdp is null)
+        if (_rdp is not { } rdp)
         {
             return $"Disconnected (reason {reason}).";
         }
 
         try
         {
-            string? description = _rdp.GetErrorDescription((uint)reason, (uint)_rdp.ExtendedDisconnectReason);
+            string? description = _instr.Timed("GetErrorDescription", () =>
+                rdp.GetErrorDescription((uint)reason, (uint)rdp.ExtendedDisconnectReason));
             return string.IsNullOrWhiteSpace(description) ? $"Disconnected (reason {reason})." : description;
         }
         catch (Exception)
@@ -1083,7 +1119,7 @@ public partial class RdpSessionView : UserControl
     /// protocol error) is treated as involuntary, so the session stays open for Reconnect.</summary>
     private bool IsUserLogoff()
     {
-        if (_rdp is null)
+        if (_rdp is not { } rdp)
         {
             return false;
         }
@@ -1092,7 +1128,7 @@ public partial class RdpSessionView : UserControl
         {
             // ExtendedDisconnectReasonCode → int: 2 = API-initiated logoff, 4 = server-initiated logoff,
             // 6 = logoff-by-user. Everything else (network / idle / disconnect / error) is an involuntary drop.
-            int reason = (int)_rdp.ExtendedDisconnectReason;
+            int reason = _instr.Timed("ExtDiscReason(logoff)", () => (int)rdp.ExtendedDisconnectReason);
             return reason is 2 or 4 or 6;
         }
         catch (Exception)
@@ -1148,6 +1184,7 @@ public partial class RdpSessionView : UserControl
     public void DisposeSession()
     {
         _closing = true;
+        _instr.Stop(); // THROWAWAY freeze instrument
         _resizeTimer.Stop();
         _verifyTimer.Stop();
 
