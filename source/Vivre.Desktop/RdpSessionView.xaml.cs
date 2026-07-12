@@ -84,6 +84,10 @@ public partial class RdpSessionView : UserControl
     // 100 = zoom off (SmartSizing stays on — today's behavior on 100% displays).
     private uint _zoomPercent = 100;
 
+    // THROWAWAY sign-out instrument (remove with this arc): auto-reconnect attempts seen since the
+    // session was last live — printed on the [RDP disc] line so a drop-then-exhaustion shows its history.
+    private int _autoReconnectAttempts;
+
     public RdpSessionView()
     {
         InitializeComponent();
@@ -173,6 +177,7 @@ public partial class RdpSessionView : UserControl
         _zoomWarnLatched = false;
         _degraded = false;
         _fullScreen = false;
+        _autoReconnectAttempts = 0; // THROWAWAY sign-out instrument
         _verifyTimer.Stop();
 
         _rdp.OnConnecting += OnRdpConnecting;
@@ -795,6 +800,7 @@ public partial class RdpSessionView : UserControl
     private void OnRdpLoginComplete(object? sender, EventArgs e)
     {
         _connected = true;
+        _autoReconnectAttempts = 0; // THROWAWAY sign-out instrument
         SetStatus(RdpConnectionState.Connected, "Connected.");
 
         // Marshal per the file's rule (control events can arrive off the UI thread); the deferred body
@@ -816,6 +822,14 @@ public partial class RdpSessionView : UserControl
     // re-assert zoom and re-fit in case the recovery reset either.
     private void OnRdpAutoReconnected(object? sender, EventArgs e)
     {
+        // THROWAWAY sign-out instrument (remove with this arc).
+        if (_vm is { } vm)
+        {
+            vm.Log.Info(vm.Title,
+                $"[RDP disc] autoreconnect event=OnAutoReconnected attemptsSeen={_autoReconnectAttempts}");
+        }
+
+        _autoReconnectAttempts = 0;
         SetStatus(RdpConnectionState.Connected, "Connected.");
         Dispatcher.BeginInvoke(() =>
         {
@@ -1113,7 +1127,32 @@ public partial class RdpSessionView : UserControl
         // drop — network blip, server reboot, idle timeout, admin disconnect, protocol error — KEEPS the session
         // + tab open in a disconnected state with the Reconnect button enabled, so the operator can rebuild it.
         // (Brief blips are usually recovered first by the control's own auto-reconnect.)
-        if (_connected && IsUserLogoff())
+        bool wouldClose = _connected && IsUserLogoff();
+
+        // THROWAWAY sign-out instrument (remove with this arc): the REAL codes next to the CURRENT code's
+        // verdict, one Info line per disconnect. `classified` has no "drop" value because the current
+        // classifier has no drop class — everything non-signout is styled as an error; that absence is
+        // itself a finding. `connected` discriminates the compound predicate's two factors.
+        if (_vm is { } instrVm)
+        {
+            int extReason;
+            try
+            {
+                extReason = _rdp is { } instrRdp ? (int)instrRdp.ExtendedDisconnectReason : -1;
+            }
+            catch (Exception)
+            {
+                extReason = -1; // unreadable — the line still carries discReason
+            }
+
+            instrVm.Log.Info(instrVm.Title,
+                $"[RDP disc] discReason={e.discReason} (0x{e.discReason:X}) extReason={extReason} (0x{extReason:X}) " +
+                $"desc=\"{DescribeDisconnect(e.discReason)}\" autoReconnecting={_autoReconnectAttempts} " +
+                $"connected={(_connected ? 1 : 0)} classified={(wouldClose ? "signout" : "error")} " +
+                $"action={(wouldClose ? "closed" : "kept")}");
+        }
+
+        if (wouldClose)
         {
             // Defer the close so the control's own disconnect callback unwinds before we dispose it.
             Dispatcher.BeginInvoke(() => _vm?.RequestClose());
@@ -1137,8 +1176,20 @@ public partial class RdpSessionView : UserControl
 
     // The control's built-in auto-reconnect (after a network blip) — keep the status bar honest so it clears
     // itself when the session comes back, instead of stranding a stale "disconnected" bar over a live desktop.
-    private void OnRdpAutoReconnecting(object? sender, IMsTscAxEvents_OnAutoReconnectingEvent e) =>
+    private void OnRdpAutoReconnecting(object? sender, IMsTscAxEvents_OnAutoReconnectingEvent e)
+    {
+        // THROWAWAY sign-out instrument (remove with this arc). pArcContinueStatus is logged as received;
+        // this handler does NOT set it — the control's own continue policy applies untouched.
+        _autoReconnectAttempts++;
+        if (_vm is { } vm)
+        {
+            vm.Log.Info(vm.Title,
+                $"[RDP disc] autoreconnect event=OnAutoReconnecting attempt={e.attemptCount} " +
+                $"disconnectReason={e.disconnectReason} continueState={e.pArcContinueStatus}");
+        }
+
         SetStatus(RdpConnectionState.Connecting, "Reconnecting…");
+    }
 
     private string DescribeDisconnect(int reason)
     {
