@@ -84,8 +84,10 @@ public partial class RdpSessionView : UserControl
     // 100 = zoom off (SmartSizing stays on — today's behavior on 100% displays).
     private uint _zoomPercent = 100;
 
-    // THROWAWAY sign-out instrument (remove with this arc): auto-reconnect attempts seen since the
-    // session was last live — printed on the [RDP disc] line so a drop-then-exhaustion shows its history.
+    // Auto-reconnect attempts seen since the session was last live. LOAD-BEARING, NOT instrument state:
+    // it is a classifier input (RdpDisconnectClassifier — a logoff code arriving mid-recovery must NOT
+    // close the tab). The throwaway [RDP disc] lines also print it, but the field, its increment, and its
+    // resets all STAY when that instrument is stripped.
     private int _autoReconnectAttempts;
 
     public RdpSessionView()
@@ -177,7 +179,7 @@ public partial class RdpSessionView : UserControl
         _zoomWarnLatched = false;
         _degraded = false;
         _fullScreen = false;
-        _autoReconnectAttempts = 0; // THROWAWAY sign-out instrument
+        _autoReconnectAttempts = 0; // classifier input — KEEP when the [RDP disc] instrument is stripped
         _verifyTimer.Stop();
 
         _rdp.OnConnecting += OnRdpConnecting;
@@ -800,7 +802,7 @@ public partial class RdpSessionView : UserControl
     private void OnRdpLoginComplete(object? sender, EventArgs e)
     {
         _connected = true;
-        _autoReconnectAttempts = 0; // THROWAWAY sign-out instrument
+        _autoReconnectAttempts = 0; // classifier input — KEEP when the [RDP disc] instrument is stripped
         SetStatus(RdpConnectionState.Connected, "Connected.");
 
         // Marshal per the file's rule (control events can arrive off the UI thread); the deferred body
@@ -822,14 +824,14 @@ public partial class RdpSessionView : UserControl
     // re-assert zoom and re-fit in case the recovery reset either.
     private void OnRdpAutoReconnected(object? sender, EventArgs e)
     {
-        // THROWAWAY sign-out instrument (remove with this arc).
+        // THROWAWAY sign-out instrument (remove with this arc): the log line ONLY.
         if (_vm is { } vm)
         {
             vm.Log.Info(vm.Title,
                 $"[RDP disc] autoreconnect event=OnAutoReconnected attemptsSeen={_autoReconnectAttempts}");
         }
 
-        _autoReconnectAttempts = 0;
+        _autoReconnectAttempts = 0; // classifier input — KEEP when the [RDP disc] instrument is stripped
         SetStatus(RdpConnectionState.Connected, "Connected.");
         Dispatcher.BeginInvoke(() =>
         {
@@ -1123,52 +1125,75 @@ public partial class RdpSessionView : UserControl
             return; // we're tearing the control down ourselves
         }
 
-        // Only a DELIBERATE sign-out closes the tab (like mstsc closing its window on logoff). An INVOLUNTARY
-        // drop — network blip, server reboot, idle timeout, admin disconnect, protocol error — KEEPS the session
-        // + tab open in a disconnected state with the Reconnect button enabled, so the operator can rebuild it.
-        // (Brief blips are usually recovered first by the control's own auto-reconnect.)
-        bool wouldClose = _connected && IsUserLogoff();
+        // Keep-by-default, close-by-exception: ONLY a deliberate sign-out (ExtendedDisconnectReasonCode 12,
+        // LogoffByUser — measured identically for Start ▸ Sign out and `logoff`) closes the tab, silently.
+        // Everything else — idle timeout, network drop, admin disconnect (session still alive!), replaced
+        // connection, genuine errors, UNKNOWN codes — keeps the tab with Reconnect. The classifier is pure
+        // and unit-tested (RdpDisconnectClassifier); the old inline check compared this property against
+        // constants from a DIFFERENT enum, which both broke sign-out AND silently closed the tab on two
+        // genuine failures (ServerLogonTimeout / OutOfMemory).
+        int extReason = ReadExtendedDisconnectReason();
+        RdpDisconnectAction action = RdpDisconnectClassifier.Classify(
+            extReason, e.discReason, _connected, _autoReconnectAttempts);
 
-        // THROWAWAY sign-out instrument (remove with this arc): the REAL codes next to the CURRENT code's
-        // verdict, one Info line per disconnect. `classified` has no "drop" value because the current
-        // classifier has no drop class — everything non-signout is styled as an error; that absence is
-        // itself a finding. `connected` discriminates the compound predicate's two factors.
+        // THROWAWAY sign-out instrument (remove with this arc): the REAL codes next to the classifier's
+        // verdict — the post-fix verify run reads these same lines to confirm each gesture's class.
         if (_vm is { } instrVm)
         {
-            int extReason;
-            try
+            string classified = action switch
             {
-                extReason = _rdp is { } instrRdp ? (int)instrRdp.ExtendedDisconnectReason : -1;
-            }
-            catch (Exception)
-            {
-                extReason = -1; // unreadable — the line still carries discReason
-            }
-
+                RdpDisconnectAction.CloseTab => "signout",
+                RdpDisconnectAction.KeepReconnectPlain => "drop",
+                _ => "error",
+            };
             instrVm.Log.Info(instrVm.Title,
                 $"[RDP disc] discReason={e.discReason} (0x{e.discReason:X}) extReason={extReason} (0x{extReason:X}) " +
                 $"desc=\"{DescribeDisconnect(e.discReason)}\" autoReconnecting={_autoReconnectAttempts} " +
-                $"connected={(_connected ? 1 : 0)} classified={(wouldClose ? "signout" : "error")} " +
-                $"action={(wouldClose ? "closed" : "kept")}");
+                $"connected={(_connected ? 1 : 0)} classified={classified} " +
+                $"action={(action == RdpDisconnectAction.CloseTab ? "closed" : "kept")}");
         }
 
-        if (wouldClose)
+        if (action == RdpDisconnectAction.CloseTab)
         {
-            // Defer the close so the control's own disconnect callback unwinds before we dispose it.
+            // Silent (no status write) — the tab just closes, like mstsc's window on logoff. Defer the
+            // close so the control's own disconnect callback unwinds before we dispose it.
             Dispatcher.BeginInvoke(() => _vm?.RequestClose());
             return;
         }
 
-        string message = DescribeDisconnect(e.discReason);
+        // GetErrorDescription is called for the ERROR outcome ONLY (inside the describer lambda) —
+        // calling it on a non-error disconnect is what produced "An internal error has occurred."
+        string message = RdpDisconnectClassifier.Message(action, () => DescribeDisconnect(e.discReason))
+            ?? $"Disconnected (reason {e.discReason})."; // unreachable for keep actions — total-function fallback
 
         // The classic cross-domain stumbling block: a server on another domain rejects the credentials with
         // NLA on. Nudge toward the fix (turning NLA off) instead of leaving the user guessing.
-        if (_vm is { Settings.NlaEnabled: true } && LooksLikeAuthFailure(e.discReason))
+        if (action == RdpDisconnectAction.KeepReconnectError
+            && _vm is { Settings.NlaEnabled: true } && LooksLikeAuthFailure(e.discReason))
         {
             message += "  If this is a cross-domain host, edit it, turn NLA off, and reconnect.";
         }
 
         SetStatus(RdpConnectionState.Disconnected, message);
+    }
+
+    /// <summary>The OCX's ExtendedDisconnectReason as an int, or -1 when unreadable — the classifier
+    /// treats unreadable as a kept error, never a close (the fail-safe direction).</summary>
+    private int ReadExtendedDisconnectReason()
+    {
+        if (_rdp is not { } rdp)
+        {
+            return -1;
+        }
+
+        try
+        {
+            return (int)rdp.ExtendedDisconnectReason;
+        }
+        catch (Exception)
+        {
+            return -1;
+        }
     }
 
     private void OnRdpFatalError(object? sender, IMsTscAxEvents_OnFatalErrorEvent e) =>
@@ -1178,9 +1203,10 @@ public partial class RdpSessionView : UserControl
     // itself when the session comes back, instead of stranding a stale "disconnected" bar over a live desktop.
     private void OnRdpAutoReconnecting(object? sender, IMsTscAxEvents_OnAutoReconnectingEvent e)
     {
-        // THROWAWAY sign-out instrument (remove with this arc). pArcContinueStatus is logged as received;
-        // this handler does NOT set it — the control's own continue policy applies untouched.
-        _autoReconnectAttempts++;
+        _autoReconnectAttempts++; // classifier input — KEEP when the [RDP disc] instrument is stripped
+
+        // THROWAWAY sign-out instrument (remove with this arc): the log line ONLY. pArcContinueStatus is
+        // logged as received; this handler does NOT set it — the control's own continue policy applies.
         if (_vm is { } vm)
         {
             vm.Log.Info(vm.Title,
@@ -1212,30 +1238,6 @@ public partial class RdpSessionView : UserControl
     // Heuristic for the NLA hint — credential/authentication-ish disconnect reasons. Advisory only.
     private static bool LooksLikeAuthFailure(int reason) =>
         reason is 2825 or 3334 or 2055 or 5639 or 264 or 516;
-
-    /// <summary>True when the disconnect was a DELIBERATE sign-out (the session ended on purpose), read from the
-    /// control's <c>ExtendedDisconnectReason</c>: API-initiated logoff (2), server-initiated logoff (4), or
-    /// logoff-by-user (6). Everything else (network / idle timeout / server- or admin-initiated disconnect /
-    /// protocol error) is treated as involuntary, so the session stays open for Reconnect.</summary>
-    private bool IsUserLogoff()
-    {
-        if (_rdp is null)
-        {
-            return false;
-        }
-
-        try
-        {
-            // ExtendedDisconnectReasonCode → int: 2 = API-initiated logoff, 4 = server-initiated logoff,
-            // 6 = logoff-by-user. Everything else (network / idle / disconnect / error) is an involuntary drop.
-            int reason = (int)_rdp.ExtendedDisconnectReason;
-            return reason is 2 or 4 or 6;
-        }
-        catch (Exception)
-        {
-            return false; // can't read the reason → treat as involuntary (keep the session open)
-        }
-    }
 
     /// <summary>Mirrors the control's REAL full-screen state into the VM (marshaled). The write is
     /// suppression-flagged: the mirror must never poke the OCX back through the sync handler (a revert after

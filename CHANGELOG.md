@@ -24,6 +24,19 @@ it ships, then gets a dated heading.
   RDP control refused the switch once (or the button was clicked while the session was down), the button
   went silently dead for the life of that tab. Now the failure is logged to the activity log with the
   control's state, and the button stays clickable — every click is a fresh attempt.
+- **Signing out inside an RDP session now closes its tab cleanly** instead of showing a bogus
+  "An internal error has occurred." with a Reconnect button. The disconnect classifier was comparing
+  codes from the wrong enum; it now closes only on a genuine sign-out and keeps the tab (with
+  Reconnect) for everything else. The sign-out code was measured on the fleet — Start ▸ Sign out and
+  the `logoff` command both report the same code.
+- **Two genuine RDP failures no longer close the tab silently.** The same wrong-enum bug made a
+  server logon timeout or an out-of-memory disconnect close the tab with no message at all — session
+  gone, no explanation. They now keep the tab and show the real reason, like every other failure.
+  Unknown disconnect codes always keep the tab: close-on-sign-out is the single exception, so an
+  unfamiliar code can never cost you a reconnectable session. (Coverage note: the close path is
+  measured; the plain-message vs real-reason split among KEPT tabs is reasoned from the protocol's
+  code tables, not yet observed on this fleet — worst case a benign drop shows a sterner message
+  than it needs, and nothing in that split can close a tab.)
 - **Re-fits now wait for quiet hands.** The engine never changes the session's resolution while you're
   mid-drag or holding a mouse button.
 - **Dragging the window border (or the tree splitter) no longer freezes the app.** The remote image now

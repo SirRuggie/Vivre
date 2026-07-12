@@ -725,7 +725,7 @@ public static class HelpContent
                 "Switch sessions with the tabs above the remote view; switch to a machine tab and back without dropping them.",
                 "Full screen: click Full screen (Ctrl+Alt+Break toggles back out). Full screen shows the remote at the monitor's native resolution — crisper but smaller than the windowed view; that's deliberate.",
                 "Disconnect: click the ✕ on a session tab, or select it and click Disconnect.",
-                "Dropped connection: if a session drops (network blip, server reboot, idle timeout) it stays open as disconnected — click Reconnect to rebuild it. Signing out inside the remote closes its tab automatically.",
+                "Dropped connection: if a session drops (network blip, server reboot, idle timeout, an admin disconnect) it stays open as disconnected — a clean drop shows a plain \"Disconnected\" note, a genuine failure shows the real reason — click Reconnect to rebuild it. Signing out inside the remote (Start ▸ Sign out, or logoff) closes its tab automatically; that's not an error.",
                 "While you drag-resize, the image may show brief borders for a second until it re-fits; on some pane sizes a 1-3 pixel unpainted edge at the right/bottom is normal.",
             ],
         },
