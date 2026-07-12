@@ -36,6 +36,13 @@ public partial class RdpSessionView : UserControl
     private string _spikeRefit = "refit=none";
     private string _spikeZoomStatus = "zoom=none";
 
+    // SPIKE-0B - REMOVE: fallback-mode toggle (static so a NEW session picks it up — EnableZoom is
+    // write-only and NOT changeable after connect, so the mode must be chosen before Connect()).
+    // Bare-zoom mode: SmartSizing OFF + ZoomLevel post-login. EnableZoom mode: SmartSizing ON +
+    // EnableZoom=true pre-connect — the documented unlock for SmartSizing UPSCALING, carrying
+    // SmartSizing's proven input mapping (round-1 V2 was the only clickable variant).
+    private static bool _spikeEnableZoomMode;
+
     public RdpSessionView()
     {
         InitializeComponent();
@@ -62,8 +69,10 @@ public partial class RdpSessionView : UserControl
         _connected = false;
         _connectStarted = false;
 
-        // SPIKE-0B - REMOVE: derive the default zoom from the actual display scale.
+        // SPIKE-0B - REMOVE: derive the default zoom from the actual display scale; sync the mode
+        // checkbox with the process-wide toggle.
         _spikeZoom = (uint)Math.Round(System.Windows.Media.VisualTreeHelper.GetDpi(this).DpiScaleX * 100);
+        SpikeEnableZoomCheck.IsChecked = _spikeEnableZoomMode;
 
         CreateControl();
 
@@ -166,9 +175,10 @@ public partial class RdpSessionView : UserControl
             // credentials instead of rejecting delegated/saved ones (the cross-domain 0x2107 rejection).
             _rdp.AdvancedSettings9.EnableCredSspSupport = s.NlaEnabled;
 
-            // SPIKE-0B - REMOVE: SmartSizing OFF — mutually exclusive with ZoomLevel (Microsoft docs).
-            // The shipping value is true; restore it when the hack is dropped.
-            _rdp.AdvancedSettings9.SmartSizing = false;
+            // SPIKE-0B - REMOVE: bare-zoom mode = SmartSizing OFF (mutually exclusive with ZoomLevel);
+            // EnableZoom mode = SmartSizing ON (EnableZoom unlocks its upscaling). Shipping value is
+            // true; restore when the hack is dropped.
+            _rdp.AdvancedSettings9.SmartSizing = _spikeEnableZoomMode;
             _rdp.AdvancedSettings9.ContainerHandledFullScreen = 0;
 
             // Let the client transparently recover a transient drop (brief network blip) on its own before we
@@ -185,6 +195,22 @@ public partial class RdpSessionView : UserControl
                 ext.set_Property("DesktopScaleFactor", ref desktop);
                 object device = deviceScale;
                 ext.set_Property("DeviceScaleFactor", ref device);
+
+                // SPIKE-0B - REMOVE: EnableZoom must be set BEFORE Connect (write-only, not
+                // changeable after). Guarded so an unsupported property can't fail the connect.
+                if (_spikeEnableZoomMode)
+                {
+                    try
+                    {
+                        object enableZoom = true;
+                        ext.set_Property("EnableZoom", ref enableZoom);
+                        _spikeZoomStatus = "mode=EnableZoom+SmartSizing (set pre-connect; write-only, no read-back)";
+                    }
+                    catch (Exception ex)
+                    {
+                        _spikeZoomStatus = $"mode=EnableZoom FAILED {ex.GetType().Name}";
+                    }
+                }
             }
 
             if (_rdp.GetOcx() is IMsTscNonScriptable nonScriptable)
@@ -246,8 +272,13 @@ public partial class RdpSessionView : UserControl
         (int width, int height) = RemotePixelSize();
         ResizeRemote(width, height);
 
-        // SPIKE-0B - REMOVE: re-apply the current zoom after the re-fit send and refresh the strip.
-        ApplySpikeZoom(_spikeZoom);
+        // SPIKE-0B - REMOVE: re-apply the current zoom after the re-fit send (bare-zoom mode only)
+        // and refresh the strip.
+        if (!_spikeEnableZoomMode)
+        {
+            ApplySpikeZoom(_spikeZoom);
+        }
+
         UpdateSpikeDiag(width, height);
     }
 
@@ -301,14 +332,17 @@ public partial class RdpSessionView : UserControl
     /// <summary>SPIKE-0B: the pane size in LOGICAL units (DIPs as-is, NOT multiplied by the DPI
     /// scale) — the ZoomLevel design's framebuffer. The floor is scaled down (ceil(640/scale) x
     /// ceil(480/scale)) so the zoomed minimum footprint matches the shipping 640x480 physical.
-    /// SHIPPING BODY (restore when the hack is dropped): DIPs x DpiScaleX/Y, floors 640/480.
-    /// MonitorPixelSize (full-screen) stays PHYSICAL and unchanged.</summary>
+    /// WIDTH IS FLOORED TO EVEN — HARD RULE: MS-RDPEDISP forbids odd display-control widths, and
+    /// an odd width is silently dropped by the server while the API reports success (this was every
+    /// "refit=OK but stale" ever recorded: 1615/2251/1801 odd = dropped; 2316/3474 even = applied).
+    /// SHIPPING BODY (restore when the hack is dropped): DIPs x DpiScaleX/Y, floors 640/480 —
+    /// and the even-width rule must carry into the shipping body too.</summary>
     private (int Width, int Height) RemotePixelSize()
     {
         var dpi = System.Windows.Media.VisualTreeHelper.GetDpi(this);
-        return (
-            Math.Max((int)Math.Ceiling(640 / dpi.DpiScaleX), (int)Math.Round(HostContainer.ActualWidth)),
-            Math.Max((int)Math.Ceiling(480 / dpi.DpiScaleY), (int)Math.Round(HostContainer.ActualHeight)));
+        int width = Math.Max((int)Math.Ceiling(640 / dpi.DpiScaleX), (int)Math.Round(HostContainer.ActualWidth));
+        int height = Math.Max((int)Math.Ceiling(480 / dpi.DpiScaleY), (int)Math.Round(HostContainer.ActualHeight));
+        return (width & ~1, height);
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -353,7 +387,11 @@ public partial class RdpSessionView : UserControl
                 return;
             }
 
-            ApplySpikeZoom(_spikeZoom);
+            if (!_spikeEnableZoomMode)
+            {
+                ApplySpikeZoom(_spikeZoom); // ZoomLevel only in bare-zoom mode (exclusive with SmartSizing)
+            }
+
             (int width, int height) = RemotePixelSize();
             UpdateSpikeDiag(width, height);
             _resizeTimer.Stop();
@@ -464,7 +502,9 @@ public partial class RdpSessionView : UserControl
         ResizeRemote(width, height);
     }
 
-    /// <summary>The pixel size of the monitor the session is on — the resolution to request when full-screen.</summary>
+    /// <summary>The pixel size of the monitor the session is on — the resolution to request when full-screen.
+    /// SPIKE-0B: width floored to even (MS-RDPEDISP hard rule — see RemotePixelSize); monitor widths
+    /// are virtually always even already, but one odd width anywhere reintroduces the silent-drop bug.</summary>
     private (int Width, int Height) MonitorPixelSize()
     {
         if (_rdp is not null)
@@ -472,7 +512,7 @@ public partial class RdpSessionView : UserControl
             System.Drawing.Rectangle bounds = System.Windows.Forms.Screen.FromControl(_rdp).Bounds;
             if (bounds.Width > 0 && bounds.Height > 0)
             {
-                return (bounds.Width, bounds.Height);
+                return (bounds.Width & ~1, bounds.Height);
             }
         }
 
@@ -540,8 +580,9 @@ public partial class RdpSessionView : UserControl
         Dispatcher.BeginInvoke(() =>
         {
             string session = _rdp is null ? "?" : $"{_rdp.DesktopWidth}x{_rdp.DesktopHeight}";
+            string mode = _spikeEnableZoomMode ? "MODE=EnableZoom+SmartSizing  " : string.Empty;
             SpikeDiag.Text =
-                $"paneDIPs={(int)HostContainer.ActualWidth}x{(int)HostContainer.ActualHeight}  " +
+                $"{mode}paneDIPs={(int)HostContainer.ActualWidth}x{(int)HostContainer.ActualHeight}  " +
                 $"fb={framebufferWidth}x{framebufferHeight}  session={session}  {_spikeRefit}  {_spikeZoomStatus}";
         });
     }
@@ -549,13 +590,23 @@ public partial class RdpSessionView : UserControl
     // SPIKE-0B - REMOVE: live zoom-value probe (Q4) — ZoomLevel is documented changeable after connect.
     private void OnSpikeApplyZoom(object sender, RoutedEventArgs e)
     {
-        if (SpikeZoomCombo.SelectedItem is ComboBoxItem { Content: string s } && uint.TryParse(s, out uint percent))
+        if (_spikeEnableZoomMode)
+        {
+            _spikeZoomStatus = "zoom=n/a (EnableZoom mode — ZoomLevel is exclusive with SmartSizing)";
+        }
+        else if (SpikeZoomCombo.SelectedItem is ComboBoxItem { Content: string s } && uint.TryParse(s, out uint percent))
         {
             ApplySpikeZoom(percent);
-            (int width, int height) = RemotePixelSize();
-            UpdateSpikeDiag(width, height);
         }
+
+        (int width, int height) = RemotePixelSize();
+        UpdateSpikeDiag(width, height);
     }
+
+    // SPIKE-0B - REMOVE: mode toggle — applies to the NEXT connect (EnableZoom is write-only and
+    // fixed at connect time). Switch modes by toggling, then closing and reopening the session.
+    private void OnSpikeModeChanged(object sender, RoutedEventArgs e) =>
+        _spikeEnableZoomMode = SpikeEnableZoomCheck.IsChecked == true;
 
     /// <summary>Disconnects and tears the control down (called via Unloaded — see the ctor).</summary>
     public void DisposeSession()

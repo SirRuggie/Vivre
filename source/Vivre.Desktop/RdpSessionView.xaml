@@ -33,6 +33,9 @@
              Docked ABOVE the host (WPF cannot render over the hosted HWND — airspace). -->
         <Border DockPanel.Dock="Top" Padding="8,3" Background="#FFFFF3C4">
             <DockPanel LastChildFill="True">
+                <CheckBox x:Name="SpikeEnableZoomCheck" DockPanel.Dock="Right" Content="EnableZoom mode (next connect)"
+                          VerticalAlignment="Center" Margin="6,0" Foreground="#FF333333"
+                          Checked="OnSpikeModeChanged" Unchecked="OnSpikeModeChanged" />
                 <ComboBox x:Name="SpikeZoomCombo" DockPanel.Dock="Right" Width="70" SelectedIndex="3">
                     <ComboBoxItem Content="100" />
                     <ComboBoxItem Content="125" />
