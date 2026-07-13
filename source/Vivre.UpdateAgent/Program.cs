@@ -55,7 +55,9 @@ namespace Vivre.UpdateAgent
 
         /// <summary>
         /// Loads the config, runs the requested operation (Install / Uninstall / Scan) writing the
-        /// append-only progress JSONL, and handles the optional post-op reboot. Shared by the console
+        /// append-only progress JSONL, and REPORTS whether a post-op reboot is required — the agent
+        /// NEVER performs one (the reboot-required return is deliberately discarded below; a reboot is
+        /// always a separate, operator-confirmed action). Shared by the console
         /// entry (WinRM lane, <paramref name="heartbeat"/> null) and <see cref="AgentService"/> (SMB
         /// lane, which passes a heartbeat so a long quiet WUA search still proves liveness). Never
         /// throws — a fault becomes a terminal Error line and a non-zero return.
@@ -146,9 +148,10 @@ namespace Vivre.UpdateAgent
         /// before reporting reboot-ready (DISM can exit 0 as a silent no-op). NEVER reboots here; the
         /// operator commits later via the controller's Reboot Wave. Returns false (no agent-side reboot).
         ///
-        /// <para>Primary path is <c>dism /add-package</c> on the .msu directly — with a current servicing
-        /// stack this handles a combined SSU+LCU and its internal ordering. If beta validation shows
-        /// 14393's DISM rejects the .msu, add an expand-to-cab fallback here (the one beta-contingent bit).</para>
+        /// <para>As built, a .msu is ALWAYS expanded to its installable .cab(s) with expand.exe first —
+        /// 14393's online DISM rejects .msu payloads outright (0x80070032) — and each cab is added via
+        /// <c>dism /online /add-package</c>, SSU before LCU (a combined package yields both; WSUSSCAN.cab
+        /// is scan metadata and never installed). A bare .cab is added directly.</para>
         /// </summary>
         private static bool RunAddPackage(AgentConfig config, ProgressWriter progress)
         {
@@ -823,7 +826,8 @@ namespace Vivre.UpdateAgent
 
         // --- install -------------------------------------------------------
 
-        /// <summary>Returns whether a reboot is required after the install (the caller reboots).</summary>
+        /// <summary>Returns whether a reboot is required after the install. Reported only — nothing in
+        /// the agent (or its caller) reboots; that is always a separate, operator-confirmed action.</summary>
         private static bool RunInstall(AgentConfig config, ProgressWriter progress)
         {
             progress.Write("Searching", "Searching for updates…", 0, 0, 0, 0, false);
@@ -908,7 +912,8 @@ namespace Vivre.UpdateAgent
 
         // --- uninstall -----------------------------------------------------
 
-        /// <summary>Returns whether a reboot is required after the uninstall (the caller reboots).</summary>
+        /// <summary>Returns whether a reboot is required after the uninstall. Reported only — nothing in
+        /// the agent (or its caller) reboots; that is always a separate, operator-confirmed action.</summary>
         private static bool RunUninstall(AgentConfig config, ProgressWriter progress)
         {
             string[] targets = config.IncludeKbs ?? new string[0];
@@ -1373,7 +1378,8 @@ namespace Vivre.UpdateAgent
         }
 
         /// <summary>Writes the terminal Done/PendingReboot line and returns whether a reboot is
-        /// required. The actual reboot is the caller's job (after COM is released).</summary>
+        /// required — reported upstream only; nothing here or in the caller reboots (that is always a
+        /// separate, operator-confirmed action).</summary>
         private static bool Summarize(
             ProgressWriter progress, IInstallationResult result, int total, string verb)
         {
