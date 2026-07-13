@@ -511,6 +511,7 @@ public static class HelpContent
                 "• Install updates… — pick a date/time to install.",
                 "• Reboot… — pick a date/time to force-reboot.",
                 "• Cancel scheduled task — clears a pending one; the row then reads 'Scheduled task cancelled' until its next action ('Cancel had errors' if the target reported problems removing it). If the machine couldn't actually remove the task, the row KEEPS its Scheduled marker and reads 'Cancel failed — task may still fire', so you never mistake a failed cancel for a cancelled task.",
+                "A box that doesn't answer within about a minute fails on its own row and the rest of the list still completes — one dead box no longer holds everything up. A schedule that couldn't be confirmed still shows as Scheduled with 'couldn't confirm — verify on the box' (never silently unscheduled: a hidden armed reboot is worse than a reboot that never comes), and a cancel that couldn't be confirmed keeps the Scheduled marker.",
                 "The time you pick is YOUR local time (this PC's). Every selected machine runs at that same moment — a box in another time zone (e.g. a UTC cloud VM) still fires at your chosen instant, not its own local clock.",
                 "A scheduled task shows as a neutral 'Scheduled' status pill and a '<action> scheduled for <time> (your time)' message in the Windows update row; the Scheduled filter chip lists those machines. It clears once the time passes.",
             ],

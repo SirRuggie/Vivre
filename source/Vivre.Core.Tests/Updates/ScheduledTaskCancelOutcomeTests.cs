@@ -81,4 +81,22 @@ public class ScheduledTaskCancelOutcomeTests
         Assert.False(outcome.Cleared);
         Assert.Equal("The task scheduler RPC server is unavailable", outcome.Detail);
     }
+
+    [Fact]
+    public void Lowercase_removed_does_not_clear()
+    {
+        // The match is exact and case-sensitive — a mangled or echoed 'removed' is not the token.
+        var outcome = ScheduledTaskCancelOutcome.Classify(hadErrors: false, ["removed"], []);
+
+        Assert.False(outcome.Cleared);
+    }
+
+    [Fact]
+    public void Whitespace_padded_removed_still_clears()
+    {
+        // Transport padding must not break a genuine REMOVED (the match trims the line first).
+        var outcome = ScheduledTaskCancelOutcome.Classify(hadErrors: false, ["  REMOVED  "], []);
+
+        Assert.True(outcome.Cleared);
+    }
 }

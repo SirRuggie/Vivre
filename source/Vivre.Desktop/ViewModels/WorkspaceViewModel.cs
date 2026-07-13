@@ -156,6 +156,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // (a client action can queue behind an in-flight probe on the same box), the 20s connect,
     // and the Invoke-CimMethod call. Only the app-wide _remoteSweepThrottle queue is excluded
     // (the CTS starts after that acquire). 60s matches HealthPerHostTimeoutSeconds.
+    // ALSO the per-row bound for the schedule-reboot / cancel-scheduled-task loops — same budget
+    // shape (gate wait + connect + invoke), same red-teamed 60s.
     private const int ClientActionPerHostTimeoutSeconds = 60;
     // Bounds the monitor's per-host reboot-pending probe: its CCM DetermineIfRebootPending WMI leg can
     // hang forever on a broken client, and an unbounded await froze the whole monitor pass (HIGH-2).
@@ -1942,39 +1944,107 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             computer.LastError = null;
             computer.LastStatus = "Scheduling reboot…";
+
+            // Per-row budget (the client-action bound, red-teamed to 60s in d600009: the linked CTS
+            // covers the per-host WinRM gate wait + the 20s connect + the invoke, all inside
+            // RunRemoteAsync). A hung box fails ITS OWN row and the loop moves on. SEQUENTIAL on
+            // purpose — ScheduledNextRun is a live-filter input (RowMatchesFilter ▸ Scheduled) and the
+            // bare awaits keep every row write on the UI thread; do NOT parallelize (the 7d8abd4
+            // cross-thread class). CTS before try — the catch filters need it in scope.
+            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+            perHost.CancelAfter(TimeSpan.FromSeconds(ClientActionPerHostTimeoutSeconds));
             try
             {
                 PSExecutionResult result = IsLocalHost(computer.Name)
-                    ? await _powerShell.RunLocalAsync(script, token)
-                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+                    ? await _powerShell.RunLocalAsync(script, perHost.Token)
+                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: perHost.Token);
 
-                if (result.HadErrors)
-                {
-                    computer.LastStatus = "Schedule failed";
-                    computer.LastError = result.Errors.Count > 0 ? result.Errors[0] : "Register-ScheduledTask failed";
-                    _activity.Error(computer.Name, $"Schedule reboot failed — {computer.LastError}");
-                }
-                else
-                {
-                    computer.ScheduledAction = "Reboot";
-                    computer.ScheduledNextRun = at;
-                    computer.LastStatus = $"Reboot scheduled for {at:g} (your time)";
-                    computer.UpdateMessage = FormatScheduledMessage("Reboot", at);
-                    _scheduledTasks[computer.Name] = at;
-                    _activity.Info(computer.Name, $"Reboot scheduled for {at:g} (your time)");
-                }
+                ApplyScheduleOutcome(computer, at,
+                    ScheduleRegistrationOutcome.Classify(result.HadErrors, result.Errors, unconfirmed: false));
+            }
+            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                // The row timed out mid-request — we do NOT know whether Register-ScheduledTask landed,
+                // and the safe direction is asymmetric (see ScheduleRegistrationOutcome): treat the box
+                // as SCHEDULED with an honest couldn't-confirm, never as silently unscheduled.
+                ApplyScheduleOutcome(computer, at,
+                    ScheduleRegistrationOutcome.Classify(hadErrors: false, [], unconfirmed: true));
+                _activity.Warn(computer.Name,
+                    $"Schedule reboot: no answer within {ClientActionPerHostTimeoutSeconds}s — treating as scheduled; verify on the box.");
             }
             catch (OperationCanceledException)
             {
-                computer.LastStatus = "Cancelled";
-                throw;
+                // Operator cancel tripped MID-INVOKE for THIS row — the request was in flight, so this
+                // row is just as unconfirmed as a timeout (chip lit) before we quit walking the list.
+                // Rows never reached were never sent anything; their (dark) state is already the truth.
+                ApplyScheduleOutcome(computer, at,
+                    ScheduleRegistrationOutcome.Classify(hadErrors: false, [], unconfirmed: true));
+                _activity.Warn(computer.Name,
+                    "Schedule reboot cancelled mid-request — treating as scheduled; verify on the box.");
+                return;
+            }
+            catch (Exception ex) when (token.IsCancellationRequested)
+            {
+                // A cancel racing a failure (the d600009 rule: cancellation can surface as a wrapped
+                // exception, not an OCE) — same mid-invoke ambiguity as above, then quit walking.
+                ApplyScheduleOutcome(computer, at,
+                    ScheduleRegistrationOutcome.Classify(hadErrors: false, [], unconfirmed: true));
+                _activity.Warn(computer.Name,
+                    $"Schedule reboot cancelled mid-request — treating as scheduled; verify on the box. ({ex.Message})");
+                return;
+            }
+            catch (Exception ex) when (ScheduleRegistrationOutcome.IsUnconfirmedFailure(ex))
+            {
+                // The box was reached (or we can't prove it wasn't) and then the failure hit — the
+                // canonical case is a MID-INVOKE session drop (RemoteSessionLostException.AtConnect ==
+                // false: "work may already be in flight"). Same asymmetry as the timeout: chip lit.
+                ApplyScheduleOutcome(computer, at,
+                    ScheduleRegistrationOutcome.Classify(hadErrors: false, [], unconfirmed: true));
+                _activity.Warn(computer.Name,
+                    $"Schedule reboot: lost the box mid-request — treating as scheduled; verify on the box. ({ex.Message})");
             }
             catch (Exception ex)
             {
+                // Provably pre-execution (connect-phase session loss, Kerberos rejection, shell-init)
+                // or a terminating in-script error — the task was NOT registered; dark is the truth.
                 computer.LastStatus = "Schedule failed";
                 computer.LastError = ex.Message;
                 _activity.Error(computer.Name, $"Schedule reboot failed — {ex.Message}");
             }
+        }
+    }
+
+    /// <summary>Applies one registration outcome to the row. TreatAsScheduled lights the Scheduled
+    /// marker (and the <c>_scheduledTasks</c> tracking) even when UNCONFIRMED — a dark row over an
+    /// armed <c>Vivre_Reboot</c> task is the dangerous direction (an unexpected reboot); a lit row
+    /// over a task that never registered is merely a reboot that doesn't come.</summary>
+    private void ApplyScheduleOutcome(Computer computer, DateTime at, ScheduleRegistrationOutcome outcome)
+    {
+        if (!outcome.TreatAsScheduled)
+        {
+            computer.LastStatus = outcome.Status;
+            computer.LastError = outcome.Detail;
+            _activity.Error(computer.Name, $"Schedule reboot failed — {outcome.Detail}");
+            return;
+        }
+
+        computer.ScheduledAction = "Reboot";
+        computer.ScheduledNextRun = at;
+        _scheduledTasks[computer.Name] = at;
+
+        if (outcome.Detail is null)
+        {
+            computer.LastStatus = $"Reboot scheduled for {at:g} (your time)";
+            computer.UpdateMessage = FormatScheduledMessage("Reboot", at);
+            _activity.Info(computer.Name, $"Reboot scheduled for {at:g} (your time)");
+        }
+        else
+        {
+            // Unconfirmed: the call sites log the specific reason (timeout / mid-invoke drop / cancel)
+            // — this method only writes the row state.
+            computer.LastStatus = outcome.Status;
+            computer.UpdateMessage = $"{FormatScheduledMessage("Reboot", at)} — couldn't confirm; verify on the box";
+            computer.LastError = outcome.Detail;
         }
     }
 
@@ -1996,11 +2066,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             computer.LastError = null;
             computer.LastStatus = "Cancelling scheduled task…";
+
+            // Per-row budget (the client-action 60s bound — gate wait + 20s connect + invoke, see
+            // ClientActionPerHostTimeoutSeconds): THE safety fix for this loop. A hung box previously
+            // stalled the whole selection forever, leaving every later box's Vivre_Reboot task armed;
+            // now it fails its own row at 60s and the rest of the list still gets cancelled. SEQUENTIAL
+            // on purpose — ScheduledNextRun is a live-filter input and the bare awaits keep row writes
+            // on the UI thread; do NOT parallelize. CTS before try — the catch filters need it in scope.
+            using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
+            perHost.CancelAfter(TimeSpan.FromSeconds(ClientActionPerHostTimeoutSeconds));
             try
             {
                 PSExecutionResult result = IsLocalHost(computer.Name)
-                    ? await _powerShell.RunLocalAsync(script, token)
-                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+                    ? await _powerShell.RunLocalAsync(script, perHost.Token)
+                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: perHost.Token);
 
                 ScheduledTaskCancelOutcome outcome = ScheduledTaskCancelOutcome.Classify(
                     result.HadErrors,
@@ -2033,10 +2112,29 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     _activity.Error(computer.Name, $"Cancel scheduled task failed — {outcome.Detail}");
                 }
             }
+            catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                // The row timed out — the unregister may or may not have run, so NEVER clear the
+                // Scheduled marker here (the task may still fire; a wrongly-dark chip would hide a live
+                // reboot). Fail THIS row honestly and keep walking the list.
+                computer.LastStatus = "Timed out";
+                computer.UpdateMessage = "Cancel failed — task may still fire";
+                computer.LastError = $"Cancel timed out after {ClientActionPerHostTimeoutSeconds}s";
+                _activity.Warn(computer.Name,
+                    $"Cancel scheduled task timed out after {ClientActionPerHostTimeoutSeconds}s — the task may still fire; the Scheduled marker stays.");
+            }
             catch (OperationCanceledException)
             {
+                // Operator cancel = quit walking the list. Untouched rows keep their honest, lit
+                // Scheduled state — Stop never un-schedules anything on a box.
                 computer.LastStatus = "Cancelled";
-                throw;
+                return;
+            }
+            catch (Exception) when (token.IsCancellationRequested)
+            {
+                // A cancel racing a failure must read "Cancelled", never "failed" (the d600009 rule).
+                computer.LastStatus = "Cancelled";
+                return;
             }
             catch (Exception ex)
             {

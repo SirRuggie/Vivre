@@ -3,31 +3,33 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-11** (release **1.14.6** cut. The session's seven commits:
-> `f4fad69` software check falls back to DCOM on Kerberos-broken boxes (+24 tests); `50a0ab4` WinRM
-> dead-end messages point at the software check (Kerberos-gated); `1d19298` software check shows
-> "Offline" on genuinely-offline boxes; `fa837e6` the DCOM fallback broadened to ANY WinRM-unavailable
-> failure (+2 tests); `b534c6b` 8px horizontal cell padding in both fleet grids; `7b1f5d1`
-> custom-column sweep cancels on removal + honest Stop counting; `413fb9d` full in-app-guide accuracy
-> sweep. **Suite is 786 green** (760 → 784 in `f4fad69`, → 786 in `fa837e6`).)
+> not a mandate). Last refreshed: **2026-07-13** (release **1.15.0** cut 2026-07-12 — the embedded-RDP
+> arc shipped: client-side zoom + verified re-fit engine `a080685`; full-screen un-latch + quiet-hands
+> guard `f9b014e`; drag-deferred OCX host resize `48eba5b` (the 12s border-drag freeze — a render
+> regression, proven by instrumentation, tag `instrument/ui-freeze-watchdog`); disconnect classifier
+> `f9a0d94` (sign-out closes the tab, everything else keeps it). **Suite is 810 green** (786 → 810
+> across the RDP arc).)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 786 green).**
+> are point-in-time only (current suite is 810 green).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-12 (release 1.14.6, suite 786 green):** the full five-lens audit
+**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0, suite 810 green):** the full five-lens audit
 record is `docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
-**and every actionable MED is closed too:** Stop-during-SMB-copy + settings-save-invisible-in-Release
+**and every actionable MED is now closed** (the batch-sequential residue closed this pass — see the bounded-loops DONE entry)**:** Stop-during-SMB-copy + settings-save-invisible-in-Release
 + Enable-WinRM no-timeout/sequential (`7e2102c`), cancel-clears-chip-on-failed-unregister +
 SCCM-ClientSDK-false-green (`289878f`), the post-reboot false-green cluster (`f965b29`), the install
 re-entry `installBegan` race (`832aa7f`), and the orphan `Vivre_Reboot_*` service (`a008747`) — plus
 the audit-adjacent install wall-clock incident (`12a5e36`), the TriggerSchedule / atomic-settings /
 LastBootTime trio (`d600009`), the atomic computer-list save (`1add64f`), and the session-found
-users-online false-green (`f26a7c4`).
+users-online false-green (`f26a7c4`). The audit LOW "stale agent doc comments promise a reboot the
+code excised" (audit doc ▸ LOW, Program.cs :58/:826/:911) is **CLOSED** — all three rewritten to the
+reported-only truth, plus a fourth of the same class found in the sweep (the `Summarize` docstring's
+"the actual reboot is the caller's job").
 
 **Still open** (none is day-to-day work — no urgent items remain):
 1. **Credentialed WinRM blocked by ambient Kerberos rejection** — `RoutingPowerShellHost.cs:59`
@@ -39,10 +41,30 @@ users-online false-green (`f26a7c4`).
    monitor-only intent, and the Monitor tooltip repeats the claim ("Stop halts it"). The help now
    documents the truth (the Monitor toggle is the only way to pause monitoring); the app-side fix
    (rebind Stop's IsEnabled to the command, or reword the tooltip) is a separate decision. PARKED.
+   (Same root line, opposite symptom: MainWindow.xaml:436 also kept Stop honestly DARK during the
+   schedule/cancel loops — see the bounded-loops DONE entry. With those loops now 60s-bounded, wiring
+   Stop for them is optional polish contingent on this item's decision — fix the :436 binding once,
+   properly, if at all. **TRAP for whoever fixes this:** the schedule/cancel loops' outer-cancel
+   catches `return` silently — dead code today since nothing passes a token, but once Stop reaches
+   these loops it will quit with NO "Cancelled — N of M processed" activity line. The #3 fix must
+   ship a VISIBLE abort — add the summary line when wiring the token, or the operator can't tell a
+   completed run from an aborted one.)
+4. **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
+   re-raise; build nothing.** The facts stand: scheduled reboots have no burst stagger — every
+   selected box fires `shutdown.exe /r /f /t 0` locally at the SAME absolute UTC instant
+   (`ScheduleTimeFormatter` StartBoundary=…Z), and the wave's `_rebootTriggerThrottle`(12)+jitter
+   never touches this path. **Why that is fine:** the wave throttle exists because a wave makes
+   VIVRE fire ~20 simultaneous REMOTE calls — 20 simultaneous auths against the DCs. A scheduled
+   reboot has none of that: the task already lives on the box, the box reboots itself locally at
+   trigger time, and Vivre isn't even running. The DC/DNS/auth burst the throttle protects against
+   structurally cannot happen here. What remains is "the boxes I picked go down at the time I
+   picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
+   batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
+   that is per-run operator judgment, not a code problem.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
-*Settings simplification* below). Beyond the two items above, what remains is the polish /
+*Settings simplification* below). Beyond the Still-open items above, what remains is the polish /
 standalone items further down, each "do only if it recurs / when a signal appears."
 
 ---
@@ -211,26 +233,69 @@ standalone items further down, each "do only if it recurs / when a signal appear
   arbitrary-script-over-SMB-as-SYSTEM without a strong reason).
 - **Force-reboot-over-RPC/SMB** as an additional wave fallback path — only if the DCOM + SMB reboot
   paths prove insufficient at scale.
-- **Embedded RDP magnification — SOLVED** (branch `feat/rdp-clientside-zoom`, awaiting the operator's
-  final acceptance run + merge). This item's old theory (mRemoteNG = WinForms framework DPI scaling;
-  recommended lever = a **per-host display-scale toggle**) was **DISPROVEN** — mRemoteNG ships
-  DPI-unaware, and any session scale above 100% breaks FCM, so the toggle is a dead lever; do not
-  build it. Shipped answer: the OCX's own **ZoomLevel** (client-side zoom; the session stays at 100% —
-  THE PIN CARDINAL: `LocalScale()` = (100,100); gate greps `= LocalScale();` → exactly 2 and
-  `_rdp.UpdateSessionDisplaySettings` → exactly 1) + the verified re-fit engine + the drag-deferred
-  host resize (the 12s border-drag freeze was a render regression, cracked by instrumentation — tag
-  `instrument/ui-freeze-watchdog`). Full record: `docs/vivre-rdp-scaling-and-fcm-findings.md`;
-  method: `docs/freeze-hunting-playbook.md`.
+- **Per-host RDP display-scale toggle — CLOSED / DISPROVEN, do not build.** The old theory
+  (mRemoteNG = WinForms framework DPI scaling; recommended lever = a **per-host display-scale
+  toggle**) was disproven: mRemoteNG ships DPI-unaware, and ANY session scale above 100% breaks FCM
+  context menus, so the toggle is a dead lever. The magnification itself **SHIPPED in 1.15.0** via
+  the OCX's client-side **ZoomLevel** with the session pinned at 100% (THE PIN CARDINAL) — see the
+  1.15.0 DONE entries. Full record: `docs/vivre-rdp-scaling-and-fcm-findings.md`; method:
+  `docs/freeze-hunting-playbook.md`.
 
 ---
 
 ## DONE (committed) — recent
 
+- **Schedule/Cancel scheduled-task loops bounded per row — DONE** (this pass, uncommitted at
+  writing; suite 810 → 817). The audit MED's two remaining sites are fixed: `ScheduleRebootSelectedAsync`
+  and `CancelScheduledTaskSelectedAsync` now wrap each row's invoke in a linked **60s** CTS (the
+  `d600009` client-action budget — the per-host WinRM gate wait + the 20s connect + the invoke all
+  count against it), so a hung box fails ITS OWN row and the loop completes the rest of the selection
+  (before: one hung box stalled the list forever — worst case, later boxes' `Vivre_Reboot` tasks were
+  never cancelled and still fired). Deliberately **SEQUENTIAL** — `ScheduledNextRun` is a live-filter
+  input (`RowMatchesFilter` ▸ Scheduled, WorkspaceViewModel.cs:457) and the bare awaits keep every row
+  write on the UI thread; do not parallelize (the `7d8abd4` cross-thread class). New pure
+  `ScheduleRegistrationOutcome` (Vivre.Core/Updates, test-pinned) encodes the register-side ASYMMETRY:
+  an unconfirmed (timed-out) registration is treated as **Scheduled — "couldn't confirm; verify on the
+  box"** (before: the chip stayed DARK over a possibly-armed task — the dangerous direction); a cancel
+  timeout NEVER clears the chip ("task may still fire" — invariant pinned in
+  `ScheduledTaskCancelOutcomeTests`, extended with the exact-match case/whitespace pins). **The whole
+  don't-know CLASS is closed, not just the timeout** (`ScheduleRegistrationOutcome.IsUnconfirmedFailure`,
+  test-pinned per door): a MID-INVOKE session drop (`RemoteSessionLostException.AtConnect == false` —
+  the type's own contract says work may be in flight), a cancel that trips mid-request, and any untyped
+  mid-call escape all light the chip; a row goes dark ONLY on proof the command never ran (connect-phase
+  loss, Kerberos rejection, shell-init) or the box's own failure report (HadErrors / a terminating
+  in-script error). The cancel loop needed no bucket work — it only ever clears on the verified REMOVED.
+  **Correction to the audit record (the audit doc is point-in-time and never edited, so this is the
+  only place the truth can live): the audit rated this MED partly on the mitigation "these are
+  cancellable IAsyncRelayCommands, so Stop recovers them" — that mitigation was DISPROVEN. The
+  handlers were plain async-void with no token, no `BeginOperation`, no `_activeCts` registration:
+  Stop never lit for these loops (`IsBusy` stays false) and, if pressed, would have cancelled
+  nothing.** Stop's darkness here shares its root line with Still-open #3 (MainWindow.xaml:436) but
+  was the HONEST direction, so no Stop change shipped — that remains #3's decision.
+- **Embedded RDP magnification + re-fit engine — DONE, shipped 1.15.0** (`a080685` · `f9b014e` ·
+  `48eba5b`, on master, from `feat/rdp-clientside-zoom`). Client-side **ZoomLevel** magnification —
+  the session stays at 100% (THE PIN CARDINAL: `LocalScale()` = (100,100) in `RdpSessionView.xaml.cs`;
+  gate greps `= LocalScale();` → exactly 2 and `_rdp.UpdateSessionDisplaySettings` → exactly 1) — plus
+  the verified/retried re-fit engine (spaced sends, read-back verify, even-both-dims per MS-RDPEDISP)
+  with the quiet-hands input guard, the full-screen un-latch (a failed switch is logged and the button
+  stays clickable, both directions), and the drag-deferred host resize (the 12s border-drag freeze was
+  the OCX repainting the 1.5×-zoomed framebuffer per drag tick — a render regression, proven by
+  instrumentation after both rival theories were disproven; tag `instrument/ui-freeze-watchdog`).
+  Records: `docs/vivre-rdp-scaling-and-fcm-findings.md`; method: `docs/freeze-hunting-playbook.md`.
+- **RDP disconnect classifier — DONE, shipped 1.15.0** (`f9a0d94`, on master, from
+  `fix/rdp-signout-close`). Pure `RdpDisconnectClassifier` (Vivre.Core/Rdp): keep-by-default — a tab
+  closes ONLY on `ExtendedDisconnectReasonCode` 12 (LogoffByUser, measured identically for
+  Start ▸ Sign out and `logoff`) while connected with no auto-reconnect in flight; codes 4
+  (ServerLogonTimeout) / 6 (OutOfMemory) and ALL unknown codes keep the tab with Reconnect. Replaces
+  the `87674c2` check, which read the WRONG enum and was inverted (real sign-outs showed a bogus
+  "internal error"; two genuine failures closed silently). `GetErrorDescription` runs for the error
+  outcome only (test-pinned). Suite 786 → 810.
 - **`413fb9d` — in-app guide accuracy sweep** (2026-07-11, release 1.14.6). Four-worker audit of every
   Help topic against the code: mode-specific filter-chip lists, the bottom panel's toggle-only opening,
   real button labels (Scan all / Install all, full client-action names), honest install targeting
   ("No updates selected" skip), the vitality rubric's −12 WinRM-degraded penalty + amber floor, the
-  reboot-wave truth (8/20-min escalation, ~4½-h no-longer-tracking cap, flagged-only UBR verify, two
+  reboot-wave truth (graceful-then-forced escalation after the 8-min go-offline window — 20-min for
+  staged-2016 boxes; these are per-box-TYPE presets, not two stages — ~4½-h no-longer-tracking cap, flagged-only UBR verify, two
   missing outcome strings), Monitor on-by-default (and Stop doesn't stop it), custom-column cancel +
   reboot-service housekeeping now covered. Also fixed the stale "Actions ▾" code comment and the
   MaintenanceWindow intro (name-then-IP). Tests unchanged (786).
@@ -498,15 +563,17 @@ standalone items further down, each "do only if it recurs / when a signal appear
   sweep continuation stays on UI; pass 3 found this callback vector. 611 tests green.)
 - **Embedded RDP — Reconnect button fixed (dead → live)** (`87674c2`, on master): Reconnect now tears
   down and rebuilds the MSTSC ActiveX control (`TearDownControl` + `CreateControl`); involuntary drops
-  keep the tab open with a Reconnect button (a deliberate sign-out is distinguished from a drop via
-  `ExtendedDisconnectReason` 2/4/6); `EnableAutoReconnect` + `GrabFocusOnConnect` are wired. Full-screen
+  keep the tab open with a Reconnect button (sign-out-vs-drop was distinguished via
+  `ExtendedDisconnectReason` 2/4/6 — **SUPERSEDED in 1.15.0**: that check read the WRONG enum and was
+  inverted; see the RDP disconnect classifier DONE entry); `EnableAutoReconnect` + `GrabFocusOnConnect` are wired. Full-screen
   reflows the session to monitor resolution (`MonitorPixelSize`) and restores on exit. See
   `vivre-rdp-scaling-and-fcm-findings.md`. (This was the previous DO-NEXT #1.)
 - **Embedded RDP — Failover Cluster Manager context menus fixed** (`1ce1abf`, on master): pinned the RDP
   session display scale to 100% (`DesktopScaleFactor=DeviceScaleFactor=100`), sidestepping the documented
   FCM >100%-scaling menu-collapse bug. Session was measured at 150% (the cause) vs mRemoteNG's 100%. Fills +
-  FCM-safe; trade-off is a compact (native-100%) image. Magnification to match mRemoteNG is PARKED (see
-  above + `docs/vivre-rdp-scaling-and-fcm-findings.md`).
+  FCM-safe; trade-off was a compact (native-100%) image. Magnification to match mRemoteNG later
+  SHIPPED in 1.15.0 via the OCX's client-side ZoomLevel, session still pinned at 100% (see the 1.15.0
+  DONE entry + `docs/vivre-rdp-scaling-and-fcm-findings.md`).
 - **Update download-size accuracy — WUA-first + catalog override for inflated express CUs** (`d39c0e3`,
   merged to master). **Root cause:** Vivre read `IUpdate.MaxDownloadSize`, WUA's worst-case aggregate — an
   express CU reported **21,926 MB** vs the real **2,435 MB** full package. **Fix:** show `MaxDownloadSize` for
@@ -522,7 +589,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
     download-evaluation. **Decision:** show the conservative full-package size (catalog), not the per-machine
     express delta. Express parity is a possible future feature (resolve-once-and-cache) if ever wanted.
 - **Transient WUA reach-failure retry — no false-green** (`ea1d078` · `bd490a0` · `7676980` · `ec6adfa` ·
-  `4e34f02` · `cfba5e8`; **on branch `feat/transient-wua-retry` — operator merges + pushes**). **Root cause
+  `4e34f02` · `cfba5e8`; **merged to master** — see `f2fd28b`/`7d8abd4` in `git log`). **Root cause
   proven** from `APVWUG`'s `WindowsUpdate.log`: `0x80072EE2` is a **transient SLS (service-locator) timeout
   at service-registration, BEFORE search** (http status `0` during the failed run, clean `200` an hour
   later; Windows' own 3 internal retries exhausted by a ~2m38s blind window). **The BatchPatch trap it
@@ -630,9 +697,13 @@ standalone items further down, each "do only if it recurs / when a signal appear
 ---
 
 ## KNOWLEDGE DOCS — current set + refresh status
-Project knowledge now holds exactly: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
-`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`, `vivre-rdp-scaling-and-fcm-findings.md`
-(under `docs/`), plus the top-level `CLAUDE.md`, `README.md`, `CHANGELOG.md` — and `windows-patching-lane.md` (now under `docs/` too).
+Project knowledge now holds: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
+`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`, `vivre-rdp-scaling-and-fcm-findings.md`,
+`windows-patching-lane.md`, `cold-start-freeze-and-threadpool-findings.md` (the load-bearing
+`ThreadPool.SetMinThreads` saga), `freeze-hunting-playbook.md` (the reusable freeze-hunt instrument +
+protocol + lying-instruments catalogue), and `vivre-audit-findings.md` (the 2026-07-01 five-lens audit
+— point-in-time, never edited; live status in this file's DO NEXT) — all under `docs/` — plus the
+top-level `CLAUDE.md`, `README.md`, `CHANGELOG.md`.
 All were refreshed in the **2026-06-23** code+docs audit against the as-built code:
 - `key-file-path-map.md` — refreshed: `Is2016` corrected to `LcuRouting` (not `Computer.cs`), the decaying
   "Recent commits / restore-point" list removed (use `git log`), the duplicated PS 5.1 gotchas reduced to a
@@ -642,7 +713,7 @@ All were refreshed in the **2026-06-23** code+docs audit against the as-built co
   `dism.exe /add-package` on expand.exe-extracted `.cab`s (not `Add-WindowsPackage`), the lane is **opt-in
   per box** (`RequiresStagedPatching`), and the build-sequencing "future work" / resolved red-team risks were
   retired. Cycle-specific KB/UBR is "this cycle" by design.
-- `vivre-rdp-scaling-and-fcm-findings.md` — refreshed: the Reconnect work is now DONE (was the deferred item);
-  the magnification investigation + candidate paths remain the load-bearing record.
+- `vivre-rdp-scaling-and-fcm-findings.md` — rewritten 2026-07-11 (`457d6c3`) and current through
+  1.15.0: ZoomLevel proven and shipped, the dead ends closed, and the freeze + disconnect hunts recorded.
 - `windows-patching-lane.md` — refreshed: the agent's five operation modes (Install / Uninstall / Scan / AddPackage /
   Cleanup), the scan-on-`RemoteSessionLostException` SMB fallback, and the component-store cleanup lane.

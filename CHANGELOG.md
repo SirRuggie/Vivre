@@ -6,6 +6,18 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **Scheduling or cancelling tasks across many machines no longer hangs on one dead box.** Each
+  machine now gets 60 seconds; a box that doesn't answer fails on its own row and the rest of the
+  list still completes — before, one hung box silently stalled everything after it (worst case:
+  scheduled reboots on the remaining boxes that never got cancelled).
+- **An unconfirmed reboot schedule now errs on the safe side.** If a box stops answering — or the
+  connection drops mid-request — while a scheduled reboot is being registered, Vivre marks it
+  Scheduled with "couldn't confirm — verify on the box" instead of showing nothing — a hidden armed
+  reboot is the dangerous direction. A row only shows "Schedule failed" when the request provably
+  never ran or the box itself reported the failure. A cancel that can't be confirmed still keeps the
+  Scheduled marker ("task may still fire"), as before.
+
 ## 1.15.0 — 2026-07-12
 
 ### Changed
