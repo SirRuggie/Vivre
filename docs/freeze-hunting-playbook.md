@@ -65,7 +65,7 @@ This is the reusable engineering. It took two hunts to converge on. Rebuild it i
 any WPF/WinForms app.
 
 **Reference implementation: `git show instrument/ui-freeze-watchdog` (tag).** Throwaway by design —
-tagged, not merged.
+tagged, then stripped from the tree (strip commit `b374041`) — recover it via the tag.
 
 ### 1. UI-thread liveness — **the discriminator**, and the one non-negotiable trick
 

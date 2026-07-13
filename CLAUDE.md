@@ -39,6 +39,8 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
 - docs/key-file-path-map.md — load-bearing file locations
 - docs/2016-LCU-lane-spec.md, docs/2016-LCU-panel-spec.md, docs/2016-LCU-red-team-review.md — read before touching the 2016 patch lane
 - docs/vivre-backlog.md — current priorities + what's done
+- docs/vivre-audit-findings.md — the 2026-07-01 five-lens audit record (point-in-time, NEVER edited;
+  the live status of every finding is tracked in docs/vivre-backlog.md ▸ DO NEXT)
 - docs/vivre-rdp-scaling-and-fcm-findings.md — embedded-RDP scaling/FCM saga; read before touching Cross-Domain RDP scaling
 - docs/cold-start-freeze-and-threadpool-findings.md — the cold-start UI freeze saga; the thread-pool worker-injection cause + the load-bearing ThreadPool.SetMinThreads fix (don't delete it). Read before touching App.OnStartup, the sweep, or large-list load.
 - docs/freeze-hunting-playbook.md — how to hunt a UI-thread freeze / hang / "it's slow": the reusable
@@ -71,19 +73,32 @@ RDP**; **Settings** pinned bottom). **Load-bearing constraints — DON'T break:*
     docs/key-file-path-map.md ▸ "Software check" for the load-bearing RV rules),
     `Columns` (`CustomColumnProbe` — run a user PowerShell one-liner per machine → a custom grid column;
     the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData),
+    `Threading` (`SplitThrottle` — the split active/reserved sweep-concurrency budget that keeps
+    passive fills (custom columns, client actions) from starving behind large sweeps),
     `Wug` (`WugMaintenance` — WhatsUp Gold maintenance: the enter/exit set plus the read-only
     per-machine state read, via the WhatsUpGoldPS module shelled out to Windows PowerShell 5.1 —
     see the two 5.1 gotchas under Conventions; no reboot path),
     `Rdp` (`RdpHostStore` — the Cross-Domain RDP folder/host tree; `RdpCredentialStore` — DPAPI-per-user saved RDP
-    logins + the credential-inheritance resolver. UI-free — the embedded RDP ActiveX control + its
+    logins + the credential-inheritance resolver; `RdpDisconnectClassifier` — the keep-by-default
+    disconnect rule: a session tab closes ONLY on a measured sign-out (`ExtendedDisconnectReasonCode`
+    12 while connected, no auto-reconnect in flight); every other or unknown code keeps the tab with
+    Reconnect. UI-free — the embedded RDP ActiveX control + its
     WindowsFormsHost live in Vivre.Desktop only).
   - **`Vivre.Desktop`** (net10.0-windows) — the WPF app, ships as **`Vivre.exe`**: WPF-UI Fluent
     shell, `ShellViewModel` (tabs) + `WorkspaceViewModel` (per tab), `WorkspaceView`, dialogs.
     Composition root in `App.xaml.cs` (manual DI — services built once and injected). The output
     assembly is `Vivre` but the namespaces stay `Vivre.Desktop`.
-    - **Cross-Domain RDP is machine-gated:** the View ▸ Cross-Domain RDP item only appears (and only
+    - **Cross-Domain RDP is machine-gated:** the Cross-Domain RDP left-nav item only appears (and only
       opens) when `Environment.MachineName` matches the `ShellViewModel.CrossDomainRdpMachine` const
       (currently `"APVHOP"`). To re-target it to another PC, change that one const.
+    - **RDP session scale is PINNED at 100% (THE PIN CARDINAL):** `LocalScale()` in
+      `RdpSessionView.xaml.cs` always returns `(100u, 100u)` — any session scale above 100% breaks
+      Failover Cluster Manager context menus on the live cluster (Microsoft won't-fix), and a build +
+      green tests will NOT catch a change. Readability comes from the client-side `ZoomLevel` zoom,
+      never from session scale. Gate greps after ANY commit touching this file: `= LocalScale();` →
+      exactly 2 hits (the connect-time extended-settings block + `ResizeRemote`) and
+      `_rdp.UpdateSessionDisplaySettings` → exactly 1 call site. If either count changes, a new
+      scale-sender exists — stop and read docs/vivre-rdp-scaling-and-fcm-findings.md first.
   - **`Vivre.UpdateAgent`** (net48) — tiny compiled EXE run as SYSTEM on the target to do WUA
     install/uninstall with real progress callbacks; bundled beside `Vivre.exe` (see docs/windows-patching-lane.md).
   - **`Vivre.Core.Tests`** (net10.0, xUnit).
@@ -102,8 +117,9 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 ```
 
 - .NET 10 SDK; build with `dotnet` (no Visual Studio / MSBuild needed).
-- **`dotnet test`/`dotnet build` on the solution does not build `Vivre.Desktop`** (it isn't a
-  test dependency) — build it explicitly before launching, or you'll run a stale exe.
+- **`dotnet test` on the solution does not build `Vivre.Desktop`** (it isn't a test dependency) —
+  after a test-only run, `dotnet build` the solution (which DOES build it) or the Desktop project
+  before launching, or you'll run a stale exe.
 - Per-user data: settings/lists/scripts under `%APPDATA%\Vivre\`; logs under
   `%LOCALAPPDATA%\Vivre\logs\` (Serilog, rolling daily).
 

@@ -384,14 +384,20 @@ Routing is by `LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.Require
 Flow per box:
 1. Pre-reboot readiness check (fails fast with a clear message if not ready).
 2. Graceful reboot issued.
-3. Wait up to the go-offline window (default 8 min) for the box to drop off TCP-445.
-   If it doesn't drop: **escalate to a forced reboot** (completion of the operator-ordered
-   reboot, not an autonomous decision). If it still won't drop: red (check it directly).
+3. Wait up to the go-offline window for the box to drop off TCP-445 — `GoOfflineWindow` = **8 min**
+   (`RebootWaveOptions.Default`, the WUA lane) or **20 min** (`ForSlowCommit`, the staged-2016 LCU
+   lane — a CBS-heavy box can hold port 445 for 15-20+ min while flushing patches). If it doesn't
+   drop: **escalate to a forced reboot** (completion of the operator-ordered reboot, not an
+   autonomous decision), then wait `ForcedGoOfflineWindow` — deliberately **2× the graceful window**
+   (16 min / 40 min), since a box mid-CBS-commit can hold the network well past the graceful wait.
+   A "shutdown already in progress" answer at either step means the box IS going down (slow, not
+   hung) — no escalation, straight to the commit-watch. Still up after both windows: red, with an
+   honest "may still be committing (slow), or stuck — check console/iLO, or Verify once it's back".
 4. Unbounded offline watch — `OfflineCeiling` only flags "Overdue — check console/iLO" once;
    the clock never stops watching and never fails a box just for being slow.
 5. When TCP-445 comes back: confirmation strategy runs. `NotReady` → retry (still coming up);
    `Confirmed` → green (Done); `Failed` → red (e.g. rolled-back UBR).
-6. `HardCap` (default 4 h): if the box hasn't returned by then, the live loop exits red with
+6. `HardCap` (default 4.5 h — `RebootWaveOptions.Default`, IRebootWave.cs): if the box hasn't returned by then, the live loop exits red with
    "no longer tracking it live — use Verify once it's back up". The standalone Verify action
    is the durable net past the live wave.
 

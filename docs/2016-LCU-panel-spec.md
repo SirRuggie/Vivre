@@ -5,23 +5,11 @@ as-built record plus the standing rules for anyone touching these files again. C
 `5631a61` (panel, clean rebuild) · `ecb798e` (filter reset when the last 2016 box leaves) ·
 `e4047a0` (guided missing-package prompt) · `332efe8` (Clean up wording). Build 0/0, 313 tests.
 
-> **Post-build drift — corrected 2026-06-23 (the lane evolved after this hand-off spec was frozen; read
-> these overrides alongside the as-built text below):**
-> - **The 2016 actions are now opt-in per box.** Clean up / Stage / Verify act on `Server2016Targets()`
->   = `StagePreconditions.IsStageTarget` (`LcuRouting.Is2016(OsBuild)` **AND** `RequiresStagedPatching`),
->   not "all 2016 when none selected." Triggering them with no flagged box shows `StagedPatchingNeededDialog`.
-> - **Reboot Wave button re-points to `OnRebootAndVerify`** (the generalized fleet-wide reboot-and-verify),
->   not `OnRebootWave2016`; `IsEnabled = SelectedComputers.Count > 0` (any selection, not 2016-only).
-> - **Chip count:** the Patching-mode chip bar now has 10 chips (All, Updates, Reboot pending, Errors,
->   Offline, Done, Unhealthy, Not scanned, Scheduled, Server 2016); the Health bar has 6 — not "8".
-> - **Action-bar MultiDataTrigger has 3 conditions:** `ActiveFilter==Server2016` AND `HasServer2016` AND
->   `IsUpdateMode==True` (Patching-only).
-> - **STAGED tag has 3 conditions:** `PatchState==RebootPending` AND `OsBuild==14393` AND
->   `StagedThisSession==True` (so a non-LCU reboot-pending 2016 box never shows the tag).
-> - **Settings:** `MonthlyCu.ExpectedSizeMb` and the `LcuSizeBox` field were **removed** — the package is
->   matched by KB + arch, never size. `MonthlyCu` is now `Kb / Arch / TargetUbr / Display`.
-> - New since this spec: the `StagedInstallDecisionDialog` (Stage CU / minor-only / Cancel), the
->   scan-before-Stage gate, and the `LcuVerifiedThisSession` skip — see `2016-LCU-lane-spec.md`.
+> **The lane evolved after this hand-off spec was frozen; the as-built text below was folded current
+> against the shipped code on 2026-07-13** (the old top-of-doc "post-build drift" overrides are merged
+> into the body — one description, no contradictions). Features newer than this spec — the
+> `StagedInstallDecisionDialog` (Stage CU / minor-only / Cancel), the scan-before-Stage gate, and the
+> `LcuVerifiedThisSession` skip — live in `2016-LCU-lane-spec.md`.
 
 The point of the panel: the people taking over patching **don't know which servers are 2016**.
 Vivre classifies them (a vitals check fills `Computer.OsBuild`) and surfaces the classification
@@ -53,7 +41,9 @@ Standing consequences:
    `ShowUpdateGrid`, BoolToVis → Collapsed); no duplicate header block.
 2. **No accidental cell-sharing** — Auto rows collapse when empty; nothing stacks unintentionally.
 3. **Defaults hidden at idle** — banner, 2016 chip, action bar, STAGED tag all default Collapsed.
-4. **Chip radio group intact** — all 8 chips share EnumEquals + `Unchecked="OnFilterChipUnchecked"`.
+4. **Chip radio group intact** — every chip in a bar shares EnumEquals + `Unchecked="OnFilterChipUnchecked"`
+   (Patching bar = 10 chips: All, Updates, Reboot pending, Errors, Offline, Done, Unhealthy,
+   Not scanned, Scheduled, Server 2016; Health bar = 6).
 5. **ItemsSource live** — both grids bind `{Binding Computers}`.
 6. **Window startup untouched** — MainWindow is out of bounds for panel work.
 7. **Diff scope** — panel work touches ONLY: `WorkspaceView.xaml(.cs)`, `SettingsPage.xaml(.cs)`,
@@ -70,8 +60,10 @@ Standing consequences:
 | `RowFilter.Server2016` | enum value | the chip's filter; predicate is `LcuRouting.Is2016(OsBuild)` |
 | `Server2016Count` / `HasServer2016` | int / bool | chip count + visibility; re-raised on rows changing and on `OsBuild` |
 | `MonthlyCuDisplay` / `LcuPackagesFolder` | string | action-bar header (reads saved settings; display-only) |
-| `CleanUp2016Command` / `Stage2016Command` / `Verify2016Command` | commands | act on selected 2016 rows, or all 2016 when none selected |
-| `RebootWave2016Command` | command | **selected 2016 rows ONLY** — never falls back to "all"; no-ops with an activity note |
+| `CleanUp2016Command` | command | selection-driven over **ALL** 2016 boxes (flagged or not) — `Clean2016Targets()`; component cleanup is reboot-free and independent of staged-state |
+| `Verify2016Command` | command | the **flagged** 2016 targets only — `Server2016Targets()` = `StagePreconditions.IsStageTarget` (`Is2016(OsBuild)` AND `RequiresStagedPatching`); no flagged box → `StagedPatchingNeededDialog` |
+| Stage | code-behind workflow (no direct command) | `OnStage2016` → `StagedInstallInteraction.RunStageWorkflowAsync`: scan-this-session gate → `CheckLcuStageReadiness()` → guided package loop → stage, over the flagged 2016 targets only |
+| Reboot Wave | code-behind handler (no VM command) | `OnRebootAndVerify` — the generalized fleet-wide reboot-and-verify; `RebootWaveButton.IsEnabled = SelectedComputers.Count > 0` (any selection, not 2016-only) |
 | `CheckLcuStageReadiness()` → `LcuStageReadiness` | method | read-only package pre-check feeding the guided prompt |
 | Filter reset | behavior | when `HasServer2016` flips false while its filter is active, `ActiveFilter` resets to All |
 
@@ -83,34 +75,43 @@ Self-populating: appears only once a vitals check confirms a 14393 box; unread b
 
 ### Action bar (`WorkspaceView.xaml`)
 A Border in a **third inner Auto row of the filter-bar grid** (NOT a new outer row). Style
-defaults Collapsed; visible only via a **MultiDataTrigger: ActiveFilter == Server2016 AND
-HasServer2016** (the second condition kills the orphaned-bar edge when the last 2016 box leaves).
+defaults Collapsed; visible only via a **MultiDataTrigger with three conditions:
+ActiveFilter == Server2016 AND HasServer2016 AND IsUpdateMode == True** (Patching-mode only; the
+HasServer2016 condition kills the orphaned-bar edge when the last 2016 box leaves).
 Contents: "This month's CU: KB… / UBR" + "Drop the .msu in <folder>" (TextBlock + StringFormat,
 `Mode=OneWay`), the caption "Clean up → Stage today → Reboot Wave tonight → Verify.", and four buttons:
-- **Clean up** → `CleanUp2016Command`. Tooltip: "Clears the Windows update backlog (required for
-  2016 boxes before staging). Never reboots."
-- **Stage** → `Click="OnStage2016"` (NOT a direct command bind — see guided prompt below).
-- **Reboot Wave** → `Click="OnRebootWave2016"`, `x:Name="RebootWaveButton"`, `IsEnabled` starts
-  False and is driven from `OnGridSelectionChanged`: enabled only while ≥1 selected row is 2016.
+- **Clean up** → `CleanUp2016Command`. Tooltip (paraphrase): clears the Windows Update
+  component-store backlog on the selected 2016 boxes (or all 2016 if none selected) — works on any
+  2016 box, staged or not; never reboots.
+- **Stage** → `Click="OnStage2016"` (NOT a direct command bind — runs
+  `StagedInstallInteraction.RunStageWorkflowAsync`; see guided prompt below).
+- **Reboot Wave** → `Click="OnRebootAndVerify"`, `x:Name="RebootWaveButton"`, `IsEnabled` starts
+  False and is driven from `OnGridSelectionChanged`: enabled while ≥1 row of any kind is selected
+  (`SelectedComputers.Count > 0`).
 - **Verify** → `Verify2016Command`.
 
 ### STAGED-box disambiguation (`WorkspaceView.xaml`, update grid Status cell)
 The pill is wrapped in a horizontal StackPanel; a second amber-bordered tag
-**"STAGED — needs Reboot Wave"** shows only via MultiDataTrigger
-(`PatchState == RebootPending` AND `OsBuild == 14393`), default Collapsed. Same amber as a plain
-reboot-pending box (no new colour/PatchState) — the tag wording is the disambiguator; a non-2016
-reboot-pending row never shows it.
+**"STAGED — needs Reboot Wave"** shows only via a MultiDataTrigger with three conditions
+(`PatchState == RebootPending` AND `OsBuild == 14393` AND `StagedThisSession == True`), default
+Collapsed. Same amber as a plain reboot-pending box (no new colour/PatchState) — the tag wording is
+the disambiguator; a non-2016 reboot-pending row, and a reboot-pending 2016 box that was NOT staged
+this session, never show it.
 
-### Reboot Wave confirm (`WorkspaceView.xaml.cs`, `OnRebootWave2016`)
-Never bound straight to the command. The handler filters the selection to 2016 rows, **names
-them** (up to 10 inline, then "+N more"), and shows a WPF-UI MessageBox: reboots now, gracefully;
-**forced after 8 minutes** if a box won't go down (completing the operator-ordered reboot);
-tracked until the UBR confirms. Primary "Reboot & commit" invokes the command; anything else does
-nothing. Defense in depth: button gate (selection) → confirm → command's own selected-only no-op.
+### Reboot Wave confirm (`WorkspaceView.xaml.cs`, `OnRebootAndVerify`)
+Never bound straight to a command. The button runs the **generalized fleet-wide reboot-and-verify**
+over the current selection (any OS — routing per box via `LcuRouting.RebootVerifyLaneFor`; 2016
+boxes get the build-verified LCU commit lane): a confirm dialog first, then the wave tracks each
+box offline → back → verified. Each box is rebooted **gracefully first**; if it doesn't drop off
+the network within the go-offline window — **8 min** (`RebootWaveOptions.Default`) or **20 min**
+(`ForSlowCommit`, the staged-2016 lane) — the wave **escalates to a forced reboot** to complete the
+one the operator ordered, then waits 2× the graceful window (16/40 min) before going red. Defense
+in depth: button gate (selection) → operator confirm → the wave's own per-box routing.
 
 ### Guided missing-package prompt (`OnStage2016` + `LcuPackageNeededDialog.xaml(.cs)`)
-Stage's Click handler calls `CheckLcuStageReadiness()` **before any box is touched**. Ready →
-invoke `Stage2016Command`. Not ready → show the standalone **"Add the Server 2016 update"**
+Stage's Click handler runs the shared `StagedInstallInteraction.RunStageWorkflowAsync` (scan-this-
+session gate → `CheckLcuStageReadiness()` **before any box is touched** → guided package-readiness
+loop → stage, over the flagged 2016 targets). Not ready → show the standalone **"Add the Server 2016 update"**
 dialog (560×480, CenterOwner): the plain reason + "no machine was touched", what's needed
 (KB · arch · ~size MB), the **Catalog link pre-filled to the KB** + open-in-browser button, the
 folder path (copy-pasteable + "Open folder", which creates the folder if absent), and "drop the
@@ -120,10 +121,11 @@ gets a "set this month's CU in Settings first" message instead of a resolver err
 ### Settings (`SettingsPage.xaml(.cs)`)
 "Server 2016 cumulative update" CardExpander (icon `Box24`), following the exact existing
 seed-in-`Initialize` + `OnXxxChanged` → `PersistSettings` pattern: **KB** (`LcuKbBox`),
-**Target UBR** (`LcuUbrBox`, int-parse, snaps back on junk), **Approx. package size MB**
-(`LcuSizeBox`, int-parse, display-only guidance), read-only **x64** label, **CU package folder**
-(`LcuPackagesFolderBox` + Browse). Model: `AppSettings.MonthlyCu` (Kb / Arch / TargetUbr /
-ExpectedSizeMb / Display) + `AppSettings.LcuPackagesFolder` (default `C:\Vivre\VivrePackages`).
+**Target UBR** (`LcuUbrBox`, int-parse, snaps back on junk), read-only **x64** label,
+**CU package folder** (`LcuPackagesFolderBox` + Browse). Model: `AppSettings.MonthlyCu`
+(Kb / Arch / TargetUbr / Display — the package is matched by **KB + arch, never size**; the old
+`ExpectedSizeMb`/`LcuSizeBox` field was removed) + `AppSettings.LcuPackagesFolder`
+(default `C:\Vivre\VivrePackages`).
 
 ### Help (`HelpContent.cs`)
 One topic in Fleet ▸ Patching: **"Patch a Windows Server 2016 box"** — the five-step flow,

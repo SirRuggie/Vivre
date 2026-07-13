@@ -37,7 +37,19 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Reboot & verify** — after an operator-confirmed reboot, Vivre watches each box offline → back →
   ready, then auto-rescans and reports a plain outcome (Server 2016 boxes are build-verified first).
 - **WhatsUp Gold maintenance** — put the selected machines into / out of WUG maintenance mode, with a
-  pre-flight connection + module check.
+  pre-flight connection + module check — and a read-only **Check WhatsUp Gold state** action that
+  reports each machine's current maintenance state without changing anything.
+- **Check software** — see whether a named product is installed on each machine (a read-only registry
+  check) in its own Software column; when WinRM is down on a box it falls back to a read-only DCOM
+  channel, so Kerberos-broken machines still answer.
+- **Custom columns** — run a PowerShell one-liner per machine into its own grid column; a column
+  manager hides/shows built-in columns, adds predefined ones, and remembers your layout.
+- **Cross-Domain RDP** — an embedded remote-desktop manager in its own left-nav section (machine-gated
+  to the designated jump box): a folder tree of hosts with saved, DPAPI-protected logins and
+  credential inheritance. Sessions re-fit to the pane as you resize, zoom to match a high-DPI display
+  (the session itself stays at 100% scale so Failover Cluster Manager's menus keep working), and can
+  go full screen. Signing out inside the remote closes its tab; any other disconnect keeps the tab
+  with a Reconnect button.
 - **Filter & report** — filter the grid by name or state (Updates / Reboot pending / Errors /
   Offline / Done), **Select shown** to act on just that subset, and **Export to CSV** for a
   maintenance-window write-up.
@@ -51,8 +63,9 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   on the grids + automation IDs; light-theme tuning of the script editor's highlight colours.
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
-  own (it touches the load-bearing monitor/reboot logic, now backed by tests). A full multi-agent code
-  review (2026-06) addressed everything else it found.
+  own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a
+  multi-agent code review (2026-06) and a five-lens audit (2026-07, `docs/vivre-audit-findings.md`) —
+  have been worked off; live status of any remaining findings is tracked in `docs/vivre-backlog.md`.
 
 ## Build & run
 

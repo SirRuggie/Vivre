@@ -5,8 +5,8 @@
 > mRemoteNG explanation turned out to be **wrong** (see "What mRemoteNG actually does" below).
 > Everything here is measured or fetched evidence, labeled. Two problems: (1) FCM context menus
 > collapsing — **SOLVED and shipped**; (2) the remote image rendering small/compact — **SHIPPED
-> via ZoomLevel + the verified re-fit engine** (`feat/rdp-clientside-zoom`; spike history under
-> the `spike/rdp-popout` tag). Nothing here touches the reboot path — RDP rendering only.
+> via ZoomLevel + the verified re-fit engine** (merged to master, released in **1.15.0**; spike
+> history under the `spike/rdp-popout` tag). Nothing here touches the reboot path — RDP rendering only.
 >
 > **General method:** the reusable instrument + protocol distilled from this hunt (and the cold-start
 > freeze) live in [freeze-hunting-playbook.md](freeze-hunting-playbook.md) — this doc is a case file.
@@ -18,7 +18,7 @@
 | Problem | Status |
 |---|---|
 | **FCM context menus collapse** in embedded RDP | **SOLVED** — shipped (master commit `a7b8833`, pin session scale to 100%). |
-| **Magnification** (compact vs mRemoteNG) | **SHIPPED** — client-side zoom + the verified re-fit engine in `RdpSessionView.xaml.cs` (branch `feat/rdp-clientside-zoom`). Step 0b proved it in the embedded tab: exact-fit, fills, 1.5× bigger, clicks land true, probe 96, FCM verified on the live cluster. |
+| **Magnification** (compact vs mRemoteNG) | **SHIPPED** — client-side zoom + the verified re-fit engine in `RdpSessionView.xaml.cs` (on master, released in 1.15.0). Step 0b proved it in the embedded tab: exact-fit, fills, 1.5× bigger, clicks land true, probe 96, FCM verified on the live cluster. |
 
 **The shipped configuration:** the EXISTING embedded control (no pop-out, no DPI trickery) +
 **framebuffer = LOGICAL pane size** (DIPs; the session renders at 100%) + **SmartSizing OFF** +
@@ -56,8 +56,9 @@ WPF  →  WindowsFormsHost (RdpHostElement)  →  WinForms Panel  →  AxMsRdpCl
 host: control creation, `LocalScale()` (the pin), framebuffer, SmartSizing, reconnect lifecycle.
 Per-host settings resolve via `_creds.Resolve(host, RdpTree.AncestorsOf(_tree, host))` in
 `CrossDomainRdpViewModel.ConnectTo`. The throwaway spike (pop-out + Step 0b hacks; never merged)
-is preserved under the `spike/rdp-popout` tag; the `feat/rdp-popout-window` branch is deleted
-after the shipped build's sign-off.
+is preserved under the `spike/rdp-popout` tag; the `feat/rdp-popout-window` branch is retained
+locally; the `spike/rdp-popout` tag (pushed to origin) is what preserves the spike — the branch can
+be deleted once the tag is confirmed on the remote.
 
 ### The in-session DPI probe (measure, don't guess)
 
@@ -365,11 +366,15 @@ is the cardinal rule of this arc.
 ## Related RDP item (separate from scaling) — Reconnect, SHIPPED (`87674c2`)
 
 `OnReconnectRequested` tears down and rebuilds the OCX (`TearDownControl` + `CreateControl` +
-`Connect`); `OnRdpDisconnected` distinguishes deliberate sign-out (`ExtendedDisconnectReason`
-2/4/6) from involuntary drops (tab stays open with Reconnect); `EnableAutoReconnect` +
-`GrabFocusOnConnect` wired; full-screen reflows to monitor resolution and restores on exit; live
-resize is debounced. The rebuild pattern (TearDownControl → CreateControl → Connect) is the
-template for any session-hosting work.
+`Connect`); `OnRdpDisconnected` now routes through `RdpDisconnectClassifier`
+(source/Vivre.Core/Rdp, `f9a0d94`, shipped 1.15.0): **keep-by-default** — the tab closes ONLY on
+`ExtendedDisconnectReasonCode` 12 (LogoffByUser) while connected with no auto-reconnect in flight;
+every other or unknown code keeps the tab with Reconnect. (The original `87674c2` check used
+`ExtendedDisconnectReason` 2/4/6 — the WRONG enum, and inverted: 4 = ServerLogonTimeout and
+6 = OutOfMemory closed the tab silently on genuine failures while a real sign-out showed a bogus
+"internal error".) `EnableAutoReconnect` + `GrabFocusOnConnect` wired; full-screen reflows to
+monitor resolution and restores on exit; live resize is debounced. The rebuild pattern
+(TearDownControl → CreateControl → Connect) is the template for any session-hosting work.
 
 ---
 
