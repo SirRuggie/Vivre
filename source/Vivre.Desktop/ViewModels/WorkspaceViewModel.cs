@@ -299,6 +299,22 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // Active operation records (parallel to _activeCts — same index).
     private readonly List<OperationRecord> _activeOps = [];
 
+    // ── WUG state-check run tracking (UI-thread only: the check runs on the dispatcher end-to-end —
+    // method body, Progress<T> callbacks, and continuations — so these need no lock) ──
+    private int _wugCheckGeneration;          // bumped when a new check starts; stale runs drop their writes
+    private WugStateCheckRun? _wugCheckRun;   // the in-flight run, if any
+
+    private sealed class WugStateCheckRun
+    {
+        public required int Generation { get; init; }
+        public required CancellationTokenSource Cts { get; init; }
+        public required int Total { get; init; }
+        public required Dictionary<string, Computer> RowsByName { get; init; }  // OrdinalIgnoreCase
+        public required HashSet<string> Pending { get; init; }                  // names with no line seen yet (OrdinalIgnoreCase)
+        public int InMaint; public int NotIn; public int NoMatch; public int Unknown;
+        public int Seen => Total - Pending.Count;
+    }
+
     private DispatcherTimer? _sweepNarrationTimer;
 
     // 3-second hold-open latch for M11 fleet band: keeps the band visible briefly after completion.
@@ -5797,11 +5813,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>
     /// Reads the current WhatsUp Gold maintenance state for <paramref name="computers"/> in the
-    /// background (fire-and-forget from the caller). READ-ONLY — it never sets maintenance; it writes
-    /// each machine's current state into its <c>Command result</c> column and adds one activity-log
-    /// summary. <paramref name="password"/> is the WhatsUp Gold login, kept separate from the
-    /// target/remote credential and never stored; it's turned into plaintext only inside the reused
-    /// wrapper (<see cref="GetWugMaintenanceStateAsync"/>).
+    /// background, streaming each machine's state onto its row as WUG answers. READ-ONLY — it never
+    /// sets maintenance; it writes each machine's current state into its <c>Command result</c> column
+    /// and adds one activity-log summary. Stop cancels it (a passive operation — it lights the toolbar
+    /// Stop without blocking other sweeps); a second check supersedes the first. <b>Must be called on
+    /// the UI thread</b> — the method body, the <see cref="Progress{T}"/> callbacks, and every
+    /// continuation run on the dispatcher, which is what keeps the grid writes thread-safe.
+    /// <paramref name="password"/> is the WhatsUp Gold login, kept separate from the target/remote
+    /// credential and never stored; it's turned into plaintext only inside the reused wrapper
+    /// (<see cref="GetWugMaintenanceStateAsync"/>).
     /// </summary>
     public async Task CheckWugStateAsync(
         IReadOnlyList<Computer> computers,
@@ -5815,74 +5835,147 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        // Immediate per-row feedback in the grid + a start line in the activity log.
-        foreach (Computer c in computers)
+        // Supersede: a second check takes over. Cancel the old run (the launcher kills its child), stamp
+        // its unreached rows the aborted state, and say so — a superseded run must never look completed.
+        if (_wugCheckRun is { } old)
         {
-            c.CommandResult = "WhatsUp Gold: checking state…";
+            try { old.Cts.Cancel(); } catch (ObjectDisposedException) { /* already retired */ }
+            foreach (string name in old.Pending)
+            {
+                if (old.RowsByName.TryGetValue(name, out Computer? oc)) { oc.CommandResult = WugRowText.NotChecked; }
+            }
+
+            _activity.Info(null, $"WhatsUp Gold: previous state check superseded — {WugMaintenance.ComposeStoppedMessage(old.Seen, old.Total)}");
+            _wugCheckRun = null;
         }
 
-        _activity.Info(null, $"WhatsUp Gold: checking maintenance state for {computers.Count} machine(s)…");
-
-        IReadOnlyList<string> names = [.. computers.Select(c => c.Name)];
-
-        Vivre.Core.Wug.WugMaintenanceStateResult result;
+        var (cts, record) = BeginOperation("Checking WhatsUp Gold state", computers, registerRows: false);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(cts.Token, token);
         try
         {
-            // NO ConfigureAwait(false): the dispatcher continuation is what keeps the post-await
-            // CommandResult writes UI-thread-safe (same mechanism as SetWugMaintenanceAsync). The wrapper
-            // folds all exceptions (including cancellation) into a failure result, so an
-            // OperationCanceledException branch here would be unreachable.
-            result = await GetWugMaintenanceStateAsync(names, server, username, password, token);
-        }
-        catch (Exception ex)
-        {
-            // Belt-and-suspenders parity with SetWugMaintenanceAsync — the wrapper should never throw.
-            foreach (Computer c in computers)
+            int gen = ++_wugCheckGeneration;
+            IReadOnlyList<string> names = [.. computers.Select(c => c.Name)];
+
+            var rowsByName = new Dictionary<string, Computer>(StringComparer.OrdinalIgnoreCase);
+            foreach (Computer c in computers) { rowsByName[c.Name] = c; }   // last-wins on duplicate names
+
+            var run = new WugStateCheckRun
             {
-                c.CommandResult = $"WhatsUp Gold: failed — {ex.Message}";
+                Generation = gen,
+                Cts = cts,
+                Total = computers.Count,
+                RowsByName = rowsByName,
+                Pending = new HashSet<string>(names, StringComparer.OrdinalIgnoreCase),
+            };
+            _wugCheckRun = run;
+
+            foreach (Computer c in computers) { c.CommandResult = WugRowText.Checking; }
+            _activity.Info(null, $"WhatsUp Gold: checking maintenance state for {computers.Count} machine(s)…");
+
+            // THE SOLE PER-ROW WRITER while the read streams. Constructed HERE, on the UI thread, so it
+            // captures the dispatcher context and every callback runs on the dispatcher (same mechanism as
+            // SetWugMaintenanceAsync's progress) — never write CommandResult from the stdout reader thread.
+            var progress = new Progress<Vivre.Core.Wug.WugDeviceState>(d =>
+            {
+                if (gen != _wugCheckGeneration) { return; }                      // superseded — drop stale lines
+                if (!run.RowsByName.TryGetValue(d.Name, out Computer? c)) { return; }
+                run.Pending.Remove(d.Name);
+                IncrementSweepCompleted(record);                                 // honest N/M in the sweep narration
+                if (!d.Matched)                    { c.CommandResult = WugRowText.NoMatchingDevice;  run.NoMatch++; }
+                else if (d.InMaintenance == true)  { c.CommandResult = WugRowText.InMaintenance;     run.InMaint++; }
+                else if (d.InMaintenance == false) { c.CommandResult = WugRowText.NotInMaintenance;  run.NotIn++; }
+                else                               { c.CommandResult = WugRowText.StateUnknown;      run.Unknown++; }
+            });
+
+            Vivre.Core.Wug.WugMaintenanceStateResult result;
+            try
+            {
+                // NO ConfigureAwait(false): the dispatcher continuation keeps the reconcile UI-thread-safe.
+                // The linked token preserves the caller's `token` semantics AND wires Stop's CTS in.
+                result = await GetWugMaintenanceStateAsync(names, server, username, password, linked.Token, progress);
+            }
+            catch (OperationCanceledException)
+            {
+                // Stop (or supersede) — the launcher already killed the child. If this run is still
+                // current, stamp what never resolved and say so LOUDLY: an aborted run must never be
+                // indistinguishable from a completed one.
+                if (gen == _wugCheckGeneration)
+                {
+                    foreach (string name in run.Pending)
+                    {
+                        if (run.RowsByName.TryGetValue(name, out Computer? c)) { c.CommandResult = WugRowText.NotChecked; }
+                    }
+
+                    _activity.Info(null, $"WhatsUp Gold state check: {WugMaintenance.ComposeStoppedMessage(run.Seen, run.Total)}");
+                    if (_wugCheckRun == run) { _wugCheckRun = null; }
+                }
+
+                return;
+            }
+            catch (Exception ex)
+            {
+                // Belt-and-suspenders (the wrapper folds failures into the result): same aborted-row rule.
+                if (gen == _wugCheckGeneration)
+                {
+                    foreach (string name in run.Pending)
+                    {
+                        if (run.RowsByName.TryGetValue(name, out Computer? c)) { c.CommandResult = WugRowText.NotChecked; }
+                    }
+
+                    _activity.Error(null, $"WhatsUp Gold state check failed — {ex.Message}");
+                    if (_wugCheckRun == run) { _wugCheckRun = null; }
+                }
+
+                return;
             }
 
-            _activity.Error(null, $"WhatsUp Gold state check failed — {ex.Message}");
-            return;
-        }
+            if (gen != _wugCheckGeneration) { return; }  // superseded while draining — the new run owns the grid
 
-        // Bucket each in-scope machine into exactly one state, counting as we go. A whole-read failure
-        // folds into unknown (with the error appended) so it surfaces per-row, not just in the summary.
-        int inMaint = 0, notIn = 0, noMatch = 0, unknown = 0;
-        var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
-        foreach (Computer c in computers)
-        {
-            if (unmatched.Contains(c.Name))
+            // Reconcile: stamps ONLY rows with no streamed line. Order-tolerant — a straggler line landing
+            // after this overwrites with a real result (a correction, not a conflict).
+            var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
+            foreach (string name in run.Pending)
             {
-                c.CommandResult = "WhatsUp Gold: no matching device (by IP)";
-                noMatch++;
+                if (!run.RowsByName.TryGetValue(name, out Computer? c)) { continue; }
+
+                if (unmatched.Contains(name))
+                {
+                    c.CommandResult = WugRowText.NoMatchingDevice; run.NoMatch++;
+                }
+                else if (result.ByName.TryGetValue(name, out bool? s) && s is bool inMaint)
+                {
+                    // WUG answered with a definite state for this row.
+                    if (inMaint) { c.CommandResult = WugRowText.InMaintenance;    run.InMaint++; }
+                    else         { c.CommandResult = WugRowText.NotInMaintenance; run.NotIn++; }
+                }
+                else if (result.Error is null)
+                {
+                    // WUG answered (or simply had no line) but no definite state — a genuine data gap.
+                    c.CommandResult = WugRowText.StateUnknown; run.Unknown++;
+                }
+                else
+                {
+                    // WUG never answered for this row — never "unknown", which would read as a WUG data gap.
+                    c.CommandResult = WugRowText.NotChecked;
+                }
             }
-            else if (result.ByName.TryGetValue(c.Name, out bool? s) && s == true)
+
+            if (result.Error is null)
             {
-                c.CommandResult = "WhatsUp Gold: in maintenance";
-                inMaint++;
-            }
-            else if (s == false)
-            {
-                c.CommandResult = "WhatsUp Gold: not in maintenance";
-                notIn++;
+                _activity.Info(null, $"WhatsUp Gold state: {run.InMaint} in maintenance, {run.NotIn} not, {run.NoMatch} no matching device, {run.Unknown} unknown");
             }
             else
             {
-                c.CommandResult = result.Error is null
-                    ? "WhatsUp Gold: state unknown"
-                    : $"WhatsUp Gold: state unknown — {result.Error}";
-                unknown++;
+                // Chunk 1's abort text already names the last machine and N-of-M (e.g. "Stalled after X —
+                // 47 of 324 checked (no result for 90s)"); the unreached rows above were stamped NotChecked.
+                _activity.Error(null, $"WhatsUp Gold state check failed — {result.Error}");
             }
-        }
 
-        if (result.Error is null)
-        {
-            _activity.Info(null, $"WhatsUp Gold state: {inMaint} in maintenance, {notIn} not, {noMatch} no matching device, {unknown} unknown");
+            if (_wugCheckRun == run) { _wugCheckRun = null; }
         }
-        else
+        finally
         {
-            _activity.Error(null, $"WhatsUp Gold state check failed — {result.Error}");
+            EndOperation(cts, record);  // every exit path — Stop/abort/exception/success
         }
     }
 
@@ -5912,23 +6005,38 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>
     /// Reads the current WhatsUp Gold maintenance state for <paramref name="names"/> without changing
     /// anything, keyed back by machine name (<c>true</c> = in maintenance, <c>false</c> = not, <c>null</c>
-    /// = unknown).  The <paramref name="password"/> is converted to plaintext only via <see
+    /// = unknown). <paramref name="deviceProgress"/>, if set, receives each machine's state as it streams
+    /// back. The <paramref name="password"/> is converted to plaintext only via <see
     /// cref="System.Net.NetworkCredential"/> and passed to the child process via the <c>VIVRE_WUG_PASS</c>
-    /// environment variable — never on a command line, never stored.
+    /// environment variable — never on a command line, never stored. Operator cancellation (via
+    /// <paramref name="token"/>) is rethrown, not folded into an error result, so Stop is never repainted
+    /// as a failure.
     /// </summary>
     public async Task<Vivre.Core.Wug.WugMaintenanceStateResult> GetWugMaintenanceStateAsync(
         IReadOnlyList<string> names,
         string server,
         string username,
         System.Security.SecureString password,
-        CancellationToken token = default)
+        CancellationToken token = default,
+        IProgress<Vivre.Core.Wug.WugDeviceState>? deviceProgress = null)
     {
         try
         {
             string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
-            // Per-device lookup cost is pilot-checked; caps at the same 10 min the set run uses.
-            TimeSpan timeout = TimeSpan.FromSeconds(Math.Min(60 + 5 * names.Count, 600));
-            return await Vivre.Core.Wug.WugMaintenance.GetMaintenanceStateAsync(names, server, username, plain, timeout, token).ConfigureAwait(false);
+            // Amendment 2 — once results stream, "a line arrived recently" is the health signal: the 90s
+            // stall watchdog catches a wedge, and the ceiling is a runaway backstop sized so it cannot fire
+            // on a healthy 324-box run; a total cap that guillotines a slow-but-working run is exactly what
+            // this replaces.
+            return await Vivre.Core.Wug.WugMaintenance.GetMaintenanceStateAsync(
+                names, server, username, plain,
+                Vivre.Core.Wug.WugMaintenance.StateReadCeiling, token, deviceProgress,
+                Vivre.Core.Wug.WugMaintenance.StateReadStallTimeout).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // The core now rethrows operator cancel; folding it into an error result would repaint Stop as
+            // a failure. Let it propagate so the caller runs its aborted-run path.
+            throw;
         }
         catch (Exception ex)
         {
