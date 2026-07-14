@@ -92,16 +92,56 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
   (`…\System32\WindowsPowerShell\v1.0\powershell.exe`) and running embedded scripts that call
   `Connect-WUGServer` / `Get-WUGDevice` (name/IP → DeviceId) / `Set-WUGDeviceMaintenance`. Runs on
   the **operator's workstation ONLY** — no target/managed box is ever contacted (names map to WUG
-  DeviceIds server-side), and there is **NO reboot path**. Holds `RunAsync` (the real set), the
-  pre-flight `TestConnectionAsync` / `InstallModuleAsync`, the **read-only state read**
+  DeviceIds server-side), and there is **NO reboot path**. Holds `RunAsync` (the real set — delegates
+  to the internal `RunCoreAsync` seam so the cancel-kill contract is testable with a synthetic script),
+  the pre-flight `TestConnectionAsync` / `InstallModuleAsync`, the **read-only STREAMING state read**
   `GetMaintenanceStateAsync` (embedded `StateScript` + `ParseMaintenanceState` →
   `WugMaintenanceStateResult`: a per-input-name, case-insensitive `bool?` tri-state map — null =
   unknown, never faked as not-in-maintenance. In-maintenance = `bestState`/`worstState` equals
   "Maintenance"; the fields are presence-checked via `PSObject.Properties` because on PS 5.1 an
   ABSENT property compares `-eq` to `$false` — a silent false "not in maintenance" otherwise), the
-  shared `RunPreflightProcessAsync` launcher, `ParsePreflight`, the `WritePs51ScriptAsync` BOM-write
-  helper, the `ProgressMarker`, and the `__WUGRESULT__` result-line marker. **All 5.1 shell-outs
-  strip `PSModulePath` AND write UTF-8-with-BOM** — see the two gotchas above.
+  shared `RunPreflightProcessAsync` launcher (used by TestConnectionAsync, InstallModuleAsync AND the
+  state read), `ParsePreflight`, the `WritePs51ScriptAsync` BOM-write helper, and the three stdout
+  markers below. **All 5.1 shell-outs strip `PSModulePath` AND write UTF-8-with-BOM** — see the two
+  gotchas above.
+- **Three stdout markers, distinct ON PURPOSE** (never overload one for another):
+  - `__WUGP__` (`ProgressMarker`) = a live step line → the activity log; **set path (`RunAsync`) only**.
+  - `__WUGDEV__` (`DeviceMarker`, internal) = one per-device state result, streamed by `StateScript`'s
+    `EmitDevice` AS each name resolves (matched and unmatched alike). Each line is its own
+    `ConvertTo-Json` object, so 5.1 escapes non-ASCII to `\uXXXX` — the payload is pure ASCII on the wire,
+    immune to the OEM code page of redirected stdout (never switch to a raw delimited format).
+    `RunPreflightProcessAsync` routes these OUT of the summary buffer and hands each to the caller's
+    `onDeviceLine` (marker stripped) — even when `onDeviceLine` is null, so the summary parse can never
+    mistake a device line for the result line.
+  - `__WUGRESULT__` (const `PreflightResultMarker`) = the final authoritative `{ ok, devices[], unmatched[],
+    error }` summary, emitted by both the pre-flight and the state `Emit`.
+- **Marker-REQUIRED summary parse (`ParseMaintenanceState`) — a false-green guard:** the state parse now
+  REQUIRES the `__WUGRESULT__` marker; the old last-braced-line fallback was DELETED. With per-device
+  `__WUGDEV__` JSON lines on the wire, that fallback could parse a trailing device line AS the summary
+  (no `devices[]`, no `error`) → a fabricated clean-but-empty read, a quiet false green. No marker → the
+  fail-open no-result path (unknown-with-error, never "not in maintenance"). `ParseDeviceLine` is kept in
+  LOCKSTEP with `AddDevice` (a divergent per-line parser is the likeliest re-entry for the fabricated
+  "not in maintenance" bug). **`ParsePreflight` KEEPS its last-braced-line fallback** — it has no streamed
+  device lines, so the ambiguity can't arise there.
+- **Timeouts — the old `min(60+5·N, 600s)` total cap is GONE**, replaced by two constants:
+  - `StateReadStallTimeout` (90s) — a stall watchdog that resets ONLY on a `__WUGDEV__` line (chatter on
+    other stdout does NOT reset it) and kills a wedged run, naming the last machine that resolved
+    (`ComposeAbortError` → "Stalled after X — 47 of 324 checked (no result for 90s)"); surfaced as
+    `WugStallException` (derives from `TimeoutException`).
+  - `StateReadCeiling` (45min) — an absolute runaway backstop, sized so it cannot fire on a healthy 324-box
+    run (~28min at the pilot-checked 5s/lookup); the stall timer, not this, is what catches hangs.
+- **Aborted read (stall / ceiling / stop) KEEPS the per-device results already streamed** — the partial
+  map is snapshot-COPIED under a lock against stragglers still draining from the killed child's async
+  output pump (a cross-thread write-during-read on the live `Dictionary` is this codebase's cardinal crash
+  class). Unreached rows are stamped the NEW distinct state `WugRowText.NotChecked` = "WhatsUp Gold: not
+  checked (read stopped)" — deliberately NOT "unknown" (WUG answered, no definite state) and NOT "no
+  matching device" (a name miss). The old "state unknown — {error}" hybrid is gone. All six row strings
+  live in **`Vivre.Core/Wug/WugRowText.cs`**, test-locked.
+- **Kill-on-cancel (BEHAVIOR CHANGE):** a caller-token cancel now KILLS the `powershell.exe` child in
+  BOTH launchers — `RunPreflightProcessAsync` (TestConnectionAsync, InstallModuleAsync, the state read)
+  AND the set path's `RunAsync` (via `RunCoreAsync`). Before, a cancelled maintenance SET kept running and
+  could still flip WUG maintenance after the UI said "cancelled" (operator-approved, 2026-07-14).
+  Regression-tested (cancel → child killed → no further mutation).
 - **Result-parse contract (the fix that made errors truthful):** "module missing" is reported ONLY on
   an explicit signal from the script. A timeout / empty output / unparseable output now surfaces the
   **real connection error** instead of a false reinstall prompt. The result line is tagged
@@ -120,11 +160,21 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
   item appears on BOTH the Health and Patching grids via the shared context menu). Server is
   **read-only, pre-filled from Settings** (no save-back), username/password entered per use; same
   pre-flight gate + Install-module affordance as the maintenance dialog; on pass it fires
-  `WorkspaceViewModel.CheckWugStateAsync` fire-and-forget and closes. Results land per row in the
-  Command result column (in maintenance / not in maintenance / no matching device (by IP) / state
-  unknown — a whole-read failure folds its error into the unknown rows) + one activity-log summary.
-  No `ConfigureAwait(false)` in `CheckWugStateAsync` — the dispatcher continuation is what keeps the
-  post-await per-row writes UI-thread-safe (same mechanism as `SetWugMaintenanceAsync`).
+  `WorkspaceViewModel.CheckWugStateAsync` fire-and-forget and closes.
+- **`CheckWugStateAsync` wiring (the streaming per-row writer):** runs as a PASSIVE operation
+  (`BeginOperation(..., registerRows: false)`) so the toolbar Stop LIGHTS (IsBusy) and cancels it — killing
+  the child — WITHOUT blocking other sweeps. Per-row writes stream through a `Progress<WugDeviceState>`
+  **constructed ON THE UI THREAD** (the dispatcher capture IS the thread-safety mechanism — never write
+  `CommandResult` from the stdout reader thread). The stream is the SOLE per-row writer; a post-exit
+  reconcile stamps ONLY rows that saw no line (order-tolerant — a straggler landing later overwrites with
+  the real result). A generation guard makes a second check supersede the first (old run cancelled + child
+  killed, its still-`Pending` rows stamped `NotChecked`). Stop / supersede logs "Stopped — N of M checked"
+  (`ComposeStoppedMessage`, test-locked) so an aborted run is never indistinguishable from a completed one.
+  Results land per row in the Command result column: in maintenance / not in maintenance / no matching device
+  (by IP) / state unknown / **not checked (read stopped)**, + one activity-log summary. **No
+  `ConfigureAwait(false)` in `CheckWugStateAsync`** — the dispatcher continuation keeps the post-await
+  reconcile + per-row writes UI-thread-safe (same mechanism as `SetWugMaintenanceAsync`); that note STILL
+  stands.
 - Callers: `WorkspaceViewModel.SetWugMaintenanceAsync` + `CheckWugStateAsync` (over the
   `GetWugMaintenanceStateAsync` wrapper) + `TestWugConnectionAsync` / `InstallWugModuleAsync`.
 - **Credential invariant (DO NOT deviate):** the WUG password is a `SecureString` →
@@ -290,7 +340,7 @@ Extracted UI/IO-free predicates, each unit-tested:
 - `ScheduleRegistrationOutcome` — the register-side ASYMMETRY: an unconfirmed reboot-schedule registration (timed out, dropped mid-request, cancelled mid-request, or any unprovable escape — `IsUnconfirmedFailure` buckets the thrown types) is treated as SCHEDULED ("couldn't confirm — verify on the box"), never silently unscheduled; a row goes dark ONLY on proof the command never ran (connect-phase loss / Kerberos / shell-init) or the box's own failure report.
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **817 green** (as of 2026-07-13, post-1.15.0 working tree) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **852 green** (as of 2026-07-14, WUG-streaming working tree) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
@@ -312,7 +362,14 @@ Extracted UI/IO-free predicates, each unit-tested:
   and the **staged-patching toggle** tests — `StagedHostMatching`, `Lcu2016CuMatcher` (`FindCuKb` ambiguity +
   `CuKbs` conservative exclude + .NET exclusion), `StagedInstallPlanner` (`Plan` partition + KB mismatch +
   `PartitionByCurrency` fail-open: all-current → none, mixed → only non-current, null/Unreachable → included),
-  and the override-aware `RebootVerifyLaneFor(osBuild, requiresStaging)` routing.
+  and the override-aware `RebootVerifyLaneFor(osBuild, requiresStaging)` routing. **+29 across the WUG
+  streaming state-check** (823 → 852): the streaming-parse tests (`ParseDeviceLine` kept in lockstep with
+  `AddDevice`; `ParseMaintenanceState` now REQUIRES `__WUGRESULT__` and rejects a trailing `__WUGDEV__`
+  line as the summary — the fabricated-clean-read guard), the `WugRowText` string locks (incl. the distinct
+  `NotChecked`), `ComposeAbortError` / `ComposeStoppedMessage`, and **6 real-`powershell.exe` process tests**
+  (incremental per-line delivery while the child runs, the stall-watchdog kill, caller-cancel kills the
+  child in both launchers, and the PSModulePath strip on both launch paths) — the process tests took the
+  suite from ~5s to ~23s.
 
 ## Docs in repo
 - **Root:** `CHANGELOG.md`, `README.md`, `CLAUDE.md`.

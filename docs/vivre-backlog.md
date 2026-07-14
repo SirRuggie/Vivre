@@ -7,17 +7,17 @@
 > arc shipped: client-side zoom + verified re-fit engine `a080685`; full-screen un-latch + quiet-hands
 > guard `f9b014e`; drag-deferred OCX host resize `48eba5b` (the 12s border-drag freeze — a render
 > regression, proven by instrumentation, tag `instrument/ui-freeze-watchdog`); disconnect classifier
-> `f9a0d94` (sign-out closes the tab, everything else keeps it). **Suite is 810 green** (786 → 810
-> across the RDP arc).)
+> `f9a0d94` (sign-out closes the tab, everything else keeps it). **Suite was 810 green** at that arc's
+> close (786 → 810 across the RDP arc).)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 810 green).**
+> are point-in-time only (current suite is 852 green as of 2026-07-14).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0, suite 810 green):** the full five-lens audit
+**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0); suite now 852 green (2026-07-14):** the full five-lens audit
 record is `docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
 **and every actionable MED is now closed** (the batch-sequential residue closed this pass — see the bounded-loops DONE entry)**:** Stop-during-SMB-copy + settings-save-invisible-in-Release
@@ -49,6 +49,15 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    these loops it will quit with NO "Cancelled — N of M processed" activity line. The #3 fix must
    ship a VISIBLE abort — add the summary line when wiring the token, or the operator can't tell a
    completed run from an aborted one.)
+   **Update (WUG streaming state-check pass, 2026-07-14): a THIRD instance of this pattern is now CLOSED
+   — by construction, not by touching :436.** `CheckWugStateAsync` runs as a PASSIVE
+   `BeginOperation(..., registerRows: false)`, so Stop LIGHTS via `IsBusy` and genuinely cancels it
+   (killing the `powershell.exe` child), and the abort is VISIBLE exactly as this item's trap demands:
+   it logs "Stopped — N of M checked" (`ComposeStoppedMessage`) and stamps unreached rows
+   `WugRowText.NotChecked` ("not checked (read stopped)"). That passive-op rail is the right template
+   for wiring #3's remaining sites. **STILL OPEN and unchanged:** the monitor-only mismatch (`CanStop()`
+   true on `IsMonitoring` alone while :436 stays dark) and the schedule/cancel scheduled-task loops. The
+   MainWindow.xaml:436 binding itself was NOT changed.
 4. **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
    re-raise; build nothing.** The facts stand: scheduled reboots have no burst stagger — every
    selected box fires `shutdown.exe /r /f /t 0` locally at the SAME absolute UTC instant
@@ -61,6 +70,17 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
+5. **WUG bulk-fetch prefetch — the SPEED fix for the state check** (streaming fixed VISIBILITY; this
+   makes it FAST). Now that the state read STREAMS (rows fill in, Stop works, a wedge is caught in 90s),
+   the remaining problem is raw speed: a healthy 324-box run is still ~28min because it does one
+   sequential `Get-WUGDevice -SearchValue` REST round-trip PER machine. Fix: pull ONE paged inventory up
+   front (`Get-WUGDevice` at 250/page, `-View overview` already carries `bestState`/`worstState`), match
+   the grid's names IN-SCRIPT against that inventory, and fall back to the per-name lookup ONLY for the
+   leftovers — collapsing 324+ round-trips into `ceil(inventory / 250)`. Streaming makes today tolerable;
+   bulk makes it fast. **Revisit AFTER the streaming check is proven on the real fleet.** Open questions to
+   confirm first: real inventory size + per-page latency (is one big pull actually cheaper than N targeted
+   ones?); whether `search=` / `SearchValue` matching is exact enough to trust for the in-script match; and
+   `DeviceGroupID -1` (or equivalent) scoping so the inventory pull covers all devices, not a default group.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
@@ -245,6 +265,26 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **WUG streaming state-check arc — DONE** (this pass, uncommitted at writing; suite 823 → 852, +29).
+  The read-only "Check WhatsUp Gold state…" read now STREAMS one result per machine (`__WUGDEV__`) as
+  WUG answers, instead of going silent and dumping everything at the end. A `StateReadStallTimeout`
+  (90s) watchdog — reset ONLY by a device line — catches a wedged run and names where it stopped
+  (`ComposeAbortError`), backstopped by a `StateReadCeiling` (45min) runaway cap; both REPLACE the old
+  `min(60+5·N, 600s)` total cap that guillotined slow-but-working runs. An aborted read (stall / ceiling /
+  Stop) KEEPS the per-device results already streamed (partial map, snapshot-copied under a lock against
+  the killed child's draining pump) and stamps unreached rows the new distinct state
+  `WugRowText.NotChecked` = "not checked (read stopped)" (never "unknown", never "no matching device").
+  Stop is wired via the passive-op rail (`BeginOperation(registerRows: false)`) — it lights, cancels, and
+  KILLS the `powershell.exe` child, and logs "Stopped — N of M checked"; a generation guard supersedes a
+  first check with a second. The summary parse (`ParseMaintenanceState`) now REQUIRES the `__WUGRESULT__`
+  marker — the last-braced-line fallback was DELETED, because with device lines on the wire it could parse
+  a trailing `__WUGDEV__` line AS a clean-but-empty summary → a quiet false green; `ParsePreflight` keeps
+  its fallback (no streamed lines there). Kill-on-cancel also covers the SET path (`RunAsync` via the
+  `RunCoreAsync` seam) — before, a cancelled maintenance set kept running and could still flip WUG
+  maintenance after the UI said "cancelled". **Suite 823 → 852** (the pre-arc 810/817 doc claims were
+  stale; 823 was the measured 2026-07-14 baseline — chunk 1 → 843, chunk 2 → 852, incl. 6
+  real-`powershell.exe` process tests that took the suite ~5s → ~23s). Cardinal clean (read path; no
+  reboot).
 - **Schedule/Cancel scheduled-task loops bounded per row — DONE** (this pass, uncommitted at
   writing; suite 810 → 817). The audit MED's two remaining sites are fixed: `ScheduleRebootSelectedAsync`
   and `CancelScheduledTaskSelectedAsync` now wrap each row's invoke in a linked **60s** CTS (the

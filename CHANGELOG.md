@@ -6,7 +6,20 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **The WhatsUp Gold state check now fills in each machine's row as WUG answers, instead of going
+  quiet and dumping every result at the end.** Rows update live as each machine resolves, and the
+  toolbar **Stop** genuinely halts the check part-way. A wedged run is now caught within 90 seconds
+  and says exactly where it stopped ("Stalled after SERVER07 — 47 of 324 checked"); whatever already
+  came back stays on the rows, and machines that were never reached read "not checked (read stopped)"
+  rather than the misleading "state unknown". Large selections are no longer cut off by the old fixed
+  10-minute ceiling.
+
 ### Fixed
+- **Cancelling a WhatsUp Gold maintenance set now actually stops it.** Before, pressing Cancel let the
+  background work keep running — it could still flip a machine's maintenance in WUG *after* the app had
+  already said "cancelled". The background process is now killed the moment you cancel, so nothing
+  changes once you've stopped it. The same fix also covers the state check and the connection test.
 - **Scheduling or cancelling tasks across many machines no longer hangs on one dead box.** Each
   machine now gets 60 seconds; a box that doesn't answer fails on its own row and the rest of the
   list still completes — before, one hung box silently stalled everything after it (worst case:
