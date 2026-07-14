@@ -35,6 +35,13 @@ public sealed record WugMaintenanceStateResult(
     string? Error);
 
 /// <summary>
+/// One per-device result streamed from the maintenance-state read as each name resolves.
+/// <paramref name="Matched"/> = false means no WUG device matched the input <paramref name="Name"/>;
+/// <paramref name="InMaintenance"/> null = unknown (the state couldn't be read — never assumed false).
+/// </summary>
+public sealed record WugDeviceState(string Name, bool Matched, bool? InMaintenance);
+
+/// <summary>
 /// Sets WhatsUp Gold maintenance mode for a set of machines via the <c>WhatsUpGoldPS</c> module — an
 /// adaptation of the admin's standalone script, supplied the tab's machine names instead of a file.
 ///
@@ -175,13 +182,49 @@ public static class WugMaintenance
     // EXACTLY that line regardless of any other stdout a cmdlet prints (see PreflightScript / ParsePreflight).
     private const string PreflightResultMarker = "__WUGRESULT__";
 
+    // Prefix the state read puts on each per-device result line (see StateScript's EmitDevice). Distinct
+    // from __WUGP__ (progress → activity log, set path) and __WUGRESULT__ (the final authoritative
+    // summary): a device line is one machine's tri-state, streamed as it resolves. Never overload
+    // __WUGP__ for it. Internal so tests can reference the exact marker.
+    internal const string DeviceMarker = "__WUGDEV__";
+
+    /// <summary>
+    /// Stall watchdog for the streaming state read: if no per-device line arrives for this long the run
+    /// is declared wedged and killed. 90s ≈ 3× the 30s pre-flight budget for the same launch+import+
+    /// connect startup and ~50× a healthy per-device lookup, so it cannot fire on a healthy run but names
+    /// a wedge in a minute and a half.
+    /// </summary>
+    public static readonly TimeSpan StateReadStallTimeout = TimeSpan.FromSeconds(90);
+
+    /// <summary>
+    /// Absolute backstop for the streaming state read so a pathological child can't live forever. Sized
+    /// above a healthy 324-box run at the pilot-checked 5 s/lookup (~28 min) — the stall timer, not this,
+    /// is what catches hangs.
+    /// </summary>
+    public static readonly TimeSpan StateReadCeiling = TimeSpan.FromMinutes(45);
+
     /// <summary>
     /// Runs the maintenance set under Windows PowerShell 5.1 and returns a typed result. Bounded by
     /// <paramref name="timeout"/> so it can never hang indefinitely. <paramref name="progress"/>, if
     /// supplied, receives a line per step (loading module, connecting, listing devices, setting) so a
     /// slow run can show what it's doing and, on timeout, the last step it reached.
     /// </summary>
-    public static async Task<WugMaintenanceResult> RunAsync(
+    public static Task<WugMaintenanceResult> RunAsync(
+        IReadOnlyList<string> names,
+        bool enable,
+        string server,
+        string username,
+        string password,
+        string reason,
+        TimeSpan timeout,
+        CancellationToken cancellationToken = default,
+        IProgress<string>? progress = null)
+        => RunCoreAsync(Script, names, enable, server, username, password, reason, timeout, cancellationToken, progress);
+
+    // Internal seam so the cancel-kill contract is testable with a synthetic script — the public RunAsync
+    // delegates here with the real Script const; the only difference is the caller-supplied script body.
+    internal static async Task<WugMaintenanceResult> RunCoreAsync(
+        string script,
         IReadOnlyList<string> names,
         bool enable,
         string server,
@@ -199,7 +242,7 @@ public static class WugMaintenance
         }
 
         string scriptPath = Path.Combine(Path.GetTempPath(), $"Vivre_Wug_{Guid.NewGuid():N}.ps1");
-        await WritePs51ScriptAsync(scriptPath, Script, cancellationToken).ConfigureAwait(false);
+        await WritePs51ScriptAsync(scriptPath, script, cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -265,6 +308,14 @@ public static class WugMaintenance
                 try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
                 return new WugMaintenanceResult(false, 0, [],
                     $"Timed out after {timeout.TotalSeconds:N0}s. The WhatsUpGoldPS module may be missing/incompatible on this machine, or {server} isn't reachable. Run your standalone script once here to confirm the module + connectivity.");
+            }
+            catch (OperationCanceledException)
+            {
+                // A caller cancel must kill the child — before this fix a cancelled set kept running and
+                // could still flip WUG maintenance after the UI reported "cancelled". INTENTIONAL BEHAVIOR
+                // CHANGE to the shipped set path (operator-approved, Amendment 3).
+                try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                throw;
             }
 
             return Parse(stdout.ToString(), stderr.ToString());
@@ -373,6 +424,11 @@ public static class WugMaintenance
         # Tag the result line with a unique marker so the host extracts EXACTLY it, immune to any banner /
         # warning / object text a cmdlet might print to stdout (see ParseMaintenanceState).
         function Emit($r) { Write-Output ("__WUGRESULT__" + ($r | ConvertTo-Json -Compress -Depth 4)) }
+        # Stream one result line per device AS it resolves, so a long run shows progress and an aborted
+        # read keeps what already came back. JSON per line is load-bearing: 5.1's ConvertTo-Json escapes
+        # non-ASCII to \uXXXX so the payload is pure ASCII on the wire, immune to the OEM code page of
+        # redirected stdout; never switch to a raw delimited format.
+        function EmitDevice($e) { Write-Output ("__WUGDEV__" + ($e | ConvertTo-Json -Compress -Depth 3)) }
 
         $names  = @($env:VIVRE_WUG_NAMES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $server = $env:VIVRE_WUG_SERVER
@@ -463,8 +519,10 @@ public static class WugMaintenance
                     }
                     # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
                     $devices += [ordered]@{ name = $srv; inMaintenance = $state }
+                    EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $state })
                 } else {
                     $unmatched += $srv
+                    EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null })
                 }
             }
         } catch {
@@ -480,7 +538,7 @@ public static class WugMaintenance
         Emit $result
         """;
 
-    // ── Shared process-launch helper (used by TestConnectionAsync + InstallModuleAsync only) ────
+    // ── Shared process-launch helper (TestConnectionAsync + InstallModuleAsync + GetMaintenanceStateAsync) ──
 
     /// <summary>
     /// Writes a PowerShell script to <paramref name="path"/> for Windows PowerShell 5.1 to run.
@@ -494,14 +552,22 @@ public static class WugMaintenance
 
     /// <summary>
     /// Writes <paramref name="script"/> to a temp .ps1, launches it under Windows PowerShell 5.1
-    /// with the supplied environment variables, waits up to <paramref name="timeout"/>, kills on
-    /// timeout, cleans up the temp file.  Returns (stdout, stderr).
+    /// with the supplied environment variables, waits up to <paramref name="timeout"/> (the absolute
+    /// ceiling), kills on timeout, cleans up the temp file.  Returns (stdout, stderr).
+    /// <para><paramref name="onDeviceLine"/>, when set, receives each <c>__WUGDEV__</c> line (marker
+    /// stripped) as it streams; those lines are routed OUT of the returned stdout buffer. It is invoked
+    /// on a ThreadPool async-read thread — callers own any marshalling.</para>
+    /// <para><paramref name="stallTimeout"/>, when set, arms a watchdog that kills the run (throwing
+    /// <see cref="WugStallException"/>) if no device line arrives for that long — a wedge detector far
+    /// tighter than the ceiling. Chatter on other stdout does NOT reset it.</para>
     /// </summary>
-    private static async Task<(string Stdout, string Stderr)> RunPreflightProcessAsync(
+    internal static async Task<(string Stdout, string Stderr)> RunPreflightProcessAsync(
         string script,
         IReadOnlyDictionary<string, string> env,
         TimeSpan timeout,
-        CancellationToken ct)
+        CancellationToken ct,
+        Action<string>? onDeviceLine = null,
+        TimeSpan? stallTimeout = null)
     {
         string psExe = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe");
         if (!File.Exists(psExe))
@@ -538,7 +604,41 @@ public static class WugMaintenance
             using var proc = new Process { StartInfo = psi };
             var stdout = new StringBuilder();
             var stderr = new StringBuilder();
-            proc.OutputDataReceived += (_, e) => { if (e.Data is not null) { stdout.AppendLine(e.Data); } };
+
+            // Absolute ceiling: linked to the caller token, fires after `timeout` no matter what.
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            // Stall watchdog (opt-in): a second token CHAINED under the ceiling that each device line
+            // pushes forward. Chaining keeps the ceiling firing even while the stall timer keeps resetting.
+            using var waitCts = stallTimeout is not null
+                ? CancellationTokenSource.CreateLinkedTokenSource(timeoutCts.Token)
+                : null;
+
+            proc.OutputDataReceived += (_, e) =>
+            {
+                if (e.Data is null)
+                {
+                    return;
+                }
+
+                // Device lines are routed OUT of the summary buffer entirely — even when onDeviceLine is
+                // null — so the summary parse can never mistake a per-device line for the result line (the
+                // fabricated-clean-read false-green). Every other non-null line buffers as before.
+                if (e.Data.StartsWith(DeviceMarker, StringComparison.Ordinal))
+                {
+                    onDeviceLine?.Invoke(e.Data[DeviceMarker.Length..]);
+                    // The stall timer resets ONLY on a device line — arriving chatter on other stdout must
+                    // never keep a dead run alive. Late lines can fire during teardown, so guard the
+                    // already-disposed timer.
+                    if (stallTimeout is { } stall && waitCts is not null)
+                    {
+                        try { waitCts.CancelAfter(stall); } catch (ObjectDisposedException) { }
+                    }
+                }
+                else
+                {
+                    stdout.AppendLine(e.Data);
+                }
+            };
             proc.ErrorDataReceived += (_, e) => { if (e.Data is not null) { stderr.AppendLine(e.Data); } };
 
             if (!proc.Start())
@@ -549,16 +649,37 @@ public static class WugMaintenance
             proc.BeginOutputReadLine();
             proc.BeginErrorReadLine();
 
-            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             timeoutCts.CancelAfter(timeout);
+            if (stallTimeout is { } initialStall)
+            {
+                waitCts!.CancelAfter(initialStall);
+            }
+
+            CancellationToken waitToken = waitCts?.Token ?? timeoutCts.Token;
             try
             {
-                await proc.WaitForExitAsync(timeoutCts.Token).ConfigureAwait(false);
+                await proc.WaitForExitAsync(waitToken).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            catch (OperationCanceledException)
             {
+                // Decode WHY the wait ended, kill the child in every case, and throw the matching signal.
+                if (ct.IsCancellationRequested)
+                {
+                    // Operator cancel must not leave the child running — a BEHAVIOR CHANGE from the old
+                    // launcher, where a caller cancel abandoned a live child. Kill, then honour the cancel.
+                    try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                    throw;
+                }
+
+                if (timeoutCts.IsCancellationRequested)
+                {
+                    try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
+                    throw new TimeoutException($"Timed out after {timeout.TotalSeconds:N0}s.");
+                }
+
+                // Only the stall timer fired: the run went quiet without hitting the ceiling.
                 try { proc.Kill(entireProcessTree: true); } catch { /* already gone */ }
-                throw new TimeoutException($"Timed out after {timeout.TotalSeconds:N0}s.");
+                throw new WugStallException(stallTimeout!.Value);
             }
 
             return (stdout.ToString(), stderr.ToString());
@@ -652,10 +773,14 @@ public static class WugMaintenance
 
     /// <summary>
     /// Reads the current WhatsUp Gold maintenance state for <paramref name="names"/> WITHOUT changing
-    /// anything, keyed back by the input machine name. Bounded by <paramref name="timeout"/>. The
-    /// <paramref name="password"/> reaches the child process via the <c>VIVRE_WUG_PASS</c> environment
-    /// variable only — never on the command line, never written to disk. Fails open: a launch / timeout /
-    /// parse failure yields an empty map plus the reason, never a fabricated "not in maintenance".
+    /// anything, keyed back by the input machine name. Bounded by <paramref name="timeout"/> (the
+    /// ceiling); when <paramref name="stallTimeout"/> is set, a quiet run with no new per-device line for
+    /// that long is aborted early. <paramref name="deviceProgress"/>, if set, receives each device result
+    /// as it streams. The <paramref name="password"/> reaches the child process via the
+    /// <c>VIVRE_WUG_PASS</c> environment variable only — never on the command line, never written to disk.
+    /// <para>FAILS OPEN: a launch / timeout / stall / parse failure never fabricates a "not in
+    /// maintenance". An aborted read now KEEPS the per-device results already streamed and names the last
+    /// machine that resolved in the error, rather than discarding everything.</para>
     /// </summary>
     public static async Task<WugMaintenanceStateResult> GetMaintenanceStateAsync(
         IReadOnlyList<string> names,
@@ -663,7 +788,9 @@ public static class WugMaintenance
         string username,
         string password,
         TimeSpan timeout,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IProgress<WugDeviceState>? deviceProgress = null,
+        TimeSpan? stallTimeout = null)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -673,19 +800,116 @@ public static class WugMaintenance
             ["VIVRE_WUG_PASS"]   = password,   // password reaches the child via env var ONLY
         };
 
+        // Partial state assembled from the streamed per-device lines so an aborted read (stall / ceiling /
+        // crash) still returns what already came back instead of discarding it. OnDeviceLine fires on a
+        // ThreadPool async-read thread, so every touch of these is under `gate`. lastName/seen name the
+        // machine an abort stopped after, for the error text.
+        var gate = new object();
+        var partial = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
+        var partialUnmatched = new List<string>();
+        string? lastName = null;
+        int seen = 0;
+
+        // Attached ALWAYS (independent of deviceProgress): the partial map is what lets an aborted read
+        // keep its results. ParseDeviceLine is the SAME tri-state contract as AddDevice — never a divergent
+        // per-line parser, the likeliest re-entry point for the fabricated "not in maintenance" bug.
+        void OnDeviceLine(string json)
+        {
+            WugDeviceState? parsed = ParseDeviceLine(json);
+            if (parsed is null)
+            {
+                return;
+            }
+
+            lock (gate)
+            {
+                if (parsed.Matched)
+                {
+                    partial[parsed.Name] = parsed.InMaintenance;
+                }
+                else
+                {
+                    partialUnmatched.Add(parsed.Name);
+                }
+                lastName = parsed.Name;
+                seen++;
+            }
+
+            deviceProgress?.Report(parsed);
+        }
+
         try
         {
-            var (stdout, stderr) = await RunPreflightProcessAsync(StateScript, env, timeout, ct).ConfigureAwait(false);
+            var (stdout, stderr) = await RunPreflightProcessAsync(
+                StateScript, env, timeout, ct, OnDeviceLine, stallTimeout).ConfigureAwait(false);
+            // Normal exit: the __WUGRESULT__ summary is authoritative — the partial map is NOT consulted.
             return ParseMaintenanceState(stdout, stderr);
+        }
+        catch (WugStallException ex)
+        {
+            // Stalled: KEEP the partial results, name the last machine that resolved. Never discard.
+            // The launcher has killed the child, but stragglers from its draining async output pump can
+            // still fire OnDeviceLine and write the live collections AFTER we return — so the result must
+            // wrap snapshot COPIES taken under `gate`, never the live maps (a cross-thread write-during-read
+            // on a Dictionary is this codebase's cardinal crash class).
+            Dictionary<string, bool?> snap; List<string> snapUnmatched; string? ln; int sn;
+            lock (gate)
+            {
+                snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
+                snapUnmatched = new List<string>(partialUnmatched);
+                ln = lastName; sn = seen;
+            }
+            return new WugMaintenanceStateResult(
+                snap, snapUnmatched, ComposeAbortError("Stalled", ln, sn, names.Count, ex.Stall));
+        }
+        catch (TimeoutException)
+        {
+            // Hit the absolute ceiling: same shape, ceiling wording and window. Snapshot under `gate` for
+            // the same reason as above — the killed child's draining pump can still write the live maps.
+            Dictionary<string, bool?> snap; List<string> snapUnmatched; string? ln; int sn;
+            lock (gate)
+            {
+                snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
+                snapUnmatched = new List<string>(partialUnmatched);
+                ln = lastName; sn = seen;
+            }
+            return new WugMaintenanceStateResult(
+                snap, snapUnmatched, ComposeAbortError("Timed out", ln, sn, names.Count, timeout));
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // Callers own cancellation semantics; the launcher already killed the child. Rethrow.
+            throw;
         }
         catch (Exception ex)
         {
-            // A timeout or launch failure says nothing about any machine's state — return unknown for
-            // all (an empty map) carrying the real reason, never a fabricated "not in maintenance".
-            return new WugMaintenanceStateResult(
-                new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase), [], ex.Message);
+            // Any other failure (launch / unexpected): return the partial map — never a fresh empty one —
+            // plus the real reason. Still fails open, never a fabricated "not in maintenance". Snapshot
+            // under `gate` for the same reason as above — the killed child's draining pump can still write
+            // the live maps.
+            Dictionary<string, bool?> snap; List<string> snapUnmatched;
+            lock (gate)
+            {
+                snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
+                snapUnmatched = new List<string>(partialUnmatched);
+            }
+            return new WugMaintenanceStateResult(snap, snapUnmatched, ex.Message);
         }
     }
+
+    /// <summary>
+    /// Composes the error text for an aborted streaming state read, naming the last machine that resolved
+    /// and how many of <paramref name="total"/> were checked before the abort. <paramref name="reason"/>
+    /// is "Stalled" or "Timed out"; <paramref name="window"/> is the stall or ceiling window that fired.
+    /// </summary>
+    internal static string ComposeAbortError(string reason, string? lastName, int seen, int total, TimeSpan window)
+        => seen > 0
+            ? $"{reason} after {lastName} — {seen} of {total} checked (no result for {window.TotalSeconds:N0}s)"
+            : $"{reason} before the first result — 0 of {total} checked (no result for {window.TotalSeconds:N0}s)";
+
+    /// <summary>The activity-log line for an operator-stopped/superseded state check — an aborted run
+    /// must never be indistinguishable from a completed one.</summary>
+    public static string ComposeStoppedMessage(int seen, int total) => $"Stopped — {seen} of {total} checked";
 
     // ── Parse helpers ────────────────────────────────────────────────────────────────────────────
 
@@ -750,14 +974,14 @@ public static class WugMaintenance
     {
         var byName = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
 
-        // Prefer the marker-tagged result line (Emit prefixes __WUGRESULT__); fall back to the last
-        // braced line for marker-less input. The marker makes extraction immune to any other stdout a
-        // cmdlet might print before the result.
+        // REQUIRE the __WUGRESULT__ marker — there is NO last-braced-line fallback here (there is one in
+        // ParsePreflight, which has no streamed lines). With per-device __WUGDEV__ JSON lines now on the
+        // wire, a braced-line fallback could parse a trailing device line AS the summary (no devices[],
+        // no error → a fabricated clean-but-empty read), the exact quiet false-green this feature must
+        // never produce. No marker → the fail-open no-result path below.
         string[] lines = stdout.Split('\n').Select(s => s.Trim()).ToArray();
         string? marked = lines.LastOrDefault(s => s.StartsWith(PreflightResultMarker, StringComparison.Ordinal));
-        string? json = marked is not null
-            ? marked[PreflightResultMarker.Length..]
-            : lines.LastOrDefault(s => s.Contains('{') && s.Contains('}'));
+        string? json = marked is not null ? marked[PreflightResultMarker.Length..] : null;
 
         // No result line (killed on timeout before emitting, or no output). This is NOT a machine state —
         // surface it as unknown-with-error, never as "not in maintenance".
@@ -858,6 +1082,57 @@ public static class WugMaintenance
         byName[nameEl.GetString()!] = state;
     }
 
+    /// <summary>
+    /// Parses ONE marker-stripped <c>__WUGDEV__</c> payload into a <see cref="WugDeviceState"/>, or null
+    /// when the line carries no usable name. Never throws (a <see cref="JsonException"/> yields null).
+    /// </summary>
+    internal static WugDeviceState? ParseDeviceLine(string json)
+    {
+        // A divergent per-line parser is the most likely re-entry point for the fabricated "not in
+        // maintenance" bug — keep it in LOCKSTEP with AddDevice: name must be a JSON string; matched is
+        // false ONLY on an explicit JSON false (absent/true/other => matched, so a miss is always explicit);
+        // inMaintenance is true/false ONLY on JSON true/false, and absent/null/other => unknown, never false.
+        try
+        {
+            int start = json.IndexOf('{');
+            int end = json.LastIndexOf('}');
+            if (start < 0 || end < start)
+            {
+                return null;
+            }
+
+            using JsonDocument doc = JsonDocument.Parse(json[start..(end + 1)]);
+            JsonElement root = doc.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            if (!root.TryGetProperty("name", out JsonElement nameEl) || nameEl.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            bool matched = !(root.TryGetProperty("matched", out JsonElement matchedEl) && matchedEl.ValueKind == JsonValueKind.False);
+
+            bool? inMaintenance = root.TryGetProperty("inMaintenance", out JsonElement mEl)
+                ? mEl.ValueKind switch
+                {
+                    JsonValueKind.True => true,
+                    JsonValueKind.False => false,
+                    _ => (bool?)null,
+                }
+                : null;
+
+            return new WugDeviceState(nameEl.GetString()!, matched, inMaintenance);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <summary>Parses the single JSON result line the script emits; falls back to stderr on failure.</summary>
     internal static WugMaintenanceResult Parse(string stdout, string stderr)
     {
@@ -913,4 +1188,16 @@ public static class WugMaintenance
             return new WugMaintenanceResult(false, 0, [], "Couldn't parse the WhatsUp Gold result: " + json);
         }
     }
+}
+
+/// <summary>
+/// Thrown when the streaming state read goes quiet for the stall window without hitting the absolute
+/// ceiling — a wedged run detected far sooner than the ceiling would. Derives from
+/// <see cref="TimeoutException"/> so an existing catch still treats it as a timeout; <see cref="Stall"/>
+/// carries the window that fired for the abort-error text.
+/// </summary>
+internal sealed class WugStallException(TimeSpan stall)
+    : TimeoutException($"No result for {stall.TotalSeconds:N0}s")
+{
+    public TimeSpan Stall { get; } = stall;
 }

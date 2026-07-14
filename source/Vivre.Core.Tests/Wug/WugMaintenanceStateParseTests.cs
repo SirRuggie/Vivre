@@ -125,4 +125,34 @@ public class WugMaintenanceStateParseTests
 
         Assert.True(r.ByName["bOx1"]);
     }
+
+    // ── The __WUGRESULT__ marker is now REQUIRED (the last-braced-line fallback was removed) ──────────
+
+    [Fact]
+    public void ParseMaintenanceState_device_lines_without_result_marker_is_error_not_a_clean_read()
+    {
+        // Streamed __WUGDEV__ lines with NO __WUGRESULT__ summary must NOT be misparsed as a clean read.
+        // Before the fallback removal a braced device line could have been taken as the summary → a
+        // fabricated clean-but-empty state. Now: no marker → typed error, empty map. Locks the fix.
+        string stdout =
+            """__WUGDEV__{"name":"BOX1","matched":true,"inMaintenance":true}""" + "\n" +
+            """__WUGDEV__{"name":"BOX2","matched":true,"inMaintenance":false}""" + "\n";
+
+        WugMaintenanceStateResult r = WugMaintenance.ParseMaintenanceState(stdout, string.Empty);
+
+        Assert.Empty(r.ByName);
+        Assert.False(string.IsNullOrWhiteSpace(r.Error));
+    }
+
+    [Fact]
+    public void ParseMaintenanceState_braced_line_without_marker_is_error_not_parsed()
+    {
+        // A braced JSON summary-shaped line with no __WUGRESULT__ marker must NOT be parsed (fallback removed).
+        string stdout = """{"ok":true,"devices":[{"name":"BOX1","inMaintenance":true}],"unmatched":[],"error":null}""" + "\n";
+
+        WugMaintenanceStateResult r = WugMaintenance.ParseMaintenanceState(stdout, string.Empty);
+
+        Assert.Empty(r.ByName);
+        Assert.False(string.IsNullOrWhiteSpace(r.Error));
+    }
 }
