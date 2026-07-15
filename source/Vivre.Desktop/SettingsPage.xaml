@@ -93,7 +93,6 @@
                                 MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
                                 PlaceholderText="50"
                                 LostFocus="OnMaxInstallsChanged"
-                                TextChanged="OnMaxInstallsChanged"
                                 ToolTip="Cap on simultaneous installs/uninstalls/stages (1–200). Default 50." />
                 </Grid>
             </Border>
@@ -119,7 +118,6 @@
                                 MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
                                 PlaceholderText="2"
                                 LostFocus="OnWugStateConcurrencyChanged"
-                                TextChanged="OnWugStateConcurrencyChanged"
                                 ToolTip="How many WUG devices the state check queries at once (1–4). Default 2." />
                 </Grid>
             </Border>

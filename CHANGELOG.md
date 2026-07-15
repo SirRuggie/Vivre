@@ -22,6 +22,13 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **The two Settings number boxes — "Max simultaneous installs" and "WhatsUp Gold state check —
+  simultaneous lookups" — can now be typed into normally.** Before, every keystroke that passed
+  through an out-of-range value snapped the box back instantly (typing "5" then "0" then "9" reverted
+  the moment 509 exceeded the range), so the field looked dead — only selecting all and typing a valid
+  number in one go worked, and the ✗ clear button did nothing. Now the value is checked when you leave
+  the field (Tab or click away), like every other setting: an in-range number sticks and persists, and
+  anything out of range or empty snaps back to the saved value on focus-out.
 - **A WhatsUp Gold server error during the state check no longer reads as a clean "no matching
   device".** If a device lookup hits a WUG error mid-run, that machine now shows **state unknown**
   instead of the misleading "no matching device", and the run summary says how many lookups failed —
