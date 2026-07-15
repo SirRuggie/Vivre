@@ -11,13 +11,13 @@
 > close (786 → 810 across the RDP arc).)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 852 green as of 2026-07-14).**
+> are point-in-time only (current suite is 897 green as of 2026-07-15).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0); suite now 852 green (2026-07-14):** the full five-lens audit
+**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0); suite now 897 green (2026-07-15):** the full five-lens audit
 record is `docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
 **and every actionable MED is now closed** (the batch-sequential residue closed this pass — see the bounded-loops DONE entry)**:** Stop-during-SMB-copy + settings-save-invisible-in-Release
@@ -70,17 +70,6 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
-5. **WUG bulk-fetch prefetch — the SPEED fix for the state check** (streaming fixed VISIBILITY; this
-   makes it FAST). Now that the state read STREAMS (rows fill in, Stop works, a wedge is caught in 90s),
-   the remaining problem is raw speed: a healthy 324-box run is still ~28min because it does one
-   sequential `Get-WUGDevice -SearchValue` REST round-trip PER machine. Fix: pull ONE paged inventory up
-   front (`Get-WUGDevice` at 250/page, `-View overview` already carries `bestState`/`worstState`), match
-   the grid's names IN-SCRIPT against that inventory, and fall back to the per-name lookup ONLY for the
-   leftovers — collapsing 324+ round-trips into `ceil(inventory / 250)`. Streaming makes today tolerable;
-   bulk makes it fast. **Revisit AFTER the streaming check is proven on the real fleet.** Open questions to
-   confirm first: real inventory size + per-page latency (is one big pull actually cheaper than N targeted
-   ones?); whether `search=` / `SearchValue` matching is exact enough to trust for the in-script match; and
-   `DeviceGroupID -1` (or equivalent) scoping so the inventory pull covers all devices, not a default group.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
@@ -265,6 +254,48 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **WUG state-check SPEED — pooled per-name lookups — DONE** (this pass: chunks A + B + a test-speed pass,
+  uncommitted at writing; suite 873 → 897). The read-only "Check WhatsUp Gold state…" read now runs its
+  per-name `Get-WUGDevice` lookups a few AT A TIME instead of strictly one-by-one — a runspace pool INSIDE
+  `StateScript` (`StateResolveLoopScript`), sized by the operator's new **Settings ▸ "WhatsUp Gold state
+  check — simultaneous lookups"** (`AppSettings.WugStateConcurrency`, default **2**, clamp **1–4** →
+  `StateReadMaxConcurrency`; `VIVRE_WUG_CONCURRENCY` absent = 1 = the untouched sequential branch). Measured
+  ~2× win: a 324-box run drops from ~6.5 min to ~3 min at N=2. Streaming is unchanged — rows still fill in
+  live, Stop still cancels + kills the child, the 90s stall watchdog + 45-min ceiling still bound it. The
+  four fan-out traps are all honoured (T1 `DefaultConnectionLimit=32` before the first request; T2 connect
+  ONCE-per-runspace, no shared auth globals; T3 completion-order poll-drain, not `WaitHandle.WaitAny`/
+  submission-order `EndInvoke`; T4 the external C# stall watchdog stays the sole wedge authority since
+  `PowerShell.Stop()` can't interrupt a blocked `Invoke-RestMethod`); the shared `ResolveFunctionScript` +
+  `Process-WugOutcome` are single-sourced into both branches, and `__WUGDEV__` is emitted only from the main
+  drain thread. A per-lookup latency tally appends "WUG lookups slowed during the run…" (+ "consider lowering
+  the concurrency setting" at N>1) when the average exceeds 2× the first-5 baseline.
+  **The cap (default 2, ceiling 4) and WHY:** the live Gate 0 ramp measured the 1→2 halving as the whole win;
+  2→4→8 stayed flat with per-lookup latency creeping UP (WUG serialises under load), so >4 is pure extra load
+  on the one box that watches the whole fleet for no wall-time gain.
+  **This is the SPEED fix that REPLACED the old DO-NEXT-#5 "WUG bulk-fetch prefetch" idea, now DEAD — DO NOT
+  re-propose.** The bulk idea (pull ONE paged inventory up front and match in-script, falling back to per-name
+  lookups only for the leftovers) was MEASURED and rejected: a single unfiltered bulk pull took **426s for
+  1469 devices** — SLOWER than the per-name sequential lookups it was meant to beat (per-lookup ~1.1s live,
+  1.0–1.7s; ~6.5 min sequential on 324). Pulling one big inventory loses to N targeted lookups, so the speed
+  fix is concurrency on the targeted lookups, not a bulk pull.
+  Suite wall-clock stayed in its ~87s ballpark despite the new real-`powershell.exe` pool process tests: they
+  ride the `VIVRE_WUG_MODULE_OVERRIDE` seam + a COMMITTED stub-module fixture
+  (`Vivre.Core.Tests/Wug/Fixtures/WugStubModule.psm1`, copied to the test output) through the SAME
+  `ImportPSModule`-by-path path, skipping the real WhatsUpGoldPS ~8s-per-runspace cold-load; one real-module
+  smoke test still exercises the production import. Cardinal clean (read path; no reboot).
+- **WUG resolver identity-verify + error honesty — DONE** (`b67ed55`; suite 852 → 873). Shipped without its
+  own docs round — this is that round. The per-name resolver was SINGLE-SOURCED into one
+  `ResolveFunctionScript` spliced into both the set path (`Script`) and the state read (`StateScript`) so they
+  can't diverge on how a name maps to a WUG device. Matching is now a normalized, case-insensitive,
+  DOT-BOUNDARY compare (`Test-WugNameMatch`) against `name`/`hostName`/`displayName` (each presence-guarded) +
+  a `networkAddress` clause for IP-literal inputs — REPLACING the dead `displayName -eq $srv` verify (null for
+  FQDN-registered fleets) and the de-facto `$results[0]` pick; the dot boundary rejects prefix collisions
+  ("APVSQL1" ≠ "APVSQL10.domain"). Outcome is exactly one of MatchedByName / MatchedByIp / NoDevice /
+  Ambiguous / LookupError. **An errored search reads UNKNOWN (`LookupError`), NEVER a false "no matching
+  device"** — only a clean-empty answer everywhere is `NoDevice`, so a struggling server can no longer
+  masquerade as a fleet of ghosts. The set path's all-nothing guard is FAIL-SAFE: a `LookupError`/`Ambiguous`
+  box over-reports failure (re-setting maintenance is idempotent) rather than silently claiming "set" for a box
+  never cleanly looked up. Cardinal clean.
 - **WUG streaming state-check arc — DONE** (this pass, uncommitted at writing; suite 823 → 852, +29).
   The read-only "Check WhatsUp Gold state…" read now STREAMS one result per machine (`__WUGDEV__`) as
   WUG answers, instead of going silent and dumping everything at the end. A `StateReadStallTimeout`

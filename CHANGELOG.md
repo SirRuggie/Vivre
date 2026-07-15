@@ -7,6 +7,12 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Changed
+- **Fleet-wide WhatsUp Gold state checks are now roughly twice as fast.** A 324-machine check takes about
+  3 minutes instead of ~6.5 — the lookups now run a few at a time instead of strictly one-by-one. Rows
+  still fill in live as each machine answers, and **Stop** still halts the check part-way. A new setting,
+  **Settings ▸ "WhatsUp Gold state check — simultaneous lookups"** (default **2**, range 1–4), controls how
+  many run at once; measured on the live server, more than 2 doesn't go any faster — it just loads the WUG
+  server — so if WUG slows under the load the run summary says so and suggests lowering the setting.
 - **The WhatsUp Gold state check now fills in each machine's row as WUG answers, instead of going
   quiet and dumping every result at the end.** Rows update live as each machine resolves, and the
   toolbar **Stop** genuinely halts the check part-way. A wedged run is now caught within 90 seconds

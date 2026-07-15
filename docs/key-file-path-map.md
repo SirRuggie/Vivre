@@ -104,6 +104,62 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
   state read), `ParsePreflight`, the `WritePs51ScriptAsync` BOM-write helper, and the three stdout
   markers below. **All 5.1 shell-outs strip `PSModulePath` AND write UTF-8-with-BOM** — see the two
   gotchas above.
+- **Per-name resolver — identity verify, single-sourced** (`b67ed55`): one shared `ResolveFunctionScript`
+  (three PS functions) is spliced ONCE into both the set path (`Script`) and the state read (`StateScript`),
+  so they can never diverge on how an input name maps to a WUG device. Outcome is exactly one of
+  **MatchedByName / MatchedByIp / NoDevice / Ambiguous / LookupError**. Matching is a normalized,
+  case-insensitive, DOT-BOUNDARY compare (`Test-WugNameMatch`) against the device's `name`/`hostName`/
+  `displayName` (each PRESENCE-guarded — a missing property can neither satisfy nor throw) plus a
+  `networkAddress`-equality clause for IP-literal inputs. It REPLACES the dead `displayName -eq $srv` verify
+  (null for FQDN-registered fleets) and the de-facto `$results[0]` pick; the dot boundary rejects prefix
+  collisions ("APVSQL1" must NOT match "APVSQL10.domain"). Control flow: name search (error-aware) → exact
+  name match → DNS→IP fall-through → exact `networkAddress` match, with NO silent `[0]`. **An errored search
+  is a `LookupError` (state UNKNOWN), NEVER a false "no matching device"** — only a clean-empty answer
+  everywhere is `NoDevice`, so a struggling server can't masquerade as a fleet of ghosts. On the set path a
+  `LookupError`/`Ambiguous` box is excluded from "unmatched" and folds into a FAIL-SAFE honesty report
+  (over-reports failure, since re-setting maintenance is idempotent — the one forbidden direction is a
+  silent "set" for a box never cleanly looked up).
+- **POOLED state read (the speed fix)** — a runspace pool INSIDE `StateResolveLoopScript` (composed into
+  `StateScript` after `$resolverText` + `$workerTail`). Concurrency comes from `VIVRE_WUG_CONCURRENCY`
+  (absent = 1 = the original, untouched sequential branch); the operator sets it in **Settings ▸ "WhatsUp
+  Gold state check — simultaneous lookups"** (`AppSettings.WugStateConcurrency`, default **2**, clamp
+  **1–4**), read at call time by `WorkspaceViewModel.GetWugMaintenanceStateAsync` and handed to
+  `GetMaintenanceStateAsync`, which `ClampConcurrency`es it into `[1, StateReadMaxConcurrency]`; the in-script
+  drain re-clamps 1–4 (defence in depth, so a hand-edited env var can't open an unbounded pool). The shared
+  `ResolveFunctionScript` is single-sourced via `$resolverText` — the sequential branch `Invoke-Expression`s
+  it into the main scope, each pooled worker EMBEDS the same text (never a second, forked resolver);
+  `Process-WugOutcome` (the outcome dispatch + tri-state read + `EmitDevice` + counters) is likewise shared,
+  and `__WUGDEV__` lines are written ONLY from the main drain thread (never a worker-thread DataAdded handler).
+  - **THE FOUR FAN-OUT TRAPS (named, all honoured):**
+    - **T1** — `[System.Net.ServicePointManager]::DefaultConnectionLimit = 32` is set BEFORE the first
+      request: .NET Framework defaults the per-host connection cap to **2** and the module never raises it,
+      silently throttling any pool otherwise.
+    - **T2** — connect **ONCE PER RUNSPACE** (the `if (-not $global:WUGBearerHeaders)` guard), never per
+      lookup; each worker reads server/user/pass from the process-global env and builds its OWN session —
+      the module's auth globals are NEVER shared across runspaces by reference (the headers dict isn't
+      thread-safe; sharing it produced garbage reads under load).
+    - **T3** — a **completion-order poll-drain** (emit each result as its handle completes), NOT
+      `WaitHandle.WaitAny` (64-handle cap) and NOT submission-order `EndInvoke` (head-of-line blocking would
+      starve stdout and trip the stall watchdog).
+    - **T4** — `PowerShell.Stop()` is cooperative and can't interrupt a blocked `Invoke-RestMethod`, so there
+      is deliberately NO per-lookup Stop plumbing here; the external C# stall watchdog + ceiling stay the
+      sole authority over a wedged run.
+  - **The cap — default 2, ceiling 4 — and WHY:** the live Gate 0 ramp measured the 1→2 halving as the whole
+    win; 2→4→8 stayed flat with per-lookup latency creeping UP (WUG serialises under load), so >4 is pure
+    extra load on the one box that monitors the whole fleet for no wall-time gain. Measured live: per-lookup
+    ~1.1s (1.0–1.7s); a 324-box run ≈ ~6.5 min sequential, ≈ ~3 min at N=2. **A bulk inventory prefetch was
+    measured and PERMANENTLY REJECTED** — one unfiltered pull took 426s for 1469 devices, SLOWER than the
+    per-name sequential lookups it was meant to beat (see `docs/vivre-backlog.md` ▸ DONE).
+  - **Per-lookup latency tally:** the script records each lookup's elapsed ms in completion order; the summary
+    carries `avgLookupMs` + `baselineLookupMs` (mean of the first up-to-5). When the average exceeds 2× the
+    baseline it APPENDS "WUG lookups slowed during the run…" to the run summary (plus "consider lowering the
+    concurrency setting" at N>1). The C# parser still ignores the two numeric fields — the appended error text
+    is the operator-visible signal.
+  - **Test seam `VIVRE_WUG_MODULE_OVERRIDE`** (test-only, NEVER set in production): rides the SAME
+    `$iss.ImportPSModule(<path>)` path with a lightweight COMMITTED fixture
+    (`Vivre.Core.Tests/Wug/Fixtures/WugStubModule.psm1`, copied to the test output) so the pool process tests
+    skip the real WhatsUpGoldPS ~8s-per-runspace cold-load; the ONE real-module smoke test omits the override
+    so the production `$iss.ImportPSModule('WhatsUpGoldPS')` branch fires and is asserted per worker runspace.
 - **Three stdout markers, distinct ON PURPOSE** (never overload one for another):
   - `__WUGP__` (`ProgressMarker`) = a live step line → the activity log; **set path (`RunAsync`) only**.
   - `__WUGDEV__` (`DeviceMarker`, internal) = one per-device state result, streamed by `StateScript`'s
@@ -128,8 +184,8 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
     other stdout does NOT reset it) and kills a wedged run, naming the last machine that resolved
     (`ComposeAbortError` → "Stalled after X — 47 of 324 checked (no result for 90s)"); surfaced as
     `WugStallException` (derives from `TimeoutException`).
-  - `StateReadCeiling` (45min) — an absolute runaway backstop, sized so it cannot fire on a healthy 324-box
-    run (~28min at the pilot-checked 5s/lookup); the stall timer, not this, is what catches hangs.
+  - `StateReadCeiling` (45min) — an absolute runaway backstop, sized far above a healthy 324-box run
+    (measured ~1.1s/lookup: ~6.5min sequential, ~3min at N=2); the stall timer, not this, is what catches hangs.
 - **Aborted read (stall / ceiling / stop) KEEPS the per-device results already streamed** — the partial
   map is snapshot-COPIED under a lock against stragglers still draining from the killed child's async
   output pump (a cross-thread write-during-read on the live `Dictionary` is this codebase's cardinal crash
@@ -340,7 +396,7 @@ Extracted UI/IO-free predicates, each unit-tested:
 - `ScheduleRegistrationOutcome` — the register-side ASYMMETRY: an unconfirmed reboot-schedule registration (timed out, dropped mid-request, cancelled mid-request, or any unprovable escape — `IsUnconfirmedFailure` buckets the thrown types) is treated as SCHEDULED ("couldn't confirm — verify on the box"), never silently unscheduled; a row goes dark ONLY on proof the command never ran (connect-phase loss / Kerberos / shell-init) or the box's own failure report.
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **852 green** (as of 2026-07-14, WUG-streaming working tree) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **897 green** (as of 2026-07-15, WUG pooled-state-read working tree) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
@@ -369,7 +425,15 @@ Extracted UI/IO-free predicates, each unit-tested:
   `NotChecked`), `ComposeAbortError` / `ComposeStoppedMessage`, and **6 real-`powershell.exe` process tests**
   (incremental per-line delivery while the child runs, the stall-watchdog kill, caller-cancel kills the
   child in both launchers, and the PSModulePath strip on both launch paths) — the process tests took the
-  suite from ~5s to ~23s.
+  suite from ~5s to ~23s. **+21 across the identity-verify resolver** (`b67ed55`, 852 → 873): the
+  dot-boundary `Test-WugNameMatch`, the MatchedByName/ByIp/NoDevice/Ambiguous/LookupError outcomes,
+  error≠no-match, and the set-path fail-safe. **+24 across the pooled state read** (873 → 897): +22
+  pool/clamp/fan-out-trap tests (`WugConcurrencyTests` — `ClampConcurrency` bounds, the `StateReadMaxConcurrency`
+  ceiling, and the T1/T2 + single-sourced-resolver + module-override string-locks; `WugPoolProcessTests` —
+  real-`powershell.exe` pool streaming/connect-once-per-runspace/error-isolation/N=2-overlap/degradation
+  tests) + 2 (the real-module smoke test + the set-path parse lock). The pool process tests ride the committed
+  stub-module fixture via `VIVRE_WUG_MODULE_OVERRIDE`, so the suite wall-clock stayed in its ~87s ballpark
+  instead of paying the real module's ~8s cold-load per runspace.
 
 ## Docs in repo
 - **Root:** `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
