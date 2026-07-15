@@ -49,6 +49,7 @@ public partial class SettingsPage : UserControl
         LcuUbrBox.Text = s.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
         LcuPackagesFolderBox.Text = s.LcuPackagesFolder;
         MaxInstallsBox.Text = s.MaxSimultaneousInstalls.ToString();
+        WugStateConcurrencyBox.Text = s.WugStateConcurrency.ToString();
 
         // Inline version in the Help & about expander.
         VersionText.Text = $"Vivre {AboutWindow.RunningVersion()}";
@@ -192,6 +193,26 @@ public partial class SettingsPage : UserControl
         }
 
         PersistSettings(s => s.MaxSimultaneousInstalls = parsed);
+    }
+
+    private void OnWugStateConcurrencyChanged(object sender, RoutedEventArgs e)
+    {
+        string raw = WugStateConcurrencyBox.Text.Trim();
+        if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency)
+        {
+            // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
+            WugStateConcurrencyBox.Text = _settingsStore?.Load().WugStateConcurrency.ToString() ?? "2";
+            return;
+        }
+
+        // parsed is already in [1, StateReadMaxConcurrency] (guarded above), so no clamp is needed — just
+        // normalize the field text (e.g. "02" → "2") so it never displays junk.
+        if (parsed.ToString() != raw)
+        {
+            WugStateConcurrencyBox.Text = parsed.ToString();
+        }
+
+        PersistSettings(s => s.WugStateConcurrency = parsed);
     }
 
     private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)

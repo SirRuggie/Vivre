@@ -79,6 +79,14 @@ public sealed class AppSettings
     /// update-download bandwidth (N hosts pulling cumulative updates simultaneously), not the client.
     /// Range 1–200; default 50.</summary>
     public int MaxSimultaneousInstalls { get; set; } = 50;
+
+    /// <summary>How many WhatsUp Gold devices the state check looks up at once. Operator-tunable in
+    /// Settings → "WhatsUp Gold state check — simultaneous lookups"; applied to checks started after the
+    /// change (an in-flight check keeps the value it launched with). Measured on the live WUG server:
+    /// wall time halves going 1→2 and then flatlines 2→4→8 with per-lookup latency creeping up, so the
+    /// ceiling is deliberately 4 (<see cref="Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency"/>).
+    /// Range 1–4; default 2. 1 = sequential (the pre-parallel behaviour).</summary>
+    public int WugStateConcurrency { get; set; } = 2;
 }
 
 /// <summary>

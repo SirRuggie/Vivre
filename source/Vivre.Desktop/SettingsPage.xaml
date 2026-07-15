@@ -98,6 +98,32 @@
                 </Grid>
             </Border>
 
+            <!-- ── WhatsUp Gold state check — simultaneous lookups (flat row) ─ -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0" Symbol="Pulse24" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:TextBlock Text="WhatsUp Gold state check — simultaneous lookups" />
+                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                      Text="How many WUG devices the state check queries at once. Measured on the live server: 2 is the sweet spot — more just loads the WUG server for no extra speed. Range 1–4; default 2. Takes effect on the next check." />
+                    </StackPanel>
+                    <ui:TextBox Grid.Column="2" x:Name="WugStateConcurrencyBox"
+                                MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
+                                PlaceholderText="2"
+                                LostFocus="OnWugStateConcurrencyChanged"
+                                TextChanged="OnWugStateConcurrencyChanged"
+                                ToolTip="How many WUG devices the state check queries at once (1–4). Default 2." />
+                </Grid>
+            </Border>
+
             <!-- ── Grid columns (flat row) ───────────────────────────────── -->
             <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

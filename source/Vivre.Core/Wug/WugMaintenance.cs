@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -322,17 +323,34 @@ public static class WugMaintenance
     /// <summary>
     /// Stall watchdog for the streaming state read: if no per-device line arrives for this long the run
     /// is declared wedged and killed. 90s ≈ 3× the 30s pre-flight budget for the same launch+import+
-    /// connect startup and ~50× a healthy per-device lookup, so it cannot fire on a healthy run but names
-    /// a wedge in a minute and a half.
+    /// connect startup and ~80× a healthy per-device lookup (measured ~1.1s live), so it cannot fire on a
+    /// healthy run but names a wedge in a minute and a half.
     /// </summary>
     public static readonly TimeSpan StateReadStallTimeout = TimeSpan.FromSeconds(90);
 
     /// <summary>
     /// Absolute backstop for the streaming state read so a pathological child can't live forever. Sized
-    /// above a healthy 324-box run at the pilot-checked 5 s/lookup (~28 min) — the stall timer, not this,
-    /// is what catches hangs.
+    /// far above a healthy 324-box run (measured ~1.1s/lookup: ~6.5 min sequential, ~3 min at N=2) — a pure
+    /// runaway backstop; the stall timer, not this, is what catches hangs.
     /// </summary>
     public static readonly TimeSpan StateReadCeiling = TimeSpan.FromMinutes(45);
+
+    /// <summary>
+    /// Hard ceiling on how many per-name lookups the streaming state read may run in parallel. MEASURED
+    /// ceiling: the live Gate 0 ramp flatlined past 2 concurrent lookups — wall time halved 1→2 then did
+    /// not improve 2→4→8, with per-lookup latency creeping UP as workers piled on (WUG serialises under
+    /// load). So anything above 4 is pure extra load on the one box that monitors the whole fleet for no
+    /// wall-time gain. The parameter default stays 1 (sequential); the operator setting
+    /// (AppSettings.WugStateConcurrency, default 2) supplies the real value at call time.
+    /// </summary>
+    public const int StateReadMaxConcurrency = 4;
+
+    /// <summary>
+    /// Bounds a requested state-read concurrency into the safe range [1, <see cref="StateReadMaxConcurrency"/>].
+    /// The in-script drain clamps the same range again (defence in depth) so a hand-edited env var can
+    /// never open an unbounded pool against the WUG server.
+    /// </summary>
+    internal static int ClampConcurrency(int requested) => Math.Clamp(requested, 1, StateReadMaxConcurrency);
 
     /// <summary>
     /// Runs the maintenance set under Windows PowerShell 5.1 and returns a typed result. Bounded by
@@ -547,11 +565,256 @@ public static class WugMaintenance
 
     // ── Maintenance-state read: read-only per-machine "in maintenance?" tri-state ─────────────────
 
+    // The per-runspace worker tail (state read, POOLED branch only): the connect-guard + the single
+    // Resolve-WugName call, assigned to $workerText's tail. Composed into a SINGLE-QUOTED here-string
+    // ($workerTail = @'...'@) so its body is LITERAL script text — every $env:/$global: reference is
+    // evaluated by the WORKER at run time, never expanded at compose time. Connect ONCE PER RUNSPACE:
+    // the guard fires the first time a pool slot runs a worker, then that runspace reuses its
+    // authenticated session for every later lookup it handles. NEVER copy the module's auth globals
+    // across runspaces by reference — the headers dict is not thread-safe and sharing it produced garbage
+    // reads under load; each worker reads server/user/pass from the process-global env and builds its own
+    // session instead. No line may begin with '@ at column 0 (that would close the here-string early).
+    private const string StateWorkerTailBody = """
+        if (-not $global:WUGBearerHeaders) {
+            $sec  = ConvertTo-SecureString $env:VIVRE_WUG_PASS -AsPlainText -Force
+            $cred = New-Object System.Management.Automation.PSCredential($env:VIVRE_WUG_USER, $sec)
+            Connect-WUGServer -ServerUri $env:VIVRE_WUG_SERVER -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+        }
+        Resolve-WugName $srv
+        """;
+
+    // The streaming resolve loop (state read), composed into StateScript AFTER $resolverText and
+    // $workerTail so it reads BOTH as the ONE resolver source (never a second, forked resolver): the
+    // sequential branch Invoke-Expressions $resolverText into the main scope; the pooled branch embeds the
+    // same text in each worker. Defines Process-WugOutcome — the outcome dispatch + tri-state read +
+    // EmitDevice + counters, MOVED VERBATIM from the old inline loop body (the tri-state block is
+    // byte-identical; the counter mutations gained a $script: scope prefix so both branches share one
+    // accounting). Internal so a test can string-lock it (DefaultConnectionLimit, etc.) and compose it
+    // over stubs under real 5.1. No line may begin with '@ at column 0.
+    internal const string StateResolveLoopScript = """
+        # Per-run accounting (script scope: Process-WugOutcome is called from either branch and writes ONE set).
+        $devices = @()
+        $unmatched = @()
+        $lookupErrors = 0
+        $ambiguous = 0
+        $matchedByIp = 0
+        $resolvedStates = 0
+        $firstErr = $null
+        # Per-lookup elapsed (ms), recorded in COMPLETION order, for the degradation check below.
+        $script:lookupMs = @()
+
+        # The outcome dispatch + tri-state read + EmitDevice, MOVED VERBATIM from the old inline loop body.
+        # Counters use $script: scope so the pooled drain and the sequential loop accumulate into one set.
+        function Process-WugOutcome {
+            param($srv, $r)
+            if ($r.outcome -eq 'MatchedByName' -or $r.outcome -eq 'MatchedByIp') {
+                $match = $r.device
+                # Tri-state maintenance read. Absent state fields => UNKNOWN ($state stays $null).
+                # Presence MUST be tested via PSObject.Properties.Name -contains: on PS 5.1 an ABSENT
+                # property compares -eq 'Maintenance' to $false, silently faking a definite "not in
+                # maintenance". Only a present, non-empty field decides.
+                $state = $null
+                $hasBest  = $match.PSObject.Properties.Name -contains 'bestState'
+                $hasWorst = $match.PSObject.Properties.Name -contains 'worstState'
+                $bestSet  = $hasBest  -and -not [string]::IsNullOrWhiteSpace($match.bestState)
+                $worstSet = $hasWorst -and -not [string]::IsNullOrWhiteSpace($match.worstState)
+                if ($bestSet -or $worstSet) {
+                    # PS -eq is case-insensitive (free robustness); any non-Maintenance value (Up, Down,
+                    # Warning, ...) correctly reads as not-in-maintenance. The literal is server-version
+                    # dependent, so OR the two fields - they normally agree, and OR biases toward "in
+                    # maintenance".
+                    $state = ($match.bestState -eq 'Maintenance' -or $match.worstState -eq 'Maintenance')
+                }
+                # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
+                $script:devices += [ordered]@{ name = $srv; inMaintenance = $state }
+                $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state }
+                if ($r.outcome -eq 'MatchedByIp') { $dev.matchedByIp = $true; $script:matchedByIp++ }
+                EmitDevice $dev
+                $script:resolvedStates++
+            }
+            elseif ($r.outcome -eq 'LookupError') {
+                # A WUG search errored — state UNKNOWN, never a false "no matching device". Counted.
+                $script:lookupErrors++
+                if ($null -eq $script:firstErr) { $script:firstErr = $r.error }
+                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+            }
+            elseif ($r.outcome -eq 'Ambiguous') {
+                # Hits but nothing exact and no IP rescue — UNKNOWN, never $results[0]. Counted.
+                $script:ambiguous++
+                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+            }
+            else {
+                # NoDevice — a clean empty answer everywhere is the ONLY honest "no matching device".
+                $script:unmatched += $srv
+                EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null })
+            }
+        }
+
+        # Concurrency: absent / invalid => 1 (sequential). Clamp 1..4 in-script too — defence in depth on
+        # top of the C# ClampConcurrency, so a hand-edited env var can never open an unbounded pool.
+        $conc = 1
+        $rawConc = $env:VIVRE_WUG_CONCURRENCY
+        if ($rawConc) { $parsedConc = 0; if ([int]::TryParse($rawConc, [ref]$parsedConc)) { $conc = $parsedConc } }
+        if ($conc -lt 1) { $conc = 1 }
+        if ($conc -gt 4) { $conc = 4 }
+
+        try {
+            if ($conc -le 1) {
+                # SEQUENTIAL branch — today's behaviour exactly. Invoke-Expression of our own compiled-in
+                # literal defines the resolver functions HERE in the main scope (workers embed the same text
+                # instead of sharing them by reference). Concurrency 1 (the setting's floor, and the
+                # parameter default) lands here — byte-equivalent to the pre-pool sequential behaviour.
+                Invoke-Expression $resolverText
+                foreach ($srv in $names) {
+                    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+                    $r = Resolve-WugName $srv
+                    $sw.Stop()
+                    $script:lookupMs += $sw.Elapsed.TotalMilliseconds
+                    Process-WugOutcome $srv $r
+                }
+            }
+            else {
+                # POOLED branch. All four fan-out traps are honoured below.
+                # T1: .NET Framework defaults the per-host connection cap to 2 and the module never raises
+                #     it; without this a pool of ANY size silently throttles to 2 concurrent HTTP calls.
+                [System.Net.ServicePointManager]::DefaultConnectionLimit = 32
+
+                # T2: a runspace pool whose runspaces already have the module imported. The import is
+                #     CONDITIONAL so the test harness (module absent, stubs embedded in $resolverText shadow
+                #     it) still opens; in production the module-present check above already passed.
+                $iss = [initialsessionstate]::CreateDefault()
+                # Test seam: VIVRE_WUG_MODULE_OVERRIDE (never set in production) lets the process tests carry a
+                # lightweight stub module through this SAME ImportPSModule path instead of cold-loading the real
+                # WhatsUpGoldPS (~8s per runspace). ImportPSModule accepts a filesystem path as well as a name.
+                if ($env:VIVRE_WUG_MODULE_OVERRIDE) { $iss.ImportPSModule($env:VIVRE_WUG_MODULE_OVERRIDE) }
+                elseif (Get-Module -ListAvailable WhatsUpGoldPS) { $iss.ImportPSModule('WhatsUpGoldPS') }
+                $pool = [runspacefactory]::CreateRunspacePool(1, $conc, $iss, $Host)
+                $pool.Open()
+
+                # One worker script for every lookup (only the -SearchValue argument differs): param($srv),
+                # then the resolver text, then the per-runspace connect-guard tail. Single-quoted
+                # 'param($srv)' keeps $srv LITERAL so it binds to the AddArgument value, not this drain
+                # scope's loop variable.
+                $workerText = 'param($srv)' + "`n" + $resolverText + "`n" + $workerTail
+
+                try {
+                    $pending = [System.Collections.Generic.Queue[string]]::new()
+                    foreach ($n in $names) { $pending.Enqueue($n) }
+                    $inflight = [System.Collections.Generic.List[object]]::new()
+
+                    # COMPLETION-ORDER poll-drain: keep <= $conc in flight and emit each result as it
+                    # FINISHES — NOT submission-order EndInvoke (head-of-line blocking would starve stdout and
+                    # trip the external stall watchdog) and NOT WaitHandle.WaitAny (64-handle cap). T4:
+                    # PowerShell.Stop() is cooperative and cannot interrupt a blocked Invoke-RestMethod, so
+                    # there is deliberately NO per-lookup Stop() plumbing here — the C# stall watchdog +
+                    # ceiling stay the sole authority over a wedged run.
+                    while ($pending.Count -gt 0 -or $inflight.Count -gt 0) {
+                        while ($inflight.Count -lt $conc -and $pending.Count -gt 0) {
+                            $srv = $pending.Dequeue()
+                            $ps = [powershell]::Create()
+                            $ps.RunspacePool = $pool
+                            $null = $ps.AddScript($workerText).AddArgument($srv)
+                            $inflight.Add([pscustomobject]@{ Name = $srv; PS = $ps; Handle = $ps.BeginInvoke(); Sw = [System.Diagnostics.Stopwatch]::StartNew() })
+                        }
+
+                        $done = @($inflight | Where-Object { $_.Handle.IsCompleted })
+                        if ($done.Count -eq 0) {
+                            Start-Sleep -Milliseconds 100
+                            continue
+                        }
+                        foreach ($slot in $done) {
+                            $r = $null
+                            try {
+                                # T5: per-worker EndInvoke try/catch is MANDATORY. A THROW (worker connect
+                                # failure, stub throw, anything) becomes a LookupError-shaped outcome so ONE
+                                # bad lookup can never abort the other 323 — a thrown lookup reads UNKNOWN
+                                # (matched:true/inMaintenance:null downstream), never matched:false, never
+                                # unmatched (preserves the Bug-1 error-aware contract).
+                                $out = $slot.PS.EndInvoke($slot.Handle)
+                                $r = $out | Select-Object -Last 1
+                                if ($null -eq $r) { throw "the lookup produced no result" }
+                            }
+                            catch {
+                                $r = [ordered]@{ outcome = 'LookupError'; device = $null; viaIp = $false; hits = 0; error = "$($_.Exception.Message)" }
+                            }
+                            $slot.Sw.Stop()
+                            $script:lookupMs += $slot.Sw.Elapsed.TotalMilliseconds
+                            # EMISSION RULE: __WUGDEV__ lines are written ONLY here, on the main drain thread —
+                            # never from a PSDataCollection.DataAdded handler (fires on worker threads =>
+                            # multi-writer stdout) and never via [Console]::WriteLine anywhere.
+                            Process-WugOutcome $slot.Name $r
+                            $slot.PS.Dispose()
+                            [void]$inflight.Remove($slot)
+                        }
+                    }
+                }
+                finally {
+                    $pool.Close(); $pool.Dispose()
+                }
+            }
+        }
+        catch {
+            $result.error = "Connected, but couldn't search WhatsUp Gold devices: $($_.Exception.Message)."
+            Emit $result; return
+        }
+
+        # Keep devices an ARRAY even for a single entry - a bare scalar assignment serializes one device
+        # as a JSON object, not an array.
+        $result.devices = @($devices)
+        $result.unmatched = @($unmatched)
+        $result.lookupErrors = $lookupErrors
+        $result.ambiguous = $ambiguous
+        $result.matchedByIp = $matchedByIp
+        $result.ok = $true
+
+        # Latency visibility. baseline = mean of the first up-to-5 COMPLETED lookups; avg = mean of all.
+        # avgLookupMs / baselineLookupMs are FUTURE-PROOFING — the C# parser ignores them for now; the
+        # error text below is the operator-visible signal.
+        $avgMs = 0.0; $baseMs = 0.0
+        if ($script:lookupMs.Count -gt 0) {
+            $avgMs  = ($script:lookupMs | Measure-Object -Average).Average
+            $baseCount = [Math]::Min(5, $script:lookupMs.Count)
+            $baseMs = ($script:lookupMs | Select-Object -First $baseCount | Measure-Object -Average).Average
+        }
+        $result.avgLookupMs = [Math]::Round($avgMs, 1)
+        $result.baselineLookupMs = [Math]::Round($baseMs, 1)
+
+        # Summary honesty. A search error must not read as a clean green run: surface how many failed with
+        # the first captured reason (ok stays true if some resolved — the host logs an Error line whenever
+        # error is non-null). Otherwise the all-failed guard (the set path has one): if NOTHING produced a
+        # real state, say so instead of an empty clean summary.
+        if ($lookupErrors -gt 0) {
+            $result.error = "$lookupErrors of $($names.Count) lookups failed — $firstErr"
+        }
+        elseif ($resolvedStates -eq 0 -and $names.Count -gt 0) {
+            $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device ($($unmatched.Count) unmatched, $ambiguous ambiguous)."
+        }
+
+        # Degradation warning (APPENDED, never replacing the honesty text above). Floor at 50ms so instant
+        # stubs / sub-millisecond lookups don't trip the 2x ratio on pure jitter; a real WUG lookup is ~1s.
+        if ($baseMs -ge 50 -and $avgMs -gt (2 * $baseMs)) {
+            $slowMsg = "WUG lookups slowed during the run — avg {0:N1}s vs {1:N1}s baseline" -f ($avgMs / 1000), ($baseMs / 1000)
+            if ($conc -gt 1) { $slowMsg += " — consider lowering the concurrency setting" }
+            if ($result.error) { $result.error = "$($result.error); $slowMsg" } else { $result.error = $slowMsg }
+        }
+        Emit $result
+        """;
+
     // Emits ONE JSON summary line: { ok, devices[{ name, inMaintenance }], unmatched[], error,
-    // lookupErrors, ambiguous, matchedByIp } plus one streamed __WUGDEV__ line per device as it resolves.
-    // Reads server/user/pass + names from env vars — password NEVER on the command line. Read-only:
-    // it never sets maintenance. No __WUGP__ progress lines (the shared launcher has no progress plumbing).
-    // Built by concatenating the SHARED resolver (ResolveFunctionScript) into the body — see that const.
+    // lookupErrors, ambiguous, matchedByIp, avgLookupMs, baselineLookupMs } plus one streamed __WUGDEV__
+    // line per device as it resolves. Reads server/user/pass + names from env vars — password NEVER on the
+    // command line. Read-only: it never sets maintenance. No __WUGP__ progress lines (the shared launcher
+    // has no progress plumbing).
+    //
+    // Composition (the recomposed streaming/pooled seam):
+    //   HEAD (Emit/EmitDevice, env reads, $result init, trap, module check, Import, credential, Connect —
+    //         the main-runspace connect stays FIRST: it validates + installs the process-wide TLS callback
+    //         before any fan-out and keeps the early-exit error paths)
+    //   + $resolverText = @'  <the ONE ResolveFunctionScript>  '@   (single-quoted here-string; ONE copy
+    //         serves both branches — the sequential branch IEXes it, each pooled worker embeds it; NO fork)
+    //   + $workerTail = @'    <StateWorkerTailBody>              '@
+    //   + StateResolveLoopScript (defines Process-WugOutcome + the sequential/pooled dispatch + summary)
+    // VIVRE_WUG_CONCURRENCY (absent => 1 => sequential) selects the branch.
     internal static readonly string StateScript =
         """
         $ErrorActionPreference = 'Stop'
@@ -607,90 +870,12 @@ public static class WugMaintenance
         }
 
         """
-        + ResolveFunctionScript + "\n" +
-        """
-        # 5. Resolve each machine via the SHARED resolver, then read its tri-state maintenance. The resolver
-        #    never guesses: MatchedByName/ByIp carry a real device; LookupError and Ambiguous emit
-        #    matched:true / inMaintenance:null (row reads "state unknown" — honest "couldn't pin it down"),
-        #    NOT a false "no matching device"; only a clean NoDevice is matched:false.
-        $devices = @()
-        $unmatched = @()
-        $lookupErrors = 0
-        $ambiguous = 0
-        $matchedByIp = 0
-        $resolvedStates = 0
-        $firstErr = $null
-        try {
-            foreach ($srv in $names) {
-                $r = Resolve-WugName $srv
-                if ($r.outcome -eq 'MatchedByName' -or $r.outcome -eq 'MatchedByIp') {
-                    $match = $r.device
-                    # Tri-state maintenance read. Absent state fields => UNKNOWN ($state stays $null).
-                    # Presence MUST be tested via PSObject.Properties.Name -contains: on PS 5.1 an ABSENT
-                    # property compares -eq 'Maintenance' to $false, silently faking a definite "not in
-                    # maintenance". Only a present, non-empty field decides.
-                    $state = $null
-                    $hasBest  = $match.PSObject.Properties.Name -contains 'bestState'
-                    $hasWorst = $match.PSObject.Properties.Name -contains 'worstState'
-                    $bestSet  = $hasBest  -and -not [string]::IsNullOrWhiteSpace($match.bestState)
-                    $worstSet = $hasWorst -and -not [string]::IsNullOrWhiteSpace($match.worstState)
-                    if ($bestSet -or $worstSet) {
-                        # PS -eq is case-insensitive (free robustness); any non-Maintenance value (Up, Down,
-                        # Warning, ...) correctly reads as not-in-maintenance. The literal is server-version
-                        # dependent, so OR the two fields - they normally agree, and OR biases toward "in
-                        # maintenance".
-                        $state = ($match.bestState -eq 'Maintenance' -or $match.worstState -eq 'Maintenance')
-                    }
-                    # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
-                    $devices += [ordered]@{ name = $srv; inMaintenance = $state }
-                    $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state }
-                    if ($r.outcome -eq 'MatchedByIp') { $dev.matchedByIp = $true; $matchedByIp++ }
-                    EmitDevice $dev
-                    $resolvedStates++
-                }
-                elseif ($r.outcome -eq 'LookupError') {
-                    # A WUG search errored — state UNKNOWN, never a false "no matching device". Counted.
-                    $lookupErrors++
-                    if ($null -eq $firstErr) { $firstErr = $r.error }
-                    EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
-                }
-                elseif ($r.outcome -eq 'Ambiguous') {
-                    # Hits but nothing exact and no IP rescue — UNKNOWN, never $results[0]. Counted.
-                    $ambiguous++
-                    EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
-                }
-                else {
-                    # NoDevice — a clean empty answer everywhere is the ONLY honest "no matching device".
-                    $unmatched += $srv
-                    EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null })
-                }
-            }
-        } catch {
-            $result.error = "Connected, but couldn't search WhatsUp Gold devices: $($_.Exception.Message)."
-            Emit $result; return
-        }
-
-        # Keep devices an ARRAY even for a single entry - a bare scalar assignment serializes one device
-        # as a JSON object, not an array.
-        $result.devices = @($devices)
-        $result.unmatched = @($unmatched)
-        $result.lookupErrors = $lookupErrors
-        $result.ambiguous = $ambiguous
-        $result.matchedByIp = $matchedByIp
-        $result.ok = $true
-
-        # Summary honesty. A search error must not read as a clean green run: surface how many failed with
-        # the first captured reason (ok stays true if some resolved — the host logs an Error line whenever
-        # error is non-null). Otherwise, the missing all-failed guard (the set path has one): if NOTHING
-        # produced a real state, say so instead of an empty clean summary.
-        if ($lookupErrors -gt 0) {
-            $result.error = "$lookupErrors of $($names.Count) lookups failed — $firstErr"
-        }
-        elseif ($resolvedStates -eq 0 -and $names.Count -gt 0) {
-            $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device ($($unmatched.Count) unmatched, $ambiguous ambiguous)."
-        }
-        Emit $result
-        """;
+        // The ONE resolver, single-sourced into a single-quoted here-string (literal — no compose-time
+        // expansion). Explicit "\n" fencing puts @' at line end and '@ at column 0 regardless of C#
+        // indentation; ResolveFunctionScript contains no line beginning with '@.
+        + "$resolverText = @'\n" + ResolveFunctionScript + "\n'@\n"
+        + "$workerTail = @'\n" + StateWorkerTailBody + "\n'@\n"
+        + StateResolveLoopScript;
 
     // ── Shared process-launch helper (TestConnectionAsync + InstallModuleAsync + GetMaintenanceStateAsync) ──
 
@@ -935,6 +1120,10 @@ public static class WugMaintenance
     /// <para>FAILS OPEN: a launch / timeout / stall / parse failure never fabricates a "not in
     /// maintenance". An aborted read now KEEPS the per-device results already streamed and names the last
     /// machine that resolved in the error, rather than discarding everything.</para>
+    /// <para><paramref name="concurrency"/> is how many per-name lookups the on-host script runs in
+    /// parallel (clamped to [1, <see cref="StateReadMaxConcurrency"/>]). It DEFAULTS to 1 (sequential) —
+    /// the ViewModel wrapper passes the operator's Settings value (default 2) at call time; 1 = the
+    /// pre-pool sequential path.</para>
     /// </summary>
     public static async Task<WugMaintenanceStateResult> GetMaintenanceStateAsync(
         IReadOnlyList<string> names,
@@ -944,7 +1133,8 @@ public static class WugMaintenance
         TimeSpan timeout,
         CancellationToken ct = default,
         IProgress<WugDeviceState>? deviceProgress = null,
-        TimeSpan? stallTimeout = null)
+        TimeSpan? stallTimeout = null,
+        int concurrency = 1)
     {
         var env = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -952,6 +1142,8 @@ public static class WugMaintenance
             ["VIVRE_WUG_SERVER"] = server,
             ["VIVRE_WUG_USER"]   = username,
             ["VIVRE_WUG_PASS"]   = password,   // password reaches the child via env var ONLY
+            // Clamped here AND re-clamped in-script (defence in depth). 1 => the sequential branch.
+            ["VIVRE_WUG_CONCURRENCY"] = ClampConcurrency(concurrency).ToString(CultureInfo.InvariantCulture),
         };
 
         // Partial state assembled from the streamed per-device lines so an aborted read (stall / ceiling /

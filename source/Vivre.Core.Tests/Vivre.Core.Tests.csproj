@@ -23,6 +23,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Committed stub .psm1 fixture for the WUG pool process tests: copied to the test output so it can
+         be imported by path through the SAME ISS.ImportPSModule seam as the real WhatsUpGoldPS (via the
+         VIVRE_WUG_MODULE_OVERRIDE test seam), skipping the real module's ~8s-per-runspace cold-load. -->
+    <None Include="Wug\Fixtures\WugStubModule.psm1" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The agent is net48 and can't be ProjectReferenced from net10, so link its PURE,
          dependency-free pieces to unit-test them here:
            - BootServicingState: the boot-busy decision (no registry/IO/COM deps).

@@ -6023,6 +6023,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         try
         {
             string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
+            // Read the operator's concurrency setting at call time (like CurrentInstallThrottle) so a check
+            // uses the value in effect when it launches; core + the script own the [1,4] clamp, so pass raw.
+            int concurrency = _appSettings.Load().WugStateConcurrency;
             // Amendment 2 — once results stream, "a line arrived recently" is the health signal: the 90s
             // stall watchdog catches a wedge, and the ceiling is a runaway backstop sized so it cannot fire
             // on a healthy 324-box run; a total cap that guillotines a slow-but-working run is exactly what
@@ -6030,7 +6033,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return await Vivre.Core.Wug.WugMaintenance.GetMaintenanceStateAsync(
                 names, server, username, plain,
                 Vivre.Core.Wug.WugMaintenance.StateReadCeiling, token, deviceProgress,
-                Vivre.Core.Wug.WugMaintenance.StateReadStallTimeout).ConfigureAwait(false);
+                Vivre.Core.Wug.WugMaintenance.StateReadStallTimeout,
+                concurrency: concurrency).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
