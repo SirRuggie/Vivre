@@ -29,17 +29,26 @@ public sealed record WugPreflightResult(bool ModulePresent, bool Connected, stri
 /// </param>
 /// <param name="Unmatched">Input names that didn't map to a WUG device.</param>
 /// <param name="Error">A human-readable failure reason, or null when the read succeeded.</param>
+/// <param name="LookupErrors">How many names hit a WUG search error (state unknown, NOT "no device").</param>
+/// <param name="Ambiguous">How many names had hits but no confident exact match (unknown, never guessed).</param>
+/// <param name="MatchedByIp">How many names resolved only via the DNS→IP fall-through.</param>
 public sealed record WugMaintenanceStateResult(
     IReadOnlyDictionary<string, bool?> ByName,   // null = unknown
     IReadOnlyList<string> Unmatched,
-    string? Error);
+    string? Error,
+    int LookupErrors = 0,
+    int Ambiguous = 0,
+    int MatchedByIp = 0);
 
 /// <summary>
 /// One per-device result streamed from the maintenance-state read as each name resolves.
-/// <paramref name="Matched"/> = false means no WUG device matched the input <paramref name="Name"/>;
+/// <paramref name="Matched"/> means the row shows a state or "unknown" (true) rather than
+/// "no matching device" (false) — a lookup error or an ambiguous name is <c>Matched=true</c> with
+/// <c>InMaintenance=null</c> (state unknown), NOT a false "no matching device".
 /// <paramref name="InMaintenance"/> null = unknown (the state couldn't be read — never assumed false).
+/// <paramref name="MatchedByIp"/> = true when the name resolved only via the DNS→IP fall-through.
 /// </summary>
-public sealed record WugDeviceState(string Name, bool Matched, bool? InMaintenance);
+public sealed record WugDeviceState(string Name, bool Matched, bool? InMaintenance, bool MatchedByIp = false);
 
 /// <summary>
 /// Sets WhatsUp Gold maintenance mode for a set of machines via the <c>WhatsUpGoldPS</c> module — an
@@ -54,9 +63,118 @@ public sealed record WugDeviceState(string Name, bool Matched, bool? InMaintenan
 /// </summary>
 public static class WugMaintenance
 {
+    // ── Shared per-name resolver (SINGLE-SOURCED into BOTH Script and StateScript) ─────────────────
+    //
+    // The one place that turns an input machine name into a WUG device, so the set path and the state
+    // read can NEVER diverge on how a name is matched. Defines three functions and RUNS nothing (safe to
+    // splice anywhere before Import-Module; it depends on Get-WUGDevice only at call time):
+    //
+    //   Resolve-WugDnsAddress  — first IPv4 for a name, or $null. OVERRIDABLE: a test can redefine it
+    //                            after this block to return a canned IP / $null (last definition wins).
+    //   Test-WugNameMatch      — normalized dot-boundary name match (the replacement for the dead
+    //                            `$_.displayName -eq $srv` verify, which is null for FQDN-registered fleets).
+    //   Resolve-WugName        — the control flow: error-aware name search → exact name match → DNS→IP
+    //                            fall-through → exact IP match, with honest outcomes and NO silent [0].
+    //
+    // Outcome is one of: MatchedByName | MatchedByIp | NoDevice | Ambiguous | LookupError.
+    internal const string ResolveFunctionScript = """
+        # First IPv4 address for $name, or $null. Wrapped in a function so tests can stub it.
+        function Resolve-WugDnsAddress {
+            param($name)
+            try {
+                return [System.Net.Dns]::GetHostAddresses($name) |
+                       Where-Object AddressFamily -eq 'InterNetwork' |
+                       Select-Object -First 1 -ExpandProperty IPAddressToString
+            } catch { return $null }
+        }
+
+        # Normalized, case-insensitive, DOT-BOUNDARY name match. Replaces the dead exact-verify: WUG
+        # registers devices FQDN ($_.name = "APVHOP.EMPLOYEES.ROOT.local"), $_.hostName is sometimes bare
+        # ("APVWUG") sometimes FQDN, and $_.displayName is often ABSENT — so the old `displayName -eq $srv`
+        # matched nothing and $results[0] was the de-facto pick. Compares $query against name/hostName/
+        # displayName (each PRESENCE-guarded — a missing property must never satisfy OR throw) plus a
+        # networkAddress equality clause for IP-literal inputs. Dot boundary rejects prefix collisions:
+        # "APVSQL1" must NOT match "APVSQL10.domain". [string]::StartsWith (NOT -like) avoids wildcard injection.
+        function Test-WugNameMatch {
+            param($query, $device)
+            $q = ([string]$query).TrimEnd('.')
+            foreach ($prop in 'name','hostName','displayName') {
+                if ($device.PSObject.Properties.Name -contains $prop) {
+                    $val = $device.$prop
+                    if (-not [string]::IsNullOrWhiteSpace($val)) {
+                        $stored = ([string]$val).TrimEnd('.')
+                        if ([string]::Equals($stored, $q, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                        # stored startswith query+"." : bare input vs FQDN store  ("APVHOP" ~ "APVHOP.EMPLOYEES.ROOT.local")
+                        if ($stored.StartsWith($q + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                        # query startswith stored+"." : FQDN input vs bare store
+                        if ($q.StartsWith($stored + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                    }
+                }
+            }
+            # Fourth clause: an IP-literal input equals the device's networkAddress (presence-guarded).
+            if ($device.PSObject.Properties.Name -contains 'networkAddress') {
+                if ($device.networkAddress -eq $query) { return $true }
+            }
+            return $false
+        }
+
+        # Resolve ONE input name to a WUG device, honestly. Returns [ordered]@{ outcome; device; viaIp; hits; error }.
+        # Control flow (a currently-working lookup still resolves via name-exact OR ip-exact):
+        #   1. Name search (error-aware). A CAPTURED ERROR => LookupError immediately (never a false no-match,
+        #      never a second call to a struggling server).
+        #   2. Clean hits with a normalized-exact match => MatchedByName (first exact if several).
+        #   3. Clean (hits-no-exact OR empty) and NOT an IP literal => DNS→IP => IP search (error-aware) =>
+        #      exact networkAddress match => MatchedByIp. NO $results2[0] fallback.
+        #   4. Saw hits anywhere but pinned nothing => Ambiguous (unknown, never [0]).
+        #      Nothing seen anywhere => NoDevice (the ONLY honest "no matching device").
+        function Resolve-WugName {
+            param($query)
+            $out = [ordered]@{ outcome = 'NoDevice'; device = $null; viaIp = $false; hits = 0; error = $null }
+            $sawHits = $false
+
+            # 1. Name search. -ErrorVariable (no '+' => reset per call) captures a search error even under
+            #    -ErrorAction SilentlyContinue; an errored search is NOT a clean no-match.
+            $nameErr = $null
+            $results = @(Get-WUGDevice -SearchValue $query -View overview -ErrorAction SilentlyContinue -ErrorVariable nameErr)
+            if ($nameErr -and $nameErr.Count -gt 0) {
+                $out.outcome = 'LookupError'; $out.error = "$($nameErr[0])"; return $out
+            }
+            $out.hits = $results.Count
+            if ($results.Count -gt 0) {
+                $sawHits = $true
+                $exact = $results | Where-Object { Test-WugNameMatch $query $_ } | Select-Object -First 1
+                if ($exact) { $out.outcome = 'MatchedByName'; $out.device = $exact; return $out }
+            }
+
+            # 3. IP fall-through from BOTH the empty and the hits-no-exact branches (the renamed-box rescue) —
+            #    unless the input is itself an IP literal (nothing to resolve).
+            if ($query -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') {
+                $ip = Resolve-WugDnsAddress $query
+                if ($ip) {
+                    $ipErr = $null
+                    $results2 = @(Get-WUGDevice -SearchValue $ip -View overview -ErrorAction SilentlyContinue -ErrorVariable ipErr)
+                    if ($ipErr -and $ipErr.Count -gt 0) {
+                        $out.outcome = 'LookupError'; $out.error = "$($ipErr[0])"; return $out
+                    }
+                    if ($results2.Count -gt 0) {
+                        $sawHits = $true
+                        $ipMatch = $results2 | Where-Object { $_.networkAddress -eq $ip } | Select-Object -First 1
+                        if ($ipMatch) { $out.outcome = 'MatchedByIp'; $out.device = $ipMatch; $out.viaIp = $true; return $out }
+                    }
+                }
+            }
+
+            # 4. Saw hits but pinned nothing => Ambiguous; nothing seen anywhere => NoDevice.
+            if ($sawHits) { $out.outcome = 'Ambiguous' } else { $out.outcome = 'NoDevice' }
+            return $out
+        }
+        """;
+
     // The on-host run, reading its inputs from environment variables (so the password never appears
     // on a command line). Emits a single JSON result object: { ok, devicesSet, unmatched[], error }.
-    private const string Script = """
+    // Built by concatenating the SHARED resolver (ResolveFunctionScript) into the body — see that const.
+    internal static readonly string Script =
+        """
         $ErrorActionPreference = 'Stop'
         $result = [ordered]@{ ok = $false; devicesSet = 0; unmatched = @(); error = $null }
         function Emit($r) { $r | ConvertTo-Json -Compress -Depth 4 }
@@ -111,44 +229,40 @@ public static class WugMaintenance
             Emit $result; return
         }
 
-        # 3. Resolve each machine to its WUG DeviceId with a targeted SearchValue lookup - one call per
-        #    entry, NOT a full inventory pull (which is slow on a large WUG install). SearchValue takes a
-        #    hostname or IP; on a miss for a name we DNS-resolve and retry by IP. Mirrors the proven
-        #    standalone Set-WUGMaintenanceMode_SearchValue script.
+        """
+        + ResolveFunctionScript + "\n" +
+        """
+        # 3. Resolve each machine to its WUG DeviceId via the SHARED resolver — one targeted SearchValue
+        #    lookup per entry, NOT a full inventory pull. The resolver is error-aware and never guesses:
+        #    LookupError / Ambiguous machines are EXCLUDED from unmatched (an errored / unpinned lookup is
+        #    NOT a proven "no matching device"), and folded into a fail-safe honesty report below.
         $deviceIds = @()
         $unmatched = @()
+        $lookupErrors = 0
+        $ambiguousCount = 0
+        $firstErr = $null
         $total = $names.Count
         $i = 0
         try {
             foreach ($srv in $names) {
                 $i++
                 Progress "Looking up $srv ($i of $total)..."
-                $match = $null
-
-                $results = @(Get-WUGDevice -SearchValue $srv -View overview -ErrorAction SilentlyContinue)
-                if ($results.Count -gt 0) {
-                    # Prefer an exact hit on name or IP; fall back to the first result.
-                    $match = $results | Where-Object { $_.displayName -eq $srv -or $_.networkAddress -eq $srv } | Select-Object -First 1
-                    if (-not $match) { $match = $results[0] }
+                $r = Resolve-WugName $srv
+                if ($r.outcome -eq 'MatchedByName' -or $r.outcome -eq 'MatchedByIp') {
+                    if ($r.viaIp) { Progress "  $srv matched by IP" }
+                    $deviceIds += $r.device.id
                 }
-                elseif ($srv -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') {
-                    # A name with no direct hit - resolve to IP and search again by address.
-                    try {
-                        $ip = [System.Net.Dns]::GetHostAddresses($srv) |
-                              Where-Object AddressFamily -eq 'InterNetwork' |
-                              Select-Object -First 1 -ExpandProperty IPAddressToString
-                    } catch { $ip = $null }
-                    if ($ip) {
-                        Progress "  $srv resolved to $ip, retrying..."
-                        $results2 = @(Get-WUGDevice -SearchValue $ip -View overview -ErrorAction SilentlyContinue)
-                        if ($results2.Count -gt 0) {
-                            $match = $results2 | Where-Object { $_.networkAddress -eq $ip } | Select-Object -First 1
-                            if (-not $match) { $match = $results2[0] }
-                        }
-                    }
+                elseif ($r.outcome -eq 'LookupError') {
+                    $lookupErrors++
+                    if ($null -eq $firstErr) { $firstErr = $r.error }
                 }
-
-                if ($null -ne $match) { $deviceIds += $match.id } else { $unmatched += $srv }
+                elseif ($r.outcome -eq 'Ambiguous') {
+                    $ambiguousCount++
+                }
+                else {
+                    # NoDevice — the only proven clean-empty miss.
+                    $unmatched += $srv
+                }
             }
         } catch {
             $result.error = "Connected, but couldn't search WhatsUp Gold devices: $($_.Exception.Message)."
@@ -157,8 +271,15 @@ public static class WugMaintenance
 
         $result.unmatched = @($unmatched)
 
+        # All-nothing-mapped guard: keep the honest wording, but NEVER say "no matching device" for boxes
+        # that actually errored / were ambiguous — that's the false-negative this fix forbids.
         if ($deviceIds.Count -eq 0) {
-            $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device. Unmatched: $($unmatched -join ', ')."
+            if ($lookupErrors -gt 0 -or $ambiguousCount -gt 0) {
+                $failed = $lookupErrors + $ambiguousCount
+                $result.error = "$failed of $($names.Count) machine(s) couldn't be looked up ($lookupErrors errored, $ambiguousCount ambiguous) — 0 device(s) were set; re-run to cover the rest."
+            } else {
+                $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device. Unmatched: $($unmatched -join ', ')."
+            }
             Emit $result; return
         }
 
@@ -170,6 +291,16 @@ public static class WugMaintenance
             $result.devicesSet = $deviceIds.Count
         } catch {
             $result.error = "Mapped $($deviceIds.Count) device(s), but Set-WUGDeviceMaintenance failed: $($_.Exception.Message)."
+        }
+
+        # FAIL-SAFE honesty: any lookup we couldn't complete (errored or ambiguous) makes the run report
+        # FAILURE with exact counts — setting maintenance twice is idempotent, so over-reporting failure is
+        # the safe direction; the one forbidden direction is silently claiming "set" for a box we never
+        # cleanly looked up. Doesn't clobber a genuine Set-WUGDeviceMaintenance failure already recorded.
+        if (($lookupErrors -gt 0 -or $ambiguousCount -gt 0) -and $null -eq $result.error) {
+            $failed = $lookupErrors + $ambiguousCount
+            $result.ok = $false
+            $result.error = "$failed of $($names.Count) machine(s) couldn't be looked up ($lookupErrors errored, $ambiguousCount ambiguous) — $($result.devicesSet) device(s) were still set; re-run to cover the rest."
         }
 
         Emit $result
@@ -416,23 +547,29 @@ public static class WugMaintenance
 
     // ── Maintenance-state read: read-only per-machine "in maintenance?" tri-state ─────────────────
 
-    // Emits ONE JSON line: { ok, devices[{ name, inMaintenance }], unmatched[], error }.
+    // Emits ONE JSON summary line: { ok, devices[{ name, inMaintenance }], unmatched[], error,
+    // lookupErrors, ambiguous, matchedByIp } plus one streamed __WUGDEV__ line per device as it resolves.
     // Reads server/user/pass + names from env vars — password NEVER on the command line. Read-only:
     // it never sets maintenance. No __WUGP__ progress lines (the shared launcher has no progress plumbing).
-    private const string StateScript = """
+    // Built by concatenating the SHARED resolver (ResolveFunctionScript) into the body — see that const.
+    internal static readonly string StateScript =
+        """
         $ErrorActionPreference = 'Stop'
         # Tag the result line with a unique marker so the host extracts EXACTLY it, immune to any banner /
         # warning / object text a cmdlet might print to stdout (see ParseMaintenanceState).
         function Emit($r) { Write-Output ("__WUGRESULT__" + ($r | ConvertTo-Json -Compress -Depth 4)) }
         # Stream one result line per device AS it resolves, so a long run shows progress and an aborted
-        # read keeps what already came back. JSON per line is load-bearing: 5.1's ConvertTo-Json escapes
-        # non-ASCII to \uXXXX so the payload is pure ASCII on the wire, immune to the OEM code page of
-        # redirected stdout; never switch to a raw delimited format.
+        # read keeps what already came back. `matched` here means the row shows a STATE or "unknown" (true)
+        # rather than "no matching device" (false): a lookup error or an ambiguous name is matched:true with
+        # inMaintenance:null (state unknown), NEVER a false "no matching device". matchedByIp is emitted only
+        # when true. JSON per line is load-bearing: 5.1's ConvertTo-Json escapes non-ASCII to \uXXXX so the
+        # payload is pure ASCII on the wire, immune to the OEM code page of redirected stdout; never switch
+        # to a raw delimited format.
         function EmitDevice($e) { Write-Output ("__WUGDEV__" + ($e | ConvertTo-Json -Compress -Depth 3)) }
 
         $names  = @($env:VIVRE_WUG_NAMES -split "`n" | ForEach-Object { $_.Trim() } | Where-Object { $_ })
         $server = $env:VIVRE_WUG_SERVER
-        $result = [ordered]@{ ok = $false; devices = @(); unmatched = @(); error = $null }
+        $result = [ordered]@{ ok = $false; devices = @(); unmatched = @(); error = $null; lookupErrors = 0; ambiguous = 0; matchedByIp = 0 }
 
         # Backstop: any terminating error OUTSIDE the per-stage try/catch still emits a structured result,
         # so a downstream failure is never dropped and misread by the host as a definite state.
@@ -469,38 +606,25 @@ public static class WugMaintenance
             Emit $result; return
         }
 
-        # 5. Resolve each machine to its WUG device with a targeted SearchValue lookup - one call per
-        #    entry, NOT a full inventory pull. SearchValue takes a hostname or IP; on a name miss we
-        #    DNS-resolve and retry by IP. Mirrors the main script's resolution loop.
+        """
+        + ResolveFunctionScript + "\n" +
+        """
+        # 5. Resolve each machine via the SHARED resolver, then read its tri-state maintenance. The resolver
+        #    never guesses: MatchedByName/ByIp carry a real device; LookupError and Ambiguous emit
+        #    matched:true / inMaintenance:null (row reads "state unknown" — honest "couldn't pin it down"),
+        #    NOT a false "no matching device"; only a clean NoDevice is matched:false.
         $devices = @()
         $unmatched = @()
+        $lookupErrors = 0
+        $ambiguous = 0
+        $matchedByIp = 0
+        $resolvedStates = 0
+        $firstErr = $null
         try {
             foreach ($srv in $names) {
-                $match = $null
-
-                $results = @(Get-WUGDevice -SearchValue $srv -View overview -ErrorAction SilentlyContinue)
-                if ($results.Count -gt 0) {
-                    # Prefer an exact hit on name or IP; fall back to the first result.
-                    $match = $results | Where-Object { $_.displayName -eq $srv -or $_.networkAddress -eq $srv } | Select-Object -First 1
-                    if (-not $match) { $match = $results[0] }
-                }
-                elseif ($srv -notmatch '^(?:\d{1,3}\.){3}\d{1,3}$') {
-                    # A name with no direct hit - resolve to IP and search again by address.
-                    try {
-                        $ip = [System.Net.Dns]::GetHostAddresses($srv) |
-                              Where-Object AddressFamily -eq 'InterNetwork' |
-                              Select-Object -First 1 -ExpandProperty IPAddressToString
-                    } catch { $ip = $null }
-                    if ($ip) {
-                        $results2 = @(Get-WUGDevice -SearchValue $ip -View overview -ErrorAction SilentlyContinue)
-                        if ($results2.Count -gt 0) {
-                            $match = $results2 | Where-Object { $_.networkAddress -eq $ip } | Select-Object -First 1
-                            if (-not $match) { $match = $results2[0] }
-                        }
-                    }
-                }
-
-                if ($null -ne $match) {
+                $r = Resolve-WugName $srv
+                if ($r.outcome -eq 'MatchedByName' -or $r.outcome -eq 'MatchedByIp') {
+                    $match = $r.device
                     # Tri-state maintenance read. Absent state fields => UNKNOWN ($state stays $null).
                     # Presence MUST be tested via PSObject.Properties.Name -contains: on PS 5.1 an ABSENT
                     # property compares -eq 'Maintenance' to $false, silently faking a definite "not in
@@ -519,8 +643,24 @@ public static class WugMaintenance
                     }
                     # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
                     $devices += [ordered]@{ name = $srv; inMaintenance = $state }
-                    EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $state })
-                } else {
+                    $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state }
+                    if ($r.outcome -eq 'MatchedByIp') { $dev.matchedByIp = $true; $matchedByIp++ }
+                    EmitDevice $dev
+                    $resolvedStates++
+                }
+                elseif ($r.outcome -eq 'LookupError') {
+                    # A WUG search errored — state UNKNOWN, never a false "no matching device". Counted.
+                    $lookupErrors++
+                    if ($null -eq $firstErr) { $firstErr = $r.error }
+                    EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+                }
+                elseif ($r.outcome -eq 'Ambiguous') {
+                    # Hits but nothing exact and no IP rescue — UNKNOWN, never $results[0]. Counted.
+                    $ambiguous++
+                    EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+                }
+                else {
+                    # NoDevice — a clean empty answer everywhere is the ONLY honest "no matching device".
                     $unmatched += $srv
                     EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null })
                 }
@@ -534,7 +674,21 @@ public static class WugMaintenance
         # as a JSON object, not an array.
         $result.devices = @($devices)
         $result.unmatched = @($unmatched)
+        $result.lookupErrors = $lookupErrors
+        $result.ambiguous = $ambiguous
+        $result.matchedByIp = $matchedByIp
         $result.ok = $true
+
+        # Summary honesty. A search error must not read as a clean green run: surface how many failed with
+        # the first captured reason (ok stays true if some resolved — the host logs an Error line whenever
+        # error is non-null). Otherwise, the missing all-failed guard (the set path has one): if NOTHING
+        # produced a real state, say so instead of an empty clean summary.
+        if ($lookupErrors -gt 0) {
+            $result.error = "$lookupErrors of $($names.Count) lookups failed — $firstErr"
+        }
+        elseif ($resolvedStates -eq 0 -and $names.Count -gt 0) {
+            $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device ($($unmatched.Count) unmatched, $ambiguous ambiguous)."
+        }
         Emit $result
         """;
 
@@ -1046,7 +1200,13 @@ public static class WugMaintenance
                 ? eEl.GetString()
                 : null;
 
-            return new WugMaintenanceStateResult(byName, unmatched, error);
+            // New honesty counts (absent => 0 for back-compat with pre-fix summaries). Guard ValueKind so
+            // a non-number never throws through the JsonException-only catch.
+            int lookupErrors = ReadCount(root, "lookupErrors");
+            int ambiguous    = ReadCount(root, "ambiguous");
+            int matchedByIp  = ReadCount(root, "matchedByIp");
+
+            return new WugMaintenanceStateResult(byName, unmatched, error, lookupErrors, ambiguous, matchedByIp);
         }
         catch (JsonException)
         {
@@ -1054,6 +1214,12 @@ public static class WugMaintenance
             return new WugMaintenanceStateResult(byName, [], detail);
         }
     }
+
+    // Reads an optional non-negative integer summary count; absent / non-number => 0. Never throws.
+    private static int ReadCount(JsonElement root, string name)
+        => root.TryGetProperty(name, out JsonElement el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out int v)
+            ? v
+            : 0;
 
     // Adds one device entry to the tri-state map: the name must be a string (skip the entry otherwise);
     // inMaintenance True/False map to true/false, and anything else (absent, null, string, number) to
@@ -1125,7 +1291,10 @@ public static class WugMaintenance
                 }
                 : null;
 
-            return new WugDeviceState(nameEl.GetString()!, matched, inMaintenance);
+            // Optional, present only when true. JSON true => true; absent / null / any other shape => false.
+            bool matchedByIp = root.TryGetProperty("matchedByIp", out JsonElement ipEl) && ipEl.ValueKind == JsonValueKind.True;
+
+            return new WugDeviceState(nameEl.GetString()!, matched, inMaintenance, matchedByIp);
         }
         catch (JsonException)
         {

@@ -16,6 +16,18 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **A WhatsUp Gold server error during the state check no longer reads as a clean "no matching
+  device".** If a device lookup hits a WUG error mid-run, that machine now shows **state unknown**
+  instead of the misleading "no matching device", and the run summary says how many lookups failed —
+  a struggling server can no longer masquerade as a fleet of ghosts.
+- **The state check no longer silently guesses when several WUG devices match a name.** It now
+  exact-matches your machine's name (with or without the domain suffix) and, if that can't pin it
+  down, falls back to the machine's IP. A name that still can't be pinned to one device reads
+  **unknown** — never another machine's maintenance state pulled from the first search hit.
+- **The maintenance set now reports honestly when lookups fail mid-run** instead of marking those
+  machines "no matching device". If any lookup errors out or can't be pinned to one device, the run
+  reports failure with exact counts (how many couldn't be looked up, how many were still set) — and
+  re-running is safe, since setting maintenance twice does no harm.
 - **Cancelling a WhatsUp Gold maintenance set now actually stops it.** Before, pressing Cancel let the
   background work keep running — it could still flip a machine's maintenance in WUG *after* the app had
   already said "cancelled". The background process is now killed the moment you cancel, so nothing
