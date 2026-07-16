@@ -22,6 +22,10 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **One long error, status or command result no longer stretches the whole Health grid.** The Last
+  error, Last status and Command result columns now cap their width and trim the overflow with "…",
+  with the full text available on hover — so a single verbose message can't push the other columns
+  off-screen.
 - **The two Settings number boxes — "Max simultaneous installs" and "WhatsUp Gold state check —
   simultaneous lookups" — can now be typed into normally.** Before, every keystroke that passed
   through an out-of-range value snapped the box back instantly (typing "5" then "0" then "9" reverted
