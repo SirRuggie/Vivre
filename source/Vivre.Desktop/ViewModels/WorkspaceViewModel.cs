@@ -100,6 +100,7 @@ public sealed record LcuStageReadiness(
 public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisposable
 {
     private const int PingTimeoutMs = 2000;
+    private const string OfflineNameNoResolveStatus = "Offline — name doesn't resolve";
     private const int MonitorIntervalSeconds = 20;
 
     private readonly IHostPinger _pinger;
@@ -3088,7 +3089,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         bool? reachable = computer.IsOnline;
         if (reachable is null)
         {
-            (bool online, _) = await ProbeReachabilityAsync(computer, token);
+            (bool online, _, _) = await ProbeReachabilityAsync(computer, token);
             reachable = online;
             computer.IsOnline = online;
             computer.LastStatus = online ? "Online" : "Offline";
@@ -4637,10 +4638,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.LastStatus = "Pinging…";
         try
         {
-            (bool online, string? error) = await ProbeReachabilityAsync(computer, token);
+            (bool online, string? error, PingErrorKind kind) = await ProbeReachabilityAsync(computer, token);
             computer.IsOnline = online;
-            computer.LastStatus = online ? "Online" : "Offline";
-            computer.LastError = online ? null : error;
+            // A name-resolution failure IS the offline state, not an error — a calm status and an empty
+            // error cell (keeping it out of the Errors filter). The raw reason still goes to the activity
+            // log below. Any other offline reason keeps its scary error text.
+            computer.LastStatus = online ? "Online" : kind == PingErrorKind.NameResolution ? OfflineNameNoResolveStatus : "Offline";
+            computer.LastError = online || kind == PingErrorKind.NameResolution ? null : error;
             if (online)
             {
                 // If the monitor was stopped while this box was down, a stale "Offline since …" reboot
@@ -4667,25 +4671,33 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>
     /// Determines reachability: ICMP first, then — only if ICMP fails AND explicit credentials
     /// are stored — an authenticated WMI/DCOM probe (many servers block ping but answer WMI).
-    /// Returns whether the host is online and, when offline, the reason. Only cancellation throws.
+    /// Returns whether the host is online, the reason when offline, and the typed <see cref="PingErrorKind"/>
+    /// describing THAT reason string — NameResolution only when the returned text is the ping's own
+    /// name-doesn't-resolve failure, so a caller can treat that one case as a calm offline. Any other
+    /// offline text (a WMI probe error, an exception message) is Other and stays a real error. Only
+    /// cancellation throws.
     /// </summary>
-    private async Task<(bool Online, string? Error)> ProbeReachabilityAsync(Computer computer, CancellationToken token)
+    private async Task<(bool Online, string? Error, PingErrorKind ErrorKind)> ProbeReachabilityAsync(Computer computer, CancellationToken token)
     {
         PingResult ping = await _pinger.PingAsync(computer.Name, PingTimeoutMs, token);
         if (ping.IsOnline)
         {
-            return (true, null);
+            return (true, null, PingErrorKind.Other);
         }
 
         if (_credentials.Current is null)
         {
-            return (false, ping.Error);
+            return (false, ping.Error, ping.ErrorKind);
         }
 
         try
         {
             ProbeResult probe = await _hostProbe.CanReachAsync(computer.Name, _credentials.Current, token);
-            return probe.Reachable ? (true, null) : (false, probe.Error ?? ping.Error);
+            // The "WMI: …" probe text is not a ping name-resolution failure — keep it Other so it's never
+            // suppressed. The kind stays NameResolution only when we fall back to the ping's own reason.
+            return probe.Reachable
+                ? (true, null, PingErrorKind.Other)
+                : (false, probe.Error ?? ping.Error, probe.Error is null ? ping.ErrorKind : PingErrorKind.Other);
         }
         catch (OperationCanceledException)
         {
@@ -4693,7 +4705,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (Exception ex)
         {
-            return (false, ex.Message);
+            return (false, ex.Message, PingErrorKind.Other);
         }
     }
 
@@ -4762,10 +4774,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // holds its own throttle, so releasing here first keeps the two caps independent.
         bool online;
         string? error;
+        PingErrorKind kind;
         await _monitorThrottle.WaitAsync(token);
         try
         {
-            (online, error) = await ProbeReachabilityAsync(computer, token);
+            (online, error, kind) = await ProbeReachabilityAsync(computer, token);
         }
         finally
         {
@@ -4789,7 +4802,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             ? null
             : effectiveOnline
                 ? "probe timed out (busy)"   // unconfirmed single failure — soft note, NOT an offline state
-                : error;                     // confirmed offline — the real reason
+                : kind == PingErrorKind.NameResolution ? null : error;   // confirmed offline: a name that doesn't resolve is the offline state (no error, stays out of Errors filter); any other reason keeps its real text
 
         // A host that just came back online (offline→online) may have actually rebooted: clear any
         // "degraded WinRM" flag so we probe it again, and open a short re-probe window (a just-booted
@@ -4856,7 +4869,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return; // unchanged — leave LastStatus as-is
         }
 
-        computer.LastStatus = effectiveOnline ? "Online" : "Offline";
+        computer.LastStatus = effectiveOnline ? "Online" : kind == PingErrorKind.NameResolution ? OfflineNameNoResolveStatus : "Offline";
         if (effectiveOnline)
         {
             // Came back from a known-offline state (a reboot/shutdown) — the BatchPatch-style

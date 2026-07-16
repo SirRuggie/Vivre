@@ -24,6 +24,7 @@ public class HostPingerTests
 
         Assert.False(result.IsOnline);
         Assert.NotNull(result.Error);
+        Assert.Equal(PingErrorKind.NameResolution, result.ErrorKind);
     }
 
     [Theory]

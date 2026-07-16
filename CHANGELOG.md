@@ -22,6 +22,12 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **A machine that is offline because its name no longer resolves no longer shows a confusing raw
+  Windows DNS error in the Last error column.** It now reads a calm "Offline — name doesn't resolve"
+  status with an empty error, and it no longer appears under the Errors filter — that filter is for
+  machines that are up but misbehaving, and an offline box still shows under Offline. The full
+  technical reason still goes to the activity log. A machine that is up, or that fails for any other
+  reason, still shows its real, scary error.
 - **One long error, status or command result no longer stretches the whole Health grid.** The Last
   error, Last status and Command result columns now cap their width and trim the overflow with "…",
   with the full text available on hover — so a single verbose message can't push the other columns

@@ -37,8 +37,9 @@ public sealed class HostPinger : IHostPinger
         }
         catch (PingException ex)
         {
-            // Name-resolution / socket failures mean "not reachable", not a crash.
-            return PingResult.Offline(ex.InnerException?.Message ?? ex.Message);
+            // Name-resolution / socket failures mean "not reachable", not a crash. Classify by the inner
+            // socket code so the UI can treat a name-doesn't-resolve offline as calm, not a scary error.
+            return PingResult.Offline(ex.InnerException?.Message ?? ex.Message, PingErrorClassification.Classify(ex.InnerException));
         }
     }
 }
