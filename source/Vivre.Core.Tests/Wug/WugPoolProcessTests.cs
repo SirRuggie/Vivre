@@ -366,7 +366,7 @@ public class WugPoolProcessTests
             $"First device at {run.FirstDeviceAt.TotalSeconds:F2}s, returned at {run.ReturnedAt.TotalSeconds:F2}s — expected a clear streaming gap.");
     }
 
-    // ── #2 Connect ONCE PER RUNSPACE (trap T2): 8 names at N=2 => exactly 2 connects (<= pool size, « 8) ─
+    // ── #2 Connect ONCE PER RUNSPACE (trap T2): 8 names at N=2 => 1..2 connects (once per runspace USED, « 8 — never per lookup) ─
 
     [Fact]
     public async Task Pooled_connects_once_per_runspace_not_per_lookup()
@@ -378,7 +378,10 @@ public class WugPoolProcessTests
         try
         {
             string[] names = BareNames(8);
-            // A modest delay forces both pool runspaces genuinely concurrent so BOTH are created (and connect).
+            // A modest delay makes it LIKELY both pool runspaces participate (each holding a lookup long enough
+            // that a second runspace spins up) — but the pool never GUARANTEES it: a fast runspace 1 may legally
+            // win the startup race and drain all 8 items itself, yielding a single connect. The assertions below
+            // tolerate exactly that (1..2), because the property under test is once-per-runspace, not per-lookup.
             var delays = names.ToDictionary(n => n, _ => 200);
 
             PoolRun run = await RunPoolAsync(Fleet(8), concurrency: 2, names, delays: delays, connectsFile: connectsFile);
@@ -386,7 +389,16 @@ public class WugPoolProcessTests
             Assert.Equal(8, run.Devices.Count);   // all resolved
 
             int connects = File.ReadAllLines(connectsFile).Count(l => !string.IsNullOrWhiteSpace(l));
-            Assert.Equal(2, connects);             // exactly pool size — proves once-per-runspace, not per-lookup
+            // A healthy pool connects ONCE PER RUNSPACE ACTUALLY USED, never once per lookup. RunspacePool
+            // is min=1/max=N: the max is a cap, not a target — a fast first runspace can legitimately win
+            // the startup race and drain the whole batch, so 1 connect is as correct as 2. The load-bearing
+            // invariant is that connects NEVER scale with the lookup count: dropping the
+            // `if (-not $global:WUGBearerHeaders)` guard (a per-lookup reconnect) gives connects == 8 here,
+            // which both assertions below fail loudly. (The guard's presence in the PRODUCTION tail is
+            // separately string-locked by WugConcurrencyTests.)
+            Assert.InRange(connects, 1, 2);                 // once per runspace ACTUALLY USED — pool max is a cap, not a target
+            Assert.True(connects < names.Length,            // the real invariant: connects never scale with lookups
+                $"Expected connects « lookups (once per runspace, not per lookup): got {connects} for {names.Length} lookups.");
         }
         finally { try { File.Delete(connectsFile); } catch { /* best-effort */ } }
     }
@@ -532,7 +544,10 @@ public class WugPoolProcessTests
             Assert.Equal(2, pool.Devices.Count);
             Assert.Equal(2, seq.Devices.Count);
 
-            // N=2: the two lookups ran at the same time — their execution intervals overlap.
+            // N=2: the two lookups ran at the same time — their execution intervals overlap. (Same runspace-
+            // startup race as test #2's connect-count, but here the 1500ms delay dwarfs runspace 2's warmup —
+            // usually well under a second, occasionally slower, which is the very race that made #2 flaky at
+            // 200ms — so runspace 2 reliably wins a lookup while runspace 1 is still busy.)
             Assert.True(OverlappingPairs(poolTimeline) >= 1,
                 "At N=2 the two lookups should execute concurrently (overlapping intervals).");
             // N=1: the sequential branch runs one lookup at a time — no intervals overlap.
