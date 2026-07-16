@@ -47,103 +47,54 @@
                 </StackPanel>
             </Border>
 
-            <!-- ── Auto-check on load (flat row) ────────────────────────── -->
+            <!-- ── Fleet behavior (flat card: auto-check + grid columns) ───── -->
             <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Grid.Column="0" Symbol="Pulse24" FontSize="20"
-                                   VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <ui:TextBlock Text="Auto-check on load" />
-                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
-                                      Text="When on, loading a list auto-pings and checks vitals. When off, the grid is a frozen snapshot until you click Ping All or Check Vitals." />
-                    </StackPanel>
-                    <ui:ToggleSwitch Grid.Column="2" x:Name="AutoToggle"
-                                     VerticalAlignment="Center" Margin="16,0,0,0"
-                                     Checked="OnAutoCheckChanged"
-                                     Unchecked="OnAutoCheckChanged"
-                                     ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals." />
-                </Grid>
-            </Border>
+                <StackPanel>
+                    <ui:TextBlock FontTypography="BodyStrong" Text="Fleet behavior" Margin="0,0,0,12" />
 
-            <!-- ── Max simultaneous installs (flat row) ─────────────────── -->
-            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Grid.Column="0" Symbol="ArrowDownload24" FontSize="20"
-                                   VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <ui:TextBlock Text="Max simultaneous installs" />
-                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
-                                      Text="How many machines install, uninstall, stage, or clean up at once. The practical limit is download bandwidth. Range 1–200; default 50. Takes effect on the next install sweep — in-flight sweeps are not interrupted." />
-                    </StackPanel>
-                    <ui:TextBox Grid.Column="2" x:Name="MaxInstallsBox"
-                                MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
-                                PlaceholderText="50"
-                                LostFocus="OnMaxInstallsChanged"
-                                ToolTip="Cap on simultaneous installs/uninstalls/stages (1–200). Default 50." />
-                </Grid>
-            </Border>
+                    <!-- Auto-check on load row (moved verbatim) -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Grid.Column="0" Symbol="Pulse24" FontSize="20"
+                                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <ui:TextBlock Text="Auto-check on load" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                          Text="When on, loading a list auto-pings and checks vitals. When off, the grid is a frozen snapshot until you click Ping All or Check Vitals." />
+                        </StackPanel>
+                        <ui:ToggleSwitch Grid.Column="2" x:Name="AutoToggle"
+                                         VerticalAlignment="Center" Margin="16,0,0,0"
+                                         Checked="OnAutoCheckChanged"
+                                         Unchecked="OnAutoCheckChanged"
+                                         ToolTip="On (default): loading a list auto-pings + checks vitals on those machines. Off: manual — a frozen snapshot until you click Ping All / Check Vitals." />
+                    </Grid>
 
-            <!-- ── WhatsUp Gold state check — simultaneous lookups (flat row) ─ -->
-            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Grid.Column="0" Symbol="Pulse24" FontSize="20"
-                                   VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <ui:TextBlock Text="WhatsUp Gold state check — simultaneous lookups" />
-                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
-                                      Text="How many WUG devices the state check queries at once. Measured on the live server: 2 is the sweet spot — more just loads the WUG server for no extra speed. Range 1–4; default 2. Takes effect on the next check." />
-                    </StackPanel>
-                    <ui:TextBox Grid.Column="2" x:Name="WugStateConcurrencyBox"
-                                MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
-                                PlaceholderText="2"
-                                LostFocus="OnWugStateConcurrencyChanged"
-                                ToolTip="How many WUG devices the state check queries at once (1–4). Default 2." />
-                </Grid>
-            </Border>
-
-            <!-- ── Grid columns (flat row) ───────────────────────────────── -->
-            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
-                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
-                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:SymbolIcon Grid.Column="0" Symbol="Table24" FontSize="20"
-                                   VerticalAlignment="Center" Margin="0,0,12,0" />
-                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                        <ui:TextBlock Text="Grid columns" />
-                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
-                                      Text="Show or hide built-in columns; add custom PowerShell columns." />
-                    </StackPanel>
-                    <ui:Button Grid.Column="2" Content="Manage columns…"
-                               VerticalAlignment="Center" Margin="16,0,0,0"
-                               Click="OnOpenColumns"
-                               ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
-                </Grid>
+                    <!-- Grid columns row (moved verbatim) -->
+                    <Grid Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:SymbolIcon Grid.Column="0" Symbol="Table24" FontSize="20"
+                                       VerticalAlignment="Center" Margin="0,0,12,0" />
+                        <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                            <ui:TextBlock Text="Grid columns" />
+                            <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                          Text="Show or hide built-in columns; add custom PowerShell columns." />
+                        </StackPanel>
+                        <ui:Button Grid.Column="2" Content="Manage columns…"
+                                   VerticalAlignment="Center" Margin="16,0,0,0"
+                                   Click="OnOpenColumns"
+                                   ToolTip="Show / hide built-in columns and manage custom PowerShell columns." />
+                    </Grid>
+                </StackPanel>
             </Border>
 
             <!-- ── Remote credentials (collapsed expander) ──────────────────── -->
@@ -195,13 +146,13 @@
                 </StackPanel>
             </ui:CardExpander>
 
-            <!-- ── Integrations (collapsed expander) ─────────────────────── -->
+            <!-- ── WhatsUp Gold (collapsed expander) ─────────────────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Link24}"
-                             Header="Integrations">
+                             Header="WhatsUp Gold">
                 <StackPanel Margin="0,8,0,0">
 
-                    <!-- WhatsUp Gold server -->
+                    <!-- WhatsUp Gold server (moved verbatim) -->
                     <ui:TextBlock Text="WhatsUp Gold server" Margin="0,0,0,4" />
                     <ui:TextBox x:Name="WugServerBox"
                                 PlaceholderText="e.g. 10.70.25.111"
@@ -210,7 +161,27 @@
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,16"
                                   Text="Used by right-click ▸ WhatsUp Gold maintenance… (set) and ▸ Check WhatsUp Gold state… (read) for monitoring maintenance. Hostname or IP; connects over HTTPS with the credentials you enter in that dialog." />
 
-                    <!-- Package library folder -->
+                    <!-- State check — simultaneous lookups (reformatted from the flat row) -->
+                    <ui:TextBlock Text="State check — simultaneous lookups" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="WugStateConcurrencyBox"
+                                MinWidth="70" HorizontalAlignment="Left"
+                                PlaceholderText="2"
+                                LostFocus="OnWugStateConcurrencyChanged"
+                                Margin="0,0,0,4"
+                                ToolTip="How many WUG devices the state check queries at once (1–4). Default 2." />
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                  Text="How many WUG devices the state check queries at once. Measured on the live server: 2 is the sweet spot — more just loads the WUG server for no extra speed. Range 1–4; default 2. Takes effect on the next check." />
+
+                </StackPanel>
+            </ui:CardExpander>
+
+            <!-- ── Software staging (collapsed expander) ─────────────────── -->
+            <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
+                             Icon="{ui:SymbolIcon Folder24}"
+                             Header="Software staging">
+                <StackPanel Margin="0,8,0,0">
+
+                    <!-- Package library folder (moved verbatim) -->
                     <ui:TextBlock Text="Package library folder" Margin="0,0,0,4" />
                     <Grid Margin="0,0,0,4">
                         <Grid.ColumnDefinitions>
@@ -231,13 +202,41 @@
                 </StackPanel>
             </ui:CardExpander>
 
+            <!-- ── Patching ──────────────────────────────────────────────── -->
+            <ui:TextBlock FontTypography="BodyStrong" Text="Patching" Margin="0,12,0,8" />
+
+            <!-- ── Max simultaneous installs (flat row) ─────────────────── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0" Symbol="ArrowDownload24" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:TextBlock Text="Max simultaneous installs" />
+                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                      Text="How many machines install, uninstall, stage, or clean up at once. The practical limit is download bandwidth. Range 1–200; default 50. Takes effect on the next install sweep — in-flight sweeps are not interrupted." />
+                    </StackPanel>
+                    <ui:TextBox Grid.Column="2" x:Name="MaxInstallsBox"
+                                MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
+                                PlaceholderText="50"
+                                LostFocus="OnMaxInstallsChanged"
+                                ToolTip="Cap on simultaneous installs/uninstalls/stages (1–200). Default 50." />
+                </Grid>
+            </Border>
+
             <!-- ── Server 2016 cumulative update (collapsed expander) ──────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Box24}"
                              Header="Server 2016 cumulative update">
                 <StackPanel Margin="0,8,0,0">
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="The month's CU the Server 2016 panel stages and verifies. Update the KB and target UBR each cycle; the package itself is a .msu you download from the Microsoft Update Catalog into the folder below." />
+                                  Text="Each month, tell Vivre which Server 2016 update you're rolling out: its KB number and the build number servers should show once it's installed. You download the update file (.msu) from the Microsoft Update Catalog into the folder below yourself — Vivre never downloads it." />
 
                     <!-- KB number -->
                     <ui:TextBlock Text="KB number" Margin="0,0,0,4" />
@@ -246,20 +245,29 @@
                                 LostFocus="OnLcuKbChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="The CU article number, e.g. KB5094122. Used to find the .msu in the package folder and shown in the 2016 panel." />
+                                  Text="This month's update number, e.g. KB5094122 — it's in the update's title on the catalog and history pages below. Vivre uses it to find the .msu in the package folder and shows it in the 2016 panel." />
 
-                    <!-- Target UBR -->
-                    <ui:TextBlock Text="Target UBR (build revision)" Margin="0,0,0,4" />
+                    <!-- Build number after the update -->
+                    <ui:TextBlock Text="Build number after the update" Margin="0,0,0,4" />
                     <ui:TextBox x:Name="LcuUbrBox"
                                 PlaceholderText="e.g. 9234"
                                 LostFocus="OnLcuUbrChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="The build revision after the CU commits. On the update history page each entry lists 'OS Build 14393.XXXX' — use the digits after the dot (e.g. 9234)." />
+                                  Text="After the update installs, servers should report OS Build 14393.XXXX — enter just the XXXX part (e.g. 9339). It's listed beside the KB on the update history page. Verify and the Reboot Wave compare servers against this number (it's also called the target UBR)." />
 
-                    <!-- Update history page — read-only, selectable label; the source for this month's KB + UBR. -->
+                    <!-- Find this month's update — read-only, selectable link. -->
                     <ui:TextBlock TextWrapping="Wrap" Margin="0,0,0,4"
-                                  Text="Update history page (copy to find this month's KB and UBR):" />
+                                  Text="Find this month's update (Microsoft Update Catalog):" />
+                    <TextBox Text="https://catalog.update.microsoft.com/Search.aspx?q=Cumulative+Update+for+Windows+Server+2016+for+x64-based+Systems"
+                             IsReadOnly="True" BorderThickness="0" Background="Transparent" Padding="0"
+                             Margin="0,0,0,12"
+                             Foreground="{DynamicResource TextFillColorPrimaryBrush}"
+                             ToolTip="Read-only — select the text to copy the link." />
+
+                    <!-- Find the build number — read-only, selectable link. -->
+                    <ui:TextBlock TextWrapping="Wrap" Margin="0,0,0,4"
+                                  Text="Find the build number (update history page):" />
                     <TextBox Text="https://support.microsoft.com/en-us/help/4000825"
                              IsReadOnly="True" BorderThickness="0" Background="Transparent" Padding="0"
                              Margin="0,0,0,12"

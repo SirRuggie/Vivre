@@ -369,7 +369,7 @@ public static class HelpContent
                 "It matches your machine names to WUG devices (by name, then by IP) and calls out any that didn't match a WUG device.",
                 "Not sure it'll connect? Click Test connection first — it checks the server and your login. If the WhatsUp Gold PowerShell module isn't installed yet, an Install module button appears to add it for you.",
                 "Want to see where things stand first? Right-click ▸ Check WhatsUp Gold state… (works from both the Health and Patching grids). The server is pre-filled from Settings (read-only) — enter your WUG login and click Check. It reads each in-scope machine's current WUG state without changing anything; results fill in row by row in the Command result column as WUG answers (no long silent wait), with a summary in the activity log. The toolbar Stop can halt the check part-way — machines it never reached read \"not checked (read stopped)\". Unknown means the state couldn't be read — not that the machine is out of maintenance; \"not checked (read stopped)\" is a different thing: it means the check was stopped before it ever got to that machine.",
-                "Settings ▸ \"WhatsUp Gold state check — simultaneous lookups\" sets how many machines the state check queries at once (default 2 — the measured sweet spot). Raising it past 2 gives little extra speed and just loads the WUG server; the change applies to the next check.",
+                "Settings ▸ WhatsUp Gold ▸ \"State check — simultaneous lookups\" sets how many machines the state check queries at once (default 2 — the measured sweet spot). Raising it past 2 gives little extra speed and just loads the WUG server; the change applies to the next check.",
             ],
             Tip = "Runs on this PC against the WUG server (not on the targets). The WUG login is asked each time and never saved (only the server address is remembered); the WhatsUpGoldPS module auto-installs for your user if it's missing.",
         },
@@ -574,7 +574,7 @@ public static class HelpContent
                 "Why Clean up? Windows Server 2016 accumulates old update pieces in a hidden store over time. Clean up tells Windows to clear that backlog — it speeds up normal Windows Update on any 2016 box and makes room before you stage a CU (without it, staging can stall or hang). It acts on the selected 2016 boxes, or all of them when none are selected; it never reboots the box and is safe to run any time.",
                 "Clean up on a backlogged box can run for hours. The row shows a live \"Cleaning — 12m\" readout (with a percent when Windows reports one) so you can see it's still working even while the percent sits still; it only flags \"looks stalled (may still be working)\" or \"still going, check the box\" as a heads-up — it won't give up on a working box. When it finishes you'll see one of these results: \"Cleaned — ready to Stage\" (green, good to go), \"Cleaned — reboot-pending\" (amber — reboot before you Stage), \"Cleaned · locked files (see log)\" (green — the backlog cleared, but security software held some files open so Windows couldn't remove the rest; staging isn't blocked, and the activity log explains how to reclaim it), or, if the box already has a reboot waiting, \"Couldn't clean up — reboot to clear the pending state first\" (it didn't run, to avoid clashing with Windows servicing).",
             ],
-            Tip = "Set the month's KB + target UBR in Settings ▸ Server 2016 cumulative update (the card also holds the update-history URL — copy this month's KB/UBR from it — and the architecture), and drop the Catalog .msu in the CU package folder before staging.",
+            Tip = "Set the month's KB + build number in Settings ▸ Server 2016 cumulative update (the card holds the catalog and update-history links — copy this month's KB and build number from them), and drop the Catalog .msu in the CU package folder before staging.",
         },
         new HelpTopic
         {
@@ -592,7 +592,7 @@ public static class HelpContent
                 "3. A box already at this month's build is detected up front and skipped automatically (\"Already current — skipped\") — it just installs its minor updates.",
                 "Manage your flagged boxes in Settings ▸ Staged patching machines: see the whole list, remove a box (sends it back to normal Windows Update), or Clear all.",
             ],
-            Tip = "Set this month's KB + target UBR in Settings ▸ Server 2016 cumulative update before staging or using \"Install minor updates only\" — both need to know which update is the cumulative one. Flagging is remembered between sessions.",
+            Tip = "Set this month's KB + build number in Settings ▸ Server 2016 cumulative update before staging or using \"Install minor updates only\" — both need to know which update is the cumulative one. Flagging is remembered between sessions.",
         },
         new HelpTopic
         {

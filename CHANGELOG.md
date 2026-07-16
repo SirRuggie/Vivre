@@ -7,6 +7,16 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Changed
+- **The Settings page is reorganized so related settings sit together.** Both WhatsUp Gold settings —
+  the server address and the state check's simultaneous lookups — now live together under one **WhatsUp
+  Gold** card; the old **Integrations** section is gone (the package library folder is now its own
+  **Software staging** card). All patching settings — **Max simultaneous installs**, **Server 2016
+  cumulative update**, and **Staged patching machines** — sit together under a **Patching** header, and
+  **Auto-check on load** and **Grid columns** share a **Fleet behavior** card.
+- **The Server 2016 cumulative update settings now speak plain language.** "Target UBR (build revision)"
+  is now **"Build number after the update"** with step-by-step help, and the card links the Microsoft
+  Update Catalog search for the month's Server 2016 CU alongside the update-history page — so you can find
+  both the update and its build number without knowing the jargon.
 - **Fleet-wide WhatsUp Gold state checks are now roughly twice as fast.** A 324-machine check takes about
   3 minutes instead of ~6.5 — the lookups now run a few at a time instead of strictly one-by-one. Rows
   still fill in live as each machine answers, and **Stop** still halts the check part-way. A new setting,
