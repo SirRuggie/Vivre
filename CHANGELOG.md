@@ -7,6 +7,11 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **The Server 2016 CU now carries a month/year label (e.g. "July 2026").** It's auto-suggested from the
+  package's file date when you use **Read from package**, editable there and in **Settings ▸ Server 2016
+  cumulative update**, and shown in the 2016 panel and the Settings card — so anyone on the box sees at a
+  glance which month's CU is loaded. (The file date is just when the `.msu` was downloaded, so the suggestion
+  is a guess you confirm, not an authoritative release date.)
 - **You can fill this month's Server 2016 CU settings straight from the update file.** Drop the month's
   `.msu` in the CU package folder and click **Settings ▸ Server 2016 cumulative update ▸ Read from
   package** — Vivre reads the KB, build number, and architecture out of the file itself and shows them

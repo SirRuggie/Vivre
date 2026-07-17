@@ -56,6 +56,7 @@ public partial class SettingsPage : UserControl
         PackagesFolderBox.Text = shared.PackagesFolder;
         LcuKbBox.Text = shared.MonthlyCu?.Kb ?? string.Empty;
         LcuUbrBox.Text = shared.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
+        LcuMonthTagBox.Text = shared.MonthlyCu?.MonthTag ?? string.Empty;
         LcuPackagesFolderBox.Text = shared.LcuPackagesFolder;
         MaxInstallsBox.Text = shared.MaxSimultaneousInstalls.ToString();
         WugStateConcurrencyBox.Text = shared.WugStateConcurrency.ToString();
@@ -184,6 +185,12 @@ public partial class SettingsPage : UserControl
         PersistShared(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.TargetUbr = ubr; });
     }
 
+    private void OnLcuMonthTagChanged(object sender, RoutedEventArgs e)
+    {
+        string value = LcuMonthTagBox.Text.Trim();
+        PersistShared(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.MonthTag = value; });
+    }
+
     private void OnMaxInstallsChanged(object sender, RoutedEventArgs e)
     {
         string raw = MaxInstallsBox.Text.Trim();
@@ -295,7 +302,12 @@ public partial class SettingsPage : UserControl
             string currentKb = s.MonthlyCu?.Kb?.Trim() ?? string.Empty;
             string currentUbr = s.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
             string currentArch = s.MonthlyCu?.Arch ?? "x64";
+            string currentMonthTag = s.MonthlyCu?.MonthTag?.Trim() ?? string.Empty;
             string readUbr = accepted.TargetUbr.ToString();
+
+            // A convenience guess from the file's own timestamp (a download date, NOT a release date) — the
+            // operator confirms/edits it in the dialog. Localize before formatting; the helper is pure.
+            string suggestedMonthTag = MonthTagSuggestion.SuggestFrom(result.FileModifiedUtc?.ToLocalTime());
 
             bool matches =
                 string.Equals(Lcu2016CuMatcher.NormalizeKb(currentKb), Lcu2016CuMatcher.NormalizeKb(accepted.Kb),
@@ -313,6 +325,8 @@ public partial class SettingsPage : UserControl
                 IdentityDescription: $"{accepted.Description} ({accepted.IdentityName} {accepted.Version})",
                 FileName: result.FileName ?? string.Empty,
                 FileDate: result.FileModifiedUtc?.ToLocalTime().ToString("d MMM yyyy HH:mm") ?? "(unknown)",
+                CurrentMonthTag: currentMonthTag.Length == 0 ? "(not set)" : currentMonthTag,
+                SuggestedMonthTag: suggestedMonthTag,
                 Matches: matches);
 
             var dialog = new LcuPackageReadDialog(comparison) { Owner = _ownerWindow };
@@ -321,15 +335,18 @@ public partial class SettingsPage : UserControl
                 return; // "Keep my settings" / Esc / close — change nothing.
             }
 
-            // Confirmed — persist into the same shared fields the typed flow writes, then mirror the two visible
-            // boxes (both are LostFocus-only wired, so setting .Text here is safe and won't re-trigger a handler).
-            // PersistShared surfaces its own failure (log + message box); only claim success + mirror when it saved.
+            // Confirmed — persist into the same shared fields the typed flow writes, then mirror the visible
+            // boxes (all are LostFocus-only wired, so setting .Text here is safe and won't re-trigger a handler).
+            // The month tag saves atomically in the SAME mutate as KB/UBR/arch. PersistShared surfaces its own
+            // failure (log + message box); only claim success + mirror when it saved.
+            string confirmedMonthTag = dialog.ConfirmedMonthTag;
             if (!PersistShared(sx =>
             {
                 sx.MonthlyCu ??= new MonthlyCu();
                 sx.MonthlyCu.Kb = accepted.Kb;
                 sx.MonthlyCu.TargetUbr = accepted.TargetUbr;
                 sx.MonthlyCu.Arch = accepted.Arch;
+                sx.MonthlyCu.MonthTag = confirmedMonthTag;
             }))
             {
                 return;
@@ -337,8 +354,10 @@ public partial class SettingsPage : UserControl
 
             LcuKbBox.Text = accepted.Kb;
             LcuUbrBox.Text = readUbr;
+            LcuMonthTagBox.Text = confirmedMonthTag;
 
-            _log?.Info(null, $"Read {accepted.Kb} / build {accepted.TargetUbr} ({accepted.Arch}) from {result.FileName} — settings updated.");
+            string tagSuffix = confirmedMonthTag.Length == 0 ? string.Empty : $" ({confirmedMonthTag})";
+            _log?.Info(null, $"Read {accepted.Kb} / build {accepted.TargetUbr} ({accepted.Arch}) from {result.FileName} — settings updated{tagSuffix}.");
         }
         catch (Exception ex)
         {

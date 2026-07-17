@@ -55,6 +55,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <!-- Column headers -->
@@ -77,11 +78,25 @@
 
                         <!-- Architecture -->
                         <TextBlock Grid.Row="3" Grid.Column="0" Text="Architecture"
-                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,0" />
-                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="CurrentArchText" Margin="12,0,12,0" />
-                        <TextBlock Grid.Row="3" Grid.Column="2" x:Name="ReadArchText" Margin="0,0,0,0" FontWeight="SemiBold" />
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,8" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="CurrentArchText" Margin="12,0,12,8" />
+                        <TextBlock Grid.Row="3" Grid.Column="2" x:Name="ReadArchText" Margin="0,0,0,8" FontWeight="SemiBold" />
+
+                        <!-- Month label (editable — a suggestion the operator confirms). -->
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="Month label"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                                   VerticalAlignment="Center" Margin="0,0,0,0" />
+                        <TextBlock Grid.Row="4" Grid.Column="1" x:Name="CurrentMonthTagText"
+                                   VerticalAlignment="Center" Margin="12,0,12,0" />
+                        <ui:TextBox Grid.Row="4" Grid.Column="2" x:Name="MonthTagBox"
+                                    MinWidth="140" PlaceholderText="e.g. July 2026" />
                     </Grid>
                 </Border>
+
+                <!-- One secondary hint for the editable month label. Deliberately NOT worded as a release date. -->
+                <TextBlock TextWrapping="Wrap" FontSize="12" Margin="0,8,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Text="Suggested from the file's date — edit if it's wrong." />
 
                 <!-- What was read, under the read column. -->
                 <TextBlock x:Name="IdentityText" TextWrapping="Wrap" FontSize="12" Margin="0,12,0,0"

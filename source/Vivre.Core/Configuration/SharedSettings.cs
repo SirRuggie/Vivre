@@ -77,6 +77,16 @@ public sealed class MonthlyCu
     /// reads 14393.9234. Verify and the Reboot Wave use this as the pass/fail check. 0 = not set yet.</summary>
     public int TargetUbr { get; set; }
 
-    /// <summary>The display Vivre shows in the 2016 panel, e.g. "KB5094122 / 9234".</summary>
-    public string Display => $"{Kb} / {TargetUbr}";
+    /// <summary>Operator-confirmed month/year label for this cycle's CU, e.g. "July 2026". Suggested from the
+    /// package file's date — a DOWNLOAD date, NOT a release date — when the operator uses "Read from package",
+    /// and always operator-editable (in the read dialog and in Settings); empty = not set. A human label ONLY:
+    /// it drives no logic (no staleness check, no identity match) — it just tells whoever's on the shared box
+    /// which month's CU is loaded.</summary>
+    public string MonthTag { get; set; } = string.Empty;
+
+    /// <summary>The display Vivre shows in the 2016 panel: "{Kb} / {TargetUbr}" (e.g. "KB5094122 / 9234"), with
+    /// the month label appended when set (e.g. "KB5094122 / 9234 — July 2026").</summary>
+    public string Display => string.IsNullOrWhiteSpace(MonthTag)
+        ? $"{Kb} / {TargetUbr}"
+        : $"{Kb} / {TargetUbr} — {MonthTag}";
 }

@@ -256,6 +256,15 @@
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="After the update installs, servers should report OS Build 14393.XXXX — enter just the XXXX part (e.g. 9339). It's listed beside the KB on the update history page. Verify and the Reboot Wave compare servers against this number (it's also called the target UBR)." />
 
+                    <!-- CU month label -->
+                    <ui:TextBlock Text="CU month label" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="LcuMonthTagBox"
+                                PlaceholderText="e.g. July 2026"
+                                LostFocus="OnLcuMonthTagChanged"
+                                Margin="0,0,0,4" />
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
+                                  Text="A label for which month's update this is, e.g. July 2026 — everyone on this box sees it. Read from package fills it in for you (editable)." />
+
                     <!-- Find this month's update — read-only, selectable link. -->
                     <ui:TextBlock TextWrapping="Wrap" Margin="0,0,0,4"
                                   Text="Find this month's update (Microsoft Update Catalog):" />

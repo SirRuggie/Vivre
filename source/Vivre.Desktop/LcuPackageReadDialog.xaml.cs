@@ -18,6 +18,8 @@ public sealed record LcuPackageReadComparison(
     string IdentityDescription,
     string FileName,
     string FileDate,
+    string CurrentMonthTag,
+    string SuggestedMonthTag,
     bool Matches);
 
 /// <summary>
@@ -44,11 +46,17 @@ public partial class LcuPackageReadDialog : FluentWindow
         FileNameText.Text = $"From file: {comparison.FileName}";
         FileDateText.Text = $"File date: {comparison.FileDate}";
 
+        CurrentMonthTagText.Text = comparison.CurrentMonthTag;
+        MonthTagBox.Text = comparison.SuggestedMonthTag; // a suggestion the operator confirms/edits — never authoritative
+
         MatchesBar.IsOpen = comparison.Matches;
 
         // Keep-my-settings is the safe default — focus it so a stray Enter/Space never overwrites settings.
         Loaded += (_, _) => KeepButton.Focus();
     }
+
+    /// <summary>The operator's final month label — read only after <see cref="Window.ShowDialog"/> returns true.</summary>
+    public string ConfirmedMonthTag => MonthTagBox.Text.Trim();
 
     private void OnUsePackage(object sender, RoutedEventArgs e)
     {

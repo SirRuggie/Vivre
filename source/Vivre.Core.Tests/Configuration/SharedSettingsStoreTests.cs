@@ -197,6 +197,28 @@ public class SharedSettingsStoreTests
         }
     }
 
+    // 8 — the month label round-trips through the store (Save then a fresh Load returns the same tag).
+    [Fact]
+    public void MonthTag_round_trips_through_the_store()
+    {
+        string dir = NewTempDir();
+        try
+        {
+            var settings = new SharedSettings
+            {
+                MonthlyCu = new MonthlyCu { Kb = "KB5099999", Arch = "x64", TargetUbr = 9339, MonthTag = "July 2026" },
+            };
+            new SharedSettingsStore(dir).Save(settings);
+
+            SharedSettings fresh = new SharedSettingsStore(dir).Load();
+            Assert.Equal("July 2026", fresh.MonthlyCu.MonthTag);
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
     // ── Helpers ─────────────────────────────────────────────────────────────────────────────────
 
     private static string NewTempDir()
