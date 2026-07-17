@@ -6,7 +6,7 @@ namespace Vivre.Core.Configuration;
 //  WRITE. NEVER add credential material here — no passwords, secrets, tokens, API keys, or
 //  DPAPI-protected blobs. Per-operator secrets stay in memory (the in-memory CredentialStore) or,
 //  if they must persist, go to a per-user ENCRYPTED store (see RdpCredentialStore's DPAPI-per-user
-//  model). SharedSettingsStore.Save runs a reflection guard that THROWS if a credential-shaped
+//  model). SharedSettingsStore.Update runs a reflection guard that THROWS if a credential-shaped
 //  property (by name or type) is ever added — that guard is a backstop for this rule, not licence
 //  to get anywhere near it.
 // ─────────────────────────────────────────────────────────────────────────────────────────────
@@ -37,21 +37,6 @@ public sealed class SharedSettings
     /// EMPTY (no KB, UBR 0) so a fresh shared file never carries a stale-looking KB — the empty-KB gates
     /// guide the operator to set it (or use "Read from package").</summary>
     public MonthlyCu MonthlyCu { get; set; } = new();
-
-    /// <summary>Cap on how many hosts install/uninstall/stage/clean-up at once. Operator-tunable in
-    /// Settings → "Max simultaneous installs"; applied to every install sweep started after the change
-    /// (in-flight sweeps continue at the cap they were started with). The practical governor is
-    /// update-download bandwidth (N hosts pulling cumulative updates simultaneously), not the client.
-    /// Range 1–200; default 50.</summary>
-    public int MaxSimultaneousInstalls { get; set; } = 50;
-
-    /// <summary>How many WhatsUp Gold devices the state check looks up at once. Operator-tunable in
-    /// Settings → "WhatsUp Gold state check — simultaneous lookups"; applied to checks started after the
-    /// change (an in-flight check keeps the value it launched with). Measured on the live WUG server:
-    /// wall time halves going 1→2 and then flatlines 2→4→8 with per-lookup latency creeping up, so the
-    /// ceiling is deliberately 4 (<see cref="Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency"/>).
-    /// Range 1–4; default 2. 1 = sequential (the pre-parallel behaviour).</summary>
-    public int WugStateConcurrency { get; set; } = 2;
 
     /// <summary>The persisted set of host names the operator has flagged as needing staged (DISM) patching;
     /// OrdinalIgnoreCase; the source of truth behind <see cref="Vivre.Core.Models.Computer.RequiresStagedPatching"/>.

@@ -6,6 +6,7 @@ using System.Security;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using Vivre.Core.IO;
 using Vivre.Core.Logging;
@@ -16,19 +17,27 @@ namespace Vivre.Core.Configuration;
 /// <summary>
 /// Reads/writes <see cref="SharedSettings"/> as the machine-wide <c>C:\ProgramData\Vivre\settings.json</c>
 /// (<see cref="Environment.SpecialFolder.CommonApplicationData"/>) so every operator on the box shares the
-/// operational settings (this month's CU, package folders, WUG server, install concurrency, staged-machine
-/// list). Personal preferences stay per-user in <c>AppSettingsStore</c> (the Roaming per-user store); this
-/// class NEVER touches the Roaming location — there is no per-user fallback.
+/// operational settings (this month's CU, package folders, WUG server, staged-machine list). Personal
+/// preferences stay per-user in <c>AppSettingsStore</c> (the Roaming per-user store); this class NEVER
+/// touches the Roaming location — there is no per-user fallback.
 ///
-/// <para><b>Load</b> does a FRESH disk read every call (no static cache — operator B's running Vivre must see
-/// operator A's save; the file is ~2 KB). An absent file, corrupt JSON, or an IO error returns safe defaults
-/// and never throws — Load is called from unguarded constructors — but a read failure is reported loudly via
-/// <see cref="ActivityLog"/> every time (never cached).</para>
+/// <para><b>The read/write contract is deliberately SPLIT — tolerant for readers, strict for writers:</b></para>
 ///
-/// <para><b>Save</b> is synchronous (a caller must know it failed): it validates that no credential-shaped
-/// field has crept into the shape, ensures the shared folder exists with an Authenticated-Users Modify ACL so
-/// the file inherits it (ProgramData's owner-only-write default would otherwise let the first creator lock
-/// everyone else out), then writes atomically. ANY failure propagates — no swallow, no fallback.</para>
+/// <para><b>Load</b> (READERS) does a FRESH disk read every call (no static cache — operator B's running Vivre
+/// must see operator A's save; the file is ~2 KB). An absent file, corrupt JSON, or an IO error returns safe
+/// defaults and never throws — Load is called from unguarded constructors — but a read failure is reported
+/// loudly via <see cref="ActivityLog"/> every time (never cached).</para>
+///
+/// <para><b>Update</b> (WRITERS) is synchronous, takes a <see cref="Action{SharedSettings}"/> DELTA (never a
+/// whole object), and is <b>structurally incapable of dropping a key it didn't intend to change</b>: it reads
+/// the CURRENT file fresh and — if the file EXISTS but can't be read or parsed — REFUSES (throws) rather than
+/// stomping unread settings with defaults (the exact wipe vector this replaces: a degraded read must never feed
+/// a save). It then applies the delta and writes back by MERGING the typed shape onto the raw on-disk JSON, so
+/// only the POCO-declared keys are overwritten, only the <see cref="ObsoleteSharedKeys"/> are removed, and every
+/// OTHER key — including keys an older/newer build wrote and this one doesn't know — is preserved verbatim. It
+/// validates that no credential-shaped field has crept into the shape and ensures the shared folder exists with
+/// an Authenticated-Users Modify ACL so the file inherits it (ProgramData's owner-only-write default would
+/// otherwise let the first creator lock everyone else out). ANY failure propagates — no swallow, no fallback.</para>
 /// </summary>
 [SupportedOSPlatform("windows")]
 public sealed class SharedSettingsStore
@@ -46,9 +55,18 @@ public sealed class SharedSettingsStore
     // operator on the box can read AND write the shared file. NOT Administrators, NOT BUILTIN\Users.
     private static readonly SecurityIdentifier AuthenticatedUsers = new(WellKnownSidType.AuthenticatedUserSid, null);
 
-    // Property NAMES that look like they carry a secret — the Save-time guard refuses any such field.
+    // Property NAMES that look like they carry a secret — the Update-time guard refuses any such field.
     private static readonly Regex CredentialNamePattern =
         new("password|secret|credential|token|pwd", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // Keys that USED to live in the shared file but have moved to the per-user store (the install cap and the
+    // WUG state-check concurrency, now personal in AppSettings). Update REMOVES these on every write so a stale
+    // shared value can't linger and mislead a reader — this is the ONLY set of keys a merge ever deletes. Every
+    // OTHER key the POCO doesn't own (an older/newer build's key) is preserved verbatim.
+    private static readonly string[] ObsoleteSharedKeys = ["MaxSimultaneousInstalls", "WugStateConcurrency"];
+
+    // Indented output so the shared file stays human-readable/diffable (matches the prior Save format).
+    private static readonly JsonSerializerOptions SerializerOptions = new() { WriteIndented = true };
 
     /// <param name="directoryOverride">Test-only: point the store at a scratch directory instead of
     /// <c>C:\ProgramData\Vivre</c>. Production always passes null.</param>
@@ -86,22 +104,107 @@ public sealed class SharedSettingsStore
         }
     }
 
-    /// <summary>Synchronous save (a caller must know it failed). Refuses credential-shaped shapes, ensures the
-    /// shared folder + ACL, then writes atomically. ANY failure propagates — writing operational data to the
-    /// Roaming store is forbidden, so there is no fallback of any kind.</summary>
-    public void Save(SharedSettings settings)
+    /// <summary>Sibling-safe mutate-and-save (this REPLACES the old whole-object Save, which could stomp keys it
+    /// never read). <paramref name="mutate"/> expresses only the DELTA; Update reads the CURRENT file fresh,
+    /// applies the delta to the typed view, and writes back by MERGING onto the raw on-disk JSON so ONLY the keys
+    /// this build declares are overwritten. Every other key (including keys an older/newer build wrote) is
+    /// preserved; only the <see cref="ObsoleteSharedKeys"/> are removed. If the file EXISTS but can't be read or
+    /// parsed the write is REFUSED (throws) — a degraded read must NEVER feed a save (that is the wipe vector this
+    /// replaces). An ABSENT file starts from defaults (first-run creation stays legal). Synchronous; ALL failures
+    /// propagate (the credential guard, a refused read, a folder/ACL failure, a write failure) — no swallow, no
+    /// fallback. Contrast <see cref="Load"/>, which stays tolerant (defaults, never throws) for unguarded readers.</summary>
+    public void Update(Action<SharedSettings> mutate)
     {
-        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(mutate);
 
         // (1) Runtime credential block — refuse to persist a shape that carries (or could carry) a secret.
         ValidateNoCredentialShapedFields(typeof(SharedSettings));
 
-        // (2) Ensure the shared folder exists with the Authenticated-Users Modify ACL (so the file inherits it).
-        EnsureSharedFolder();
+        // (2) Read the CURRENT file fresh. Absent → an empty object (defaults fill in on merge). Present but
+        //     unreadable/unparseable → REFUSE (throw): never let a degraded read feed a save.
+        JsonObject onDisk = ReadRawForWriteOrRefuse();
+        SharedSettings typed = onDisk.Deserialize<SharedSettings>() ?? new SharedSettings();
+        // Rebuild the staged-host set with the OrdinalIgnoreCase comparer (a JSON round-trip resets it to
+        // ordinal) so the caller's case-insensitive Add/Remove behaves exactly as it did through the typed API.
+        typed.StagedHosts = StagedHostMatching.Normalize(typed.StagedHosts);
 
-        // (3) Serialize + (4) atomic write. A write failure throws straight out to the caller — no fallback.
-        string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
-        AtomicFileWriter.Write(_path, json);
+        // (3) Apply the caller's change to the typed view.
+        mutate(typed);
+
+        // (4) Merge the typed view back onto the raw object: overwrite ONLY POCO-declared keys, drop ONLY the
+        //     obsolete keys, preserve everything else (unknown/future keys survive).
+        JsonObject merged = MergeTypedOntoRaw(typed, onDisk);
+
+        // (5) Ensure the shared folder + ACL, then write atomically. Any failure propagates.
+        EnsureSharedFolder();
+        AtomicFileWriter.Write(_path, merged.ToJsonString(SerializerOptions));
+    }
+
+    /// <summary>Reads the current file as a <see cref="JsonObject"/> for a write. Absent → an empty object.
+    /// Present but unreadable (IO) or unparseable (bad JSON / non-object root) → THROWS with the real cause so
+    /// the write is refused rather than stomping settings that couldn't be read back.</summary>
+    private JsonObject ReadRawForWriteOrRefuse()
+    {
+        if (!File.Exists(_path))
+        {
+            return new JsonObject(); // first run — start from an empty object; defaults fill in on the merge.
+        }
+
+        string raw;
+        try
+        {
+            raw = File.ReadAllText(_path);
+        }
+        catch (Exception ex)
+        {
+            throw new IOException(
+                $"The shared settings file ({_path}) exists but couldn't be read, so the save was refused rather "
+                + "than overwriting settings that couldn't be read back — fix or free the file, then retry "
+                + $"({ex.GetType().Name}: {ex.Message}).", ex);
+        }
+
+        JsonNode? node;
+        try
+        {
+            node = JsonNode.Parse(raw);
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidDataException(
+                $"The shared settings file ({_path}) exists but couldn't be parsed as JSON, so the save was refused "
+                + "rather than overwriting settings that couldn't be read back — fix or delete the file, then retry "
+                + $"({ex.GetType().Name}: {ex.Message}).", ex);
+        }
+
+        return node as JsonObject
+               ?? throw new InvalidDataException(
+                   $"The shared settings file ({_path}) exists but its root isn't a JSON object, so the save was "
+                   + "refused rather than overwriting it — fix or delete the file, then retry.");
+    }
+
+    /// <summary>Overlays the typed shape's own (POCO-declared) keys onto the raw on-disk object, removes ONLY the
+    /// <see cref="ObsoleteSharedKeys"/>, and leaves every other key exactly as it was on disk (so an older/newer
+    /// build's unknown keys survive a save by this build).</summary>
+    private static JsonObject MergeTypedOntoRaw(SharedSettings typed, JsonObject onDisk)
+    {
+        // The typed object's own keys — exactly the POCO-declared shape.
+        JsonObject typedObj = JsonSerializer.SerializeToNode(typed, SerializerOptions) as JsonObject
+                              ?? new JsonObject();
+
+        // Overlay each POCO key onto the raw object (overwrites the known keys, adds any missing). DeepClone so
+        // the node detaches from typedObj — a JsonNode can't have two parents.
+        foreach (KeyValuePair<string, JsonNode?> kv in typedObj)
+        {
+            onDisk[kv.Key] = kv.Value?.DeepClone();
+        }
+
+        // Remove ONLY the obsolete keys — the sole deletion a merge ever performs.
+        foreach (string obsolete in ObsoleteSharedKeys)
+        {
+            onDisk.Remove(obsolete);
+        }
+
+        return onDisk;
     }
 
     // ── Credential guard ─────────────────────────────────────────────────────────────────────────

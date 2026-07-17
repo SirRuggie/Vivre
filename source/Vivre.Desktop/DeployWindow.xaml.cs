@@ -151,9 +151,9 @@ public partial class DeployWindow : FluentWindow
 
         try
         {
-            SharedSettings s = _shared.Load();
-            s.PackagesFolder = dialog.FolderName;
-            _shared.Save(s);
+            // Sibling-safe: Update reads the shared file fresh and changes ONLY PackagesFolder; a degraded read
+            // refuses the write (throws) rather than stomping the other operational keys with defaults.
+            _shared.Update(s => s.PackagesFolder = dialog.FolderName);
         }
         catch (Exception ex)
         {

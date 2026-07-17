@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Vivre.Core.Columns;
 using Vivre.Core.IO;
 using Vivre.Core.Logging;
@@ -37,6 +38,21 @@ public sealed class AppSettings
     /// those machines so the grid's data is "just there". Off = manual (a frozen snapshot until you
     /// click Ping All / Check Vitals). Always scoped to the loaded list; never the wider fleet.</summary>
     public bool AutoCheckOnLoad { get; set; } = true;
+
+    /// <summary>Cap on how many hosts YOU install/uninstall/stage/clean-up at once — per operator, not shared
+    /// (your change affects only your sweeps; other operators keep their own). Tunable in Settings → "Max
+    /// simultaneous installs"; applied to every install sweep started after the change (in-flight sweeps
+    /// continue at the cap they were started with). The practical governor is update-download bandwidth (N hosts
+    /// pulling cumulative updates simultaneously), not the client. Range 1–200; default 50.</summary>
+    public int MaxSimultaneousInstalls { get; set; } = 50;
+
+    /// <summary>How many WhatsUp Gold devices YOUR state check looks up at once — per operator, not shared.
+    /// Tunable in Settings → "WhatsUp Gold state check — simultaneous lookups"; applied to checks started after
+    /// the change (an in-flight check keeps the value it launched with). Measured on the live WUG server: wall
+    /// time halves going 1→2 and then flatlines 2→4→8 with per-lookup latency creeping up, so the ceiling is
+    /// deliberately 4 (<see cref="Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency"/>). Range 1–4;
+    /// default 2. 1 = sequential (the pre-parallel behaviour).</summary>
+    public int WugStateConcurrency { get; set; } = 2;
 
     /// <summary>Whether the left NavigationView pane is expanded (true) or collapsed/compact (false).
     /// Default false — starts collapsed so the icon-only pane takes minimal horizontal space.</summary>
@@ -112,11 +128,12 @@ public sealed class AppSettingsStore
 
     public void Save(AppSettings settings)
     {
-        // Serialize and re-seat the cache synchronously (on the calling/UI thread) so the next Load()
-        // sees the new value immediately and the JSON is taken from a stable snapshot — only the disk
-        // write is pushed off the UI thread so saving a setting never blocks the UI on file I/O.
-        string json = JsonSerializer.Serialize(settings, new JsonSerializerOptions { WriteIndented = true });
+        // Re-seat the cache synchronously (on the calling/UI thread) so the next Load() sees the new value
+        // immediately, and snapshot the POCO as a DETACHED JsonObject here so a later mutation of `settings`
+        // can't race the background merge. Only the disk write is pushed off the UI thread, so saving a
+        // setting never blocks the UI on file I/O.
         _cache = settings;
+        JsonObject poco = JsonSerializer.SerializeToNode(settings, WriteIndented) as JsonObject ?? new JsonObject();
         string path = _path;
         _ = Task.Run(() =>
         {
@@ -124,17 +141,54 @@ public sealed class AppSettingsStore
             {
                 lock (_writeLock)
                 {
-                    AtomicFileWriter.Write(path, json);
+                    // Merge onto the on-disk JSON so a key this build doesn't declare (e.g. a newer build's
+                    // setting) survives a save by this one — mirrors the shared store's sibling-safe write.
+                    JsonObject merged = MergeOntoDisk(path, poco);
+                    AtomicFileWriter.Write(path, merged.ToJsonString(WriteIndented));
                 }
             }
             catch (Exception ex)
             {
                 // The in-memory cache still holds the change, so a failed write means the change is lost
                 // ONLY across restart — exactly how a StagedHosts flag silently reverts. Error (not Warn):
-                // it is not self-healing and the operator must re-do the action to persist it.
+                // it is not self-healing and the operator must re-do the action to persist it. This ALSO fires
+                // when the on-disk file exists but can't be read/parsed: the write is refused (below) rather
+                // than overwriting keys we couldn't read back with the POCO alone.
                 ActivityLog?.Error(null, $"Couldn't save settings to {path} — the change will be lost on restart: {ex.GetType().Name}: {ex.Message}");
                 System.Diagnostics.Debug.WriteLine($"AppSettingsStore.Save: failed to write {path}: {ex.Message}");
             }
         });
+    }
+
+    private static readonly JsonSerializerOptions WriteIndented = new() { WriteIndented = true };
+
+    /// <summary>Overlays the POCO's keys onto the raw on-disk JSON, preserving any key the POCO doesn't declare
+    /// (a newer/older build's setting). An ABSENT file starts from an empty object (first-run write is legal).
+    /// A PRESENT-but-unreadable/unparseable file THROWS — the write is refused rather than writing the POCO
+    /// alone and silently dropping keys we couldn't read back (surfaced via the caller's ActivityLog.Error).</summary>
+    private static JsonObject MergeOntoDisk(string path, JsonObject poco)
+    {
+        JsonObject onDisk;
+        if (File.Exists(path))
+        {
+            // An IO failure (locked file) throws straight out → refused + surfaced, never a POCO-only fallback.
+            string raw = File.ReadAllText(path);
+            onDisk = JsonNode.Parse(raw) as JsonObject
+                     ?? throw new InvalidDataException(
+                         $"{path} exists but its root isn't a JSON object; refusing to overwrite it (would drop keys "
+                         + "that couldn't be read back). Fix or delete the file, then retry.");
+        }
+        else
+        {
+            onDisk = new JsonObject();
+        }
+
+        // DeepClone so each node detaches from `poco` — a JsonNode can't have two parents.
+        foreach (KeyValuePair<string, JsonNode?> kv in poco)
+        {
+            onDisk[kv.Key] = kv.Value?.DeepClone();
+        }
+
+        return onDisk;
     }
 }

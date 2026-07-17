@@ -24,9 +24,10 @@ namespace Vivre.Desktop;
 public partial class SettingsPage : UserControl
 {
     private AppSettingsStore? _settingsStore;
-    // Machine-wide operational settings (WUG server, package folders, this month's CU, install concurrency,
-    // staged-machine list) shared by every operator on the box. Stateless and self-contained, so field-init
-    // it — it doesn't need injecting like the per-user store.
+    // Machine-wide operational settings (WUG server, package folders, this month's CU, staged-machine list)
+    // shared by every operator on the box. Stateless and self-contained, so field-init it — it doesn't need
+    // injecting like the per-user store. (The install cap and WUG state-check concurrency are PERSONAL — they
+    // live in the per-user AppSettings store, seeded/persisted via _settingsStore below.)
     private readonly SharedSettingsStore _sharedStore = new();
     private Core.Logging.IActivityLog? _log;
     private SettingsViewModel? _credVm;
@@ -58,8 +59,9 @@ public partial class SettingsPage : UserControl
         LcuUbrBox.Text = shared.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
         LcuMonthTagBox.Text = shared.MonthlyCu?.MonthTag ?? string.Empty;
         LcuPackagesFolderBox.Text = shared.LcuPackagesFolder;
-        MaxInstallsBox.Text = shared.MaxSimultaneousInstalls.ToString();
-        WugStateConcurrencyBox.Text = shared.WugStateConcurrency.ToString();
+        // The install cap and WUG state-check concurrency are PERSONAL — seed them from the per-user snapshot.
+        MaxInstallsBox.Text = s.MaxSimultaneousInstalls.ToString();
+        WugStateConcurrencyBox.Text = s.WugStateConcurrency.ToString();
 
         // Inline version in the Help & about expander.
         VersionText.Text = $"Vivre {AboutWindow.RunningVersion()}";
@@ -197,7 +199,7 @@ public partial class SettingsPage : UserControl
         if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > 200)
         {
             // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
-            MaxInstallsBox.Text = _sharedStore.Load().MaxSimultaneousInstalls.ToString();
+            MaxInstallsBox.Text = (_settingsStore?.Load() ?? new AppSettings()).MaxSimultaneousInstalls.ToString();
             return;
         }
 
@@ -208,7 +210,8 @@ public partial class SettingsPage : UserControl
             MaxInstallsBox.Text = parsed.ToString();
         }
 
-        PersistShared(s => s.MaxSimultaneousInstalls = parsed);
+        // Personal, per operator — persists to the per-user store (not the machine-wide shared file).
+        PersistSettings(s => s.MaxSimultaneousInstalls = parsed);
     }
 
     private void OnWugStateConcurrencyChanged(object sender, RoutedEventArgs e)
@@ -217,7 +220,7 @@ public partial class SettingsPage : UserControl
         if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency)
         {
             // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
-            WugStateConcurrencyBox.Text = _sharedStore.Load().WugStateConcurrency.ToString();
+            WugStateConcurrencyBox.Text = (_settingsStore?.Load() ?? new AppSettings()).WugStateConcurrency.ToString();
             return;
         }
 
@@ -228,7 +231,8 @@ public partial class SettingsPage : UserControl
             WugStateConcurrencyBox.Text = parsed.ToString();
         }
 
-        PersistShared(s => s.WugStateConcurrency = parsed);
+        // Personal, per operator — persists to the per-user store (not the machine-wide shared file).
+        PersistSettings(s => s.WugStateConcurrency = parsed);
     }
 
     private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)
@@ -512,9 +516,10 @@ public partial class SettingsPage : UserControl
     {
         try
         {
-            SharedSettings s = _sharedStore.Load();
-            mutate(s);
-            _sharedStore.Save(s);
+            // Sibling-safe: Update reads the shared file fresh and merges ONLY the edited key back. A degraded
+            // read (unreadable/corrupt file) makes Update REFUSE (throw) rather than stomp the other keys with
+            // defaults — surfaced below as an unmissable "couldn't save" so the operator fixes the file.
+            _sharedStore.Update(mutate);
             return true;
         }
         catch (Exception ex)

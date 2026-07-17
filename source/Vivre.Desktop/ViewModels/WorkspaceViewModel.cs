@@ -123,11 +123,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly ICustomColumnProbe _customColumns;
     private readonly ICatalogSizeService _catalogSize;
     private readonly OrphanRebootServiceReaper _reaper;
-    // Personal, per-user (Roaming) preferences: auto-check-on-load + the grid column layout only.
+    // Personal, per-user (Roaming) preferences: auto-check-on-load, the grid column layout, the install cap
+    // (MaxSimultaneousInstalls) and the WUG state-check concurrency (WugStateConcurrency) — each operator's own.
     private readonly AppSettingsStore _appSettings = new();
-    // Machine-wide operational settings (this month's CU, package folders, WUG server, install concurrency,
-    // staged-machine list) shared by every operator on the box — see SharedSettingsStore. Stateless; fresh
-    // disk read per Load so a change another operator saved is picked up on the next read.
+    // Machine-wide operational settings (this month's CU, package folders, WUG server, staged-machine list)
+    // shared by every operator on the box — see SharedSettingsStore. Stateless; fresh disk read per Load so a
+    // change another operator saved is picked up on the next read.
     private readonly SharedSettingsStore _shared = new();
 
     /// <summary>User-defined custom columns (machine mode), loaded from settings; the view builds a grid
@@ -848,7 +849,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _scripts = scripts;
         _patch = patch;
         _patchOptions = patchOptions;
-        _patchThrottleCap = ClampInstallCap(_shared.Load().MaxSimultaneousInstalls);
+        _patchThrottleCap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
         _patchThrottle = new SemaphoreSlim(_patchThrottleCap);
         // First tab wins: the shared read budget is set once from the singleton PatchOptions and then
         // reused by every subsequent tab. Safe without a lock because all WorkspaceViewModel instances
@@ -2758,7 +2759,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// semaphores and the total concurrent load stays bounded.</summary>
     private SemaphoreSlim CurrentInstallThrottle()
     {
-        int cap = ClampInstallCap(_shared.Load().MaxSimultaneousInstalls);
+        int cap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
         if (cap != _patchThrottleCap)
         {
             // Operator changed "Max simultaneous installs". Swap to a fresh semaphore at the new cap.
@@ -3692,25 +3693,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         computer.RequiresStagedPatching = staged;
 
-        SharedSettings settings = _shared.Load();
-        if (staged)
-        {
-            settings.StagedHosts.Add(computer.Name);
-        }
-        else
-        {
-            settings.StagedHosts.Remove(computer.Name);
-        }
-
         try
         {
-            _shared.Save(settings);
+            // Sibling-safe: Update reads the shared file fresh and changes ONLY StagedHosts — a degraded read
+            // refuses the write (throws) rather than stomping the other operational keys with defaults.
+            _shared.Update(settings =>
+            {
+                if (staged)
+                {
+                    settings.StagedHosts.Add(computer.Name);
+                }
+                else
+                {
+                    settings.StagedHosts.Remove(computer.Name);
+                }
+            });
         }
         catch (Exception ex)
         {
-            // The shared save is synchronous and throws on failure. A flag that LOOKS set but didn't persist
-            // would mis-route this box down the wrong WUA lane after a restart, so revert the live flag to
-            // match reality and surface it — the operator must re-do the change to persist it.
+            // The shared save is synchronous and throws on failure (including a refused degraded read). A flag
+            // that LOOKS set but didn't persist would mis-route this box down the wrong WUA lane after a restart,
+            // so revert the live flag to match reality and surface it — the operator must re-do the change.
             computer.RequiresStagedPatching = !staged;
             _activity.Error(computer.Name, $"Couldn't save the staged-patching change — reverted: {ex.Message}");
         }
@@ -6055,7 +6058,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
             // Read the operator's concurrency setting at call time (like CurrentInstallThrottle) so a check
             // uses the value in effect when it launches; core + the script own the [1,4] clamp, so pass raw.
-            int concurrency = _shared.Load().WugStateConcurrency;
+            int concurrency = _appSettings.Load().WugStateConcurrency;
             // Amendment 2 — once results stream, "a line arrived recently" is the health signal: the 90s
             // stall watchdog catches a wedge, and the ceiling is a runaway backstop sized so it cannot fire
             // on a healthy 324-box run; a total cap that guillotines a slow-but-working run is exactly what

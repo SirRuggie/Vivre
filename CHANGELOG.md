@@ -22,12 +22,15 @@ it ships, then gets a dated heading.
 
 ### Changed
 - **Patching settings are now shared by everyone who uses this computer, instead of living in each person's
-  profile.** This month's Server 2016 CU, the package folders, the WhatsUp Gold server, the max simultaneous
-  installs, the state-check lookup count, and the staged-machine list are now stored in one machine-wide file
-  (`C:\ProgramData\Vivre\settings.json`, created on first save) — so whoever signs into this box sees the same
-  patching setup and picks up changes a colleague made. Personal preferences (theme, grid columns, and
-  auto-check on load) still stay per-person in your own profile. A patching-setting change that can't be saved
-  now tells you right away rather than silently looking saved.
+  profile.** This month's Server 2016 CU, the package folders, the WhatsUp Gold server, and the staged-machine
+  list are now stored in one machine-wide file (`C:\ProgramData\Vivre\settings.json`, created on first save) —
+  so whoever signs into this box sees the same patching setup and picks up changes a colleague made. Personal
+  preferences (theme, grid columns, and auto-check on load) still stay per-person in your own profile. A
+  patching-setting change that can't be saved now tells you right away rather than silently looking saved.
+- **"Max simultaneous installs" and the WhatsUp Gold state-check lookup count are personal to each operator
+  again**, not shared. Everyone starts from the same defaults (50 installs at once, 2 lookups at once), but
+  your change to either affects only your own runs — not your colleagues'. (Auto-check on load was already
+  personal; this just puts these two number settings alongside it.)
 - **The Settings page is reorganized so related settings sit together.** Both WhatsUp Gold settings —
   the server address and the state check's simultaneous lookups — now live together under one **WhatsUp
   Gold** card; the old **Integrations** section is gone (the package library folder is now its own
@@ -53,6 +56,12 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **Saving one shared patching setting can no longer erase the others.** Saves now re-read the real
+  machine-wide file and change only the value you edited — instead of rewriting the whole file from an
+  in-memory copy, which could (and once did) blank the staged-machine list and other settings if the file had
+  been read back as empty a moment earlier. If the shared file genuinely can't be read (locked or corrupt), the
+  save is now refused with a clear error telling you to fix or delete the file, rather than quietly overwriting
+  it with defaults.
 - **A machine that is offline because its name no longer resolves no longer shows a confusing raw
   Windows DNS error in the Last error column.** It now reads a calm "Offline — name doesn't resolve"
   status with an empty error, and it no longer appears under the Errors filter — that filter is for

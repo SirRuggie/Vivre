@@ -71,14 +71,20 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
 5. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
-   use.** The machine-wide operational settings (`C:\ProgramData\Vivre\settings.json`, written by
-   `SharedSettingsStore`) are **whole-file last-writer-wins** between operators: two operators editing
-   patching settings at once, or one saving while another's Vivre holds an older in-memory copy, silently
-   overwrites the other's change (`Load` is uncached and `Save` rewrites the whole file with no version/etag
-   check). Acceptable for the current single-admin reality — but before this box is genuinely shared by
-   concurrent operators, add an optimistic-concurrency guard (read a version/mtime on Load, re-check it on
-   Save, and merge or reject-and-reload on mismatch). No migration/copy/stomp-guard shipped with the initial
-   split by design.
+   use.** *Prerequisite now IN:* the write path is `SharedSettingsStore.Update(Action<SharedSettings>)` — a
+   **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves every other
+   key (including a future build's), and **refuses (throws) if an existing file can't be read** instead of
+   stomping unread keys with defaults. That closes the *single-writer* wipe vector that once blanked
+   `StagedHosts` (a degraded `Load` returned defaults, then a whole-file `Save` wrote them back over
+   everything). What REMAINS is the *concurrent-writer* race: writes are still **whole-file last-writer-wins**
+   between operators — two operators editing at once, or one saving while another's Vivre holds an older
+   in-memory copy, each still merges onto the file **as they last read it**, so the later writer's merge can
+   revert a key the earlier writer just changed. Acceptable for the current single-admin reality — but before
+   this box is genuinely shared by concurrent operators, add an optimistic-concurrency guard (read a
+   version/mtime inside `Update`, re-check it just before the atomic write, and reject-and-reload on mismatch).
+   Adjacent small hardening while in there: `AtomicFileWriter` uses a **fixed-name `.tmp`** (`path + ".tmp"`),
+   so two processes writing the same file at once can collide on the temp — give it a per-write unique suffix.
+   No migration/copy/stomp-guard shipped with the initial split by design.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under

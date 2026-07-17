@@ -179,14 +179,14 @@ public partial class MaintenanceWindow : FluentWindow
             // Pre-flight passed — remember the server address (never the credentials).
             try
             {
-                SharedSettings s = _shared.Load();
-                s.WugServer = server;
-                _shared.Save(s);
+                // Sibling-safe: Update reads the shared file fresh and changes ONLY WugServer; a degraded read
+                // refuses the write (throws) rather than stomping the other operational keys with defaults.
+                _shared.Update(s => s.WugServer = server);
             }
             catch (Exception ex)
             {
                 // Best-effort — remembering the server address is a convenience, not required to proceed —
-                // but the shared store's Save is synchronous and surfaces failures through its CALLER, so
+                // but the shared store's Update is synchronous and surfaces failures through its CALLER, so
                 // never swallow it silently: report via the store's shared activity-log hook and continue.
                 SharedSettingsStore.ActivityLog?.Error(null,
                     $"Couldn't save the WhatsUp Gold server address for next time — {ex.Message}. The maintenance action itself still ran.");
