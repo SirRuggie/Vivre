@@ -2,6 +2,7 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using Microsoft.Win32;
+using Vivre.Core.Configuration;
 using Vivre.Core.Models;
 using Vivre.Desktop.ViewModels;
 using Wpf.Ui.Controls;
@@ -20,7 +21,8 @@ public partial class DeployWindow : FluentWindow
 {
     private readonly WorkspaceViewModel _vm;
     private readonly IReadOnlyList<Computer> _computers;
-    private readonly AppSettingsStore _settings = new();
+    // The package library folder is a machine-wide operational setting (shared across operators).
+    private readonly SharedSettingsStore _shared = new();
 
     public DeployWindow(WorkspaceViewModel vm, IReadOnlyList<Computer> computers)
     {
@@ -44,7 +46,7 @@ public partial class DeployWindow : FluentWindow
         {
             try
             {
-                return _settings.Load().PackagesFolder;
+                return _shared.Load().PackagesFolder;
             }
             catch
             {
@@ -149,9 +151,9 @@ public partial class DeployWindow : FluentWindow
 
         try
         {
-            AppSettings s = _settings.Load();
+            SharedSettings s = _shared.Load();
             s.PackagesFolder = dialog.FolderName;
-            _settings.Save(s);
+            _shared.Save(s);
         }
         catch (Exception ex)
         {

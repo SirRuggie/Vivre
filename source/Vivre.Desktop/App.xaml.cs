@@ -2,6 +2,7 @@ using System.Windows;
 using Wpf.Ui.Appearance;
 using Vivre.Core.Columns;
 using Vivre.Core.Computers;
+using Vivre.Core.Configuration;
 using Vivre.Core.Credentials;
 using Vivre.Core.Deploy;
 using Vivre.Core.Net;
@@ -64,8 +65,10 @@ public partial class App : Application
         var credentials = new CredentialStore();
         var activity = new ActivityLog();
         // Settings-save failures surface through the activity log (a static hook because the store is
-        // new()-constructed in several places — see AppSettingsStore.ActivityLog).
+        // new()-constructed in several places — see AppSettingsStore.ActivityLog). The machine-wide shared
+        // store (operational settings under C:\ProgramData\Vivre) reports read failures the same way.
         AppSettingsStore.ActivityLog = activity;
+        SharedSettingsStore.ActivityLog = activity;
         var scripts = new ScriptLibrary();
         var patch = new PatchService(powerShell, activity);
         var vitals = new VitalsProbe(powerShell, new DcomVitalsProbe());

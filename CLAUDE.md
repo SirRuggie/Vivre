@@ -120,8 +120,19 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - **`dotnet test` on the solution does not build `Vivre.Desktop`** (it isn't a test dependency) —
   after a test-only run, `dotnet build` the solution (which DOES build it) or the Desktop project
   before launching, or you'll run a stale exe.
-- Per-user data: settings/lists/scripts under `%APPDATA%\Vivre\`; logs under
-  `%LOCALAPPDATA%\Vivre\logs\` (Serilog, rolling daily).
+- Data locations (split by scope):
+  - **Personal, per-user** — `AppSettingsStore` writes `%APPDATA%\Vivre\settings.json`: theme, grid
+    columns, hidden columns, auto-check-on-load, nav-pane state, dock height, software→service map.
+    Computer **lists** and **scripts** also live under `%APPDATA%\Vivre\`.
+  - **Shared, machine-wide (operational)** — `SharedSettingsStore` (`Vivre.Core.Configuration`) writes
+    `C:\ProgramData\Vivre\settings.json` (created on first save, with an Authenticated-Users Modify ACL so
+    every operator can read/write): this month's CU (`MonthlyCu`), the LCU + package folders, the WUG
+    server, max simultaneous installs, the WUG state-check concurrency, and the staged-machine list. Fresh
+    disk read per `Load` (uncached) so one operator sees another's save; synchronous `Save` that surfaces
+    failures. **Never put credential material here** — a Save-time reflection guard throws on a
+    credential-shaped field. (Whole-file last-writer-wins between operators until an optimistic-concurrency
+    stomp guard lands — see docs/vivre-backlog.md.)
+  - **Logs** — `%LOCALAPPDATA%\Vivre\logs\` (Serilog, rolling daily).
 
 ## Conventions
 

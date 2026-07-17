@@ -1,5 +1,6 @@
 using System.Security;
 using System.Windows;
+using Vivre.Core.Configuration;
 using Vivre.Core.Models;
 using Vivre.Desktop.ViewModels;
 using Wpf.Ui.Controls;
@@ -21,7 +22,8 @@ public partial class WugStateWindow : FluentWindow
 {
     private readonly WorkspaceViewModel _vm;
     private readonly IReadOnlyList<Computer> _computers;
-    private readonly AppSettingsStore _settings = new();
+    // The WUG server address is a machine-wide operational setting (shared across operators).
+    private readonly SharedSettingsStore _shared = new();
 
     public WugStateWindow(WorkspaceViewModel vm, IReadOnlyList<Computer> computers)
     {
@@ -34,7 +36,7 @@ public partial class WugStateWindow : FluentWindow
 
         try
         {
-            ServerBox.Text = _settings.Load().WugServer;
+            ServerBox.Text = _shared.Load().WugServer;
         }
         catch
         {

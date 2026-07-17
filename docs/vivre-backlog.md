@@ -70,6 +70,15 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
+5. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
+   use.** The machine-wide operational settings (`C:\ProgramData\Vivre\settings.json`, written by
+   `SharedSettingsStore`) are **whole-file last-writer-wins** between operators: two operators editing
+   patching settings at once, or one saving while another's Vivre holds an older in-memory copy, silently
+   overwrites the other's change (`Load` is uncached and `Save` rewrites the whole file with no version/etag
+   check). Acceptable for the current single-admin reality — but before this box is genuinely shared by
+   concurrent operators, add an optimistic-concurrency guard (read a version/mtime on Load, re-check it on
+   Save, and merge or reject-and-reload on mismatch). No migration/copy/stomp-guard shipped with the initial
+   split by design.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under

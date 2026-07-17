@@ -9,6 +9,10 @@
   <ItemGroup>
     <!-- Let the test project assert on internal script builders (e.g. BuildBootstrapScript). -->
     <InternalsVisibleTo Include="Vivre.Core.Tests" />
+    <!-- The desktop app (assembly name "Vivre") sets the internal SharedSettingsStore.ActivityLog hook from
+         its composition root — same static-hook wiring as AppSettingsStore.ActivityLog, but that store lives
+         in the Desktop assembly whereas SharedSettingsStore lives here in Core. -->
+    <InternalsVisibleTo Include="Vivre" />
   </ItemGroup>
 
   <ItemGroup>

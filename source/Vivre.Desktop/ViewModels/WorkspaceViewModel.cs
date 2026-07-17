@@ -10,6 +10,7 @@ using System.Windows.Data;
 using System.Windows.Threading;
 using Vivre.Core.Columns;
 using Vivre.Core.Computers;
+using Vivre.Core.Configuration;
 using Vivre.Core.Credentials;
 using Vivre.Core.Deploy;
 using Vivre.Core.Logging;
@@ -122,7 +123,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly ICustomColumnProbe _customColumns;
     private readonly ICatalogSizeService _catalogSize;
     private readonly OrphanRebootServiceReaper _reaper;
+    // Personal, per-user (Roaming) preferences: auto-check-on-load + the grid column layout only.
     private readonly AppSettingsStore _appSettings = new();
+    // Machine-wide operational settings (this month's CU, package folders, WUG server, install concurrency,
+    // staged-machine list) shared by every operator on the box — see SharedSettingsStore. Stateless; fresh
+    // disk read per Load so a change another operator saved is picked up on the next read.
+    private readonly SharedSettingsStore _shared = new();
 
     /// <summary>User-defined custom columns (machine mode), loaded from settings; the view builds a grid
     /// column per entry and the CSV export appends them. Mutated via Add/Remove which persist.</summary>
@@ -842,7 +848,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _scripts = scripts;
         _patch = patch;
         _patchOptions = patchOptions;
-        _patchThrottleCap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
+        _patchThrottleCap = ClampInstallCap(_shared.Load().MaxSimultaneousInstalls);
         _patchThrottle = new SemaphoreSlim(_patchThrottleCap);
         // First tab wins: the shared read budget is set once from the singleton PatchOptions and then
         // reused by every subsequent tab. Safe without a lock because all WorkspaceViewModel instances
@@ -1263,7 +1269,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         var added = new List<Computer>();
         // Load settings once before the loop — StagedHosts is the persisted set of host names the
         // operator has flagged for the DISM lane; seed each new row's flag from it now.
-        HashSet<string> stagedHosts = _appSettings.Load().StagedHosts;
+        HashSet<string> stagedHosts = _shared.Load().StagedHosts;
         foreach (string name in names.Select(n => n.Trim()).Where(n => n.Length > 0))
         {
             if (existing.Add(name))
@@ -2752,7 +2758,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// semaphores and the total concurrent load stays bounded.</summary>
     private SemaphoreSlim CurrentInstallThrottle()
     {
-        int cap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
+        int cap = ClampInstallCap(_shared.Load().MaxSimultaneousInstalls);
         if (cap != _patchThrottleCap)
         {
             // Operator changed "Max simultaneous installs". Swap to a fresh semaphore at the new cap.
@@ -3330,7 +3336,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // Settings (the same gate the Stage lane uses) so cuExclude always has the operator-declared KB as a
             // floor, then ALSO exclude EVERY CU-titled update the scan shows (CuKbs — not the single-confident
             // FindCuKb) so an ambiguous scan listing two CU KBs can't let one slip through.
-            string? settingsCu = _appSettings.Load().MonthlyCu?.Kb;
+            string? settingsCu = _shared.Load().MonthlyCu?.Kb;
             if (string.IsNullOrWhiteSpace(settingsCu))
             {
                 computer.UpdatePhase = PatchPhase.Idle.ToString();
@@ -3547,10 +3553,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>This cycle's Server 2016 CU, e.g. "KB5094122 / 9234" — shown in the 2016 panel, set in
     /// Settings. The lane stages this KB and Verify checks the box reaches this UBR.</summary>
-    public string MonthlyCuDisplay => _appSettings.Load().MonthlyCu?.Display ?? "(set in Settings)";
+    public string MonthlyCuDisplay => _shared.Load().MonthlyCu?.Display ?? "(set in Settings)";
 
     /// <summary>The folder the operator drops the monthly CU <c>.msu</c> into (read-only display for the panel).</summary>
-    public string LcuPackagesFolder => _appSettings.Load().LcuPackagesFolder;
+    public string LcuPackagesFolder => _shared.Load().LcuPackagesFolder;
 
     /// <summary>How many confirmed Server 2016 boxes are in this tab — drives the panel's count + visibility.
     /// Unread boxes (no OS build yet) don't count until a vitals check classifies them.</summary>
@@ -3601,7 +3607,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// still need their CU staged (the dialog set) versus which proceed via the normal install, plus any
     /// Settings-vs-scan CU KB mismatches. Pure — no host is contacted.</summary>
     public StagedInstallPlan PlanStagedInstall(IReadOnlyList<Computer> targets) =>
-        StagedInstallPlanner.Plan(targets, _appSettings.Load().MonthlyCu?.Kb);
+        StagedInstallPlanner.Plan(targets, _shared.Load().MonthlyCu?.Kb);
 
     /// <summary>Stage this month's CU on the given flagged 2016 boxes (decision dialog "Stage CU first"). Same
     /// per-host stage as the panel button, scoped to a specific set.</summary>
@@ -3632,7 +3638,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+        int targetUbr = _shared.Load().MonthlyCu?.TargetUbr ?? 0;
         var outcomes = new ConcurrentDictionary<string, LcuVerifyOutcome>(StringComparer.OrdinalIgnoreCase);
 
         async Task ReadOneAsync(Computer box)
@@ -3674,9 +3680,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>Marks or unmarks a Server 2016 box for staged patching: flips the live per-row flag (routing and
-    /// the grid's Staged column react immediately) AND persists the host in <see cref="AppSettings.StagedHosts"/>
-    /// so the choice survives restarts and seeds future row loads. No-op for a non-2016 box — the flag is only
-    /// meaningful there.</summary>
+    /// the grid's Staged column react immediately) AND persists the host in <see cref="SharedSettings.StagedHosts"/>
+    /// (the machine-wide shared store) so the choice survives restarts and seeds future row loads. No-op for a
+    /// non-2016 box — the flag is only meaningful there.</summary>
     public void SetStagedPatching(Computer computer, bool staged)
     {
         if (computer is null || !LcuRouting.Is2016(computer.OsBuild))
@@ -3686,7 +3692,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         computer.RequiresStagedPatching = staged;
 
-        AppSettings settings = _appSettings.Load();
+        SharedSettings settings = _shared.Load();
         if (staged)
         {
             settings.StagedHosts.Add(computer.Name);
@@ -3696,10 +3702,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             settings.StagedHosts.Remove(computer.Name);
         }
 
-        _appSettings.Save(settings);
+        try
+        {
+            _shared.Save(settings);
+        }
+        catch (Exception ex)
+        {
+            // The shared save is synchronous and throws on failure. A flag that LOOKS set but didn't persist
+            // would mis-route this box down the wrong WUA lane after a restart, so revert the live flag to
+            // match reality and surface it — the operator must re-do the change to persist it.
+            computer.RequiresStagedPatching = !staged;
+            _activity.Error(computer.Name, $"Couldn't save the staged-patching change — reverted: {ex.Message}");
+        }
     }
 
-    private static LcuTarget BuildLcuTarget(AppSettings s) =>
+    private static LcuTarget BuildLcuTarget(SharedSettings s) =>
         new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
 
     /// <summary>Read-only precheck for the panel's Stage button: is this month's CU <c>.msu</c> present +
@@ -3707,7 +3724,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// "drop the file here" prompt instead of touching any box. (No host is contacted.)</summary>
     public LcuStageReadiness CheckLcuStageReadiness()
     {
-        AppSettings s = _appSettings.Load();
+        SharedSettings s = _shared.Load();
         string kb = s.MonthlyCu?.Kb?.Trim() ?? string.Empty;
 
         // No KB configured yet — guide to Settings instead of resolving (the resolver requires a KB). This is
@@ -3720,7 +3737,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 Arch: s.MonthlyCu?.Arch ?? "x64",
                 Folder: s.LcuPackagesFolder,
                 CatalogUrl: "https://www.catalog.update.microsoft.com",
-                Problem: "This month's CU isn't set yet. Open Settings ▸ \"Server 2016 cumulative update\" and enter the KB (e.g. KB5094122) and target UBR first.");
+                Problem: "This month's CU isn't set yet. Open Settings ▸ \"Server 2016 cumulative update\" and enter the KB (e.g. KB5094122) and the build number after the update first — or drop the .msu in the CU package folder and use Read from package.");
         }
 
         LcuTarget target = BuildLcuTarget(s);
@@ -3821,11 +3838,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        AppSettings settings = _appSettings.Load();
+        SharedSettings settings = _shared.Load();
         if (string.IsNullOrWhiteSpace(settings.MonthlyCu?.Kb))
         {
             computer.UpdatePhase = PatchPhase.Idle.ToString();
-            computer.UpdateMessage = "Set this month's CU (KB + UBR) in Settings before staging 2016 boxes.";
+            computer.UpdateMessage = "Set this month's CU (KB + build number) in Settings before staging 2016 boxes.";
             return;
         }
 
@@ -4127,7 +4144,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             HostPatchStatus final;
             if (lane == RebootVerifyLane.Lcu2016)
             {
-                int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+                int targetUbr = _shared.Load().MonthlyCu?.TargetUbr ?? 0;
                 // 2016 staged box: it commits the CU slowly on shutdown and can hold the network up for
                 // 15–20+ min, so use the longer go-offline windows (ForSlowCommit) — the 8-min default
                 // false-failed these as "the reboot isn't taking" while they were genuinely committing.
@@ -4337,7 +4354,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// red; "can't read it yet" just leaves a re-check message (never a failure).</summary>
     private async Task VerifyLcuRowAsync(Computer computer, CancellationToken token)
     {
-        int targetUbr = _appSettings.Load().MonthlyCu?.TargetUbr ?? 0;
+        int targetUbr = _shared.Load().MonthlyCu?.TargetUbr ?? 0;
 
         computer.UpdateError = null;
         computer.UpdateMessage = "Verifying build…";
@@ -6038,7 +6055,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             string plain = new System.Net.NetworkCredential(string.Empty, password).Password;
             // Read the operator's concurrency setting at call time (like CurrentInstallThrottle) so a check
             // uses the value in effect when it launches; core + the script own the [1,4] clamp, so pass raw.
-            int concurrency = _appSettings.Load().WugStateConcurrency;
+            int concurrency = _shared.Load().WugStateConcurrency;
             // Amendment 2 — once results stream, "a line arrived recently" is the health signal: the 90s
             // stall watchdog catches a wedge, and the ceiling is a runaway backstop sized so it cannot fire
             // on a healthy 324-box run; a total cap that guillotines a slow-but-working run is exactly what

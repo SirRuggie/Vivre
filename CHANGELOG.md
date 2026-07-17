@@ -6,7 +6,23 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- **You can fill this month's Server 2016 CU settings straight from the update file.** Drop the month's
+  `.msu` in the CU package folder and click **Settings ▸ Server 2016 cumulative update ▸ Read from
+  package** — Vivre reads the KB, build number, and architecture out of the file itself and shows them
+  next to your current settings for you to confirm before anything changes, along with the file's own
+  date so a stale, last-month file is easy to spot. It refuses anything that
+  isn't a genuine Server 2016 cumulative update (wrong product, a renamed file, a servicing-stack update,
+  or two `.msu` files in the folder) and never changes your values without showing you what it read.
+
 ### Changed
+- **Patching settings are now shared by everyone who uses this computer, instead of living in each person's
+  profile.** This month's Server 2016 CU, the package folders, the WhatsUp Gold server, the max simultaneous
+  installs, the state-check lookup count, and the staged-machine list are now stored in one machine-wide file
+  (`C:\ProgramData\Vivre\settings.json`, created on first save) — so whoever signs into this box sees the same
+  patching setup and picks up changes a colleague made. Personal preferences (theme, grid columns, and
+  auto-check on load) still stay per-person in your own profile. A patching-setting change that can't be saved
+  now tells you right away rather than silently looking saved.
 - **The Settings page is reorganized so related settings sit together.** Both WhatsUp Gold settings —
   the server address and the state check's simultaneous lookups — now live together under one **WhatsUp
   Gold** card; the old **Integrations** section is gone (the package library folder is now its own

@@ -1,0 +1,108 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.LcuPackageReadDialog"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        mc:Ignorable="d"
+        Title="Read from the package"
+        Width="580"
+        SizeToContent="Height"
+        MinHeight="320" MaxHeight="640"
+        ResizeMode="NoResize"
+        ExtendsContentIntoTitleBar="True"
+        WindowBackdropType="Mica"
+        WindowCornerPreference="Round"
+        WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" Title="Read from the package">
+            <ui:TitleBar.Icon>
+                <ui:SymbolIcon Symbol="Box24" />
+            </ui:TitleBar.Icon>
+        </ui:TitleBar>
+
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,8,20,8">
+            <StackPanel>
+                <TextBlock TextWrapping="Wrap" FontSize="13"
+                           Text="Vivre read this month's cumulative update from the .msu in the CU package folder. Compare it with your current settings below, then choose. Nothing changes unless you click &quot;Use package values&quot;." />
+
+                <!-- Shown only when the read values already match the typed ones. -->
+                <ui:InfoBar x:Name="MatchesBar" Severity="Success" IsOpen="False" IsClosable="False"
+                            Margin="0,12,0,0"
+                            Title="Matches your current settings"
+                            Message="What Vivre read is the same as what you already have — using the package values would change nothing." />
+
+                <!-- Side-by-side comparison. -->
+                <Border Margin="0,14,0,0" CornerRadius="6" Padding="14,12"
+                        Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Column headers -->
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="Your settings now" FontWeight="SemiBold"
+                                   Margin="12,0,12,8" />
+                        <TextBlock Grid.Row="0" Grid.Column="2" Text="Read from the package" FontWeight="SemiBold"
+                                   Margin="0,0,0,8" />
+
+                        <!-- KB number -->
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="KB number"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,8" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CurrentKbText" Margin="12,0,12,8" />
+                        <TextBlock Grid.Row="1" Grid.Column="2" x:Name="ReadKbText" Margin="0,0,0,8" FontWeight="SemiBold" />
+
+                        <!-- Build number -->
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="Build number"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,8" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" x:Name="CurrentUbrText" Margin="12,0,12,8" />
+                        <TextBlock Grid.Row="2" Grid.Column="2" x:Name="ReadUbrText" Margin="0,0,0,8" FontWeight="SemiBold" />
+
+                        <!-- Architecture -->
+                        <TextBlock Grid.Row="3" Grid.Column="0" Text="Architecture"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,0" />
+                        <TextBlock Grid.Row="3" Grid.Column="1" x:Name="CurrentArchText" Margin="12,0,12,0" />
+                        <TextBlock Grid.Row="3" Grid.Column="2" x:Name="ReadArchText" Margin="0,0,0,0" FontWeight="SemiBold" />
+                    </Grid>
+                </Border>
+
+                <!-- What was read, under the read column. -->
+                <TextBlock x:Name="IdentityText" TextWrapping="Wrap" FontSize="12" Margin="0,12,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="FileNameText" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                <TextBlock x:Name="FileDateText" TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="2" Padding="20,12" BorderThickness="0,1,0,0"
+                BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <ui:Button Content="Use package values" Appearance="Primary"
+                           Click="OnUsePackage" Margin="0,0,8,0"
+                           ToolTip="Overwrite the KB, build number, and architecture in Settings with what Vivre just read." />
+                <ui:Button x:Name="KeepButton" Content="Keep my settings" IsDefault="True" IsCancel="True"
+                           Click="OnKeep"
+                           ToolTip="Leave your current settings unchanged." />
+            </StackPanel>
+        </Border>
+    </Grid>
+</ui:FluentWindow>

@@ -3,7 +3,6 @@ using System.Text.Json;
 using Vivre.Core.Columns;
 using Vivre.Core.IO;
 using Vivre.Core.Logging;
-using Vivre.Core.Updates;
 
 namespace Vivre.Desktop;
 
@@ -13,24 +12,6 @@ public sealed class AppSettings
 {
     /// <summary>"Light" | "Dark" | "System". Applied on startup.</summary>
     public string Theme { get; set; } = "Dark";
-
-    /// <summary>WhatsUp Gold server address, remembered for the maintenance-mode dialog (the
-    /// credentials are NOT saved — only this address).</summary>
-    public string WugServer { get; set; } = "10.70.25.111";
-
-    /// <summary>Folder holding the stageable software packages (each subfolder or lone .msi/.exe is
-    /// one package). Populates the Stage software window's package dropdown; empty by default.</summary>
-    public string PackagesFolder { get; set; } = string.Empty;
-
-    /// <summary>Folder the Server 2016 full-package CU lane reads the monthly cumulative-update <c>.msu</c>
-    /// from (the operator drops the catalog download here; auto-fetch is off by design). Defaults to
-    /// <c>C:\Vivre\VivrePackages</c>; configurable in Settings.</summary>
-    public string LcuPackagesFolder { get; set; } = @"C:\Vivre\VivrePackages";
-
-    /// <summary>This cycle's Server 2016 cumulative update — the KB the lane stages and the UBR it verifies
-    /// after the reboot. Surfaced in the 2016 panel and confirmed by the operator each month; defaults to
-    /// the cycle in flight when the lane shipped.</summary>
-    public MonthlyCu MonthlyCu { get; set; } = new();
 
     /// <summary>Remembered "product name → Windows service name" pairs for the Check software dialog, so
     /// once you tell Vivre that (e.g.) CrowdStrike's service is CSFalconService it pre-fills it next time.
@@ -67,47 +48,6 @@ public sealed class AppSettings
     /// height will open at the clamped height rather than this raw value until the user resizes
     /// further. Default 170.</summary>
     public double BottomDockHeight { get; set; } = 170;
-
-    /// <summary>The persisted set of host names the operator has flagged as needing staged (DISM) patching;
-    /// OrdinalIgnoreCase; the source of truth behind <see cref="Vivre.Core.Models.Computer.RequiresStagedPatching"/>.
-    /// Always normalize after deserialization — a JSON round-trip resets the set's comparer to ordinal.</summary>
-    public HashSet<string> StagedHosts { get; set; } = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Cap on how many hosts install/uninstall/stage/clean-up at once. Operator-tunable in
-    /// Settings → "Max simultaneous installs"; applied to every install sweep started after the change
-    /// (in-flight sweeps continue at the cap they were started with). The practical governor is
-    /// update-download bandwidth (N hosts pulling cumulative updates simultaneously), not the client.
-    /// Range 1–200; default 50.</summary>
-    public int MaxSimultaneousInstalls { get; set; } = 50;
-
-    /// <summary>How many WhatsUp Gold devices the state check looks up at once. Operator-tunable in
-    /// Settings → "WhatsUp Gold state check — simultaneous lookups"; applied to checks started after the
-    /// change (an in-flight check keeps the value it launched with). Measured on the live WUG server:
-    /// wall time halves going 1→2 and then flatlines 2→4→8 with per-lookup latency creeping up, so the
-    /// ceiling is deliberately 4 (<see cref="Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency"/>).
-    /// Range 1–4; default 2. 1 = sequential (the pre-parallel behaviour).</summary>
-    public int WugStateConcurrency { get; set; } = 2;
-}
-
-/// <summary>
-/// The month's Server 2016 cumulative update the operator confirms each cycle. Kept deliberately small —
-/// the KB to stage, the architecture token expected in the <c>.msu</c> name, and the UBR the box should
-/// report once the CU commits (what Verify / the Reboot Wave check). Maps to <c>LcuTarget</c> in the lane.
-/// </summary>
-public sealed class MonthlyCu
-{
-    /// <summary>The CU article, e.g. "KB5094122" (bare "5094122" also accepted by the lane).</summary>
-    public string Kb { get; set; } = "KB5094122";
-
-    /// <summary>Architecture token expected in the .msu filename (Server 2016 is x64).</summary>
-    public string Arch { get; set; } = "x64";
-
-    /// <summary>The build revision (UBR) the box should report after the CU commits, e.g. 9234 → the box
-    /// reads 14393.9234. Verify and the Reboot Wave use this as the pass/fail check.</summary>
-    public int TargetUbr { get; set; } = 9234;
-
-    /// <summary>The display Vivre shows in the 2016 panel, e.g. "KB5094122 / 9234".</summary>
-    public string Display => $"{Kb} / {TargetUbr}";
 }
 
 /// <summary>
@@ -155,9 +95,6 @@ public sealed class AppSettingsStore
             AppSettings settings = File.Exists(_path)
                 ? JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(_path)) ?? new AppSettings()
                 : new AppSettings();
-            // A JSON round-trip resets HashSet/Dictionary comparers to ordinal — rebuild with
-            // OrdinalIgnoreCase so case-insensitive lookups always work after deserialization.
-            settings.StagedHosts = StagedHostMatching.Normalize(settings.StagedHosts);
             return settings;
         }
         catch (Exception ex) when (ex is not IOException and not UnauthorizedAccessException)

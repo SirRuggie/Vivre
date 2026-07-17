@@ -7,6 +7,7 @@ using System.Windows.Input;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
 using Microsoft.Win32;
+using Vivre.Core.Configuration;
 using Vivre.Core.Models;
 using Vivre.Core.Updates;
 using Vivre.Desktop.ViewModels;
@@ -55,8 +56,12 @@ public partial class MainWindow : FluentWindow
     public static readonly RoutedUICommand InstallKey = new("Install", nameof(InstallKey), typeof(MainWindow));
     public static readonly RoutedUICommand HelpKey = new("Help", nameof(HelpKey), typeof(MainWindow));
 
-    /// <summary>Persisted preferences — injected by the composition root.</summary>
+    /// <summary>Persisted per-user preferences (theme, dock height) — injected by the composition root.</summary>
     internal AppSettingsStore? Settings { get; set; }
+
+    /// <summary>Machine-wide operational settings (the staged-machine list is read here to re-sync grid flags).
+    /// Stateless; a fresh disk read per Load picks up a change another operator saved.</summary>
+    private readonly SharedSettingsStore _shared = new();
 
     /// <summary>Activity log for surfacing settings-save failures — injected by the composition root.</summary>
     internal Core.Logging.IActivityLog? Log { get; set; }
@@ -1140,12 +1145,12 @@ public partial class MainWindow : FluentWindow
     /// column and HasStagedServer2016 all additionally gate on Is2016, so the flag only ever acts on 2016 boxes.</summary>
     public void ResyncStagedPatchingFlags()
     {
-        if (Settings is not { } store || Shell is not { } shell)
+        if (Shell is not { } shell)
         {
             return;
         }
 
-        HashSet<string> staged = store.Load().StagedHosts;
+        HashSet<string> staged = _shared.Load().StagedHosts;
         foreach (WorkspaceViewModel tab in shell.AllTabs.OfType<WorkspaceViewModel>())
         {
             foreach (Computer c in tab.Computers)

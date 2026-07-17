@@ -296,6 +296,15 @@
                     </Grid>
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                   Text="Where you drop the monthly cumulative-update .msu downloaded from the Microsoft Update Catalog. Default: C:\Vivre\VivrePackages. Vivre only reads from here — it never downloads the file itself." />
+
+                    <!-- Read from package — accelerator for the KB / build number / architecture fields above. -->
+                    <ui:Button x:Name="ReadLcuPackageButton" Content="Read from package"
+                               Icon="{ui:SymbolIcon DocumentSearch24}"
+                               Margin="0,12,0,4"
+                               Click="OnReadLcuPackage"
+                               ToolTip="Read the KB, build number, and architecture off the .msu in the folder above, then ask you to confirm before changing anything." />
+                    <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                  Text="Reads the KB, build number, and architecture from the .msu in the folder above, then asks you to confirm before anything changes." />
                 </StackPanel>
             </ui:CardExpander>
 
