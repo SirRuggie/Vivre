@@ -126,7 +126,10 @@ public partial class App : Application
         ApplyTheme(settings.Theme);
 
         // Factory for a fresh tab/workspace, capturing the shared services.
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper);
+        // Force reboot's runner: WinRM shutdown + the narrow Kerberos-auth fallback onto the SAME
+        // DCOM → SMB/SCM trigger the Reboot Wave uses. Fires only inside the operator's confirmed click.
+        var forceReboot = new ForceRebootRunner(powerShell, new DcomRebootTrigger());
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper, forceReboot);
 
         // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.
         // The nav section's DataContext binds to ShellViewModel.RdpViewModel.

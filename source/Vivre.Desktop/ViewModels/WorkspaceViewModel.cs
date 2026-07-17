@@ -115,6 +115,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly IPatchService _patch;
     private readonly PatchOptions _patchOptions;
     private readonly IHostRebootProbe _rebootProbe;
+    // Force reboot's channel runner: WinRM shutdown with the narrow Kerberos-auth DCOM fallback (the
+    // same IRebootTrigger the Reboot Wave uses). See ForceRebootRunner for the classification.
+    private readonly ForceRebootRunner _forceReboot;
     private readonly IPowerShellHost _powerShell;
     private readonly IVitalsProbe _vitals;
     private readonly IRemediationService _remediation;
@@ -836,7 +839,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -861,6 +864,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             _remoteSweepThrottleBacking = new SplitThrottle(total, reserved);
         }
         _rebootProbe = rebootProbe;
+        _forceReboot = forceReboot;
         _vitals = vitals;
         _remediation = remediation;
         _deployment = deployment;
@@ -5729,32 +5733,49 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// Force-reboots the selected machines now (<c>shutdown /r /f /t 5</c> — the small delay lets the
     /// WinRM call return cleanly before the box goes down). The most common Windows-Update follow-up;
     /// invoked from the context menu after the user confirms. The monitor reports each box back online.
+    /// On a WinRM Kerberos AUTH rejection — where the command provably never reached the box — the
+    /// runner completes the SAME confirmed reboot over the DCOM → SMB/SCM trigger the Reboot Wave
+    /// already uses there (see <see cref="ForceRebootRunner"/>); any other failure surfaces as before,
+    /// no fallback, so an ambiguous WinRM failure can never double-reboot a box.
     /// </summary>
     public async Task RebootForceSelectedAsync(IReadOnlyList<Computer>? rows = null, CancellationToken token = default)
     {
-        const string script = "shutdown.exe /r /f /t 5 /c \"Vivre forced reboot\"";
         foreach (Computer computer in rows ?? SelectedComputers.ToList())
         {
             computer.LastError = null;
             computer.LastStatus = "Rebooting (force)…";
             try
             {
-                PSExecutionResult result = IsLocalHost(computer.Name)
-                    ? await _powerShell.RunLocalAsync(script, token)
-                    : await _powerShell.RunRemoteAsync(computer.Name, script, CurrentPsCredential(), cancellationToken: token);
+                ForceRebootResult result = await _forceReboot.RebootAsync(computer.Name, CurrentPsCredential(), token);
 
-                if (result.HadErrors)
+                if (result.Error is { } error)
                 {
+                    // The WinRM channel worked and shutdown.exe itself reported the failure — same surface
+                    // as before this runner existed; deliberately no fallback (double-act risk).
                     computer.LastStatus = "Reboot command failed";
-                    computer.LastError = result.Errors.Count > 0 ? result.Errors[0] : "shutdown reported an error";
-                    _activity.Error(computer.Name, $"Force reboot failed — {computer.LastError}");
+                    computer.LastError = error;
+                    _activity.Error(computer.Name, $"Force reboot failed — {error}");
+                }
+                else if (result.Dispatch == RebootDispatch.AlreadyInProgress)
+                {
+                    // Only the DCOM/SMB fallback reports this (Win32 1115): the box is already going down
+                    // on its own — going-offline, not a failure, and nothing gets re-fired.
+                    computer.LastStatus = "Shutdown already in progress — going down";
+                    computer.WasConfirmedOnline = true; // reached over remoting — genuinely managed, so track its return
+                    computer.RebootMessage = $"Forced reboot sent {DateTime.Now:HH:mm} — a shutdown was already in progress";
+                    _activity.Info(computer.Name, "Force reboot: a shutdown is already in progress — the box is going down on its own.");
+                    _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
                 }
                 else
                 {
                     computer.LastStatus = "Reboot forced — going down";
-                    computer.WasConfirmedOnline = true; // the reboot ran over WinRM — genuinely managed, so track its return
-                    computer.RebootMessage = $"Forced reboot sent {DateTime.Now:HH:mm}";
-                    _activity.Info(computer.Name, "Forced reboot (shutdown /r /f /t 5)");
+                    computer.WasConfirmedOnline = true; // the reboot ran over WinRM or DCOM/SMB — genuinely managed, so track its return
+                    computer.RebootMessage = result.Channel == ForceRebootChannel.Dcom
+                        ? $"Forced reboot sent {DateTime.Now:HH:mm} (DCOM)"
+                        : $"Forced reboot sent {DateTime.Now:HH:mm}";
+                    _activity.Info(computer.Name, result.Channel == ForceRebootChannel.Dcom
+                        ? "Forced reboot — WinRM auth rejected (Kerberos); completed over the DCOM/SMB channel"
+                        : "Forced reboot (shutdown /r /f /t 5)");
                     // Once the machine comes back online the monitor will re-probe reboot-pending status
                     // (up to PostBootRebootRechecks times) so the Reboot Pending column clears automatically.
                     _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
@@ -5767,6 +5788,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
             catch (Exception ex)
             {
+                // Includes the trigger's both-channels-failed InvalidOperationException (DCOM + SMB/SCM
+                // reasons in one message) and every non-Kerberos WinRM failure — surfaced, never retried.
                 computer.LastStatus = "Reboot command failed";
                 computer.LastError = ex.Message;
                 _activity.Error(computer.Name, $"Force reboot failed — {ex.Message}");

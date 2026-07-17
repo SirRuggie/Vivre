@@ -56,6 +56,12 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **Force reboot now works on Kerberos-broken machines.** When the normal WinRM reboot can't authenticate
+  (the 0x80090322 Kerberos rejection — the command never reaches the box), Force reboot now automatically
+  completes over the DCOM channel — the same one Reboot & verify already uses on those machines — instead of
+  dead-ending with a WinRM error. Only that provably-safe authentication failure triggers the fallback:
+  ambiguous WinRM failures (a dropped connection, a timeout) still surface as errors with no fallback, so a
+  box can never be double-rebooted. Still entirely inside your click-and-confirm — nothing reboots on its own.
 - **Reboot & verify is no longer greyed out on a failed install that needs a reboot.** A machine whose patch
   failed shows the red Error pill, and the "Reboot & verify…" right-click item used to require the amber
   reboot-pending state — so it vanished exactly when you needed it, leaving only the WinRM-based force reboot
