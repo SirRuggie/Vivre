@@ -577,12 +577,12 @@ public partial class WorkspaceView : UserControl
         rebootForce.Click += OnRebootForce;
         _gridMenu.Items.Add(rebootForce);
 
-        // Reboot & verify — Patching-only AND only when a selected box is genuinely reboot-pending. Keyed on
-        // the SAME PatchState.RebootPending signal that drives the grid's "Reboot pending" pill (via
-        // RebootVerifyMenu.ShouldOfferRebootVerify) so the item and the pill always agree — it shows for a
-        // box pending from ANY source (in-session install, app reopen, re-scan, BatchPatch, manual), not
-        // just one installed this session, since RebootRequired survives a re-scan. Visibility only — the
-        // click still routes through the existing operator-confirmed Reboot & verify flow.
+        // Reboot & verify — Patching-only, when a selected box is reboot-pending OR is a failed install
+        // with a confirmed pending reboot (Error + RebootRequired, the case Error's pill precedence hides —
+        // see RebootVerifyMenu.ShouldOfferRebootVerify). Shows for a box pending from ANY source
+        // (in-session install, app reopen, re-scan, BatchPatch, manual), since RebootRequired survives a
+        // re-scan. Visibility only — the click still routes through the existing operator-confirmed
+        // Reboot & verify flow.
         if (vm.SelectedComputers.Any(c => RebootVerifyMenu.ShouldOfferRebootVerify(c, vm.IsUpdateMode)))
         {
             var rebootVerify = WithIcon(new MenuItem { Header = "Reboot & verify…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwiseDashes24);

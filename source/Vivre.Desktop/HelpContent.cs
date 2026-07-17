@@ -540,7 +540,7 @@ public static class HelpContent
                 "1. Select the machines you want to reboot.",
                 "2. Right-click ▸ Reboot & verify…",
                 "3. Review the list and click Reboot & verify to start.",
-                "Reboot & verify… appears only in Patching, on rows that are actually reboot-pending — if you don't see it, the box has nothing pending.",
+                "Reboot & verify… appears only in Patching, on rows that are reboot-pending — and on a red failed-install row whose reboot is still pending, so a failed patch that needs its reboot can always be rebooted. If you don't see it, the box has nothing pending.",
                 "Each box is rebooted gracefully (lets SQL/services flush). If it doesn't go down within 8 minutes (20 for a staged-2016 box, whose commit is slower) Vivre escalates to a forced reboot to complete the one you ordered.",
                 "While offline, Vivre keeps watching — the row shows how long it's been down, flagging \"Overdue\" past ~90 minutes. After ~4½ hours it stops live-tracking and marks the row red (\"hasn't returned after N min — no longer tracking it live. Use Verify once it's back up.\"); a box that never goes down after the forced reboot is also marked red rather than watched forever.",
                 "When a box comes back online:",

@@ -56,6 +56,12 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **Reboot & verify is no longer greyed out on a failed install that needs a reboot.** A machine whose patch
+  failed shows the red Error pill, and the "Reboot & verify…" right-click item used to require the amber
+  reboot-pending state — so it vanished exactly when you needed it, leaving only the WinRM-based force reboot
+  (which can't reach Kerberos-broken machines). The item now also appears on a red failed-install row whose
+  reboot is confirmed pending. Availability only — nothing reboots without your click and confirm, and a
+  machine mid-install/scan still never offers a reboot.
 - **A machine that couldn't confirm its state after a reboot no longer shows a green "Up to date."** After a
   reboot wave, a box whose post-reboot rescan or reboot-pending check couldn't complete ("couldn't rescan" /
   "couldn't confirm reboot state") now shows a neutral **"Unverified"** chip with a re-check message, instead
