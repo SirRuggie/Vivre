@@ -88,6 +88,10 @@
                                     <DataTrigger Binding="{Binding Computer.PatchState}" Value="Error">
                                         <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
                                     </DataTrigger>
+                                    <!-- Couldn't confirm/rescan: neutral-grey pill matching the grid, never green. -->
+                                    <DataTrigger Binding="{Binding Computer.PatchState}" Value="Unverified">
+                                        <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                                    </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
@@ -120,6 +124,9 @@
                                         </DataTrigger>
                                         <DataTrigger Binding="{Binding Computer.PatchState}" Value="Error">
                                             <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Computer.PatchState}" Value="Unverified">
+                                            <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
                                         </DataTrigger>
                                     </Style.Triggers>
                                 </Style>

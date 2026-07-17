@@ -6,7 +6,8 @@ namespace Vivre.Core.Updates;
 ///
 /// A terminal status — whether a failure (<see cref="PatchState.Error"/>, which includes
 /// Unreachable) or a success (<see cref="PatchState.Done"/> / <see cref="PatchState.RebootPending"/>,
-/// which include the 2016 Cleaned/Deferred terminals) — carries operation detail (e.g. "Installed 3
+/// which include the 2016 Cleaned/Deferred terminals) or the post-reboot <see cref="PatchState.Unverified"/>
+/// couldn't-confirm/rescan terminal — carries operation detail (e.g. "Installed 3
 /// updates", "Can't reach WU"), NOT a scope-scoped scan result. The target scope's cached message is
 /// often null for such rows (they were never successfully scanned in that scope), so swapping would
 /// silently blank the detail. An in-flight row (<paramref name="isPatching"/>) similarly carries live
@@ -27,5 +28,5 @@ public static class ScopeToggleRule
     /// <param name="state">The row's current <see cref="PatchState"/>.</param>
     /// <param name="isPatching">Whether the row is mid-operation (download / install / uninstall / scan).</param>
     public static bool PreservesMessageOnScopeToggle(PatchState state, bool isPatching)
-        => isPatching || state is PatchState.Error or PatchState.Done or PatchState.RebootPending;
+        => isPatching || state is PatchState.Error or PatchState.Done or PatchState.RebootPending or PatchState.Unverified;
 }

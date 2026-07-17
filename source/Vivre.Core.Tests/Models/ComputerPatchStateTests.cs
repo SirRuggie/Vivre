@@ -28,6 +28,11 @@ public class ComputerPatchStateTests
     [InlineData("PendingReboot", true, PatchState.RebootPending)]
     [InlineData("Rebooting", true, PatchState.RebootPending)]
     [InlineData("Done", false, PatchState.Done)]
+    // Couldn't confirm/rescan after a reboot: neutral Unverified when no reboot is known pending...
+    [InlineData("Unverified", null, PatchState.Unverified)]
+    [InlineData("Unverified", false, PatchState.Unverified)]
+    // ...but a later probe that finds a genuine pending reboot upgrades it to amber (Done's pending-guard).
+    [InlineData("Unverified", true, PatchState.RebootPending)]
     [InlineData("Error", null, PatchState.Error)]
     // ERROR > REBOOT-PENDING: a failed install/uninstall (forced to the Error phase when FailedCount>0 by the
     // agent's Summarize / the controller's ApplyStatus) must read red Error even when a reboot is ALSO
@@ -82,5 +87,16 @@ public class ComputerPatchStateTests
         c.RebootRequired = true;
 
         Assert.True(hits >= 2);
+    }
+
+    [Fact]
+    public void A_fresh_unscanned_row_is_Idle_not_Unverified()
+    {
+        // THE TRAP: RebootRequired == null is ALSO every fresh, not-yet-probed row. The Unverified state
+        // must key off the reboot-wave OUTCOME (UpdatePhase), never off null reboot-state — otherwise every
+        // unscanned row would go non-green. A fresh row (no UpdatePhase) must stay Idle.
+        var c = new Computer("HOST");
+        Assert.Equal(PatchState.Idle, c.PatchState);
+        Assert.NotEqual(PatchState.Unverified, c.PatchState);
     }
 }

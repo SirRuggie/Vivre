@@ -1070,7 +1070,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         get
         {
-            int done = 0, working = 0, reboot = 0, failed = 0, available = 0;
+            int done = 0, working = 0, reboot = 0, failed = 0, available = 0, unverified = 0;
             foreach (Computer c in Computers)
             {
                 switch (c.PatchState)
@@ -1080,6 +1080,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     case PatchState.RebootPending: reboot++; break;
                     case PatchState.Error: failed++; break;
                     case PatchState.Available: available++; break;
+                    case PatchState.Unverified: unverified++; break;
                 }
             }
 
@@ -1088,6 +1089,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (available > 0) parts.Add($"{available} available");
             if (reboot > 0) parts.Add($"{reboot} reboot");
             if (done > 0) parts.Add($"{done} done");
+            if (unverified > 0) parts.Add($"{unverified} unverified");
             if (failed > 0) parts.Add($"{failed} failed");
             return parts.Count == 0 ? string.Empty : "Updates: " + string.Join(" · ", parts);
         }
@@ -2929,11 +2931,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (label is "Clean up" or "Reboot Wave" or "Verify")
         {
             int ok = rows.Count(r => r.PatchState == PatchState.Done);
+            int unverified = rows.Count(r => r.PatchState == PatchState.Unverified);
             int errs = rows.Count(r => r.PatchState == PatchState.Error);
             string s = $"{label} finished — {ok} ok";
+            if (unverified > 0) s += $", {unverified} unverified — re-check";
             if (errs > 0) s += $", {errs} failed — see Activity log";
-            OperationSeverity sev = errs == 0 ? OperationSeverity.Success
-                : ok > 0 ? OperationSeverity.Warning
+            // Unverified isn't a clean success (we couldn't confirm the box) — downgrade to Warning.
+            OperationSeverity sev = errs == 0 && unverified == 0 ? OperationSeverity.Success
+                : (ok > 0 || unverified > 0) ? OperationSeverity.Warning
                 : OperationSeverity.Error;
             return (s, sev);
         }
@@ -2944,10 +2949,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         int done = rows.Count(r => r.PatchState == PatchState.Done);
         int staged2016 = rows.Count(r => r.PatchState == PatchState.RebootPending && LcuRouting.Is2016(r.OsBuild));
         int needReboot = rows.Count(r => r.PatchState == PatchState.RebootPending && !LcuRouting.Is2016(r.OsBuild));
+        int unverifiedInstall = rows.Count(r => r.PatchState == PatchState.Unverified);
         int failed = rows.Count(r => r.PatchState == PatchState.Error);
         var parts = new List<string> { $"{done} installed" };
         if (staged2016 > 0) parts.Add($"{staged2016} staged — run Reboot Wave");
         if (needReboot > 0) parts.Add($"{needReboot} need reboot");
+        if (unverifiedInstall > 0) parts.Add($"{unverifiedInstall} unverified — re-check");
         if (failed > 0) parts.Add($"{failed} failed");
         string summary = $"{label} finished — " + string.Join(", ", parts);
         if (failed > 0) summary += " — see Activity log";
@@ -2955,13 +2962,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // Any failure at all = Error severity unless something also succeeded (partial = Warning); all
         // failed with nothing installed/staged/reboot = Error.
         OperationSeverity severity;
-        if (failed == 0)
+        if (failed == 0 && unverifiedInstall == 0)
         {
             severity = OperationSeverity.Success;
         }
-        else if (done > 0 || staged2016 > 0 || needReboot > 0)
+        else if (done > 0 || staged2016 > 0 || needReboot > 0 || unverifiedInstall > 0)
         {
-            severity = OperationSeverity.Warning; // partial failure
+            severity = OperationSeverity.Warning; // partial / unconfirmed
         }
         else
         {
@@ -4319,10 +4326,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // ── e/f) write outcome ────────────────────────────────────────────────────────────────────
         if (!is2016)
         {
-            // WUA lane: outcome string IS the primary UpdateMessage.
+            // WUA lane: outcome string IS the primary UpdateMessage. Classify once (single source of
+            // precedence) so the chip's display state can't drift from the message.
+            RebootOutcomeKind kind = RebootOutcomeSelector.Classify(failed, remaining, rebootStillPending, scanFailed);
             string outcome = RebootOutcomeSelector.Select(installed, failed, remaining, rebootStillPending, scanFailed);
             computer.UpdateMessage = outcome;
             computer.RebootRequired = rebootStillPending;
+            // Couldn't confirm/rescan → neutral "Unverified" chip, never a green "Up to date". Keyed off the
+            // OUTCOME (not off RebootRequired==null, which fresh unscanned rows also share). DerivePatchState
+            // keeps this amber if a reboot is known pending.
+            if (kind is RebootOutcomeKind.CouldntConfirm or RebootOutcomeKind.CouldntRescan)
+            {
+                computer.UpdatePhase = PatchPhase.Unverified.ToString();
+            }
             _activity.Info(name, outcome);
         }
         else
@@ -4337,6 +4353,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.UpdateMessage = committedMessage.Length > 0
                     ? $"{committedMessage} · couldn't rescan — re-check"
                     : "Couldn't rescan after reboot — re-check";
+                // Couldn't rescan → neutral "Unverified" chip, never a green "Up to date" (the wave left the
+                // row at Done). Applies to 2016 too: the operator's call is "couldn't rescan = Unverified"
+                // regardless of box type — errs toward re-checking, the safe direction on a patching box.
+                computer.UpdatePhase = PatchPhase.Unverified.ToString();
                 _activity.Info(name, $"{name}: couldn't rescan — re-check");
             }
             else if (remaining > 0)

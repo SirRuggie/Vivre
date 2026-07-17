@@ -56,6 +56,12 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **A machine that couldn't confirm its state after a reboot no longer shows a green "Up to date."** After a
+  reboot wave, a box whose post-reboot rescan or reboot-pending check couldn't complete ("couldn't rescan" /
+  "couldn't confirm reboot state") now shows a neutral **"Unverified"** chip with a re-check message, instead
+  of a green "Up to date" that made an unconfirmed box look patched-and-verified. The honest state carries
+  through every surface — the grid chip, the machine detail pill, the bottom-bar fleet tally, and the
+  post-wave completion summary — and a fresh, not-yet-scanned machine still renders normally.
 - **Saving one shared patching setting can no longer erase the others.** Saves now re-read the real
   machine-wide file and change only the value you edited — instead of rewriting the whole file from an
   in-memory copy, which could (and once did) blank the staged-machine list and other settings if the file had

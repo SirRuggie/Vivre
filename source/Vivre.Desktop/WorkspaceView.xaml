@@ -860,6 +860,13 @@
                                             <DataTrigger Binding="{Binding PatchState}" Value="Error">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorCriticalBackgroundBrush}" />
                                             </DataTrigger>
+                                            <!-- Couldn't confirm/rescan after a reboot: neutral-grey pill, deliberately
+                                                 NOT green Done and NOT amber RebootPending. Pinned explicitly (not left to
+                                                 the neutral default) so a future default change can't silently turn an
+                                                 unconfirmed box green — the exact false-green this state exists to prevent. -->
+                                            <DataTrigger Binding="{Binding PatchState}" Value="Unverified">
+                                                <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
+                                            </DataTrigger>
                                             <!-- Scheduled overrides all PatchState colors — neutral pill -->
                                             <DataTrigger Binding="{Binding IsScheduled}" Value="True">
                                                 <Setter Property="Background" Value="{DynamicResource SystemFillColorNeutralBackgroundBrush}" />
@@ -889,6 +896,9 @@
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Done">
                                                     <Setter Property="Text" Value="Up to date" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Unverified">
+                                                    <Setter Property="Text" Value="Unverified" />
                                                 </DataTrigger>
                                                 <!-- Active Reboot Wave: the pill stays amber via RebootPending color. -->
                                                 <DataTrigger Binding="{Binding UpdatePhase}" Value="Rebooting">
@@ -930,6 +940,11 @@
                                                 </DataTrigger>
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Error">
                                                     <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
+                                                </DataTrigger>
+                                                <!-- Neutral-grey text, same brush as the grey "?" reboot dot — reads as
+                                                     "unknown / not verified", never green success. -->
+                                                <DataTrigger Binding="{Binding PatchState}" Value="Unverified">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
                                                 </DataTrigger>
                                                 <!-- Scheduled: override both color and text — neutral pill regardless
                                                      of underlying PatchState. Placed LAST so it wins over all others. -->

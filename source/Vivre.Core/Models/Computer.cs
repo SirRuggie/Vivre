@@ -353,6 +353,9 @@ public partial class Computer : ObservableObject
             PatchPhase.PendingReboot or PatchPhase.Rebooting => pending ? PatchState.RebootPending : PatchState.Done,
             // A scanned/finished/idle row still shows amber if a reboot is outstanding.
             PatchPhase.Done => pending ? PatchState.RebootPending : PatchState.Done,
+            // Couldn't confirm/rescan after a reboot: neutral "Unverified" (never green). Mirrors Done's
+            // pending-guard so a later monitor probe finding a genuine pending reboot upgrades it to amber.
+            PatchPhase.Unverified => pending ? PatchState.RebootPending : PatchState.Unverified,
             PatchPhase.Available => pending ? PatchState.RebootPending : PatchState.Available,
             _ => pending ? PatchState.RebootPending : PatchState.Idle,
         };

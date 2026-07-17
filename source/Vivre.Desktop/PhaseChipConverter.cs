@@ -20,6 +20,7 @@ public sealed class PhaseChipLabelConverter : IValueConverter
         PatchState.Uninstalling => "Uninstalling",
         PatchState.RebootPending => "Reboot pending",
         PatchState.Done => "Done",
+        PatchState.Unverified => "Unverified",
         PatchState.Error => "Error",
         _ => string.Empty,
     };

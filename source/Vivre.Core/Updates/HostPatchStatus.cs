@@ -68,6 +68,16 @@ public enum PatchPhase
     /// genuine install failure. See <see cref="TransientWuaError"/>.
     /// </summary>
     Unreachable,
+
+    /// <summary>
+    /// The box returned from a reboot wave but Vivre could NOT verify its post-reboot state — the
+    /// post-reboot rescan failed ("couldn't rescan") or the reboot-pending probe couldn't answer
+    /// ("couldn't confirm reboot state"). The install/reboot may well have succeeded; we simply
+    /// couldn't CONFIRM it. Distinct terminal so the chip reads a neutral "Unverified" — an unconfirmed
+    /// box must never look identical to a verified green one. Maps to <see cref="PatchState.Unverified"/>
+    /// unless a reboot is known pending, in which case amber RebootPending wins (more actionable).
+    /// </summary>
+    Unverified,
 }
 
 /// <summary>
@@ -100,6 +110,10 @@ public enum PatchState
 
     /// <summary>Finished / up to date / back online with nothing pending (green).</summary>
     Done,
+
+    /// <summary>Came back from a reboot but Vivre couldn't confirm/rescan it — neutral grey, NOT green
+    /// "up to date" and NOT red Error. An honest "couldn't verify this box; re-check it."</summary>
+    Unverified,
 
     /// <summary>Something failed (red).</summary>
     Error,

@@ -26,6 +26,10 @@ public class ScopeToggleRuleTests
         // RebootPending — a reboot-pending install/cleanup summary (incl. 2016 Deferred) persists.
         Assert.True(ScopeToggleRule.PreservesMessageOnScopeToggle(PatchState.RebootPending, isPatching: false));
 
+        // Unverified — the post-reboot couldn't-confirm/rescan terminal; its honest "re-check" message
+        // must persist across a scope toggle, never be blanked by the target scope's null cached scan.
+        Assert.True(ScopeToggleRule.PreservesMessageOnScopeToggle(PatchState.Unverified, isPatching: false));
+
         // In-flight: isPatching:true for any state preserves live progress detail.
         Assert.True(ScopeToggleRule.PreservesMessageOnScopeToggle(PatchState.Available, isPatching: true));
         Assert.True(ScopeToggleRule.PreservesMessageOnScopeToggle(PatchState.Idle, isPatching: true));

@@ -197,4 +197,51 @@ public class RebootOutcomeSelectorTests
 
         Assert.Equal("Back online · 3 remaining", result);
     }
+
+    // ── Classify: the single source of precedence Select delegates to ─────────
+    // Same truthfulness-first ladder: scanFailed > failed > confirmed-pending > remaining >
+    // couldn't-confirm > up-to-date. These lock in the outcome KIND the display state keys off.
+
+    [Fact]
+    public void Classify_scanFailed_wins_over_everything()
+    {
+        // scanFailed set together with failed>0, remaining>0 AND pending=true — it still wins.
+        Assert.Equal(RebootOutcomeKind.CouldntRescan,
+            RebootOutcomeSelector.Classify(failed: 2, remaining: 5, rebootStillPending: true, scanFailed: true));
+    }
+
+    [Fact]
+    public void Classify_failed_beats_pending_and_remaining()
+    {
+        Assert.Equal(RebootOutcomeKind.Failed,
+            RebootOutcomeSelector.Classify(failed: 2, remaining: 3, rebootStillPending: true, scanFailed: false));
+    }
+
+    [Fact]
+    public void Classify_confirmed_pending_beats_remaining()
+    {
+        Assert.Equal(RebootOutcomeKind.RebootStillPending,
+            RebootOutcomeSelector.Classify(failed: 0, remaining: 3, rebootStillPending: true, scanFailed: false));
+    }
+
+    [Fact]
+    public void Classify_remaining_when_not_pending()
+    {
+        Assert.Equal(RebootOutcomeKind.Remaining,
+            RebootOutcomeSelector.Classify(failed: 0, remaining: 3, rebootStillPending: false, scanFailed: false));
+    }
+
+    [Fact]
+    public void Classify_unknown_probe_on_a_clean_box_is_CouldntConfirm()
+    {
+        Assert.Equal(RebootOutcomeKind.CouldntConfirm,
+            RebootOutcomeSelector.Classify(failed: 0, remaining: 0, rebootStillPending: null, scanFailed: false));
+    }
+
+    [Fact]
+    public void Classify_confirmed_clean_is_UpToDate()
+    {
+        Assert.Equal(RebootOutcomeKind.UpToDate,
+            RebootOutcomeSelector.Classify(failed: 0, remaining: 0, rebootStillPending: false, scanFailed: false));
+    }
 }

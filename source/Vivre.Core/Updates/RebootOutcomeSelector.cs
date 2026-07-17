@@ -1,5 +1,17 @@
 namespace Vivre.Core.Updates;
 
+/// <summary>Which post-reboot outcome <see cref="RebootOutcomeSelector"/> selected — the single source
+/// of truth for BOTH the message string and the display state, so the two can never drift.</summary>
+public enum RebootOutcomeKind
+{
+    UpToDate,
+    Remaining,
+    Failed,
+    RebootStillPending,
+    CouldntRescan,
+    CouldntConfirm,
+}
+
 /// <summary>
 /// Pure (no I/O, no side effects) selector that maps the post-reboot rescan result to the
 /// appropriate <see cref="RebootOutcomeMessages"/> string.
@@ -28,13 +40,29 @@ public static class RebootOutcomeSelector
     /// replaces the otherwise-false-green up-to-date.</param>
     /// <param name="scanFailed">True if the post-reboot rescan could not be completed.</param>
     /// <returns>A human-readable outcome string from <see cref="RebootOutcomeMessages"/>.</returns>
-    public static string Select(int? installed, int? failed, int remaining, bool? rebootStillPending, bool scanFailed)
+    public static string Select(int? installed, int? failed, int remaining, bool? rebootStillPending, bool scanFailed) =>
+        Classify(failed, remaining, rebootStillPending, scanFailed) switch
+        {
+            RebootOutcomeKind.CouldntRescan => RebootOutcomeMessages.BackOnlineRescanFailed(),
+            RebootOutcomeKind.Failed => RebootOutcomeMessages.BackOnlineFailed(installed ?? 0, failed!.Value, remaining),
+            RebootOutcomeKind.RebootStillPending => RebootOutcomeMessages.RebootStillPending(),
+            RebootOutcomeKind.Remaining => RebootOutcomeMessages.BackOnlineRemaining(installed, remaining),
+            RebootOutcomeKind.CouldntConfirm => RebootOutcomeMessages.BackOnlineRebootUnknown(installed),
+            _ => RebootOutcomeMessages.BackOnlineUpToDate(installed),
+        };
+
+    /// <summary>Classifies the post-reboot rescan result into the outcome kind, using the SAME
+    /// truthfulness-first precedence as <see cref="Select"/> (scan-failure &gt; install-failure &gt;
+    /// confirmed pending &gt; remaining &gt; couldn't-confirm &gt; up-to-date). This is the single source
+    /// of precedence — <see cref="Select"/> delegates to it, and the view model keys the display state
+    /// off it, so the chip and the message can never disagree.</summary>
+    public static RebootOutcomeKind Classify(int? failed, int remaining, bool? rebootStillPending, bool scanFailed)
     {
-        if (scanFailed) return RebootOutcomeMessages.BackOnlineRescanFailed();
-        if (failed > 0) return RebootOutcomeMessages.BackOnlineFailed(installed ?? 0, failed.Value, remaining);
-        if (rebootStillPending == true) return RebootOutcomeMessages.RebootStillPending();
-        if (remaining > 0) return RebootOutcomeMessages.BackOnlineRemaining(installed, remaining);
-        if (rebootStillPending is null) return RebootOutcomeMessages.BackOnlineRebootUnknown(installed);
-        return RebootOutcomeMessages.BackOnlineUpToDate(installed);
+        if (scanFailed) return RebootOutcomeKind.CouldntRescan;
+        if (failed > 0) return RebootOutcomeKind.Failed;
+        if (rebootStillPending == true) return RebootOutcomeKind.RebootStillPending;
+        if (remaining > 0) return RebootOutcomeKind.Remaining;
+        if (rebootStillPending is null) return RebootOutcomeKind.CouldntConfirm;
+        return RebootOutcomeKind.UpToDate;
     }
 }
