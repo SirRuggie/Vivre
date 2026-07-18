@@ -4149,8 +4149,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdateError = null;
         computer.UpdatePhase = PatchPhase.Rebooting.ToString();
         computer.UpdateMessage = "Starting reboot wave…";
+        // Narrate the reboot in ITS OWN column too. The monitor (the column's usual writer) is paused
+        // while a sweep runs (IsBusy), so without these writes the column stays blank for the whole
+        // wave — the operator flew blind through a reboot. Same strings as the activity/update
+        // narration; no second vocabulary.
+        computer.RebootMessage = "Starting reboot wave…";
 
-        var progress = new Progress<HostPatchStatus>(s => ApplyStatus(computer, s));
+        var progress = new Progress<HostPatchStatus>(s =>
+        {
+            ApplyStatus(computer, s);
+            // Mirror the wave's REBOOT-lifecycle reports ("Rebooting (graceful)…", "Committing
+            // (offline) — N min…", "Back online — waiting for it to finish coming up to verify…")
+            // into the Reboot message column. Rebooting-phase only — the readiness check (Scanning)
+            // and the terminal states write their own column text below.
+            if (s.Phase == PatchPhase.Rebooting)
+            {
+                computer.RebootMessage = s.Message;
+            }
+        });
         try
         {
             // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
@@ -4183,12 +4199,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
                 _activity.Info(computer.Name, final.Message);
 
+                computer.RebootMessage = "Back online — verifying…";
+
                 // Post-reboot rescan runs AFTER the wave returns Done — ORDERING GUARANTEE.
                 // For 2016 the UBR check always precedes this; for WUA this is the primary verify.
                 await ReportPostRebootOutcomeAsync(computer, is2016: lane == RebootVerifyLane.Lcu2016, token);
+
+                // Terminal column text = the wave's own success message (WUA lane: "Back online —
+                // rebooted. (committed in ~N min)" — the "Back online" prefix keeps it in the
+                // transient-clearable class, same lifecycle as the monitor's notices).
+                computer.RebootMessage = final.Message;
             }
             else if (final.Phase == PatchPhase.Error)
             {
+                // The wave's failure text is already honest and self-contained ("hasn't returned after
+                // N min — … Use Verify once it's back up.") — surface it in the reboot column too, as a
+                // current-state notice (not transient-clearable; it stands until a later reboot/monitor
+                // transition overwrites it).
+                computer.RebootMessage = final.Message;
                 _activity.Error(computer.Name, $"Reboot wave — {final.Message}");
             }
         }
@@ -4196,6 +4224,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             // Clear any transient phase (Scanning/Installing/…) so a user Stop never leaves the row stuck
             // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
+            // The reboot column deliberately keeps its last narration: the box may genuinely still be
+            // mid-reboot after a Stop, and the monitor's transitions will overwrite it as truth arrives.
             computer.UpdatePhase = PatchPhase.Idle.ToString();
             computer.UpdateMessage = "Cancelled";
             throw;
@@ -4205,6 +4235,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.UpdateError = ex.Message;
             computer.UpdateMessage = "Reboot wave failed";
             computer.UpdatePhase = PatchPhase.Error.ToString();
+            computer.RebootMessage = $"Reboot failed — {ex.Message}";
             _activity.Error(computer.Name, $"Reboot wave failed — {ex.Message}");
         }
         finally
@@ -5744,9 +5775,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             computer.LastError = null;
             computer.LastStatus = "Rebooting (force)…";
+            // Same text in the Reboot message column (the Patching grid has no Last-status column, so
+            // without this the whole attempt is invisible there — the incident's blind spot). The
+            // runner's narration hook then reports the DCOM hand-off live if the Kerberos fallback fires.
+            computer.RebootMessage = "Rebooting (force)…";
             try
             {
-                ForceRebootResult result = await _forceReboot.RebootAsync(computer.Name, CurrentPsCredential(), token);
+                ForceRebootResult result = await _forceReboot.RebootAsync(
+                    computer.Name, CurrentPsCredential(), token,
+                    new Progress<string>(s => computer.RebootMessage = s));
 
                 if (result.Error is { } error)
                 {
@@ -5754,6 +5791,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // as before this runner existed; deliberately no fallback (double-act risk).
                     computer.LastStatus = "Reboot command failed";
                     computer.LastError = error;
+                    computer.RebootMessage = $"Reboot failed {DateTime.Now:HH:mm} — {error}";
                     _activity.Error(computer.Name, $"Force reboot failed — {error}");
                 }
                 else if (result.Dispatch == RebootDispatch.AlreadyInProgress)
@@ -5792,6 +5830,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // reasons in one message) and every non-Kerberos WinRM failure — surfaced, never retried.
                 computer.LastStatus = "Reboot command failed";
                 computer.LastError = ex.Message;
+                computer.RebootMessage = $"Reboot failed {DateTime.Now:HH:mm} — {ex.Message}";
                 _activity.Error(computer.Name, $"Force reboot failed — {ex.Message}");
             }
         }

@@ -56,6 +56,12 @@ it ships, then gets a dated heading.
   10-minute ceiling.
 
 ### Fixed
+- **The Reboot message column now narrates a reboot live instead of staying blank.** During Reboot & verify
+  and Force reboot the column shows the status as it happens — "Rebooting (graceful)…", "Committing (offline) —
+  N min…", "Back online — verifying…", then the result — and on a Kerberos-broken machine it shows the
+  hand-off ("WinRM auth rejected (Kerberos) — trying the DCOM channel…") as it occurs. A failed reboot now
+  writes its reason into the column too, so you can see what a reboot is doing without digging through the
+  activity log.
 - **Force reboot now works on Kerberos-broken machines.** When the normal WinRM reboot can't authenticate
   (the 0x80090322 Kerberos rejection — the command never reaches the box), Force reboot now automatically
   completes over the DCOM channel — the same one Reboot & verify already uses on those machines — instead of

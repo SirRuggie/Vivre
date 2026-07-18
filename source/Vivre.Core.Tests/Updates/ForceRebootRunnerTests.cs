@@ -152,7 +152,59 @@ public class ForceRebootRunnerTests
         Assert.Equal(0, trigger.CallCount);
     }
 
+    [Fact]
+    public async Task Kerberos_fallback_narrates_the_dcom_handoff()
+    {
+        // DISPLAY-ONLY: the narration hook reports the channel switch, and it changes nothing about the
+        // execution — the result is still the Dcom/Issued fallback the Kerberos catch produces.
+        var host = new FakeHost { RemoteThrow = new KerberosWrongPrincipalException("HOST", new Exception("0x80090322")) };
+        var trigger = new FakeTrigger { Result = RebootDispatch.Issued };
+        var runner = new ForceRebootRunner(host, trigger);
+        var status = new CapturingStatus();
+
+        ForceRebootResult result = await runner.RebootAsync(Host, credential: null, CancellationToken.None, status);
+
+        Assert.Single(status.Reports);
+        Assert.Contains("DCOM", status.Reports[0]);
+        Assert.Equal(ForceRebootChannel.Dcom, result.Channel);
+        Assert.Equal(RebootDispatch.Issued, result.Dispatch);
+    }
+
+    [Fact]
+    public async Task WinRm_success_narrates_nothing()
+    {
+        var host = new FakeHost { RemoteResult = Clean() };
+        var trigger = new FakeTrigger();
+        var runner = new ForceRebootRunner(host, trigger);
+        var status = new CapturingStatus();
+
+        await runner.RebootAsync(Host, credential: null, CancellationToken.None, status);
+
+        Assert.Empty(status.Reports);
+    }
+
+    [Fact]
+    public async Task Non_kerberos_failures_narrate_nothing()
+    {
+        // A mid-command session loss propagates unchanged with no fallback — and no narration either.
+        var host = new FakeHost { RemoteThrow = new RemoteSessionLostException("HOST", new Exception()) };
+        var trigger = new FakeTrigger();
+        var runner = new ForceRebootRunner(host, trigger);
+        var status = new CapturingStatus();
+
+        await Assert.ThrowsAsync<RemoteSessionLostException>(
+            () => runner.RebootAsync(Host, credential: null, CancellationToken.None, status));
+
+        Assert.Empty(status.Reports);
+    }
+
     private static PSExecutionResult Clean() => new([], [], [], HadErrors: false);
+
+    private sealed class CapturingStatus : IProgress<string>
+    {
+        public List<string> Reports { get; } = [];
+        public void Report(string value) => Reports.Add(value);
+    }
 
     private sealed class FakeHost : IPowerShellHost
     {

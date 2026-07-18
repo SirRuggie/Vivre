@@ -56,8 +56,11 @@ public sealed class ForceRebootRunner
     }
 
     /// <summary>Sends the forced reboot to <paramref name="host"/>. See the class doc for the exact
-    /// fallback classification. Exceptions other than the Kerberos auth rejection propagate.</summary>
-    public async Task<ForceRebootResult> RebootAsync(string host, PSCredential? credential, CancellationToken cancellationToken)
+    /// fallback classification. Exceptions other than the Kerberos auth rejection propagate.
+    /// <paramref name="status"/> is a DISPLAY-ONLY narration hook (the grid's Reboot message column) —
+    /// reported at the fallback hand-off so the operator can see the channel switch live; it changes
+    /// nothing about execution.</summary>
+    public async Task<ForceRebootResult> RebootAsync(string host, PSCredential? credential, CancellationToken cancellationToken, IProgress<string>? status = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
 
@@ -74,6 +77,7 @@ public sealed class ForceRebootRunner
             // the operator's already-confirmed reboot over the proven DCOM → SMB/SCM trigger, forced,
             // exactly once. AlreadyInProgress from the trigger means the box is going down on its own
             // (1115) — reported, never re-fired. A both-channels failure throws with both reasons.
+            status?.Report("WinRM auth rejected (Kerberos) — trying the DCOM channel…");
             RebootDispatch dispatch = await _dcomFallback.RebootAsync(host, forced: true, cancellationToken).ConfigureAwait(false);
             return new ForceRebootResult(ForceRebootChannel.Dcom, dispatch, Error: null);
         }

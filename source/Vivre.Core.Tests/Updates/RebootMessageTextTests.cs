@@ -17,6 +17,10 @@ public class RebootMessageTextTests
     [InlineData("Back online 10:22")]
     [InlineData("Back online 10:22 (down 5m 12s)")]
     [InlineData("Forced reboot sent 10:22")]
+    // The reboot-wave column terminals: the WUA success message and the interim "verifying" state both
+    // ride the "Back online" prefix, so a later scan/install auto-clears them (same lifecycle as above).
+    [InlineData("Back online — rebooted. (committed in ~3 min)")]
+    [InlineData("Back online — verifying…")]
     public void Transient_past_event_notices_are_cleared(string message) =>
         Assert.True(RebootMessageText.IsTransientRebootNotice(message));
 
@@ -26,6 +30,11 @@ public class RebootMessageTextTests
     [InlineData("Offline since 10:00 — waiting for it to come back…")]
     [InlineData("WinRM temporarily unavailable on HOST — backing off, will retry.")]
     [InlineData("WinRM temporarily unavailable on HOST (reboot still pending) — backing off.")]
+    // A failed-reboot notice is a current-state failure — it must survive until something real overwrites it.
+    [InlineData("Reboot failed 14:58 — WinRM error")]
+    // In-flight narration — always followed by a terminal write in the same flow, so it must not self-clear.
+    [InlineData("Rebooting (force)…")]
+    [InlineData("Starting reboot wave…")]
     // Nothing to clear.
     [InlineData(null)]
     [InlineData("")]
