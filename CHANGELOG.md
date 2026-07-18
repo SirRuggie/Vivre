@@ -7,6 +7,14 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## 1.16.0 — 2026-07-17
+
+### Added
 - **The Server 2016 CU now carries a month/year label (e.g. "July 2026").** It's auto-suggested from the
   package's file date when you use **Read from package**, editable there and in **Settings ▸ Server 2016
   cumulative update**, and shown in the 2016 panel and the Settings card — so anyone on the box sees at a

@@ -150,6 +150,12 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - No empty `catch {}` — surface failures (to the activity log / `LastError`), don't swallow them.
 - Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
+- **Reboot cardinal — NOTHING auto-reboots.** Every reboot path (the Reboot & Verify wave, Force reboot
+  including its narrow Kerberos-auth DCOM fallback in `ForceRebootRunner`, Schedule reboot, the script
+  library) fires only from an operator's explicit per-box click + confirm — never an independent decision.
+  The shutdown primitive `Win32Shutdown` lives in EXACTLY ONE file (`DcomRebootTrigger.cs`). Gate grep
+  after ANY commit touching reboot code: `grep -rl --include=*.cs "Win32Shutdown" source/` → exactly that
+  one file. Don't write the primitive's name in other source prose/comments — it breaks the gate.
 - All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see docs/windows-patching-lane.md).
 - **Shelling out to Windows PowerShell 5.1** (the WUG lane in `Wug/WugMaintenance.cs`, and any

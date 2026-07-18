@@ -3,7 +3,10 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-13** (release **1.15.0** cut 2026-07-12 — the embedded-RDP
+> not a mandate). Last refreshed: **2026-07-17** (release **1.16.0** cut 2026-07-17 — WUG streaming
+> state-check + identity-verify, the personal/shared **settings split**, 2016 CU auto-read + month label,
+> the neutral **Unverified** patch state, and the **reboot arc** shipped; see the 1.16.0 DONE entries. Prior
+> release **1.15.0** cut 2026-07-12 — the embedded-RDP
 > arc shipped: client-side zoom + verified re-fit engine `a080685`; full-screen un-latch + quiet-hands
 > guard `f9b014e`; drag-deferred OCX host resize `48eba5b` (the 12s border-drag freeze — a render
 > regression, proven by instrumentation, tag `instrument/ui-freeze-watchdog`); disconnect classifier
@@ -11,13 +14,13 @@
 > close (786 → 810 across the RDP arc).)
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 897 green as of 2026-07-15).**
+> are point-in-time only (current suite is 984 green as of 2026-07-17).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0); suite now 897 green (2026-07-15):** the full five-lens audit
+**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0); suite now 984 green (2026-07-17):** the full five-lens audit
 record is `docs/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
 **and every actionable MED is now closed** (the batch-sequential residue closed this pass — see the bounded-loops DONE entry)**:** Stop-during-SMB-copy + settings-save-invisible-in-Release
@@ -126,6 +129,23 @@ standalone items further down, each "do only if it recurs / when a signal appear
   now makes the manual KB+UBR lookup a two-click copy. The `Lcu2016CuMatcher.FindCuKb`
   heuristic built for the staged-patching dialog exists if this is ever revisited, but the decision is:
   manual only.
+- **Clear the CU month label when the KB is hand-edited.** The 1.16.0 CU month label (read from the staged
+  package — see DONE) is not cleared when the operator manually changes the KB, so a stale label from the old
+  package can sit on a newly-typed KB and mislead the team about which cycle they're on. Clear (or re-derive)
+  the label whenever the KB field is edited by hand.
+
+### Unverified / reboot-verify follow-ups (from the 1.16.0 Unverified + reboot arc — see DONE)
+- **Monitor self-heal for the Unverified state.** A later successful monitor probe updates the reboot dot but
+  never rewrites the stale "couldn't confirm — re-check" message or clears the **Unverified** chip, so a box
+  that has since become verifiable keeps reading Unverified until the operator acts. Extend the `was == true`
+  monitor guard so a subsequent clean probe rewrites the message and chip and the fleet converges on its own —
+  no operator action needed.
+- **Reboot-pending-probe DCOM fallback for the Kerberos cohort.** The post-reboot reboot-pending probe is
+  WinRM-only, so a Kerberos-broken box (WinRM auth rejected) can NEVER be confirmed after a reboot — it is
+  **guaranteed Unverified** every cycle. Add a DCOM fallback: the reboot-pending registry legs need no WinRM,
+  and the `DcomRebootReadinessProbe` machinery already exists — wiring it in rescues that cohort so its boxes
+  can verify like the rest. (Design settled, build pending; related to the parked Kerberos remoting-cache
+  work in DO NEXT #1 and the drift-hunt "stale reboot-pending dot on DCOM-only boxes" note below.)
 
 ---
 
@@ -145,6 +165,12 @@ standalone items further down, each "do only if it recurs / when a signal appear
   `static`) but `_patchThrottle` is per-tab, so installs are NOT cross-tab gated. Fix direction (future): a
   dedicated I/O-aware copy cap separate from the install cap; and/or stage to one share and have targets pull;
   and/or sequence the large copies.
+- **SHA-256 package-hash verification for the staged CU package.** Stage integrity is byte-count only today
+  (no content hash of the `.msu`/package — see the fan-out item above), so a silently-truncated-but-right-size
+  or corrupted copy would pass. Add a SHA-256 verify of the staged package against the source. Small, standalone.
+- **Staged-machine list "copy all / export" UX gap.** The Settings staged-patching management card lists /
+  Removes / Clears the flagged machines but has no way to copy the whole list out (clipboard or file export),
+  so an operator can't easily hand the staged set to a teammate or record it. Add a copy-all / export affordance.
 - **Clean "~30 of 51 cleaned" — RESOLVED (it was the Staged gate, NOT a concurrency cap) + Clean now
   selection-driven.** The "only ~30 of 51 boxes cleaned" observation was **NOT a bug and NOT a thread-pool /
   concurrency ceiling** — Clean was intentionally gated to Staged (flagged) 2016 boxes via
@@ -257,6 +283,11 @@ standalone items further down, each "do only if it recurs / when a signal appear
   arbitrary-script-over-SMB-as-SYSTEM without a strong reason).
 - **Force-reboot-over-RPC/SMB** as an additional wave fallback path — only if the DCOM + SMB reboot
   paths prove insufficient at scale.
+- **APVPATCHING — "New-ScheduledTaskAction is not recognized" — PARKED by the operator (known; do NOT
+  troubleshoot ad hoc).** Scheduling an action on APVPATCHING fails with `New-ScheduledTaskAction` not
+  recognized (the ScheduledTasks module cmdlet is unavailable on that host). The operator has parked this
+  deliberately — it is a known condition of that one box, not a Vivre bug to chase. Do not investigate or
+  "fix" it opportunistically; act only if the operator re-raises it.
 - **Per-host RDP display-scale toggle — CLOSED / DISPROVEN, do not build.** The old theory
   (mRemoteNG = WinForms framework DPI scaling; recommended lever = a **per-host display-scale
   toggle**) was disproven: mRemoteNG ships DPI-unaware, and ANY session scale above 100% breaks FCM
@@ -269,6 +300,53 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **Reboot arc — Reboot & Verify reaches patch-failed boxes + Force reboot falls back to DCOM on Kerberos
+  boxes — DONE, shipped 1.16.0** (`cabe230` · `e016c4f` · `039ce6f`, on master). (1) **Reboot & Verify is now enabled on a
+  box in `Error` that still needs a reboot** — a patch that failed but left the box reboot-required could not be
+  sent through Reboot & Verify (the menu gated `Error` out), stranding it; the gate now admits Error +
+  reboot-required. (2) **Force reboot falls back to DCOM** when the WinRM auth is rejected on a Kerberos-broken
+  box (`0x80090322`) — routed through the existing, already-Kerberos-capable `DcomRebootTrigger`, so the one
+  manual Force-reboot action no longer dead-ends on the cohort the reboot wave already handles. (3) The **Reboot
+  message column narrates live** through the reboot → offline → back-online sequence. Cardinal: reboot stays
+  operator-confirmed and `Win32Shutdown` stays confined to `DcomRebootTrigger`. (Verdict record: MEMORY ▸
+  "Kerberos reboot dead-end verdict".)
+- **Neutral "Unverified" patch state — couldn't-confirm / couldn't-rescan boxes no longer read green — DONE,
+  shipped 1.16.0** (`6f3a4ed`, on master). A box whose post-reboot reboot-pending probe or WUA rescan could not
+  complete used to fall through to a green "Up to date"; it now shows a neutral **Unverified** state (not green,
+  not red) across all five surfaces it can appear on. Extends the honest-post-reboot
+  cluster (`f965b29`) — a couldn't-confirm/couldn't-rescan outcome is now visibly "we don't know," never a false
+  green. **Known follow-up gaps are OPEN** (see OPEN ▸ patching features ▸ *Unverified / reboot-verify
+  follow-ups*): a later successful monitor probe does not yet self-heal the stale message/chip, and the
+  Kerberos cohort's WinRM-only reboot-pending probe leaves those boxes permanently Unverified.
+- **2016 CU auto-read from the staged package + CU month label — DONE, shipped 1.16.0** (`794baf4` the month
+  label, on master). The 2016 CU KB is now read from the staged `.msu` package (`MsuPackageReader`,
+  product-pinned) and offered side-by-side with the existing Settings value as a **read-and-confirm** — never a
+  silent overwrite of a deliberately-set KB (the same guardrail that kept KB-auto-population-from-scan manual
+  only, above). A **month label** derived from the package annotates the CU so the team can see which cycle it
+  is. (OPEN follow-up: clear that label when the KB is hand-edited — see *Settings simplification*.)
+- **Personal / shared settings split — DONE, shipped 1.16.0** (`003c963`, on master). Per-operator preferences
+  stay personal in `%APPDATA%\Vivre\settings.json`; the shared operational settings (this month's CU,
+  LCU/package folders, WUG server, staged-machine list) move to a machine-wide `SharedSettingsStore` at
+  `C:\ProgramData\Vivre\settings.json` (Authenticated-Users Modify ACL, fresh uncached read per `Load`). Writes
+  go through `Update(Action<SharedSettings>)` — a **sibling-key-safe read-merge-write** that changes only the
+  keys the delta touches, preserves every other key (including a future build's), and **refuses (throws) on a
+  degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
+  `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
+  prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer optimistic concurrency and the
+  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #5). No migration/copy shipped with the
+  split by design.
+- **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
+  DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the
+  2016 CU / patching fields relabeled into plain language, with the Microsoft Update **update-history / catalog
+  link** that makes the manual KB+UBR lookup a two-click copy (already referenced under *Settings
+  simplification*). The numeric Settings boxes (Max simultaneous installs, WUG state-check concurrency) now
+  commit **on LostFocus only**, so an intermediate value typed mid-edit no longer clamps/rewrites under the
+  operator. Reorg was pure-XAML-safe (MEMORY ▸ "Settings reorg + 2016 CU auto-read verdicts").
+- **Health-grid column caps + calm name-resolution offline — DONE, shipped 1.16.0** (no single hash — 1.16.0).
+  The health grid's columns gained width caps (no single column blowing out the layout), and a `PingErrorKind`
+  name-resolution failure (DNS can't resolve the host — WSAHOST_NOT_FOUND / 11001) now reads as a calm
+  **Offline** instead of a red error — a host that no longer resolves is off/decommissioned, not a fault to
+  alarm on (MEMORY ▸ "Health-grid false-alarm arc").
 - **WUG state-check SPEED — pooled per-name lookups — DONE** (this pass: chunks A + B + a test-speed pass,
   uncommitted at writing; suite 873 → 897). The read-only "Check WhatsUp Gold state…" read now runs its
   per-name `Get-WUGDevice` lookups a few AT A TIME instead of strictly one-by-one — a runspace pool INSIDE
