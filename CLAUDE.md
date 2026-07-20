@@ -140,9 +140,11 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 
 ## Conventions
 
-- **Answer concisely, in plain (layman's) terms.** Lead with the bottom line; keep chat replies
-  short and jargon-free, and skip the deep technical walkthrough unless asked. (Code, commit
-  messages, and docs still use full technical precision — this is about chat replies.)
+- **Chat replies:** lead with the outcome. Assume a technically capable reader (systems engineer)
+  who is not a .NET dev — translate .NET/WPF/C# jargon in one line where it's unavoidable; don't
+  explain general IT concepts (AD, DNS, WinRM, SMB, etc.). Default under 150 words outside of task
+  reports. Skip the deep technical walkthrough unless asked. (Code, commit messages, and docs keep
+  full technical precision — this rule is about chat replies only.)
 - **Do NOT add a `Co-Authored-By: Claude ...` trailer (or any AI/Claude attribution) to commit
   messages.** This overrides the default Claude Code behavior — write commit messages with no
   co-author/attribution line.
@@ -209,6 +211,25 @@ Specifically:
 
 This standard applies to investigations, red-team passes, build commits,
 and checkpoint reviews — every task without exception.
+
+## Report format (every report to the operator — no exceptions)
+
+End every task with exactly these sections, in order. No preamble, no restating
+the task. Plain summary lines; technical detail lives only under the finding it
+belongs to.
+
+- **VERDICT** — one line: done / blocked / needs decision, plus build status
+  (0 warnings/0 errors or not) and test count.
+- **OPERATOR ACTIONS** — numbered, ordered by severity. Every item that needs my
+  click, decision, or visual check. Exactly two sentences each: what it is, what
+  I must do or decide. Never omit or merge items to save space. New findings
+  only — a previously-reported item reappears only if its status changed.
+  None → write "None."
+- **VERIFIED** — findings you personally confirmed against the actual code (per
+  the PM Verification Standard above), 1–2 lines each.
+- **UNVERIFIED** — worker/agent claims you could NOT confirm from the code
+  directly. Never fold these into VERIFIED. None → write "None."
+- **RISKS / WATCH** — 3 sentences max. None → write "None."
 
 ## Commit messages — keep them SHORT
 
