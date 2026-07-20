@@ -9,8 +9,18 @@ it ships, then gets a dated heading.
 ### Added
 
 ### Changed
+- **Background monitoring no longer pauses for the whole tab during long operations.** Rows an operation
+  isn't working on keep their online dot and reboot state live throughout a reboot wave or an install;
+  only the rows an operation is actively working on are left alone.
+- **When a reboot is confirmed complete on a row that's still Unverified, the update message now reads
+  "Reboot confirmed complete — rescan to confirm updates"** instead of a stale reboot-required tail that
+  contradicted the neutral chip.
 
 ### Fixed
+- **A box marked Unverified after a reboot now clears itself to green once the machine confirms no reboot
+  is pending — but ONLY when the post-reboot update check had already come back clean.** Anything left
+  unconfirmed (an update check that couldn't run, or a reboot probe that never answered) stays visibly
+  Unverified until you re-check it.
 
 ## 1.16.1 — 2026-07-20
 

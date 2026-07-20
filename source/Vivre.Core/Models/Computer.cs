@@ -246,6 +246,19 @@ public partial class Computer : ObservableObject
     /// and consume rules. Runtime-only, not persisted, not observable.</summary>
     public int? LastInstallFailedCount { get; set; }
 
+    /// <summary>
+    /// Runtime-only marker: true when this row's Unverified state is due SOLELY to the reboot-pending
+    /// probe failing to answer (a "couldn't confirm reboot state" outcome) while the applicability
+    /// rescan itself completed clean — 0 remaining, 0 failed. It is the ONE Unverified variant a later
+    /// definite-clean monitor probe (reboot confirmed not pending) may lift to green Done, because the
+    /// only thing left unconfirmed was the reboot, and the probe has now confirmed it. Every other
+    /// Unverified variant (couldn't rescan, scan failed) leaves this false and never self-heals.
+    /// Set in <see cref="Vivre.Core.Updates.MonitorSelfHeal"/>'s calling sites; read by ShouldSelfHeal.
+    /// MUST NOT be [ObservableProperty] — it never feeds the live grid filter. Runtime-only, not
+    /// persisted (Computer is never serialized; the named-list store writes only host names).
+    /// </summary>
+    public bool UnverifiedRebootProbeOnly { get; set; }
+
     /// <summary>The full vitals snapshot behind the score — the Machine Details triage panel's per-drive /
     /// per-reading breakdown binds THROUGH this (e.g. <c>Vitals.Drives</c>, <c>Vitals.SystemDriveFreePercent</c>,
     /// <c>Vitals.LastBootTime</c>). Observable so a Check Vitals run WHILE Machine Details is open re-resolves

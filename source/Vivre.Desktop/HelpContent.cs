@@ -262,6 +262,7 @@ public static class HelpContent
             Lines =
             [
                 "Monitor is ON by default — Vivre starts watching online/offline the moment a list loads, re-checking every machine on a timer.",
+                "It keeps watching even while a long operation (a reboot wave, an install) runs — only the rows that operation is actually working on are left alone, so every other machine's online dot and reboot state stay live throughout.",
                 "Turn the Monitor toggle off for a frozen snapshot and back on to resume. The toggle is the ONLY way to pause monitoring — the Stop button cancels running operations, not the monitor.",
             ],
         },
@@ -553,8 +554,8 @@ public static class HelpContent
                 "  Installed N · up to date — the install needed no reboot at all.",
                 "  Back online · reboot still pending — re-check — another reboot is needed; run again when ready.",
                 "  Back online · couldn't rescan — the re-scan didn't complete; use Scan to re-check.",
-                "  Back online · couldn't confirm reboot state — the reboot-pending check didn't answer (it's bounded at ~2 minutes); the Pending Reboot column shows \"?\" — re-check when convenient. Never shown as \"up to date\".",
-                "  Unverified — the box came back on the network but the reboot couldn't be confirmed within ~30 minutes (e.g. its build was unreadable, or it never appeared to go down) — a neutral outcome, neither green nor red; use Verify to check it.",
+                "  Back online · couldn't confirm reboot state — the reboot-pending check didn't answer (it's bounded at ~2 minutes); the Pending Reboot column shows \"?\" — re-check when convenient. Never shown as \"up to date\". Because the update re-scan here already came back clean, this one clears itself to green on its own once background monitoring later confirms no reboot is pending — you may not need to touch it.",
+                "  Unverified — the box came back on the network but the reboot couldn't be confirmed within ~30 minutes (e.g. its build was unreadable, its update re-scan didn't complete, or it never appeared to go down) — a neutral outcome, neither green nor red. Only the \"couldn't confirm reboot state\" case above (clean re-scan, reboot alone unconfirmed) self-heals later; the others stay Unverified until you re-check them with Verify.",
                 "If a box outlasts the live watch, re-check it once it's back up — that's exactly what the red no-longer-tracking row is asking for. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
             ],
             Tip = "Reboot & verify reboots ONLY the machines you select and confirm. It never touches the rest of the fleet. To reboot without a post-reboot rescan, use right-click ▸ Reboot (force now).",

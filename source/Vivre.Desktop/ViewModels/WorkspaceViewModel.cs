@@ -297,6 +297,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly Dictionary<string, OperationRecord> _heldRows =
         new(StringComparer.OrdinalIgnoreCase);
 
+    // Passive ops hold no _heldRows entry (they must not block sweeps), but two of them (client
+    // actions, Enable WinRM) write monitor-owned fields (LastStatus/LastError), so the monitor
+    // must skip their rows explicitly. Same UI-thread-only invariant as _heldRows; keyed by
+    // machine name (case-insensitive); value = the suppressing operation record.
+    private readonly Dictionary<string, OperationRecord> _monitorSkipRows =
+        new(StringComparer.OrdinalIgnoreCase);
+
     // Per-operation narration record (replaces the old scalar _sweepLabel/_sweepTotal/_sweepCompleted/_sweepStopwatch).
     private sealed class OperationRecord
     {
@@ -2382,7 +2389,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <param name="eligibleRows">The rows this operation will run on (already eligibility-filtered).</param>
     /// <param name="registerRows">When false (passive mode), rows are NOT added to <see cref="_heldRows"/> —
     /// the operation participates in narration and is Stop-cancellable, but it does not block any other op.</param>
-    private (CancellationTokenSource Cts, OperationRecord Record) BeginOperation(string? label, IReadOnlyList<Computer> eligibleRows, bool registerRows = true)
+    /// <param name="suppressMonitor">When true, the operation's rows are registered in <see cref="_monitorSkipRows"/>
+    /// so the monitor skips them. Set ONLY by passive ops that write monitor-owned fields (LastStatus/LastError) —
+    /// active ops already exclude their rows via <see cref="_heldRows"/>, so this is redundant for them.</param>
+    private (CancellationTokenSource Cts, OperationRecord Record) BeginOperation(string? label, IReadOnlyList<Computer> eligibleRows, bool registerRows = true, bool suppressMonitor = false)
     {
         var cts = new CancellationTokenSource();
         _activeCts.Add(cts);
@@ -2397,6 +2407,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             foreach (Computer row in eligibleRows)
             {
                 _heldRows[row.Name] = record;
+            }
+        }
+
+        // A passive op that writes monitor-owned fields (LastStatus/LastError) registers its rows here so
+        // the monitor skips them — active ops don't need this (their rows are already held via _heldRows).
+        if (suppressMonitor)
+        {
+            foreach (Computer row in eligibleRows)
+            {
+                _monitorSkipRows[row.Name] = record;
             }
         }
 
@@ -2451,6 +2471,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (ReferenceEquals(kv.Value, record))
             {
                 _heldRows.Remove(kv.Key);
+            }
+        }
+
+        // Release any monitor-skip entries this operation registered (passive ops only; see BeginOperation).
+        foreach (KeyValuePair<string, OperationRecord> kv in _monitorSkipRows.ToList())
+        {
+            if (ReferenceEquals(kv.Value, record))
+            {
+                _monitorSkipRows.Remove(kv.Key);
             }
         }
 
@@ -4387,6 +4416,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 computer.UpdatePhase = PatchPhase.Unverified.ToString();
             }
+            // Arm the self-heal marker ONLY for the probe-only variant (CouldntConfirm: the rescan came
+            // back clean, only the reboot-pending probe couldn't answer). Unconditional so it also clears
+            // to false on CouldntRescan and every green/remaining/failed outcome — a later definite-clean
+            // monitor probe may then lift only a probe-only Unverified row (MonitorSelfHeal.ShouldSelfHeal).
+            computer.UnverifiedRebootProbeOnly = kind == RebootOutcomeKind.CouldntConfirm;
             _activity.Info(name, outcome);
         }
         else
@@ -4405,6 +4439,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // row at Done). Applies to 2016 too: the operator's call is "couldn't rescan = Unverified"
                 // regardless of box type — errs toward re-checking, the safe direction on a patching box.
                 computer.UpdatePhase = PatchPhase.Unverified.ToString();
+                // Couldn't-rescan is NOT probe-only — don't let a later clean probe self-heal it. Set false
+                // explicitly rather than relying on the wave's earlier ApplyStatus clear alone (red-team amendment).
+                computer.UnverifiedRebootProbeOnly = false;
                 _activity.Info(name, $"{name}: couldn't rescan — re-check");
             }
             else if (remaining > 0)
@@ -4548,6 +4585,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         bool phaseChanged = !string.Equals(computer.UpdatePhase, phase, StringComparison.Ordinal);
 
         computer.UpdatePhase = phase;
+        // Any completed scan/install supersedes the probe-only marker: this row's Unverified (if any) is
+        // being replaced by a real scan conclusion, so it's no longer a bare "couldn't confirm reboot".
+        computer.UnverifiedRebootProbeOnly = false;
         computer.UpdateMessage = message;
         computer.UpdateProgress = status.Percent;
 
@@ -4805,10 +4845,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             while (!token.IsCancellationRequested)
             {
-                // Don't fight a manual sweep (Ping All / Check All) — pause while one runs.
-                if (!IsBusy && Computers.Count > 0)
+                // Don't fight an operation on the rows it owns — skip PER ROW, not for the whole tab.
+                // A row is skipped only while it's held by an active op (_heldRows) or its monitor-owned
+                // fields are being written by a passive op (_monitorSkipRows); every other row keeps
+                // probing, so its online dot and reboot state stay live mid-wave / mid-install. A
+                // full-fleet sweep holds every row, emptying the snapshot — the same pause as before.
+                if (Computers.Count > 0)
                 {
-                    await MonitorRowsAsync([.. Computers], token);
+                    var free = Computers
+                        .Where(c => !_heldRows.ContainsKey(c.Name) && !_monitorSkipRows.ContainsKey(c.Name))
+                        .ToList();
+                    if (free.Count > 0)
+                    {
+                        await MonitorRowsAsync(free, token);
+                    }
                 }
 
                 await Task.Delay(TimeSpan.FromSeconds(MonitorIntervalSeconds), token);
@@ -4916,7 +4966,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // probe it at all, or it spams "Reboot probe failing" every cycle. Its reboot state comes from
         // the 2016 lane's DCOM Verify instead.
         bool winRmUnsupported = _winRmRebootProbeUnsupported.ContainsKey(computer.Name);
-        if (online && IsUpdateMode && !backoffActive && !winRmUnsupported)
+        // Closes the row-became-held-mid-pass race for the one expensive WinRM write: if an op claimed
+        // this row after the whole-pass snapshot was taken, don't fire the reboot-pending probe on it.
+        if (online && IsUpdateMode && !backoffActive && !winRmUnsupported
+            && !_heldRows.ContainsKey(computer.Name) && !_monitorSkipRows.ContainsKey(computer.Name))
         {
             bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
             // Every box — pending or not — is re-probed on a single slow cadence (RebootPendingRecheckInterval,
@@ -5062,6 +5115,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 computer.RebootRequired = pending.Value;
 
+                // A confirmed NEW pending reboot invalidates the self-heal marker: the box has changed
+                // since the clean rescan that armed it, so its "only the reboot was unconfirmed" premise
+                // no longer holds — a later clean probe must not lift this row to green on those stale
+                // rescan facts. The row re-verifies through a real rescan instead (review advisory).
+                if (pending.Value)
+                {
+                    computer.UnverifiedRebootProbeOnly = false;
+                }
+
                 // Reboot just resolved (was pending, now clear) — the reliable "it's back, reboot
                 // done" signal (this transition is what turns the dot green, so it always runs even
                 // if the monitor never caught the brief offline window). Narrate it and strip the
@@ -5071,11 +5133,29 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.RebootMessage = $"Reboot complete — back online {DateTime.Now:HH:mm}";
                     computer.WentOfflineAt = null;
 
-                    // Separator-agnostic: the agent writes the tail with a middot separator, older builds
-                    // used a comma - remove whichever so the message stops contradicting the green pill.
-                    computer.UpdateMessage = UpdateMessageText.WithoutRebootRequiredTail(computer.UpdateMessage);
+                    // Message-only (state derivation untouched here): a row still reading Unverified under a
+                    // grey chip would otherwise show a contradictory reboot-required tail, so say the reboot
+                    // is confirmed and prompt a rescan; otherwise strip the now-stale reboot-required tail the
+                    // install left (separator-agnostic — the agent uses a middot, older builds a comma).
+                    computer.UpdateMessage = string.Equals(computer.UpdatePhase, PatchPhase.Unverified.ToString(), StringComparison.Ordinal)
+                        ? "Reboot confirmed complete — rescan to confirm updates"
+                        : UpdateMessageText.WithoutRebootRequiredTail(computer.UpdateMessage);
 
                     _activity.Info(computer.Name, "Reboot complete — back online, no reboot pending");
+                }
+                else if (!pending.Value && MonitorSelfHeal.ShouldSelfHeal(computer.UpdatePhase, computer.UnverifiedRebootProbeOnly, pending))
+                {
+                    // Variant-A self-heal: the post-reboot verify wrote RebootRequired=null (so the was==true
+                    // guard above can't fire), leaving a probe-only Unverified row. The probe has now answered
+                    // definitively clean — RebootRequired=false was just written at :5063, so PatchState derives
+                    // green Done. Lift the row and clear the marker. Every write here is on the monitor's UI
+                    // context chain (this block already writes assert-guarded RebootRequired) — no ConfigureAwait.
+                    computer.UpdatePhase = PatchPhase.Done.ToString();
+                    computer.UpdateMessage = RebootOutcomeMessages.BackOnlineUpToDate(null);
+                    computer.RebootMessage = $"Reboot complete — back online {DateTime.Now:HH:mm}";
+                    computer.WentOfflineAt = null;
+                    computer.UnverifiedRebootProbeOnly = false;
+                    _activity.Info(computer.Name, "Post-reboot verify self-healed — reboot confirmed clean, up to date.");
                 }
             }
         }
@@ -5587,7 +5667,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        (CancellationTokenSource cts, OperationRecord record) = BeginOperation(action.Label, rows, registerRows: false);
+        (CancellationTokenSource cts, OperationRecord record) = BeginOperation(action.Label, rows, registerRows: false, suppressMonitor: true);
         try
         {
             Task work = Task.WhenAll(rows.Select(row => TriggerScheduleRowAsync(row, action, record, cts.Token)));
@@ -5699,7 +5779,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        (CancellationTokenSource cts, OperationRecord record) = BeginOperation("Enabling WinRM", rows, registerRows: false);
+        (CancellationTokenSource cts, OperationRecord record) = BeginOperation("Enabling WinRM", rows, registerRows: false, suppressMonitor: true);
         try
         {
             Task work = Task.WhenAll(rows.Select(row => EnableWinRmRowAsync(row, record, cts.Token)));

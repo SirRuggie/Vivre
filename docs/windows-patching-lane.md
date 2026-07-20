@@ -472,6 +472,18 @@ For non-2016 boxes the outcome string replaces `UpdateMessage` as the primary re
 For 2016 boxes the wave's UBR Done message is kept as primary; the rescan appends a
 supplementary note (e.g. "· up to date" or "· N update(s) still applicable — run a WUA pass").
 
+**Monitor self-heal of the probe-only Unverified.** The tri-state probe's *unknown* arm leaves the row
+`Unverified` (never a false green). Only the `CouldntConfirm` variant — the applicable rescan came back
+clean (0 remaining, 0 failed) and the *reboot* alone was left unconfirmed — arms a runtime-only marker
+(`Computer.UnverifiedRebootProbeOnly`, set in `ReportPostRebootOutcomeAsync`, cleared by any later
+`ApplyStatus`). When the background monitor's reboot-pending probe later answers **definitively clean**
+(`false`, not `null`/`true`) on such a row, `MonitorSelfHeal.ShouldSelfHeal` lifts it to green `Done`
+(`ProbeRebootPendingAsync`). Every other Unverified variant (couldn't-rescan, scan-failed) leaves the
+marker false and can never self-heal; the Kerberos/timeout cohort only ever produces `null`, so it is
+structurally unable to reach the heal. Separately, the monitor now skips only **held** rows (an active op)
+and **suppressed** rows (a passive op writing `LastStatus`/`LastError`) rather than pausing wholesale — so a
+row mid-wave or mid-install keeps its online dot and reboot state live.
+
 ### Readiness vs offline-detection distinction
 
 - **Readiness probe** (`IRebootReadinessProbe`) — PRE-reboot question: "may we reboot this box
