@@ -371,35 +371,65 @@ Routing is by `LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.Require
   and compared to the operator's target UBR; a rolled-back build is caught as Failed (red).
 - **All other boxes (incl. a non-flagged Server 2016 box)** → `RebootWaveWuaAsync` → `BasicReachabilityReadinessProbe` +
   `ReadyConfirmation`. Pre-reboot gate is unconditionally ready (no 2016-specific signals to
-  check). Post-reboot confirmation queries `Win32_OperatingSystem` over DCOM/CIM — Confirmed when
-  the OS stack answers, NotReady (retry) when it can't be reached yet. It never returns Failed;
-  whether updates took is determined by the WUA rescan below.
+  check). `ReadyConfirmation` captures the box's `LastBootUpTime` over DCOM/CIM BEFORE the reboot and,
+  once it returns, is Confirmed only when the box reports a **newer** boot time (a genuine reboot) —
+  NotReady (retry) while it still reads the same/older boot time or can't be reached yet. It never returns
+  Failed; whether updates took is determined by the WUA rescan below.
 
 ### Reboot execution (`RebootWave.RebootAndCommitAsync`)
 
-`DcomRebootTrigger` is the **sole reboot primitive** — its only call path is
-`RebootWave.RebootAndCommitAsync`. No other code calls Win32Shutdown, `shutdown.exe`,
-`Restart-Computer`, or any reboot API.
+`DcomRebootTrigger` holds the **sole shutdown primitive** — it lives in exactly one file
+(`DcomRebootTrigger.cs`), enforced by a gate grep. It now has **two callers**, both fired only inside an
+operator's explicit, confirmed per-box click (nothing reboots autonomously): the Reboot Wave
+(`RebootWave.RebootAndCommitAsync`) and `ForceRebootRunner`'s narrow Kerberos-auth fallback
+(**Force reboot**, via `WorkspaceViewModel.RebootForceSelectedAsync` — since e016c4f, when WinRM
+shutdown is rejected on a Kerberos-broken box the runner falls back to the same DCOM→SMB/SCM trigger).
+
+**Clock-immune uptime proof.** The wave captures a `BootTimeReading` (the target's own `LocalDateTime` and
+`LastBootUpTime`, read in ONE `Win32_OperatingSystem` query via `DcomBootTimeReader`) just before the
+graceful reboot, and again while watching. Their difference — the **uptime** — is immune to a clock step:
+a uniform shift moves `LocalDateTime` and `LastBootUpTime` equally, so `LocalDateTime − LastBootUpTime`
+is invariant. Combined with the wave's own monotonic `Stopwatch`, a reboot is *proven* only when the
+current uptime has collapsed by more than a **2-minute margin** (which just absorbs read jitter — a real
+reboot shifts the expectation by the whole pre-reboot session uptime plus downtime, always minutes to
+days). Any unreadable read returns null and is **never** a false success.
 
 Flow per box:
 1. Pre-reboot readiness check (fails fast with a clear message if not ready).
-2. Graceful reboot issued.
+2. Graceful reboot issued; the since-**ordered** stopwatch starts here (it drives the HardCap/Overdue
+   bounds and the "N min since the reboot was ordered" messages).
 3. Wait up to the go-offline window for the box to drop off TCP-445 — `GoOfflineWindow` = **8 min**
    (`RebootWaveOptions.Default`, the WUA lane) or **20 min** (`ForSlowCommit`, the staged-2016 LCU
    lane — a CBS-heavy box can hold port 445 for 15-20+ min while flushing patches). If it doesn't
-   drop: **escalate to a forced reboot** (completion of the operator-ordered reboot, not an
-   autonomous decision), then wait `ForcedGoOfflineWindow` — deliberately **2× the graceful window**
-   (16 min / 40 min), since a box mid-CBS-commit can hold the network well past the graceful wait.
-   A "shutdown already in progress" answer at either step means the box IS going down (slow, not
-   hung) — no escalation, straight to the commit-watch. Still up after both windows: red, with an
-   honest "may still be committing (slow), or stuck — check console/iLO, or Verify once it's back".
-4. Unbounded offline watch — `OfflineCeiling` only flags "Overdue — check console/iLO" once;
-   the clock never stops watching and never fails a box just for being slow.
+   drop, the wave first checks the **uptime proof**: if it proves the graceful reboot already completed
+   (the drop just fell between polls), the forced escalation is **suppressed** and it goes straight to
+   the commit-watch. Otherwise it **escalates to a forced reboot** (completion of the operator-ordered
+   reboot, not an autonomous decision — the proof only ever *suppresses* a force, never adds one), then
+   waits `ForcedGoOfflineWindow` — deliberately **2× the graceful window** (16 min / 40 min), since a box
+   mid-CBS-commit can hold the network well past the graceful wait. A "shutdown already in progress"
+   answer at either step means the box IS going down (slow, not hung) — no escalation, straight to the
+   commit-watch. Still up after both windows: red, with an honest "may still be committing (slow), or
+   stuck — check console/iLO, or Verify once it's back".
+4. Offline watch — `OfflineCeiling` only flags "Overdue — N min since the reboot was ordered" once; the
+   clock never stops watching and never fails a box just for being slow. **Confirmation is gated on
+   drop-OR-proof:** it runs only after the box was seen leaving the network, or the clock-immune uptime
+   proof shows it rebooted — so a box that merely answers slowly on its OLD boot can't be read and
+   false-failed as "rolled back" (the 2016 guard, now strengthened by the step-immune proof).
 5. When TCP-445 comes back: confirmation strategy runs. `NotReady` → retry (still coming up);
    `Confirmed` → green (Done); `Failed` → red (e.g. rolled-back UBR).
-6. `HardCap` (default 4.5 h — `RebootWaveOptions.Default`, IRebootWave.cs): if the box hasn't returned by then, the live loop exits red with
-   "no longer tracking it live — use Verify once it's back up". The standalone Verify action
-   is the durable net past the live wave.
+6. **`PostReturnConfirmWindow` (default 30 min):** a box that is back on the network but stays
+   *unconfirmable* (unreadable UBR, or never-seen-offline-and-unprovable) for this long ends as the
+   **neutral `Unverified` terminal** ("couldn't confirm — use Verify"), not a hang and not a false green.
+   The window RESETS every time a poll sees the box offline, so a box that flaps (returns, drops again,
+   returns) re-arms it and can still confirm.
+7. `HardCap` (default 4.5 h — `RebootWaveOptions.Default`, IRebootWave.cs), measured **since the reboot was
+   ordered**: if the box hasn't returned by then, the live loop exits red with "no longer tracking it
+   live — use Verify once it's back up". The standalone Verify action is the durable net past the live wave.
+
+**Wave trace.** The wave leaves a permanent, file-only diagnostic breadcrumb (`IActivityLog.Trace` →
+`%LOCALAPPDATA%\Vivre\logs\`, never mirrored to the UI panel): reboot dispatches (incl. the channel DCOM
+vs SMB/SCM took), each offline-wait entry/exit, one line per commit-watch beat, the proof decisions, and
+the terminal result — for post-hoc diagnosis of a box that behaved oddly.
 
 ### Scale model — two throttles, one gate per wave
 

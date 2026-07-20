@@ -3805,9 +3805,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         var gate = new RebootTriggerGate(_rebootTriggerThrottle, jitterMs: 500);
 
         return RunPatchSweepAsync(selected, (c, ct) => RebootWaveRowAsync(c, gate, ct), "Reboot & verify", _waveThrottle,
-            // The wave self-bounds at its own hard cap; give the per-host watchdog a margin beyond it so it
-            // never cuts a legitimately-still-committing box short. Standalone Verify is the net past this.
-            RebootWaveOptions.Default.HardCap + TimeSpan.FromMinutes(15));
+            // The wave self-bounds at its OWN honest terminals — the HardCap (since the reboot was ordered) and
+            // the PostReturnConfirmWindow (reachable-but-unconfirmed → neutral Unverified). Both must fire BEFORE
+            // this generic per-host watchdog, so the operator sees the wave's honest outcome, never a bare
+            // "Timed out". Add the longest forced go-offline window + a margin so a legitimately-still-committing
+            // box is never cut short. Standalone Verify is the net past this.
+            RebootWaveOptions.Default.HardCap + RebootWaveOptions.ForSlowCommit.ForcedGoOfflineWindow + TimeSpan.FromMinutes(15));
     }
 
     /// <summary>Panel button: read each targeted 2016 box's build/UBR and confirm the CU committed. Read-only;
@@ -4209,6 +4212,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // rebooted. (committed in ~N min)" — the "Back online" prefix keeps it in the
                 // transient-clearable class, same lifecycle as the monitor's notices).
                 computer.RebootMessage = final.Message;
+            }
+            else if (final.Phase == PatchPhase.Unverified)
+            {
+                // The box came back on the network but the wave couldn't confirm the reboot within its bound
+                // (unreadable UBR, or never seen going down and not provable). A neutral terminal — NOT red,
+                // NOT green: surface the wave's honest "couldn't confirm — use Verify" in the reboot column and
+                // log it as a warning. ApplyStatus above already applied the Unverified phase/message to the
+                // update columns.
+                computer.RebootMessage = final.Message;
+                _activity.Warn(computer.Name, $"Reboot wave — {final.Message}");
             }
             else if (final.Phase == PatchPhase.Error)
             {

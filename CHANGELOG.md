@@ -7,10 +7,28 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- **The reboot wave now leaves a permanent diagnostic trace in the daily log file**
+  (`%LOCALAPPDATA%\Vivre\logs\`). It records each reboot's channel (DCOM vs the SMB/SCM fallback), the
+  offline-wait outcomes, a line per watch beat, and the final result — a durable record for working out
+  after the fact why a particular box behaved oddly during a reboot. It's file-only and never clutters the
+  on-screen Activity panel.
 
 ### Changed
+- **Reboot-wave status now reads "N min since the reboot was ordered" instead of "offline N min".** The
+  old wording claimed a still-reachable box was offline; the new wording is honest about what the clock is
+  actually measuring.
 
 ### Fixed
+- **A box the wave never saw go down no longer parks for hours.** The wave now confirms a reboot with a
+  clock-immune uptime check (the machine's own boot time vs. its own clock, so a time change can't fool it),
+  so a box whose restart happened between network checks is verified promptly instead of waiting out the
+  4½-hour ceiling.
+- **A machine that comes back but can't be confirmed now ends as a neutral "Unverified — use Verify"
+  within 30 minutes** instead of spinning until the hard cap. The 30-minute clock resets if the box drops
+  offline again, so a machine that restarts a second time still gets confirmed.
+- **The wave no longer force-reboots a box that provably already rebooted.** If the uptime check shows the
+  graceful reboot already completed, the escalation to a forced reboot is skipped (an unreadable or genuinely
+  hung box still escalates exactly as before).
 
 ## 1.16.0 — 2026-07-17
 

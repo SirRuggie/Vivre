@@ -66,6 +66,24 @@ public sealed class ActivityLog : IActivityLog
         }
     }
 
+    /// <summary>
+    /// Writes a high-volume diagnostic breadcrumb straight to the rolling file ONLY — never to the in-memory
+    /// <see cref="Entries"/> (the UI panel), which is for operator-facing history. Emitted at Information level
+    /// because the file sink's minimum level is Information (a Debug write would be dropped). Best-effort: a
+    /// sink failure must never propagate out of the reboot wave's poll loop.
+    /// </summary>
+    public void Trace(string? machine, string message)
+    {
+        try
+        {
+            _file.Write(LogEventLevel.Information, "{Machine} {Message}", machine ?? "-", message);
+        }
+        catch
+        {
+            // Diagnostic tracing must never become a failure source; it's a breadcrumb, not the record.
+        }
+    }
+
     private void Add(LogSeverity severity, string? machine, string message)
     {
         var entry = new LogEntry(DateTime.Now, severity, machine, message);

@@ -56,8 +56,9 @@ public interface IReachabilityProbe
 /// <param name="OfflineCeiling">How long a box may be offline (committing) before it's flagged "Overdue —
 /// check console/iLO". The watch CONTINUES past this. Default 90 minutes.</param>
 /// <param name="PollInterval">How often to poll reachability while waiting. Default 20 seconds.</param>
-/// <param name="HardCap">Absolute bound on LIVE tracking of a box that never returns; after this the wave
-/// stops watching it (red, "use Verify when it's back"). Default 4.5 hours.</param>
+/// <param name="HardCap">Absolute bound on LIVE tracking, measured since the reboot was ORDERED (the graceful
+/// dispatch), not since the box was first seen offline — a slightly tighter, more honest bound. After this the
+/// wave stops watching (red, "use Verify when it's back"). Default 4.5 hours.</param>
 public sealed record RebootWaveOptions(
     TimeSpan GoOfflineWindow,
     TimeSpan OfflineCeiling,
@@ -65,6 +66,20 @@ public sealed record RebootWaveOptions(
     TimeSpan HardCap)
 {
     private readonly TimeSpan? _forcedGoOfflineWindow;
+    private readonly TimeSpan? _postReturnConfirmWindow;
+
+    /// <summary>Bound on the CONTINUOUSLY-reachable-but-unconfirmed phase: once a returned box has been
+    /// reachable this long WITHOUT the confirmation strategy confirming (its UBR is unreadable, or it came
+    /// back without ever being seen going down and can't be proven rebooted), the wave stops spinning and
+    /// returns the neutral <see cref="PatchPhase.Unverified"/> terminal ("couldn't confirm — use Verify"). The
+    /// clock RESETS whenever a poll sees the box offline, so a box that flaps (returns, drops again, returns)
+    /// re-arms the window each time. Defaults to 30 minutes; inherited unchanged by
+    /// <see cref="ForSlowCommit"/> via the <c>with</c> copy.</summary>
+    public TimeSpan PostReturnConfirmWindow
+    {
+        get => _postReturnConfirmWindow ?? TimeSpan.FromMinutes(30);
+        init => _postReturnConfirmWindow = value;
+    }
 
     /// <summary>How long to wait for the box to drop offline after the FORCED reboot — deliberately
     /// <b>strictly longer</b> than the graceful <see cref="GoOfflineWindow"/>: the graceful wait already

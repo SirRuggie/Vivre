@@ -31,18 +31,29 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     // a shutdown is ALREADY underway — the box is going offline on its own, so it is NOT a reboot failure.
     private const int ErrorShutdownInProgress = 1115;
 
+    private readonly Vivre.Core.Logging.IActivityLog? _trace;
+
+    /// <param name="trace">Optional file-only diagnostic breadcrumb sink — records which channel (DCOM vs the
+    /// SMB/SCM fallback) took the reboot, for post-hoc diagnosis. Never mirrored to the UI. Null = no tracing.
+    /// Purely observational: it changes no logic, no flags, and no call path.</param>
+    public DcomRebootTrigger(Vivre.Core.Logging.IActivityLog? trace = null)
+    {
+        _trace = trace;
+    }
+
     public Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         return Task.Run(() => RebootSync(host, forced, cancellationToken), cancellationToken);
     }
 
-    private static RebootDispatch RebootSync(string host, bool forced, CancellationToken cancellationToken)
+    private RebootDispatch RebootSync(string host, bool forced, CancellationToken cancellationToken)
     {
         // 1) Preferred path: DCOM Win32Shutdown (works on healthy, domain-correct boxes).
         (bool ok, bool alreadyInProgress, string dcomFailure) = TryDcomShutdown(host, forced, cancellationToken);
         if (ok)
         {
+            _trace?.Trace(host, $"reboot channel: DCOM accepted (forced={forced})");
             return RebootDispatch.Issued;
         }
 
@@ -50,15 +61,18 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         // wave watches the commit instead of escalating to another reboot or declaring a false failure.
         if (alreadyInProgress)
         {
+            _trace?.Trace(host, "reboot channel: DCOM reports a shutdown already in progress (1115)");
             return RebootDispatch.AlreadyInProgress;
         }
 
         // 2) DCOM didn't take it (e.g. 1191 / access denied on a Kerberos-broken box). Fall back to the
         //    SMB/SCM channel — the same transport that delivers the agent, which authenticates over NTLM.
         cancellationToken.ThrowIfCancellationRequested();
+        _trace?.Trace(host, $"reboot channel: DCOM failed ({dcomFailure}) — falling back to SMB/SCM");
         try
         {
             RebootViaSmbScm(host, forced);
+            _trace?.Trace(host, $"reboot channel: SMB/SCM issued (forced={forced})");
             return RebootDispatch.Issued;
         }
         catch (Exception smbEx)
@@ -67,6 +81,7 @@ public sealed class DcomRebootTrigger : IRebootTrigger
             // not a failure (don't turn a box that's actually rebooting into a red error).
             if (IsShutdownInProgress(smbEx))
             {
+                _trace?.Trace(host, "reboot channel: SMB/SCM reports a shutdown already in progress (1115)");
                 return RebootDispatch.AlreadyInProgress;
             }
 

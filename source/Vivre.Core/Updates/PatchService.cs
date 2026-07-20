@@ -40,7 +40,7 @@ public sealed class PatchService : IPatchService
     {
         _wua = new WuaUpdateLane(powerShell, activityLog: activity);
         _lcu = new FullPackageLcuLane(_wua.Smb);
-        _wave = new RebootWave(new DcomRebootTrigger(), new TcpReachabilityProbe());
+        _wave = new RebootWave(new DcomRebootTrigger(activity), new TcpReachabilityProbe(), new DcomBootTimeReader(), activity);
     }
 
     public async Task<HostPatchStatus> ScanAsync(

@@ -128,7 +128,7 @@ public partial class App : Application
         // Factory for a fresh tab/workspace, capturing the shared services.
         // Force reboot's runner: WinRM shutdown + the narrow Kerberos-auth fallback onto the SAME
         // DCOM → SMB/SCM trigger the Reboot Wave uses. Fires only inside the operator's confirmed click.
-        var forceReboot = new ForceRebootRunner(powerShell, new DcomRebootTrigger());
+        var forceReboot = new ForceRebootRunner(powerShell, new DcomRebootTrigger(activity));
         WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper, forceReboot);
 
         // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.

@@ -533,7 +533,7 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.ArrowClockwiseDashes24, Title = "Reboot and verify after patching",
-            Keywords = "reboot verify wave confirm rescan ubr build 2016 wua outcome back online remaining up to date installed",
+            Keywords = "reboot verify wave confirm rescan ubr build 2016 wua outcome back online remaining up to date installed unverified couldn't confirm",
             Lines =
             [
                 "After installing updates, right-click the machine(s) and choose Reboot & verify…, then confirm the list — nothing reboots without your confirm.",
@@ -554,6 +554,7 @@ public static class HelpContent
                 "  Back online · reboot still pending — re-check — another reboot is needed; run again when ready.",
                 "  Back online · couldn't rescan — the re-scan didn't complete; use Scan to re-check.",
                 "  Back online · couldn't confirm reboot state — the reboot-pending check didn't answer (it's bounded at ~2 minutes); the Pending Reboot column shows \"?\" — re-check when convenient. Never shown as \"up to date\".",
+                "  Unverified — the box came back on the network but the reboot couldn't be confirmed within ~30 minutes (e.g. its build was unreadable, or it never appeared to go down) — a neutral outcome, neither green nor red; use Verify to check it.",
                 "If a box outlasts the live watch, re-check it once it's back up — that's exactly what the red no-longer-tracking row is asking for. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
             ],
             Tip = "Reboot & verify reboots ONLY the machines you select and confirm. It never touches the rest of the fleet. To reboot without a post-reboot rescan, use right-click ▸ Reboot (force now).",

@@ -21,7 +21,12 @@ public class RebootWaveTests
 
     private static RebootWaveOptions Fast(int goOfflineMs = 2000, int ceilingMs = 5000, int hardCapMs = 10000) =>
         new(TimeSpan.FromMilliseconds(goOfflineMs), TimeSpan.FromMilliseconds(ceilingMs),
-            TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(hardCapMs));
+            TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(hardCapMs))
+        {
+            // Generous by default so existing tests never accidentally trip the reachable-but-unconfirmed
+            // bound; the Unverified/flap tests override it small per-test via a `with` copy.
+            PostReturnConfirmWindow = TimeSpan.FromSeconds(5),
+        };
 
     [Fact]
     public async Task Happy_path_graceful_reboot_commits_and_verifies_green()
@@ -208,13 +213,186 @@ public class RebootWaveTests
         Assert.True(gate.DisposeCount >= gate.EnterCount, "Every Enter must have a matching Dispose.");
     }
 
+    [Fact]
+    public async Task Unobserved_reboot_never_seen_offline_is_proven_by_uptime_and_verifies_green()
+    {
+        // FM1: a 1115 box that is NEVER observed leaving the network but DID reboot (uptime resets after 2
+        // reach checks) and returns at the target build. The clock-immune uptime proof unblocks confirmation,
+        // so it verifies green WITHOUT a second forced reboot.
+        var box = new FakeBox
+        {
+            RebootReportsAlreadyInProgress = true,
+            GoesOfflineWhenAlreadyInProgress = false, // never drops off — the wave can't see it go down
+            RebootsUnobservedAfterChecks = 2,         // ...but its uptime resets after 2 reach checks
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.True(reboot.Graceful);
+        Assert.False(reboot.Forced); // proven by uptime, never force-rebooted a box that already rebooted
+    }
+
+    [Fact]
+    public async Task Returned_but_confirmation_never_ready_ends_neutral_unverified_not_a_hang()
+    {
+        // FM2: the box drops and returns (sawOffline the classic way), but its UBR is unreadable forever, so
+        // confirmation returns NotReady on every poll. Instead of spinning to the hard cap, the wave bounds the
+        // reachable-but-unconfirmed phase and returns a neutral Unverified terminal.
+        var box = new FakeBox { GracefulTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = null };
+        var (wave, _, readiness, confirmation) = Build(box);
+
+        RebootWaveOptions opts = Fast() with { PostReturnConfirmWindow = TimeSpan.FromMilliseconds(150) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase); // neutral — NOT Error, NOT a hang
+        Assert.Contains("use Verify", result.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Box_never_seen_offline_and_never_proven_rebooted_ends_unverified()
+    {
+        // The !sawOffline-forever case: a 1115 box that never drops AND never reboots (uptime never resets, so
+        // the proof is always false). It must not park forever — the reachable-but-unconfirmed bound resolves it
+        // to a neutral Unverified, and it is never force-rebooted.
+        var box = new FakeBox
+        {
+            RebootReportsAlreadyInProgress = true,
+            GoesOfflineWhenAlreadyInProgress = false, // never drops
+            // no RebootsUnobservedAfterChecks → it never reboots, so the uptime proof stays false
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        RebootWaveOptions opts = Fast() with { PostReturnConfirmWindow = TimeSpan.FromMilliseconds(150) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase);
+        Assert.False(reboot.Forced);
+    }
+
+    [Fact]
+    public async Task Forced_escalation_is_suppressed_when_uptime_proves_the_graceful_reboot_completed()
+    {
+        // The graceful reboot won't be SEEN going offline, but it completes an unobserved reboot within the
+        // graceful window (uptime resets after 2 checks). The proof suppresses the forced escalation — we never
+        // force a box that provably already rebooted — and it still verifies green.
+        var box = new FakeBox
+        {
+            GracefulTakesOffline = false,     // never observed dropping in the graceful window
+            RebootsUnobservedAfterChecks = 2, // ...but it really rebooted (uptime resets)
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 100), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.True(reboot.Graceful);
+        Assert.False(reboot.Forced); // suppressed by the uptime proof
+    }
+
+    [Fact]
+    public async Task Forced_escalation_still_fires_when_the_uptime_proof_is_unreadable()
+    {
+        // Suppress-only: when the proof can't be read (unreadable boot time), a graceful reboot that won't take
+        // MUST still escalate to a forced reboot — a genuinely hung graceful reboot is never left un-completed.
+        var box = new FakeBox
+        {
+            GracefulTakesOffline = false,
+            ForcedTakesOffline = true,
+            BootReaderReturnsNull = true, // proof disabled — must NOT suppress the escalation
+            ComesBackAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.True(reboot.Forced); // escalated, because the proof couldn't suppress it
+    }
+
+    [Fact]
+    public async Task A_forward_clock_step_does_not_fake_a_reboot_proof_box_ends_unverified()
+    {
+        // Clock-step pin: a never-rebooted 1115 box, with a large forward clock step applied to BOTH LocalNow
+        // and LastBootUpTime mid-watch. Because the uptime is LocalNow − LastBootUpTime, the step cancels and the
+        // proof must NOT fire — the box ends neutral Unverified, never a false green.
+        var box = new FakeBox
+        {
+            RebootReportsAlreadyInProgress = true,
+            GoesOfflineWhenAlreadyInProgress = false, // never drops, never reboots
+            ClockStep = TimeSpan.FromDays(10),        // a big forward step…
+            ClockStepAfterReads = 1,                  // …applied after the baseline read
+        };
+        var (wave, _, readiness, confirmation) = Build(box);
+
+        RebootWaveOptions opts = Fast() with { PostReturnConfirmWindow = TimeSpan.FromMilliseconds(150) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase); // NOT Done — the step never faked a reboot
+    }
+
+    [Fact]
+    public async Task A_forward_clock_step_does_not_suppress_a_needed_forced_escalation()
+    {
+        // Clock-step pin (escalation side): a graceful reboot that won't take, never actually reboots, with a big
+        // forward clock step. The step must not fake a proof that suppresses the force — the forced escalation
+        // STILL fires.
+        var box = new FakeBox
+        {
+            GracefulTakesOffline = false,
+            ForcedTakesOffline = false, // never actually reboots
+            ClockStep = TimeSpan.FromDays(10),
+            ClockStepAfterReads = 1,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.True(reboot.Forced); // the step did not suppress the escalation
+    }
+
+    [Fact]
+    public async Task The_unverified_window_resets_when_the_box_flaps_offline_again_then_confirms_green()
+    {
+        // Window-reset guard: the box returns unconfirmed, drops again, and repeats many times before finally
+        // returning confirmed. Each reachable stretch is a single beat, and every offline poll RESETS the
+        // reachable-but-unconfirmed clock — so the box confirms green even though the COMBINED reachable time
+        // across the episodes exceeds the window (which, without the reset, would have tripped Unverified).
+        var box = new FakeBox
+        {
+            RebootReportsAlreadyInProgress = true,
+            GoesOfflineWhenAlreadyInProgress = true, // enters the commit-watch already offline
+            FlapScenario = true,
+            FlapEpisodes = 12,          // 12 unconfirmed return→drop cycles, then a confirmed return
+            FlapOfflineChecks = 1,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, _, readiness, confirmation) = Build(box);
+
+        var window = TimeSpan.FromMilliseconds(50);
+        RebootWaveOptions opts = Fast() with { PostReturnConfirmWindow = window };
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+        sw.Stop();
+
+        Assert.Equal(PatchPhase.Done, result.Phase); // confirmed green — the window reset on each flap
+        Assert.True(sw.Elapsed > window, "The flap must span longer than the window, so a no-reset wave would have tripped Unverified.");
+    }
+
     private static (RebootWave wave, FakeReboot reboot, IRebootReadinessProbe readiness, IPostRebootConfirmation confirmation) Build(FakeBox box)
     {
         var reboot = new FakeReboot(box);
         var builds = new FakeBuilds(box);
         // Use a real UbrConfirmation backed by FakeBuilds so the same UBR logic is exercised through the seam.
         var confirmation = new UbrConfirmation(builds, TargetUbr);
-        var wave = new RebootWave(reboot, new FakeReach(box));
+        // Wire the clock-immune uptime reader in too, so the proof path is exercised through the real seam.
+        var wave = new RebootWave(reboot, new FakeReach(box), new FakeBootTimeReader(box));
         return (wave, reboot, new FakeReadiness(box), confirmation);
     }
 
@@ -232,6 +410,53 @@ public class RebootWaveTests
         public bool RebootReportsAlreadyInProgress;     // the trigger reports 1115 (a shutdown is already underway)
         public bool GoesOfflineWhenAlreadyInProgress;   // ...and the box then drops off the network on its own
         public int ChecksBeforeOffline;                 // >0: answers (at the OLD build) this many reach checks, then drops off (a box slow to leave the network)
+
+        // --- Uptime-proof fidelity ---
+        // A modeled REAL reboot has completed: the boot reader then reports a small (reset) uptime; until then
+        // it reports a large, slowly-growing uptime. HasRebooted flips on a real observed offline→return, OR
+        // after RebootsUnobservedAfterChecks reachability checks WITHOUT the box ever reporting offline (FM1/FM3).
+        public bool HasRebooted;
+        public int? RebootsUnobservedAfterChecks;       // flip HasRebooted after this many reach checks, never dropping
+        public int ReachChecks;                          // reachability checks seen so far
+        public int BootReads;                            // boot-time reads so far (drives the tiny uptime growth)
+        public TimeSpan InitialUptime = TimeSpan.FromDays(3); // large pre-reboot uptime
+        public bool BootReaderReturnsNull;               // model an unreadable boot time (proof disabled → escalate/spin)
+        public TimeSpan ClockStep = TimeSpan.Zero;       // a uniform clock step applied to BOTH LocalNow and LastBoot
+        public int ClockStepAfterReads;                  // ...on boot reads AFTER this many (baseline is read #1)
+        public static readonly DateTime BootAnchor = new(2026, 1, 1, 0, 0, 0, DateTimeKind.Local);
+
+        // --- Flap scenario (window-reset test) ---
+        public bool FlapScenario;
+        public int FlapEpisodes;                         // unconfirmed return→drop episodes before the final confirmed return
+        public int FlapOfflineChecks = 1;                // offline checks between episodes
+        public int FlapReturns;                          // unconfirmed/confirmed returns so far
+    }
+
+    /// <summary>Models the target's own clock: LocalDateTime − LastBootUpTime is the uptime, LARGE (and slowly
+    /// growing) before a modeled reboot and SMALL after one. BOTH values are shifted by the same
+    /// <see cref="FakeBox.ClockStep"/>, so their difference (the uptime) is invariant under a clock step —
+    /// exactly the clock-immune property the wave's proof relies on. Returns null when the box models an
+    /// unreadable boot time.</summary>
+    private sealed class FakeBootTimeReader(FakeBox box) : IBootTimeReader
+    {
+        public Task<BootTimeReading?> ReadAsync(string host, CancellationToken cancellationToken)
+        {
+            if (box.BootReaderReturnsNull)
+            {
+                // Unreadable — a retry signal, never proof (the wave must NOT read this as a completed reboot).
+                return Task.FromResult<BootTimeReading?>(null);
+            }
+
+            box.BootReads++;
+            TimeSpan uptime = box.HasRebooted
+                ? TimeSpan.FromSeconds(5)
+                : box.InitialUptime + TimeSpan.FromSeconds(box.BootReads); // grows a little each read
+            DateTime lastBoot = box.HasRebooted
+                ? FakeBox.BootAnchor + box.InitialUptime + TimeSpan.FromSeconds(30)
+                : FakeBox.BootAnchor;
+            TimeSpan step = box.BootReads > box.ClockStepAfterReads ? box.ClockStep : TimeSpan.Zero;
+            return Task.FromResult<BootTimeReading?>(new BootTimeReading(lastBoot + uptime + step, lastBoot + step));
+        }
     }
 
     private sealed class FakeReboot(FakeBox box) : IRebootTrigger
@@ -268,6 +493,22 @@ public class RebootWaveTests
     {
         public Task<bool> IsReachableAsync(string host, CancellationToken cancellationToken)
         {
+            box.ReachChecks++;
+
+            if (box.FlapScenario)
+            {
+                return Task.FromResult(FlapReach(box));
+            }
+
+            // FM1/FM3 fidelity: a box that completes a reboot WITHOUT ever being seen offline. After the
+            // configured number of reachability checks its uptime has reset (HasRebooted) — but it stays
+            // reachable the whole time, so the wave never observes a drop. It also reads its post-reboot build.
+            if (box.RebootsUnobservedAfterChecks is int n && box.ReachChecks >= n && !box.HasRebooted)
+            {
+                box.HasRebooted = true;
+                box.Ubr = box.UbrAfterReturn;
+            }
+
             // A box slow to drop off after an "already in progress" reboot: it answers (still at the OLD
             // build) for a few checks, then leaves the network.
             if (box.Online && box.ChecksBeforeOffline > 0)
@@ -284,10 +525,44 @@ public class RebootWaveTests
                 {
                     box.Online = true;
                     box.Ubr = box.UbrAfterReturn;
+                    box.HasRebooted = true; // a real observed drop→return IS a real reboot (uptime resets)
                 }
             }
 
             return Task.FromResult(box.Online);
+        }
+
+        // Returns unconfirmed (UBR null), drops, and repeats FlapEpisodes times, THEN returns confirmed
+        // (UBR=target). Each unconfirmed reachable stretch is a SINGLE beat before dropping again, so the wave's
+        // reachable-but-unconfirmed window (reset on every offline poll) never accumulates past its bound —
+        // proving the reset. Without the reset, the combined reachable time across the episodes would trip
+        // Unverified.
+        private static bool FlapReach(FakeBox box)
+        {
+            if (!box.Online)
+            {
+                box.OfflineChecks++;
+                if (box.OfflineChecks >= box.FlapOfflineChecks)
+                {
+                    box.OfflineChecks = 0;
+                    box.Online = true;
+                    box.HasRebooted = true;
+                    box.FlapReturns++;
+                    box.Ubr = box.FlapReturns > box.FlapEpisodes ? box.UbrAfterReturn : null;
+                }
+
+                return box.Online;
+            }
+
+            // Online. An unconfirmed return (UBR null) drops again on the very next check; the final confirmed
+            // return (UBR=target) stays up.
+            if (box.Ubr is null)
+            {
+                box.Online = false;
+                box.OfflineChecks = 0;
+            }
+
+            return box.Online;
         }
     }
 
