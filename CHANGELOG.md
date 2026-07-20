@@ -9,6 +9,12 @@ it ships, then gets a dated heading.
 ### Added
 
 ### Changed
+
+### Fixed
+
+## 1.16.2 — 2026-07-20
+
+### Changed
 - **Background monitoring no longer pauses for the whole tab during long operations.** Rows an operation
   isn't working on keep their online dot and reboot state live throughout a reboot wave or an install;
   only the rows an operation is actively working on are left alone.
