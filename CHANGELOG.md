@@ -7,6 +7,14 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+
+### Changed
+
+### Fixed
+
+## 1.16.1 — 2026-07-20
+
+### Added
 - **The reboot wave now leaves a permanent diagnostic trace in the daily log file**
   (`%LOCALAPPDATA%\Vivre\logs\`). It records each reboot's channel (DCOM vs the SMB/SCM fallback), the
   offline-wait outcomes, a line per watch beat, and the final result — a durable record for working out
