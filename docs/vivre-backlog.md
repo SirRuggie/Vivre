@@ -151,6 +151,13 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## OPEN — polish / smaller standalone items
 
+- **Auto-heal for "couldn't rescan" Unverified boxes — PARKED, gather signal first.** After a
+  reboot-verify, B/C/D Unverified boxes (rescan itself failed) need a manual rescan; 1.16.2
+  already self-heals the common variant-A case. Design is DONE + red-teamed (auto-rescan, or a
+  simpler one-click "Rescan all Unverified" button — leaning button). Build nothing until a few
+  patch cycles show how often this actually recurs; today's cases were largely a broken SCCM
+  client on one box. Full design lives in the Action-3 gate discussion.
+
 - **Stage copy fan-out I/O contention (UI sluggish during big batch Stage)** — NOT a UI-blocking copy and NOT
   a wrong-thread hash (both were earlier guesses). The 1.7 GB Stage copy already runs OFF the UI thread
   (`SmbAgentLane.cs:230-246` — `File.Copy` inside `Task.Run(...).ConfigureAwait(false)`), and integrity is
