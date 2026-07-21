@@ -100,7 +100,9 @@ public static class WugMaintenance
     //   Test-WugNameMatch      — normalized dot-boundary name match (the replacement for the dead
     //                            `$_.displayName -eq $srv` verify, which is null for FQDN-registered fleets).
     //   Resolve-WugName        — the control flow: error-aware name search → exact name match → DNS→IP
-    //                            fall-through → exact IP match, with honest outcomes and NO silent [0].
+    //                            fall-through → EXACT-IP-count classify (1 => MatchedByIp, 0 => NoDevice,
+    //                            2+ => Ambiguous — SearchValue is substring, so 0-exact never counts as a
+    //                            hit), with honest outcomes and NO silent [0].
     //
     // Outcome is one of: MatchedByName | MatchedByIp | NoDevice | Ambiguous | LookupError.
     internal const string ResolveFunctionScript = """
@@ -150,7 +152,10 @@ public static class WugMaintenance
         #      never a second call to a struggling server).
         #   2. Clean hits with a normalized-exact match => MatchedByName (first exact if several).
         #   3. Clean (hits-no-exact OR empty) and NOT an IP literal => DNS→IP => IP search (error-aware) =>
-        #      exact networkAddress match => MatchedByIp. NO $results2[0] fallback.
+        #      classify by the COUNT of EXACT networkAddress matches (SearchValue is a SUBSTRING search, so
+        #      .10 also returns .101/.109): exactly 1 exact => MatchedByIp; 0 exact => substring-only rows
+        #      are NOT hits, fall through (=> NoDevice unless the NAME search saw hits); 2+ exact => real
+        #      shared-IP Ambiguous. NO $results2[0] fallback.
         #   4. Saw hits anywhere but pinned nothing => Ambiguous (unknown, never [0]).
         #      Nothing seen anywhere => NoDevice (the ONLY honest "no matching device").
         function Resolve-WugName {
@@ -183,9 +188,14 @@ public static class WugMaintenance
                         $out.outcome = 'LookupError'; $out.error = "$($ipErr[0])"; return $out
                     }
                     if ($results2.Count -gt 0) {
-                        $sawHits = $true
-                        $ipMatch = $results2 | Where-Object { $_.networkAddress -eq $ip } | Select-Object -First 1
-                        if ($ipMatch) { $out.outcome = 'MatchedByIp'; $out.device = $ipMatch; $out.viaIp = $true; return $out }
+                        # Classify by the COUNT of EXACT networkAddress matches. WUG's SearchValue is a
+                        # SUBSTRING search (.10 also returns .101/.109), so substring-only rows are NOT
+                        # evidence this box exists in WUG and must not count as hits: 0 exact falls through
+                        # to an honest NoDevice (unless the NAME search already saw hits). Two or more exact
+                        # = devices genuinely sharing the IP = real ambiguity (unknown), never a silent [0].
+                        $exactIp = @($results2 | Where-Object { $_.networkAddress -eq $ip })
+                        if ($exactIp.Count -eq 1) { $out.outcome = 'MatchedByIp'; $out.device = $exactIp[0]; $out.viaIp = $true; return $out }
+                        if ($exactIp.Count -ge 2) { $sawHits = $true }
                     }
                 }
             }

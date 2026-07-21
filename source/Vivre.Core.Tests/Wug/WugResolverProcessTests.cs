@@ -418,4 +418,131 @@ public class WugResolverProcessTests
         Assert.Contains("RESULT absentProps False", stdout);     // missing props never throw / never match
         Assert.Contains("RESULT genuineMiss False", stdout);
     }
+
+    // ── IP fall-through classified by the COUNT of EXACT networkAddress matches (the substring-hit fix) ──
+    //
+    // WUG's SearchValue is a SUBSTRING search: an IP search for x.y.z.10 also returns x.y.z.101 / .109.
+    // The resolver must classify by how many rows EXACTLY equal the IP — 1 => MatchedByIp; 0 => the
+    // substring-only rows are NOT evidence the box exists (=> NoDevice, unless the NAME search saw hits);
+    // 2+ => devices genuinely share the IP => Ambiguous (never a silent first-pick). Live-confirmed on
+    // AZRPWDEGWEB (.10 => .109/.108, 0 exact) and AZRLIC8 (.12 => .120/.124, 0 exact).
+
+    [Fact]
+    public async Task Ip_search_with_one_exact_amid_substring_siblings_matches_the_exact_device()
+    {
+        RequirePowerShell51();
+
+        // IP search '10.0.0.10' also returns the .109/.108 substring siblings (Up). Only the EXACT .10 is
+        // 'Maintenance', so InMaintenance==true PROVES the exact device (not a substring sibling) was picked.
+        var (devices, summary) = await RunResolverAsync(
+            new[]
+            {
+                new StubDev("neighbor-a.employees.root.local", "neighbor-a", "10.0.0.109", "Up"),
+                new StubDev("the-right-box.employees.root.local", "the-right-box", "10.0.0.10", "Maintenance"),
+                new StubDev("neighbor-b.employees.root.local", "neighbor-b", "10.0.0.108", "Up"),
+            },
+            dns: new Dictionary<string, string> { ["AZRPWDEGWEB"] = "10.0.0.10" },
+            errNames: null, "AZRPWDEGWEB");
+
+        WugDeviceState d = DeviceFor(devices, "AZRPWDEGWEB");
+        Assert.True(d.Matched);
+        Assert.True(d.MatchedByIp);              // rescued via the DNS→IP fall-through
+        Assert.True(d.InMaintenance);            // the EXACT .10's state, NOT a substring sibling's (false)
+        Assert.Equal(1, summary.MatchedByIp);
+        Assert.Null(summary.Error);
+        Assert.Empty(summary.Unmatched);
+    }
+
+    [Fact]
+    public async Task Ip_search_with_zero_exact_only_substring_rows_reads_no_matching_device()
+    {
+        RequirePowerShell51();
+
+        // The live AZRPWDEGWEB bug: name search clean-empty, DNS→'10.0.0.10', but WUG only has .109/.108
+        // (substring hits, ZERO exact). Those rows are NOT proof the box exists => honest NoDevice, NOT the
+        // old Ambiguous "state unknown".
+        var (devices, summary) = await RunResolverAsync(
+            new[]
+            {
+                new StubDev("neighbor-a.employees.root.local", "neighbor-a", "10.0.0.109", "Up"),
+                new StubDev("neighbor-b.employees.root.local", "neighbor-b", "10.0.0.108", "Up"),
+            },
+            dns: new Dictionary<string, string> { ["AZRPWDEGWEB"] = "10.0.0.10" },
+            errNames: null, "AZRPWDEGWEB");
+
+        WugDeviceState d = DeviceFor(devices, "AZRPWDEGWEB");
+        Assert.False(d.Matched);                 // honest "no matching device", not a fabricated unknown
+        Assert.Null(d.InMaintenance);
+        Assert.False(d.MatchedByIp);
+        Assert.Contains("AZRPWDEGWEB", summary.Unmatched);
+        Assert.Equal(0, summary.LookupErrors);
+        Assert.Equal(0, summary.Ambiguous);      // substring-only IP rows must NOT count as an ambiguity
+    }
+
+    [Fact]
+    public async Task Ip_search_with_two_exact_matches_reads_ambiguous_never_first_pick()
+    {
+        RequirePowerShell51();
+
+        // Two WUG devices GENUINELY share 10.0.0.12 (both networkAddress -eq the IP). That is real ambiguity
+        // => Ambiguous (unknown), never the old silent first-pick. A clean-by-name sibling (APVHOP) keeps
+        // resolvedStates>0 so the all-failed guard stays quiet and summary.Error isolates to null.
+        var (devices, summary) = await RunResolverAsync(
+            new[]
+            {
+                new StubDev("shared-a.employees.root.local", "shared-a", "10.0.0.12", "Up"),
+                new StubDev("shared-b.employees.root.local", "shared-b", "10.0.0.12", "Maintenance"),
+                new StubDev("apvhop.employees.root.local",   "APVHOP",   "10.9.9.9",  "Up"),
+            },
+            dns: new Dictionary<string, string> { ["AZRLIC8"] = "10.0.0.12" },
+            errNames: null, "AZRLIC8", "APVHOP");
+
+        WugDeviceState amb = DeviceFor(devices, "AZRLIC8");
+        Assert.True(amb.Matched);                // unknown, NOT "no matching device"
+        Assert.Null(amb.InMaintenance);          // never picks shared-a or shared-b's state
+        Assert.False(amb.MatchedByIp);
+        Assert.DoesNotContain("AZRLIC8", summary.Unmatched);
+        Assert.Equal(1, summary.Ambiguous);
+        Assert.Null(summary.Error);              // APVHOP resolved, so no all-failed / no lookup error
+    }
+
+    [Fact]
+    public async Task Ip_search_error_reads_lookup_error_never_no_matching_device()
+    {
+        RequirePowerShell51();
+
+        // Name search clean-empty => DNS→'10.0.0.10' => the IP search itself ERRORS (errNames holds the IP).
+        // An errored IP search is state UNKNOWN (LookupError), NEVER a fabricated NoDevice — the b67ed55
+        // error-honesty guard on the IP path.
+        var (devices, summary) = await RunResolverAsync(
+            new[] { new StubDev("unrelated.employees.root.local", "unrelated", "10.5.5.5", "Up") },
+            dns: new Dictionary<string, string> { ["AZRPWDEGWEB"] = "10.0.0.10" },
+            errNames: new[] { "10.0.0.10" }, "AZRPWDEGWEB");
+
+        WugDeviceState d = DeviceFor(devices, "AZRPWDEGWEB");
+        Assert.True(d.Matched);                  // shows a state/unknown, not "no matching device"
+        Assert.Null(d.InMaintenance);            // UNKNOWN
+        Assert.False(d.MatchedByIp);
+        Assert.Equal(1, summary.LookupErrors);
+        Assert.DoesNotContain("AZRPWDEGWEB", summary.Unmatched);   // an errored lookup is NOT unmatched
+        Assert.Contains("stub search failed", summary.Error);      // carries the real IP-search error text
+    }
+
+    // ── Single-source (splice) locks: the ONE ResolveFunctionScript feeds BOTH paths, never forked ──────
+
+    [Fact]
+    public void ResolveFunctionScript_is_spliced_verbatim_into_both_set_and_state_paths()
+    {
+        // The set path (Script) concatenates the const directly; the state path (StateScript) embeds it
+        // inside the $resolverText here-string. Either splice breaking (a fork) is a load-bearing regression.
+        Assert.Contains(WugMaintenance.ResolveFunctionScript, WugMaintenance.Script);
+        Assert.Contains(WugMaintenance.ResolveFunctionScript, WugMaintenance.StateScript);
+    }
+
+    [Fact]
+    public void Both_paths_carry_the_distinctive_resolver_function_line()
+    {
+        Assert.Contains("function Resolve-WugName", WugMaintenance.Script);
+        Assert.Contains("function Resolve-WugName", WugMaintenance.StateScript);
+    }
 }
