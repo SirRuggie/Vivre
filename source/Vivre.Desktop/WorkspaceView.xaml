@@ -644,7 +644,7 @@
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Header="Vitals" Width="Auto" MinWidth="64" SortMemberPath="VitalityScore"
                                         CellTemplate="{StaticResource VitalsPillCellTemplate}" />
-                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140" MaxWidth="400">
+                <DataGridTextColumn Header="Command result" Binding="{Binding CommandResult}" Width="Auto" MinWidth="140">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
