@@ -10,20 +10,8 @@ public sealed class PhaseChipLabelConverter : IValueConverter
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         value is PatchState s ? LabelFor(s) : string.Empty;
 
-    internal static string LabelFor(PatchState s) => s switch
-    {
-        PatchState.Idle => "Idle",
-        PatchState.Scanning => "Scanning",
-        PatchState.Available => "Available",
-        PatchState.Downloading => "Downloading",
-        PatchState.Installing => "Installing",
-        PatchState.Uninstalling => "Uninstalling",
-        PatchState.RebootPending => "Reboot pending",
-        PatchState.Done => "Done",
-        PatchState.Unverified => "Unverified",
-        PatchState.Error => "Error",
-        _ => string.Empty,
-    };
+    // Label map lives in Core (PatchStateLabels) so the CSV export shares it — one source of truth.
+    internal static string LabelFor(PatchState s) => PatchStateLabels.For(s);
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture) =>
         throw new NotSupportedException();

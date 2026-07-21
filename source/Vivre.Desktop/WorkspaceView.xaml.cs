@@ -38,6 +38,11 @@ public partial class WorkspaceView : UserControl
     /// <see cref="OnGridRightClick"/> immediately before the menu is built.</summary>
     private Computer? _contextRow;
 
+    /// <summary>The grid the context menu was last opened on (Machines or Windows Update) — the
+    /// column source for Export ▸ Shown rows + columns, so the CSV mirrors the grid actually
+    /// clicked. Set alongside <see cref="_contextRow"/> in <see cref="OnGridRightClick"/>.</summary>
+    private DataGrid? _contextMenuGrid;
+
     /// <summary>Debounce timer for the post-settle corrective re-layout (see the constructor for the why).</summary>
     private readonly System.Windows.Threading.DispatcherTimer _settleRelayoutTimer;
 
@@ -559,7 +564,8 @@ public partial class WorkspaceView : UserControl
 
         // ---- Export ▸ ----
         var export = WithIcon(new MenuItem { Header = "Export" }, SymbolRegular.ArrowExportUp24);
-        // The rows currently shown (respects the filter) + all visible/custom columns — same as File ▸ Export to CSV.
+        // The rows currently shown (respects the filter) + the clicked grid's visible columns, in
+        // display order (hidden columns excluded; custom columns where they render).
         var exportShown = new MenuItem { Header = "Shown rows + columns (CSV)…", IsEnabled = vm.VisibleRowCount > 0 };
         exportShown.Click += OnExportShownRows;
         export.Items.Add(exportShown);
@@ -896,9 +902,10 @@ public partial class WorkspaceView : UserControl
         });
     }
 
-    /// <summary>Saves the rows currently shown in the grid (respecting the filter) with all visible + custom
-    /// columns to a CSV the user picks (right-click ▸ Export ▸ Shown rows). Identical export to File ▸ Export
-    /// to CSV — reuses <see cref="WorkspaceViewModel.BuildReportCsv"/>.</summary>
+    /// <summary>Saves the rows currently shown in the grid (respecting the filter) to a CSV the user
+    /// picks (right-click ▸ Export ▸ Shown rows). Columns are the clicked grid's visible columns in
+    /// display order — Health and Patching each export exactly what they show; hidden columns are
+    /// excluded and custom columns appear only where they render (Health).</summary>
     private void OnExportShownRows(object sender, RoutedEventArgs e)
     {
         if (ViewModel is not { } vm)
@@ -926,10 +933,15 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
+        // Column source: the grid the context menu was opened on; if the handler ever fires without
+        // one (defensive), fall back to whichever machines grid is currently visible for this tab's mode.
+        DataGrid sourceGrid = _contextMenuGrid
+            ?? (ComputerGrid.Visibility == Visibility.Visible ? ComputerGrid : UpdateGrid);
+
         // Build the CSV on the UI thread (it reads data-bound row/VM state), then push the disk write off
         // the UI thread so a large export never freezes the grid. The activity log is the progress
         // indicator: an "Exporting…" line now, the result when it finishes (it marshals to the UI itself).
-        string csv = vm.BuildReportCsv();
+        string csv = vm.BuildReportCsv(VisibleReportColumns(sourceGrid));
         string fileName = dialog.FileName;
         int rowCount = vm.VisibleRowCount;
         vm.Activity.Info(null, $"Exporting {rowCount} row(s) to {fileName}…");
@@ -945,6 +957,20 @@ public partial class WorkspaceView : UserControl
                 vm.Activity.Error(null, $"Export failed: {ex.Message}");
             }
         });
+    }
+
+    /// <summary>The export's column list: the given grid's visible columns in display order (a
+    /// user-dragged reorder is respected via <see cref="DataGridColumn.DisplayIndex"/>), keyed by the
+    /// same header text the Columns manager uses, with custom columns flagged so their cells resolve
+    /// from <see cref="Computer.CustomValues"/>.</summary>
+    private List<ReportColumn> VisibleReportColumns(DataGrid grid)
+    {
+        var customCols = new HashSet<DataGridColumn>(_customGridColumns.Values);
+        return [.. grid.Columns
+            .Where(c => c.Visibility == Visibility.Visible)
+            .OrderBy(c => c.DisplayIndex)
+            .Select(c => new ReportColumn(GetColumnKey(c), customCols.Contains(c)))
+            .Where(c => c.Header.Length > 0)];
     }
 
     /// <summary>Opens the Columns manager for the machine grid (hide built-ins, add predefined/custom
@@ -1216,6 +1242,7 @@ public partial class WorkspaceView : UserControl
         // Anchor the per-field Copy items on the right-clicked row, independent of the (possibly
         // stale / multi-row) selection — fixes "Copy ▸ Update message copied all machines".
         _contextRow = row.Item as Computer;
+        _contextMenuGrid = grid;
 
         if (!row.IsSelected)
         {

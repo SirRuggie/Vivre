@@ -495,43 +495,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         };
     }
 
-    /// <summary>Builds a CSV report of the rows currently shown (respects the filter) for a
-    /// maintenance-window write-up / ticket: machine, online, state, updates, reboot, error, OS, schedule.</summary>
-    public string BuildReportCsv()
-    {
-        // Append a column per user-defined custom column so the export reflects the grid the user built.
-        List<CustomColumnSpec> custom = [.. CustomColumns];
-
-        var sb = new StringBuilder();
-        string header = "Name,Online,Status,Updates available,Update message,Reboot pending,Reboot message,Last error,OS,Scheduled,Scheduled time";
-        if (custom.Count > 0)
-        {
-            header += "," + string.Join(",", custom.Select(c => Csv(c.Name)));
-        }
-
-        sb.AppendLine(header);
-        foreach (Computer c in _computersView.Cast<Computer>())
-        {
-            var fields = new List<string>
-            {
-                Csv(c.Name),
-                Csv(c.IsOnline switch { true => "Online", false => "Offline", _ => "?" }),
-                Csv(c.PatchState.ToString()),
-                Csv(c.UpdatesAvailable?.ToString() ?? string.Empty),
-                Csv(c.UpdateMessage ?? c.LastStatus ?? string.Empty),
-                Csv(c.RebootRequired switch { true => "Yes", false => "No", _ => "?" }),
-                Csv(c.RebootMessage ?? string.Empty),
-                Csv(c.LastError ?? c.UpdateError ?? string.Empty),
-                Csv(c.OperatingSystem ?? string.Empty),
-                Csv(c.ScheduledAction ?? string.Empty),
-                Csv(c.ScheduledNextRun?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty),
-            };
-            fields.AddRange(custom.Select(col => Csv(c.CustomValues[col.Name] ?? string.Empty)));
-            sb.AppendLine(string.Join(",", fields));
-        }
-
-        return sb.ToString();
-    }
+    /// <summary>Builds the shown-rows CSV for a maintenance-window write-up / ticket: the ACTIVE grid's
+    /// visible columns exactly as displayed (the view passes them in display order — hidden columns
+    /// excluded, custom columns only where they render) over the rows currently shown (respects the
+    /// filter). Column resolution lives in <see cref="GridReportCsv"/>.</summary>
+    public string BuildReportCsv(IReadOnlyList<ReportColumn> columns) =>
+        GridReportCsv.Build(columns, _computersView.Cast<Computer>());
 
     /// <summary>True when at least one shown row has had a software check — gates the "Export software
     /// report" menu item so an all-blank report isn't offered.</summary>
@@ -569,21 +538,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         return sb.ToString();
     }
 
-    private static string Csv(string value)
-    {
-        // Guard against CSV/formula injection: a value from a target machine (software DisplayName,
-        // error string, custom-column output) that starts with = + - @ is interpreted as a formula
-        // by Excel / LibreOffice when the file is opened.  Prefix with a tab to neutralise it,
-        // then fall through to the quoted branch so the tab is preserved in the output cell.
-        if (value.Length > 0 && value[0] is '=' or '+' or '-' or '@')
-        {
-            value = "\t" + value;
-        }
-
-        return value.Contains(',') || value.Contains('"') || value.Contains('\n') || value.Contains('\r') || value.StartsWith('\t')
-            ? "\"" + value.Replace("\"", "\"\"") + "\""
-            : value;
-    }
+    // CSV escaping (incl. the formula-injection guard) lives in GridReportCsv.Escape — shared with
+    // the shown-rows export so both CSVs neutralise hostile cell values identically.
+    private static string Csv(string value) => GridReportCsv.Escape(value);
 
     /// <summary>True while a sweep (Ping All / Check All) is running — drives the busy indicator and button enable-state.</summary>
     [ObservableProperty]

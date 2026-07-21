@@ -159,7 +159,7 @@ public static class HelpContent
             Lines =
             [
                 "Right-click ▸ Export ▸ Shown rows + columns (CSV)… — saves the rows currently shown (it respects the filter) to a CSV.",
-                "Columns: machine, online, status, updates available, update/reboot messages, reboot pending, last error, OS, scheduled task, plus any custom columns you've added.",
+                "Columns match the grid you right-clicked: its visible columns, in their current order — hidden columns stay out, and custom columns are included where they appear (the Health grid).",
                 "Opens cleanly in Excel.",
             ],
             Tip = "Filter first to scope the report — e.g. filter to Up to date (Done in the Health view) and export to record exactly what got patched this window.",
@@ -320,7 +320,7 @@ public static class HelpContent
                 "• Hide columns you don't use — untick them under \"Show columns\" (Name always stays). Saved across launches.",
                 "• Add a predefined column from the gallery (Serial, Model, Days since reboot, Free C: (GB), Logged-on user, OS) — one click.",
                 "• Add your own — a column name + a PowerShell one-liner. It runs on every machine and whatever it prints fills the cell, e.g. (Get-CimInstance Win32_BIOS).SerialNumber.",
-                "Custom columns sort (numeric-aware) and are included when you export (right-click ▸ Export ▸ Shown rows + columns (CSV)…). Use Refresh values to re-run them.",
+                "Custom columns sort (numeric-aware) and are included when you export the Health grid (right-click ▸ Export ▸ Shown rows + columns (CSV)…). Use Refresh values to re-run them.",
                 "Stop cancels a running fill — cells still waiting show \"cancelled\" and the progress counter freezes where it was; removing a column mid-fill cancels just that column's fill (other columns keep filling).",
             ],
             Tip = "Custom columns are read-only — they run your one-liner per machine and show the result, nothing more. A column whose script errors shows \"ERR: …\" for that machine; the rest still fill. A cell can also read \"Offline\", \"timed out\", \"WinRM n/a\" or \"error\" for a box that couldn't be read.",
