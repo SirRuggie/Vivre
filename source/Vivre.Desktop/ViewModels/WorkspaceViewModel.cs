@@ -6090,7 +6090,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 run.Pending.Remove(d.Name);
                 IncrementSweepCompleted(record);                                 // honest N/M in the sweep narration
                 if (!d.Matched)                    { c.CommandResult = WugRowText.NoMatchingDevice;  run.NoMatch++; }
-                else if (d.InMaintenance == true)  { c.CommandResult = WugRowText.InMaintenance;     run.InMaint++; }
+                else if (d.InMaintenance == true)  { c.CommandResult = WugRowText.ComposeInMaintenance(d.Reason, d.User, d.SinceUtc); run.InMaint++; }
                 else if (d.InMaintenance == false) { c.CommandResult = WugRowText.NotInMaintenance;  run.NotIn++; }
                 else                               { c.CommandResult = WugRowText.StateUnknown;      run.Unknown++; }
             });
@@ -6153,8 +6153,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 else if (result.ByName.TryGetValue(name, out bool? s) && s is bool inMaint)
                 {
                     // WUG answered with a definite state for this row.
-                    if (inMaint) { c.CommandResult = WugRowText.InMaintenance;    run.InMaint++; }
-                    else         { c.CommandResult = WugRowText.NotInMaintenance; run.NotIn++; }
+                    if (inMaint)
+                    {
+                        Vivre.Core.Wug.WugMaintenanceDetail? det =
+                            result.DetailsByName is { } dd && dd.TryGetValue(name, out Vivre.Core.Wug.WugMaintenanceDetail? found) ? found : null;
+                        c.CommandResult = WugRowText.ComposeInMaintenance(det?.Reason, det?.User, det?.SinceUtc);
+                        run.InMaint++;
+                    }
+                    else { c.CommandResult = WugRowText.NotInMaintenance; run.NotIn++; }
                 }
                 else if (result.Error is null)
                 {
@@ -6171,6 +6177,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (result.Error is null)
             {
                 _activity.Info(null, $"WhatsUp Gold state: {run.InMaint} in maintenance, {run.NotIn} not, {run.NoMatch} no matching device, {run.Unknown} unknown");
+                // The in-maintenance digest (who/why/since per machine) from the authoritative summary —
+                // a fleet answer in the dock without touching the grid. Null when nothing is in maintenance.
+                if (WugRowText.ComposeMaintenanceDigest(result.ByName, result.DetailsByName) is { } digest)
+                {
+                    _activity.Info(null, digest);
+                }
             }
             else
             {

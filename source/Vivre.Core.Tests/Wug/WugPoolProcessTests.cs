@@ -66,7 +66,7 @@ public class WugPoolProcessTests
 
     // A canned WUG device (same shape as WugResolverProcessTests). Best null => no bestState/worstState
     // props (state UNKNOWN); HostName null => no hostName prop. displayName is NEVER emitted.
-    private sealed record StubDev(string Name, string? HostName, string Ip, string? Best);
+    private sealed record StubDev(string Name, string? HostName, string Ip, string? Best, string? Id = null);
 
     private sealed record PoolRun(
         IReadOnlyList<WugDeviceState> Devices,
@@ -90,6 +90,7 @@ public class WugPoolProcessTests
             if (d.HostName is not null) { sb.Append("; hostName = ").Append(PsQuote(d.HostName)); }
             sb.Append("; networkAddress = ").Append(PsQuote(d.Ip));
             if (d.Best is not null) { sb.Append("; bestState = ").Append(PsQuote(d.Best)).Append("; worstState = ").Append(PsQuote(d.Best)); }
+            if (d.Id is not null) { sb.Append("; id = ").Append(PsQuote(d.Id)); }
             sb.AppendLine(" }");
         }
         sb.AppendLine(")");
@@ -194,7 +195,8 @@ public class WugPoolProcessTests
         IEnumerable<StubDev> inventory,
         IReadOnlyDictionary<string, int>? delays,
         IEnumerable<string>? errNames,
-        IEnumerable<string>? throwNames)
+        IEnumerable<string>? throwNames,
+        string? headExtra = null)
     {
         // $resolverText = @' <stub env + stub Get-WUGDevice + REAL resolver + DNS null-override> '@
         // ONE copy: the sequential branch IEXes it; each pooled worker embeds it. Explicit "\n" fencing
@@ -210,6 +212,9 @@ public class WugPoolProcessTests
 
         return
             HeadMirror + "\n" +
+            // Optional MAIN-scope extension (e.g. a stub Invoke-RestMethod + the module's session globals)
+            // for the detail-enrichment tests — Process-WugOutcome's enrichment runs in main scope only.
+            (headExtra is not null ? headExtra + "\n" : string.Empty) +
             "$resolverText = @'\n" + resolverBody + "\n'@\n" +
             "$workerTail = @'\n" + TestWorkerTail + "\n'@\n" +
             WugMaintenance.StateResolveLoopScript;
@@ -225,9 +230,10 @@ public class WugPoolProcessTests
         string? connectsFile = null,
         string? timelineFile = null,
         bool useRealModule = false,
-        string? moduleProbeFile = null)
+        string? moduleProbeFile = null,
+        string? headExtra = null)
     {
-        string script = ComposePoolScript(inventory, delays, errNames, throwNames);
+        string script = ComposePoolScript(inventory, delays, errNames, throwNames, headExtra);
 
         var env = new Dictionary<string, string>(StringComparer.Ordinal)
         {
@@ -364,6 +370,111 @@ public class WugPoolProcessTests
         // The FIRST device line landed well before the process exited — proof of live streaming from the pool.
         Assert.True(run.ReturnedAt - run.FirstDeviceAt >= TimeSpan.FromMilliseconds(250),
             $"First device at {run.FirstDeviceAt.TotalSeconds:F2}s, returned at {run.ReturnedAt.TotalSeconds:F2}s — expected a clear streaming gap.");
+    }
+
+    // ── Detail enrichment (reason / who / since): in-maintenance rows only, fail-open ────────────────
+
+    // Main-scope stub REST endpoint + the session globals the real Connect would set. Records every URI
+    // hit to $env:VIVRE_TEST_RESTCALLS so the cost contract (2 GETs per IN-MAINTENANCE row, zero
+    // otherwise) is asserted, not assumed. The drain thread is the only caller — plain Add-Content is safe.
+    private const string EnrichmentHeadExtra = """
+        function Invoke-RestMethod {
+            [CmdletBinding()]
+            param($Uri, $Method, $Headers, [int]$TimeoutSec)
+            if ($env:VIVRE_TEST_RESTCALLS) { Add-Content -LiteralPath $env:VIVRE_TEST_RESTCALLS -Value "$Uri" }
+            if ($Uri -like '*/config/polling') {
+                [pscustomobject]@{ data = [pscustomobject]@{ maintenance = [pscustomobject]@{ enabled = $true; manual = [pscustomobject]@{ user = 'admin_stub'; reason = 'stub reason - SB' } } } }
+            } else {
+                [pscustomobject]@{ data = [pscustomobject]@{ bestState = 'Maintenance'; worstState = 'Maintenance'; lastChangeUtc = '2026-05-21T07:00:07Z' } }
+            }
+        }
+        $global:WhatsUpServerBaseURI = 'https://wug.test:9644'
+        $global:WUGBearerHeaders = @{ auth = 'stub' }
+        """;
+
+    private static StubDev[] FleetWithIds(int n)
+    {
+        StubDev[] devs = Fleet(n);
+        for (int i = 0; i < n; i++) { devs[i] = devs[i] with { Id = (1000 + i + 1).ToString(System.Globalization.CultureInfo.InvariantCulture) }; }
+        return devs;
+    }
+
+    [Fact]
+    public async Task Detail_enrichment_streams_reason_user_since_for_maintenance_rows_only()
+    {
+        RequirePowerShell51();
+
+        string restCalls = Path.Combine(Path.GetTempPath(), $"Vivre_WugRest_{Guid.NewGuid():N}.txt");
+        try
+        {
+            string[] names = BareNames(6);
+            // The recorder path reaches the child via headExtra (child-process env var) — main scope only,
+            // exactly where Process-WugOutcome's enrichment runs.
+            PoolRun run = await RunPoolAsync(
+                FleetWithIds(6), concurrency: 2, names,
+                headExtra: "$env:VIVRE_TEST_RESTCALLS = '" + restCalls.Replace("'", "''") + "'\n" + EnrichmentHeadExtra);
+
+            // box2/box4/box6 (Maintenance) stream the full detail; box1/3/5 (Up) carry none.
+            foreach (string n in new[] { "box2", "box4", "box6" })
+            {
+                WugDeviceState d = DeviceFor(run.Devices, n);
+                Assert.True(d.InMaintenance);
+                Assert.Equal("stub reason - SB", d.Reason);
+                Assert.Equal("admin_stub", d.User);
+                Assert.Equal("2026-05-21T07:00:07Z", d.SinceUtc);
+            }
+            foreach (string n in new[] { "box1", "box3", "box5" })
+            {
+                WugDeviceState d = DeviceFor(run.Devices, n);
+                Assert.False(d.InMaintenance);
+                Assert.Null(d.Reason);
+                Assert.Null(d.User);
+                Assert.Null(d.SinceUtc);
+            }
+
+            // The authoritative summary carries the SAME detail (keyed by INPUT name), and a clean run
+            // stays clean — enrichment adds no error.
+            Assert.Null(run.Summary.Error);
+            Assert.NotNull(run.Summary.DetailsByName);
+            Assert.Equal("stub reason - SB", run.Summary.DetailsByName!["box2"].Reason);
+            Assert.False(run.Summary.DetailsByName.ContainsKey("box1"));
+
+            // COST CONTRACT: exactly 2 GETs per in-maintenance row (3 rows => 6), zero for the others.
+            string[] uris = File.ReadAllLines(restCalls).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            Assert.Equal(6, uris.Length);
+            Assert.Equal(3, uris.Count(u => u.EndsWith("/config/polling", StringComparison.Ordinal)));
+            Assert.Equal(3, uris.Count(u => u.EndsWith("/status", StringComparison.Ordinal)));
+            // Ids on the wire prove the lookups hit the RESOLVED device, not a guess.
+            Assert.Contains(uris, u => u.Contains("/devices/1002/", StringComparison.Ordinal));
+        }
+        finally { try { File.Delete(restCalls); } catch { /* best-effort */ } }
+    }
+
+    [Fact]
+    public async Task Detail_enrichment_failure_fails_open_and_says_so()
+    {
+        RequirePowerShell51();
+
+        // The stub REST endpoint is DOWN: state must stand (fail open, plain in-maintenance), and the
+        // summary must say the reason lookup degraded — never silently.
+        const string brokenHead = """
+            function Invoke-RestMethod { [CmdletBinding()] param($Uri, $Method, $Headers, [int]$TimeoutSec) throw 'stub REST down' }
+            $global:WhatsUpServerBaseURI = 'https://wug.test:9644'
+            $global:WUGBearerHeaders = @{ auth = 'stub' }
+            """;
+
+        PoolRun run = await RunPoolAsync(FleetWithIds(2), concurrency: 1, BareNames(2), headExtra: brokenHead);
+
+        WugDeviceState d = DeviceFor(run.Devices, "box2");
+        Assert.True(d.InMaintenance);          // the state stands — enrichment failure never touches it
+        Assert.Null(d.Reason);
+        Assert.Null(d.User);
+        Assert.Null(d.SinceUtc);
+
+        Assert.True(run.Summary.ByName["box2"]);
+        Assert.NotNull(run.Summary.Error);
+        Assert.Contains("maintenance-reason lookup failed for 1 machine(s)", run.Summary.Error);
+        Assert.Contains("stub REST down", run.Summary.Error);
     }
 
     // ── #2 Connect ONCE PER RUNSPACE (trap T2): 8 names at N=2 => 1..2 connects (once per runspace USED, « 8 — never per lookup) ─

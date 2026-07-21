@@ -100,6 +100,58 @@ public class WugDeviceLineParseTests
         Assert.Equal("café-01", d!.Name);
     }
 
+    // ── Optional maintenance detail (reason / user / sinceUtc) — display-only, never state ──────────
+
+    [Fact]
+    public void ParseDeviceLine_reads_the_full_maintenance_detail()
+    {
+        WugDeviceState? d = WugMaintenance.ParseDeviceLine(
+            """{"name":"BOX1","matched":true,"inMaintenance":true,"reason":"Rebuilding - SB","user":"admin_sbridges","sinceUtc":"2026-05-27T21:14:42Z"}""");
+
+        Assert.NotNull(d);
+        Assert.True(d!.InMaintenance);
+        Assert.Equal("Rebuilding - SB", d.Reason);
+        Assert.Equal("admin_sbridges", d.User);
+        Assert.Equal("2026-05-27T21:14:42Z", d.SinceUtc);
+    }
+
+    [Fact]
+    public void ParseDeviceLine_absent_detail_fields_read_null()
+    {
+        WugDeviceState? d = WugMaintenance.ParseDeviceLine("""{"name":"BOX1","matched":true,"inMaintenance":true}""");
+
+        Assert.NotNull(d);
+        Assert.Null(d!.Reason);
+        Assert.Null(d.User);
+        Assert.Null(d.SinceUtc);
+    }
+
+    [Fact]
+    public void ParseDeviceLine_non_string_or_whitespace_detail_fields_read_null()
+    {
+        // A malformed detail can only DROP display text — number/null/whitespace never become text and
+        // never touch the state.
+        WugDeviceState? d = WugMaintenance.ParseDeviceLine(
+            """{"name":"BOX1","matched":true,"inMaintenance":true,"reason":123,"user":null,"sinceUtc":"   "}""");
+
+        Assert.NotNull(d);
+        Assert.True(d!.InMaintenance);
+        Assert.Null(d.Reason);
+        Assert.Null(d.User);
+        Assert.Null(d.SinceUtc);
+    }
+
+    [Fact]
+    public void ParseDeviceLine_detail_values_are_trimmed()
+    {
+        WugDeviceState? d = WugMaintenance.ParseDeviceLine(
+            """{"name":"BOX1","matched":true,"inMaintenance":true,"reason":"  spaced  ","user":" u1 "}""");
+
+        Assert.NotNull(d);
+        Assert.Equal("spaced", d!.Reason);
+        Assert.Equal("u1", d.User);
+    }
+
     // ── ComposeAbortError: the two exact formats ────────────────────────────────────────────────────
 
     [Fact]

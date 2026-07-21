@@ -177,6 +177,24 @@ runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wron
     mistake a device line for the result line.
   - `__WUGRESULT__` (const `PreflightResultMarker`) = the final authoritative `{ ok, devices[], unmatched[],
     error }` summary, emitted by both the pre-flight and the state `Emit`.
+- **Maintenance-detail enrichment (reason / who / since — 2026-07-20):** in-maintenance rows ONLY get two
+  read-only REST GETs (`/devices/{id}/config/polling` → `manual.reason`/`manual.user`;
+  `/devices/{id}/status` → `lastChangeUtc` = the entry time, operator-verified to the second against the
+  timeline's "Manual Maintenance - Start" row). **The cost contract is load-bearing:** a machine NOT in
+  maintenance costs exactly what it cost before (asserted by a process test counting the stub REST calls).
+  Detail fields ride the SAME `__WUGDEV__`/summary entries as optional `reason`/`user`/`sinceUtc` strings;
+  the ONE reader (`ReadDetail`, shared by `AddDevice` + `ParseDeviceLine`) keeps them lockstep, and a
+  malformed detail can only DROP display text — never touch the tri-state. Every enrichment failure fails
+  OPEN (plain "in maintenance") and is COUNTED into a "maintenance-reason lookup failed for N" summary
+  note — degraded detail is said out loud, never silent. Enrichment runs ONLY on the emitting thread
+  (sequential loop / pooled drain), so `EmitDevice` stays single-writer; each GET is capped at 15s, inside
+  the 90s stall window. The raw `Invoke-RestMethod` calls ride a COMPILED trust-all cert policy installed
+  in the HEAD (step 5): the module's scriptblock callback dies on a COLD TLS handshake (operator-reproduced
+  in a plain console), which is exactly where the pooled branch's first main-scope GET lands; install
+  failure is non-fatal (fields drop, note appears). Row text composes via
+  `WugRowText.ComposeInMaintenance` (ALWAYS prefixed with the exact plain `InMaintenance` string — the
+  prefix invariant is test-locked) and the activity log gets a `ComposeMaintenanceDigest` line naming
+  every in-maintenance machine (capped at 6 + "and N more").
 - **Marker-REQUIRED summary parse (`ParseMaintenanceState`) — a false-green guard:** the state parse now
   REQUIRES the `__WUGRESULT__` marker; the old last-braced-line fallback was DELETED. With per-device
   `__WUGDEV__` JSON lines on the wire, that fallback could parse a trailing device line AS the summary

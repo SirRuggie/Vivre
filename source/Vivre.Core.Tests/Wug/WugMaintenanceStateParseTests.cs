@@ -57,6 +57,45 @@ public class WugMaintenanceStateParseTests
     }
 
     [Fact]
+    public void ParseMaintenanceState_summary_detail_lands_in_DetailsByName()
+    {
+        string stdout = """__WUGRESULT__{"ok":true,"devices":[{"name":"BOX1","inMaintenance":true,"reason":"Rebuilding - SB","user":"admin_sbridges","sinceUtc":"2026-05-27T21:14:42Z"}],"unmatched":[],"error":null}""" + "\n";
+
+        WugMaintenanceStateResult r = WugMaintenance.ParseMaintenanceState(stdout, string.Empty);
+
+        Assert.True(r.ByName["BOX1"]);
+        Assert.NotNull(r.DetailsByName);
+        WugMaintenanceDetail d = r.DetailsByName!["BOX1"];
+        Assert.Equal("Rebuilding - SB", d.Reason);
+        Assert.Equal("admin_sbridges", d.User);
+        Assert.Equal("2026-05-27T21:14:42Z", d.SinceUtc);
+    }
+
+    [Fact]
+    public void ParseMaintenanceState_device_without_detail_gets_no_DetailsByName_entry()
+    {
+        string stdout = """__WUGRESULT__{"ok":true,"devices":[{"name":"BOX1","inMaintenance":true},{"name":"BOX2","inMaintenance":true,"reason":"r"}],"unmatched":[],"error":null}""" + "\n";
+
+        WugMaintenanceStateResult r = WugMaintenance.ParseMaintenanceState(stdout, string.Empty);
+
+        Assert.NotNull(r.DetailsByName);
+        Assert.False(r.DetailsByName!.ContainsKey("BOX1"));
+        Assert.Equal("r", r.DetailsByName["BOX2"].Reason);
+    }
+
+    [Fact]
+    public void ParseMaintenanceState_malformed_detail_never_touches_the_state()
+    {
+        // Detail is display-only: number/whitespace detail fields are dropped, the tri-state stands.
+        string stdout = """__WUGRESULT__{"ok":true,"devices":[{"name":"BOX1","inMaintenance":true,"reason":42,"user":"  ","sinceUtc":false}],"unmatched":[],"error":null}""" + "\n";
+
+        WugMaintenanceStateResult r = WugMaintenance.ParseMaintenanceState(stdout, string.Empty);
+
+        Assert.True(r.ByName["BOX1"]);
+        Assert.False(r.DetailsByName!.ContainsKey("BOX1"));
+    }
+
+    [Fact]
     public void ParseMaintenanceState_no_output_with_stderr_returns_empty_map_and_surfaces_stderr()
     {
         // No result line (e.g. killed on timeout before emitting). Empty map (all unknown), error carries

@@ -22,6 +22,15 @@ public sealed record WugMaintenanceResult(
 /// <param name="Error">A human-readable failure reason, or null when fully connected.</param>
 public sealed record WugPreflightResult(bool ModulePresent, bool Connected, string? Error);
 
+/// <summary>
+/// The optional manual-maintenance detail for one in-maintenance machine: the free-text reason, the WUG
+/// user who set it, and the UTC entry time (<c>lastChangeUtc</c> — while a device sits in maintenance
+/// nothing polls, so its last state change IS the moment it entered; operator-verified against the
+/// timeline's "Manual Maintenance - Start" row to the second). Every field is independently optional —
+/// absent means the detail read didn't return it, NEVER a statement about the state itself.
+/// </summary>
+public sealed record WugMaintenanceDetail(string? Reason, string? User, string? SinceUtc);
+
 /// <summary>The read-only WhatsUp Gold maintenance state of a set of machines.</summary>
 /// <param name="ByName">
 /// Maintenance state keyed by the INPUT machine name (case-insensitive): <c>true</c> = in maintenance,
@@ -33,13 +42,19 @@ public sealed record WugPreflightResult(bool ModulePresent, bool Connected, stri
 /// <param name="LookupErrors">How many names hit a WUG search error (state unknown, NOT "no device").</param>
 /// <param name="Ambiguous">How many names had hits but no confident exact match (unknown, never guessed).</param>
 /// <param name="MatchedByIp">How many names resolved only via the DNS→IP fall-through.</param>
+/// <param name="DetailsByName">
+/// Manual-maintenance detail (reason / who / since) keyed by INPUT name, present only for in-maintenance
+/// machines whose detail read returned something. Null / missing entries are a DISPLAY downgrade only
+/// (row shows plain "in maintenance") — never a state signal.
+/// </param>
 public sealed record WugMaintenanceStateResult(
     IReadOnlyDictionary<string, bool?> ByName,   // null = unknown
     IReadOnlyList<string> Unmatched,
     string? Error,
     int LookupErrors = 0,
     int Ambiguous = 0,
-    int MatchedByIp = 0);
+    int MatchedByIp = 0,
+    IReadOnlyDictionary<string, WugMaintenanceDetail>? DetailsByName = null);
 
 /// <summary>
 /// One per-device result streamed from the maintenance-state read as each name resolves.
@@ -48,8 +63,18 @@ public sealed record WugMaintenanceStateResult(
 /// <c>InMaintenance=null</c> (state unknown), NOT a false "no matching device".
 /// <paramref name="InMaintenance"/> null = unknown (the state couldn't be read — never assumed false).
 /// <paramref name="MatchedByIp"/> = true when the name resolved only via the DNS→IP fall-through.
+/// <paramref name="Reason"/>/<paramref name="User"/>/<paramref name="SinceUtc"/> are the optional
+/// manual-maintenance detail (see <see cref="WugMaintenanceDetail"/>) — populated only for
+/// in-maintenance rows whose detail read succeeded; absent detail never changes the state.
 /// </summary>
-public sealed record WugDeviceState(string Name, bool Matched, bool? InMaintenance, bool MatchedByIp = false);
+public sealed record WugDeviceState(
+    string Name,
+    bool Matched,
+    bool? InMaintenance,
+    bool MatchedByIp = false,
+    string? Reason = null,
+    string? User = null,
+    string? SinceUtc = null);
 
 /// <summary>
 /// Sets WhatsUp Gold maintenance mode for a set of machines via the <c>WhatsUpGoldPS</c> module — an
@@ -600,11 +625,15 @@ public static class WugMaintenance
         $matchedByIp = 0
         $resolvedStates = 0
         $firstErr = $null
+        $reasonErrors = 0
+        $firstReasonErr = $null
         # Per-lookup elapsed (ms), recorded in COMPLETION order, for the degradation check below.
         $script:lookupMs = @()
 
-        # The outcome dispatch + tri-state read + EmitDevice, MOVED VERBATIM from the old inline loop body.
-        # Counters use $script: scope so the pooled drain and the sequential loop accumulate into one set.
+        # The outcome dispatch + tri-state read + detail enrichment + EmitDevice (the tri-state block is
+        # byte-identical to the original inline loop body; the emission gained the in-maintenance-only
+        # detail enrichment). Counters use $script: scope so the pooled drain and the sequential loop
+        # accumulate into one set.
         function Process-WugOutcome {
             param($srv, $r)
             if ($r.outcome -eq 'MatchedByName' -or $r.outcome -eq 'MatchedByIp') {
@@ -625,9 +654,45 @@ public static class WugMaintenance
                     # maintenance".
                     $state = ($match.bestState -eq 'Maintenance' -or $match.worstState -eq 'Maintenance')
                 }
+                # Detail enrichment (reason / who / since): IN-MAINTENANCE rows ONLY, so a machine not in
+                # maintenance costs exactly what it cost before this feature. Two read-only GETs against the
+                # session the main-scope Connect established (guarded on its globals - absent means no
+                # session, e.g. under the test stubs, and enrichment silently skips). EVERY failure fails
+                # OPEN ($state untouched, fields simply absent) and is COUNTED so the summary carries a
+                # reason-lookup note - degraded detail is said out loud, never silent, never a state change.
+                # Runs only on the emitting thread (sequential loop / pooled drain): EmitDevice stays
+                # single-writer, and each row still emits well inside the stall window (two 15s-capped GETs).
+                $detail = $null
+                if ($state -eq $true -and $global:WhatsUpServerBaseURI -and $global:WUGBearerHeaders) {
+                    $devId = "$($match.id)"
+                    if (-not [string]::IsNullOrWhiteSpace($devId)) {
+                        # Prefer the compiled trust-all policy over the module's scriptblock callback (HEAD
+                        # step 5) - the scriptblock dies on a cold handshake; the compiled policy cannot.
+                        if ($script:vivreTrustAllReady) { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null }
+                        $detail = [ordered]@{}
+                        try {
+                            $mc = (Invoke-RestMethod -Uri "$($global:WhatsUpServerBaseURI)/api/v1/devices/$devId/config/polling" -Method Get -Headers $global:WUGBearerHeaders -TimeoutSec 15).data.maintenance.manual
+                            if ($mc) {
+                                if (-not [string]::IsNullOrWhiteSpace("$($mc.reason)")) { $detail.reason = "$($mc.reason)" }
+                                if (-not [string]::IsNullOrWhiteSpace("$($mc.user)"))   { $detail.user   = "$($mc.user)" }
+                            }
+                            $st = (Invoke-RestMethod -Uri "$($global:WhatsUpServerBaseURI)/api/v1/devices/$devId/status" -Method Get -Headers $global:WUGBearerHeaders -TimeoutSec 15).data
+                            if ($st -and -not [string]::IsNullOrWhiteSpace("$($st.lastChangeUtc)")) { $detail.sinceUtc = "$($st.lastChangeUtc)" }
+                        } catch {
+                            $script:reasonErrors++
+                            if ($null -eq $script:firstReasonErr) {
+                                $script:firstReasonErr = "$($_.Exception.Message)"
+                                if ($script:trustAllErr) { $script:firstReasonErr += " (trust-all policy install also failed: $script:trustAllErr)" }
+                            }
+                        }
+                        if ($detail.Count -eq 0) { $detail = $null }
+                    }
+                }
                 # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
-                $script:devices += [ordered]@{ name = $srv; inMaintenance = $state }
+                $sum = [ordered]@{ name = $srv; inMaintenance = $state }
                 $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state }
+                if ($detail) { foreach ($k in @($detail.Keys)) { $sum[$k] = $detail[$k]; $dev[$k] = $detail[$k] } }
+                $script:devices += $sum
                 if ($r.outcome -eq 'MatchedByIp') { $dev.matchedByIp = $true; $script:matchedByIp++ }
                 EmitDevice $dev
                 $script:resolvedStates++
@@ -790,6 +855,14 @@ public static class WugMaintenance
             $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device ($($unmatched.Count) unmatched, $ambiguous ambiguous)."
         }
 
+        # Reason-lookup honesty (APPENDED, never replacing the text above): in-maintenance rows whose
+        # detail read failed still show a correct plain "in maintenance" - but a degraded read is said out
+        # loud here, never silently.
+        if ($reasonErrors -gt 0) {
+            $reasonMsg = "maintenance-reason lookup failed for $reasonErrors machine(s) — $firstReasonErr"
+            if ($result.error) { $result.error = "$($result.error); $reasonMsg" } else { $result.error = $reasonMsg }
+        }
+
         # Degradation warning (APPENDED, never replacing the honesty text above). Floor at 50ms so instant
         # stubs / sub-millisecond lookups don't trip the 2x ratio on pure jitter; a real WUG lookup is ~1s.
         if ($baseMs -ge 50 -and $avgMs -gt (2 * $baseMs)) {
@@ -800,11 +873,12 @@ public static class WugMaintenance
         Emit $result
         """;
 
-    // Emits ONE JSON summary line: { ok, devices[{ name, inMaintenance }], unmatched[], error,
-    // lookupErrors, ambiguous, matchedByIp, avgLookupMs, baselineLookupMs } plus one streamed __WUGDEV__
-    // line per device as it resolves. Reads server/user/pass + names from env vars — password NEVER on the
-    // command line. Read-only: it never sets maintenance. No __WUGP__ progress lines (the shared launcher
-    // has no progress plumbing).
+    // Emits ONE JSON summary line: { ok, devices[{ name, inMaintenance, reason?, user?, sinceUtc? }],
+    // unmatched[], error, lookupErrors, ambiguous, matchedByIp, avgLookupMs, baselineLookupMs } plus one
+    // streamed __WUGDEV__ line per device as it resolves (same optional detail fields, in-maintenance rows
+    // only). Reads server/user/pass + names from env vars — password NEVER on the command line. Read-only:
+    // it never sets maintenance (the detail enrichment is two GETs). No __WUGP__ progress lines (the
+    // shared launcher has no progress plumbing).
     //
     // Composition (the recomposed streaming/pooled seam):
     //   HEAD (Emit/EmitDevice, env reads, $result init, trap, module check, Import, credential, Connect —
@@ -868,6 +942,24 @@ public static class WugMaintenance
             $result.error = "Couldn't connect to WhatsUp Gold at $server`: $($_.Exception.Message). Check the address, that the server is reachable, and the WUG username/password."
             Emit $result; return
         }
+
+        # 5. Maintenance-detail support: a COMPILED trust-all certificate policy. The module's
+        #    -IgnoreSSLErrors installs a PowerShell scriptblock as the process-wide certificate callback,
+        #    and a scriptblock callback dies on a COLD TLS handshake ("The underlying connection was
+        #    closed" — operator-reproduced) — exactly where the raw detail reads in Process-WugOutcome can
+        #    land, since the pooled branch makes no main-scope HTTP call between Connect and the first
+        #    detail read. The compiled policy runs on any thread. Install failure is NON-FATAL: the detail
+        #    reads then ride the module's callback, and any failure surfaces via the reason-lookup note —
+        #    never as a state change. Process-scoped trust-all is acceptable: this child talks only to WUG.
+        $vivreTrustAllReady = $false
+        $trustAllErr = $null
+        try {
+            if (-not ('VivreWugTrustAll' -as [type])) {
+                Add-Type -TypeDefinition 'using System; using System.Net; using System.Security.Cryptography.X509Certificates; public class VivreWugTrustAll : ICertificatePolicy { public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; } }'
+            }
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object VivreWugTrustAll
+            $vivreTrustAllReady = $true
+        } catch { $trustAllErr = $_.Exception.Message }
 
         """
         // The ONE resolver, single-sourced into a single-quoted here-string (literal — no compose-time
@@ -1152,6 +1244,7 @@ public static class WugMaintenance
         // machine an abort stopped after, for the error text.
         var gate = new object();
         var partial = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
+        var partialDetails = new Dictionary<string, WugMaintenanceDetail>(StringComparer.OrdinalIgnoreCase);
         var partialUnmatched = new List<string>();
         string? lastName = null;
         int seen = 0;
@@ -1172,6 +1265,12 @@ public static class WugMaintenance
                 if (parsed.Matched)
                 {
                     partial[parsed.Name] = parsed.InMaintenance;
+                    // Keep the streamed detail too, so an ABORTED read's reconcile can't downgrade a row
+                    // that already showed reason/who/since back to a plain "in maintenance".
+                    if (parsed.Reason is not null || parsed.User is not null || parsed.SinceUtc is not null)
+                    {
+                        partialDetails[parsed.Name] = new WugMaintenanceDetail(parsed.Reason, parsed.User, parsed.SinceUtc);
+                    }
                 }
                 else
                 {
@@ -1198,29 +1297,33 @@ public static class WugMaintenance
             // still fire OnDeviceLine and write the live collections AFTER we return — so the result must
             // wrap snapshot COPIES taken under `gate`, never the live maps (a cross-thread write-during-read
             // on a Dictionary is this codebase's cardinal crash class).
-            Dictionary<string, bool?> snap; List<string> snapUnmatched; string? ln; int sn;
+            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; string? ln; int sn;
             lock (gate)
             {
                 snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
+                snapDetails = new Dictionary<string, WugMaintenanceDetail>(partialDetails, StringComparer.OrdinalIgnoreCase);
                 snapUnmatched = new List<string>(partialUnmatched);
                 ln = lastName; sn = seen;
             }
             return new WugMaintenanceStateResult(
-                snap, snapUnmatched, ComposeAbortError("Stalled", ln, sn, names.Count, ex.Stall));
+                snap, snapUnmatched, ComposeAbortError("Stalled", ln, sn, names.Count, ex.Stall),
+                DetailsByName: snapDetails);
         }
         catch (TimeoutException)
         {
             // Hit the absolute ceiling: same shape, ceiling wording and window. Snapshot under `gate` for
             // the same reason as above — the killed child's draining pump can still write the live maps.
-            Dictionary<string, bool?> snap; List<string> snapUnmatched; string? ln; int sn;
+            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; string? ln; int sn;
             lock (gate)
             {
                 snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
+                snapDetails = new Dictionary<string, WugMaintenanceDetail>(partialDetails, StringComparer.OrdinalIgnoreCase);
                 snapUnmatched = new List<string>(partialUnmatched);
                 ln = lastName; sn = seen;
             }
             return new WugMaintenanceStateResult(
-                snap, snapUnmatched, ComposeAbortError("Timed out", ln, sn, names.Count, timeout));
+                snap, snapUnmatched, ComposeAbortError("Timed out", ln, sn, names.Count, timeout),
+                DetailsByName: snapDetails);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1233,13 +1336,14 @@ public static class WugMaintenance
             // plus the real reason. Still fails open, never a fabricated "not in maintenance". Snapshot
             // under `gate` for the same reason as above — the killed child's draining pump can still write
             // the live maps.
-            Dictionary<string, bool?> snap; List<string> snapUnmatched;
+            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched;
             lock (gate)
             {
                 snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
+                snapDetails = new Dictionary<string, WugMaintenanceDetail>(partialDetails, StringComparer.OrdinalIgnoreCase);
                 snapUnmatched = new List<string>(partialUnmatched);
             }
-            return new WugMaintenanceStateResult(snap, snapUnmatched, ex.Message);
+            return new WugMaintenanceStateResult(snap, snapUnmatched, ex.Message, DetailsByName: snapDetails);
         }
     }
 
@@ -1319,6 +1423,7 @@ public static class WugMaintenance
     internal static WugMaintenanceStateResult ParseMaintenanceState(string stdout, string stderr)
     {
         var byName = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
+        var details = new Dictionary<string, WugMaintenanceDetail>(StringComparer.OrdinalIgnoreCase);
 
         // REQUIRE the __WUGRESULT__ marker — there is NO last-braced-line fallback here (there is one in
         // ParsePreflight, which has no streamed lines). With per-device __WUGDEV__ JSON lines now on the
@@ -1360,12 +1465,12 @@ public static class WugMaintenance
                 {
                     foreach (JsonElement dev in devicesEl.EnumerateArray())
                     {
-                        AddDevice(byName, dev);
+                        AddDevice(byName, details, dev);
                     }
                 }
                 else if (devicesEl.ValueKind == JsonValueKind.Object)
                 {
-                    AddDevice(byName, devicesEl);
+                    AddDevice(byName, details, devicesEl);
                 }
             }
 
@@ -1398,7 +1503,7 @@ public static class WugMaintenance
             int ambiguous    = ReadCount(root, "ambiguous");
             int matchedByIp  = ReadCount(root, "matchedByIp");
 
-            return new WugMaintenanceStateResult(byName, unmatched, error, lookupErrors, ambiguous, matchedByIp);
+            return new WugMaintenanceStateResult(byName, unmatched, error, lookupErrors, ambiguous, matchedByIp, details);
         }
         catch (JsonException)
         {
@@ -1415,8 +1520,9 @@ public static class WugMaintenance
 
     // Adds one device entry to the tri-state map: the name must be a string (skip the entry otherwise);
     // inMaintenance True/False map to true/false, and anything else (absent, null, string, number) to
-    // null — unknown, never assumed false.
-    private static void AddDevice(Dictionary<string, bool?> byName, JsonElement dev)
+    // null — unknown, never assumed false. The optional detail (reason/user/sinceUtc, via the shared
+    // ReadDetail) can only ADD display text — a malformed detail never changes the state.
+    private static void AddDevice(Dictionary<string, bool?> byName, Dictionary<string, WugMaintenanceDetail> details, JsonElement dev)
     {
         if (dev.ValueKind != JsonValueKind.Object)
         {
@@ -1437,8 +1543,34 @@ public static class WugMaintenance
             }
             : null;
 
-        byName[nameEl.GetString()!] = state;
+        string name = nameEl.GetString()!;
+        byName[name] = state;
+        if (ReadDetail(dev) is { } detail)
+        {
+            details[name] = detail;
+        }
     }
+
+    // The ONE reader for the optional maintenance detail on a device entry — shared by AddDevice and
+    // ParseDeviceLine so the summary and the streamed lines can never diverge. Each field must be a
+    // non-whitespace JSON string (trimmed); anything else (absent, null, number, object) => null. All
+    // three null => no detail at all.
+    private static WugMaintenanceDetail? ReadDetail(JsonElement dev)
+    {
+        string? reason = ReadOptionalString(dev, "reason");
+        string? user = ReadOptionalString(dev, "user");
+        string? since = ReadOptionalString(dev, "sinceUtc");
+        return reason is null && user is null && since is null
+            ? null
+            : new WugMaintenanceDetail(reason, user, since);
+    }
+
+    private static string? ReadOptionalString(JsonElement el, string name)
+        => el.TryGetProperty(name, out JsonElement v)
+           && v.ValueKind == JsonValueKind.String
+           && !string.IsNullOrWhiteSpace(v.GetString())
+            ? v.GetString()!.Trim()
+            : null;
 
     /// <summary>
     /// Parses ONE marker-stripped <c>__WUGDEV__</c> payload into a <see cref="WugDeviceState"/>, or null
@@ -1486,7 +1618,13 @@ public static class WugMaintenance
             // Optional, present only when true. JSON true => true; absent / null / any other shape => false.
             bool matchedByIp = root.TryGetProperty("matchedByIp", out JsonElement ipEl) && ipEl.ValueKind == JsonValueKind.True;
 
-            return new WugDeviceState(nameEl.GetString()!, matched, inMaintenance, matchedByIp);
+            // Optional maintenance detail — the SAME reader as AddDevice (lockstep); display-only, can
+            // never affect matched / inMaintenance above.
+            WugMaintenanceDetail? detail = ReadDetail(root);
+
+            return new WugDeviceState(
+                nameEl.GetString()!, matched, inMaintenance, matchedByIp,
+                detail?.Reason, detail?.User, detail?.SinceUtc);
         }
         catch (JsonException)
         {
