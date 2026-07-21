@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.16.3 — 2026-07-21
+
 ### Added
 - **The WhatsUp Gold state check now shows WHY a machine is in maintenance.** In-maintenance rows read
   e.g. `in maintenance — "Rebuilding - SB" (admin_sbridges, since 2026-05-27, 54d)` — the reason note,
@@ -13,8 +15,6 @@ it ships, then gets a dated heading.
   in-maintenance machine. Only in-maintenance machines pay the extra lookups (two read-only REST GETs
   each), so a check with nothing in maintenance is exactly as fast as before; a failed detail read
   degrades to the plain "in maintenance" text and says so in the summary, never silently.
-
-### Changed
 
 ### Fixed
 - **Export ▸ Shown rows + columns (CSV) now exports the grid you right-clicked.** The columns match
