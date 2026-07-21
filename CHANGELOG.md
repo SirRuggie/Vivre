@@ -17,6 +17,12 @@ it ships, then gets a dated heading.
 ### Changed
 
 ### Fixed
+- **Export ▸ Shown rows + columns (CSV) now exports the grid you right-clicked.** The columns match
+  what's on screen — the active grid's visible columns in their current order, hidden columns
+  excluded, custom columns included where they render — instead of a fixed list that ignored the
+  Patching grid entirely.
+- **The Health grid's Command result column can now be dragged wider** (it previously stopped at a
+  400 px cap the Patching grid never had).
 
 ## 1.16.2 — 2026-07-20
 
