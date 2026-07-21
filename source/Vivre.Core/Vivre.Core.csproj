@@ -31,6 +31,10 @@
          Windows-only; this is a Windows-only tool. Encrypts per Windows user (CurrentUser scope).
          Pinned to 10.0.5 to match the version PowerShell.SDK already pulls in transitively (avoids NU1605). -->
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.5" />
+    <!-- Not used directly: PowerShell.SDK pulls 10.0.6 transitively, which carries four NU1903 high-severity
+         advisories (all patched in 10.0.10 — every 10.0.x below it is in the affected range). This direct pin
+         lifts the resolved version; drop it once PowerShell.SDK's own dependency moves past 10.0.9. -->
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.10" />
   </ItemGroup>
 
 </Project>
