@@ -255,6 +255,20 @@ public static class WugMaintenance
             Emit $result; return
         }
 
+        # 2b. Trust-all for the Get-WUGDevice / maintenance-set calls below: Connect's -IgnoreSSLErrors just
+        #     installed the module's scriptblock certificate callback (fragile on a cold TLS handshake), so
+        #     install a COMPILED trust-all policy and null the callback — inside the try, only if the install
+        #     succeeds (else the scriptblock stays the only trust-all). Install failure is NON-FATAL: the
+        #     calls then ride the module's callback and any failure surfaces normally.
+        $trustAllErr = $null
+        try {
+            if (-not ('VivreWugTrustAll' -as [type])) {
+                Add-Type -TypeDefinition 'using System; using System.Net; using System.Security.Cryptography.X509Certificates; public class VivreWugTrustAll : ICertificatePolicy { public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; } }'
+            }
+            [System.Net.ServicePointManager]::CertificatePolicy = New-Object VivreWugTrustAll
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+        } catch { $trustAllErr = $_.Exception.Message }
+
         """
         + ResolveFunctionScript + "\n" +
         """
@@ -599,11 +613,18 @@ public static class WugMaintenance
     // across runspaces by reference — the headers dict is not thread-safe and sharing it produced garbage
     // reads under load; each worker reads server/user/pass from the process-global env and builds its own
     // session instead. No line may begin with '@ at column 0 (that would close the here-string early).
-    private const string StateWorkerTailBody = """
+    internal const string StateWorkerTailBody = """
         if (-not $global:WUGBearerHeaders) {
             $sec  = ConvertTo-SecureString $env:VIVRE_WUG_PASS -AsPlainText -Force
             $cred = New-Object System.Management.Automation.PSCredential($env:VIVRE_WUG_USER, $sec)
             Connect-WUGServer -ServerUri $env:VIVRE_WUG_SERVER -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+            # Connect's -IgnoreSSLErrors just re-installed the module's scriptblock callback (process-wide).
+            # Re-null it so the compiled trust-all policy installed at HEAD stays the active validator — but
+            # ONLY when that policy is actually in place; without it the scriptblock is the only trust-all.
+            $vivrePol = [System.Net.ServicePointManager]::CertificatePolicy
+            if ($vivrePol -and $vivrePol.GetType().Name -eq 'VivreWugTrustAll') {
+                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
+            }
         }
         Resolve-WugName $srv
         """;
@@ -943,14 +964,18 @@ public static class WugMaintenance
             Emit $result; return
         }
 
-        # 5. Maintenance-detail support: a COMPILED trust-all certificate policy. The module's
-        #    -IgnoreSSLErrors installs a PowerShell scriptblock as the process-wide certificate callback,
-        #    and a scriptblock callback dies on a COLD TLS handshake ("The underlying connection was
-        #    closed" — operator-reproduced) — exactly where the raw detail reads in Process-WugOutcome can
-        #    land, since the pooled branch makes no main-scope HTTP call between Connect and the first
-        #    detail read. The compiled policy runs on any thread. Install failure is NON-FATAL: the detail
-        #    reads then ride the module's callback, and any failure surfaces via the reason-lookup note —
-        #    never as a state change. Process-scoped trust-all is acceptable: this child talks only to WUG.
+        # 5. Maintenance-detail support: a COMPILED trust-all certificate policy, plus the null-out of the
+        #    module's scriptblock callback — done HERE at HEAD, before any fan-out. Step 4's -IgnoreSSLErrors
+        #    installs a PowerShell scriptblock as the process-wide certificate callback, and a scriptblock
+        #    callback dies on a COLD TLS handshake ("The underlying connection was closed" —
+        #    operator-reproduced) — exactly where the raw detail reads in Process-WugOutcome can land, since
+        #    the pooled branch makes no main-scope HTTP call between Connect and the first detail read, and
+        #    where every pooled worker's own cold handshake lands. The compiled policy runs on any thread but
+        #    only governs while the callback is NULL (a non-null callback takes precedence), so we null the
+        #    callback here — inside the try, AFTER the install succeeds. Install failure is NON-FATAL: we
+        #    DON'T null (the scriptblock would then be the only trust-all), the detail reads then ride the
+        #    module's callback, and any failure surfaces via the reason-lookup note — never as a state
+        #    change. Process-scoped trust-all is acceptable: this child talks only to WUG.
         $vivreTrustAllReady = $false
         $trustAllErr = $null
         try {
@@ -958,6 +983,12 @@ public static class WugMaintenance
                 Add-Type -TypeDefinition 'using System; using System.Net; using System.Security.Cryptography.X509Certificates; public class VivreWugTrustAll : ICertificatePolicy { public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; } }'
             }
             [System.Net.ServicePointManager]::CertificatePolicy = New-Object VivreWugTrustAll
+            # The compiled policy only governs while the callback is NULL — a non-null callback takes
+            # precedence, and step 4's -IgnoreSSLErrors just installed the module's fragile scriptblock one.
+            # Null it NOW, before any fan-out, so no worker handshake ever rides the scriptblock (the
+            # cold-TLS mass-LookupError bug). Inside the try: if the policy install threw we must NOT null —
+            # the scriptblock would then be the only trust-all in the process.
+            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
             $vivreTrustAllReady = $true
         } catch { $trustAllErr = $_.Exception.Message }
 
