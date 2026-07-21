@@ -151,6 +151,8 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## OPEN — polish / smaller standalone items
 
+- **Custom columns are intentionally NOT exported from the Patching grid** (they only render on Health; the shown-rows CSV mirrors the clicked grid) — readdress only if a Patching-grid custom-column export is ever wanted.
+
 - **Auto-heal for "couldn't rescan" Unverified boxes — PARKED, gather signal first.** After a
   reboot-verify, B/C/D Unverified boxes (rescan itself failed) need a manual rescan; 1.16.2
   already self-heals the common variant-A case. Design is DONE + red-teamed (auto-rescan, or a
