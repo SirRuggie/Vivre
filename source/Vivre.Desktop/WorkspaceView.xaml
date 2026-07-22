@@ -917,6 +917,13 @@
                                                 <DataTrigger Binding="{Binding UpdatePhase}" Value="Unreachable">
                                                     <Setter Property="Text" Value="Can't reach WU" />
                                                 </DataTrigger>
+                                                <!-- Reboot Wave found nothing staged/pending to commit (CBS RebootPending
+                                                     definitively absent — no reboot issued): a distinct neutral label.
+                                                     Reduces to PatchState.Idle so the pill background is already neutral;
+                                                     keyed off UpdatePhase like Staging/Cleaning/Unreachable. -->
+                                                <DataTrigger Binding="{Binding UpdatePhase}" Value="NothingToCommit">
+                                                    <Setter Property="Text" Value="Nothing to commit" />
+                                                </DataTrigger>
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Scanning">
                                                     <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                                 </DataTrigger>
@@ -944,6 +951,11 @@
                                                 <!-- Neutral-grey text, same brush as the grey "?" reboot dot — reads as
                                                      "unknown / not verified", never green success. -->
                                                 <DataTrigger Binding="{Binding PatchState}" Value="Unverified">
+                                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
+                                                </DataTrigger>
+                                                <!-- Nothing to commit: neutral-grey text (matches the neutral pill),
+                                                     never green — same brush as the Unverified label. -->
+                                                <DataTrigger Binding="{Binding UpdatePhase}" Value="NothingToCommit">
                                                     <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
                                                 </DataTrigger>
                                                 <!-- Scheduled: override both color and text — neutral pill regardless

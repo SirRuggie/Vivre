@@ -535,7 +535,7 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Updates, Icon = SymbolRegular.ArrowClockwiseDashes24, Title = "Reboot and verify after patching",
-            Keywords = "reboot verify wave confirm rescan ubr build 2016 wua outcome back online remaining up to date installed unverified couldn't confirm",
+            Keywords = "reboot verify wave confirm rescan ubr build 2016 wua outcome back online remaining up to date installed unverified couldn't confirm servicing wait settle nothing to commit force reboot",
             Lines =
             [
                 "After installing updates, right-click the machine(s) and choose Reboot & verify…, then confirm the list — nothing reboots without your confirm.",
@@ -543,6 +543,8 @@ public static class HelpContent
                 "2. Right-click ▸ Reboot & verify…",
                 "3. Review the list and click Reboot & verify to start.",
                 "Reboot & verify… appears only in Patching, on rows that are reboot-pending — and on a red failed-install row whose reboot is still pending, so a failed patch that needs its reboot can always be rebooted. If you don't see it, the box has nothing pending.",
+                "Before rebooting, Vivre makes sure each box is safe to restart. If Windows is still installing updates (servicing is active), it WAITS — re-checking on a short interval — and reboots the moment servicing finishes, so it never reboots into a long \"Stopping\" hang. If servicing hasn't finished within the max wait (default 20 minutes; change it in Settings ▸ \"Reboot wave — max wait for in-progress servicing\"), Vivre stops WITHOUT rebooting: it does NOT force a reboot through active servicing. The row then reads \"servicing still running … — not rebooted; use Force reboot to override,\" so the decision stays yours.",
+                "If a box has nothing staged or pending to commit (no reboot is queued for it), Vivre stops calmly and the row shows a neutral \"Nothing to commit\" — that's informational (grey), not an error: there was simply nothing to reboot for.",
                 "Each box is rebooted gracefully (lets SQL/services flush). If it doesn't go down within 8 minutes (20 for a staged-2016 box, whose commit is slower) Vivre escalates to a forced reboot to complete the one you ordered.",
                 "While offline, Vivre keeps watching — the row shows how long it's been down, flagging \"Overdue\" past ~90 minutes. After ~4½ hours it stops live-tracking and marks the row red (\"hasn't returned after N min — no longer tracking it live. Use Verify once it's back up.\"); a box that never goes down after the forced reboot is also marked red rather than watched forever.",
                 "When a box comes back online:",
@@ -557,9 +559,11 @@ public static class HelpContent
                 "  Back online · couldn't rescan — the re-scan didn't complete; use Scan to re-check.",
                 "  Back online · couldn't confirm reboot state — the reboot-pending check didn't answer (it's bounded at ~2 minutes); the Pending Reboot column shows \"?\" — re-check when convenient. Never shown as \"up to date\". Because the update re-scan here already came back clean, this one clears itself to green on its own once background monitoring later confirms no reboot is pending — you may not need to touch it.",
                 "  Unverified — the box came back on the network but the reboot couldn't be confirmed within ~30 minutes (e.g. its build was unreadable, its update re-scan didn't complete, or it never appeared to go down) — a neutral outcome, neither green nor red. Only the \"couldn't confirm reboot state\" case above (clean re-scan, reboot alone unconfirmed) self-heals later; the others stay Unverified until you re-check them with Verify.",
+                "  Nothing to commit — the box had no staged or pending reboot, so nothing was rebooted; neutral (grey), not a failure.",
                 "If a box outlasts the live watch, re-check it once it's back up — that's exactly what the red no-longer-tracking row is asking for. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
+                "A manual reboot now verifies too: right-click ▸ Reboot (force now) arms the same post-reboot check. When the box returns and its reboot-pending state reads clean, Vivre runs the read-only rescan on its own and shows the same verified / \"N remaining\" / Unverified outcome as Reboot & verify — no extra click needed.",
             ],
-            Tip = "Reboot & verify reboots ONLY the machines you select and confirm. It never touches the rest of the fleet. To reboot without a post-reboot rescan, use right-click ▸ Reboot (force now).",
+            Tip = "Reboot & verify reboots ONLY the machines you select and confirm — never the rest of the fleet. Right-click ▸ Reboot (force now) skips the confirm-list step but now rejoins the same verify arc, so its row also gets the post-reboot recheck when the box returns.",
         },
         new HelpTopic
         {

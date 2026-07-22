@@ -3790,13 +3790,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // so all boxes watch + verify in parallel, independent of each other.
         var gate = new RebootTriggerGate(_rebootTriggerThrottle, jitterMs: 500);
 
-        return RunPatchSweepAsync(selected, (c, ct) => RebootWaveRowAsync(c, gate, ct), "Reboot & verify", _waveThrottle,
+        // Read the operator's servicing-wait knob ONCE at click time (clamped 5–120) so every box in THIS wave
+        // uses the same pre-reboot settle bound even if the setting is edited mid-wave. The wave waits this long
+        // for in-progress servicing to finish before rebooting, then stops WITHOUT rebooting (never forces).
+        var servicingSettle = TimeSpan.FromMinutes(Math.Clamp(_appSettings.Load().ServicingWaitMinutes, 5, 120));
+
+        return RunPatchSweepAsync(selected, (c, ct) => RebootWaveRowAsync(c, gate, servicingSettle, ct), "Reboot & verify", _waveThrottle,
             // The wave self-bounds at its OWN honest terminals — the HardCap (since the reboot was ordered) and
             // the PostReturnConfirmWindow (reachable-but-unconfirmed → neutral Unverified). Both must fire BEFORE
             // this generic per-host watchdog, so the operator sees the wave's honest outcome, never a bare
-            // "Timed out". Add the longest forced go-offline window + a margin so a legitimately-still-committing
-            // box is never cut short. Standalone Verify is the net past this.
-            RebootWaveOptions.Default.HardCap + RebootWaveOptions.ForSlowCommit.ForcedGoOfflineWindow + TimeSpan.FromMinutes(15));
+            // "Timed out". Add the pre-reboot servicing-settle window (a box can wait the whole window before the
+            // reboot even starts) + the longest forced go-offline window + a margin so a legitimately-still-
+            // committing box is never cut short. Standalone Verify is the net past this.
+            servicingSettle + RebootWaveOptions.Default.HardCap + RebootWaveOptions.ForSlowCommit.ForcedGoOfflineWindow + TimeSpan.FromMinutes(15));
     }
 
     /// <summary>Panel button: read each targeted 2016 box's build/UBR and confirm the CU committed. Read-only;
@@ -4124,7 +4130,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     ///   and OS-queryable; the actual verify comes from the post-reboot Applicable rescan.</description></item>
     /// </list>
     /// </summary>
-    private async Task RebootWaveRowAsync(Computer computer, IRebootGate gate, CancellationToken token)
+    private async Task RebootWaveRowAsync(Computer computer, IRebootGate gate, TimeSpan servicingSettle, CancellationToken token)
     {
         if (computer.IsPatching)
         {
@@ -4160,6 +4166,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             // No ConfigureAwait(false): the result-application below mutates data-bound Computer state
             // (live-filtered properties), so the continuation must resume on the captured (UI) context.
+            // The operator's servicing-wait knob overrides the pre-reboot settle window on BOTH lanes (uniform;
+            // the Default/WUA probe answers Ready immediately so the override is inert there, but passing it
+            // keeps the two lanes symmetric and the host timeout above honest).
             HostPatchStatus final;
             if (lane == RebootVerifyLane.Lcu2016)
             {
@@ -4168,12 +4177,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // 15–20+ min, so use the longer go-offline windows (ForSlowCommit) — the 8-min default
                 // false-failed these as "the reboot isn't taking" while they were genuinely committing.
                 final = await _patch
-                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.ForSlowCommit, progress, token, gate);
+                    .RebootWaveLcuAsync(computer.Name, targetUbr, RebootWaveOptions.ForSlowCommit with { ServicingSettleWindow = servicingSettle }, progress, token, gate);
             }
             else
             {
                 final = await _patch
-                    .RebootWaveWuaAsync(computer.Name, RebootWaveOptions.Default, progress, token, gate);
+                    .RebootWaveWuaAsync(computer.Name, RebootWaveOptions.Default with { ServicingSettleWindow = servicingSettle }, progress, token, gate);
             }
 
             ApplyStatus(computer, final);
@@ -4208,6 +4217,22 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // update columns.
                 computer.RebootMessage = final.Message;
                 _activity.Warn(computer.Name, $"Reboot wave — {final.Message}");
+            }
+            else if (final.Phase == PatchPhase.NothingToCommit)
+            {
+                // The wave issued NO reboot: the pre-reboot readiness read got a SETTLED StdRegProv answer that
+                // the CBS RebootPending key is ABSENT (EnumKey ReturnValue 2) — nothing was staged, so there was
+                // nothing to reboot for. Calm/neutral (reduces to Idle), never an error and never green "up to
+                // date". ApplyStatus(final) above already wrote the "NothingToCommit" phase + message and cleared
+                // the probe-only marker; surface the wave's honest terminal in the reboot column and the log too.
+                computer.RebootMessage = final.Message;
+                // Clear the pending flags on this DEFINITE not-pending probe answer. The NothingToCommit verdict
+                // comes from a successful StdRegProv read of CBS RebootPending returning ABSENT (rv==2) — an
+                // actual not-pending PROBE reading, NOT a scan inference — so it satisfies the cardinal rule that
+                // RebootRequired=false may be written only from a definite probe answer.
+                computer.RebootRequired = false;
+                computer.StagedThisSession = false;
+                _activity.Info(computer.Name, final.Message);
             }
             else if (final.Phase == PatchPhase.Error)
             {
@@ -4366,6 +4391,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             string outcome = RebootOutcomeSelector.Select(installed, failed, remaining, rebootStillPending, scanFailed);
             computer.UpdateMessage = outcome;
             computer.RebootRequired = rebootStillPending;
+            // A hand reboot + clean probe: when the reboot-pending probe answered DEFINITELY false (NOT null),
+            // the reboot committed, so clear the staged-awaiting-reboot flag too. Honest-unknown rule: only a
+            // definite not-pending PROBE answer clears it — NEVER a clean scan alone (a scan can't prove a reboot
+            // completed). A null (couldn't-confirm) probe leaves StagedThisSession untouched.
+            if (rebootStillPending == false)
+            {
+                computer.StagedThisSession = false;
+            }
             // Couldn't confirm/rescan → neutral "Unverified" chip, never a green "Up to date". Keyed off the
             // OUTCOME (not off RebootRequired==null, which fresh unscanned rows also share). DerivePatchState
             // keeps this amber if a reboot is known pending.
@@ -5089,6 +5122,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 {
                     computer.RebootMessage = $"Reboot complete — back online {DateTime.Now:HH:mm}";
                     computer.WentOfflineAt = null;
+                    // The reboot the box was staged for has completed: RebootRequired WAS true and the probe now
+                    // answers DEFINITELY not-pending (pending.Value == false, not null), so clear the
+                    // staged-awaiting-reboot flag too. Honest-unknown rule: only a definite not-pending PROBE
+                    // answer clears this — NEVER a scan result alone, which can't prove a reboot completed.
+                    computer.StagedThisSession = false;
 
                     // Message-only (state derivation untouched here): a row still reading Unverified under a
                     // grey chip would otherwise show a contradictory reboot-required tail, so say the reboot
@@ -5113,6 +5151,22 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.WentOfflineAt = null;
                     computer.UnverifiedRebootProbeOnly = false;
                     _activity.Info(computer.Name, "Post-reboot verify self-healed — reboot confirmed clean, up to date.");
+                }
+
+                // A hand Force reboot rejoins the verify arc. The operator's standalone Force reboot armed
+                // ForceRebootAwaitingVerify; now the box has returned and the probe answered DEFINITIVELY clean
+                // (pending.HasValue && pending.Value == false — true/null never qualify), so run the SAME
+                // post-reboot recheck the wave's Done arm runs, giving a hand reboot the same verified/Unverified
+                // outcome. Single-shot: clear the marker BEFORE the await so a concurrent monitor tick can't
+                // double-enter. If a sweep owns the row (IsPatching), ShouldRunVerify is false → skip WITHOUT
+                // clearing, so a later clean transition retries. This site already writes Computer state on the
+                // monitor's UI context (see the method header), and ReportPostRebootOutcomeAsync keeps that
+                // context (no ConfigureAwait) so its data-bound writes stay UI-thread-safe.
+                if (ForceRebootVerifyGate.ShouldRunVerify(computer.ForceRebootAwaitingVerify, computer.IsPatching, pending))
+                {
+                    computer.ForceRebootAwaitingVerify = false;
+                    bool is2016 = LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.RequiresStagedPatching) == RebootVerifyLane.Lcu2016;
+                    await ReportPostRebootOutcomeAsync(computer, is2016, token);
                 }
             }
         }
@@ -5853,6 +5907,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.RebootMessage = $"Forced reboot sent {DateTime.Now:HH:mm} — a shutdown was already in progress";
                     _activity.Info(computer.Name, "Force reboot: a shutdown is already in progress — the box is going down on its own.");
                     _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
+                    // A hand Force reboot rejoins the verify arc: when the box returns and the monitor's probe
+                    // answers definitively clean, it runs the same post-reboot recheck the wave's Done arm does.
+                    computer.ForceRebootAwaitingVerify = true;
                 }
                 else
                 {
@@ -5867,6 +5924,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // Once the machine comes back online the monitor will re-probe reboot-pending status
                     // (up to PostBootRebootRechecks times) so the Reboot Pending column clears automatically.
                     _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
+                    // A hand Force reboot rejoins the verify arc: when the box returns and the monitor's probe
+                    // answers definitively clean, it runs the same post-reboot recheck the wave's Done arm does.
+                    computer.ForceRebootAwaitingVerify = true;
                 }
             }
             catch (OperationCanceledException)

@@ -62,6 +62,7 @@ public partial class SettingsPage : UserControl
         // The install cap and WUG state-check concurrency are PERSONAL — seed them from the per-user snapshot.
         MaxInstallsBox.Text = s.MaxSimultaneousInstalls.ToString();
         WugStateConcurrencyBox.Text = s.WugStateConcurrency.ToString();
+        ServicingWaitBox.Text = s.ServicingWaitMinutes.ToString();
 
         // Inline version in the Help & about expander.
         VersionText.Text = $"Vivre {AboutWindow.RunningVersion()}";
@@ -233,6 +234,27 @@ public partial class SettingsPage : UserControl
 
         // Personal, per operator — persists to the per-user store (not the machine-wide shared file).
         PersistSettings(s => s.WugStateConcurrency = parsed);
+    }
+
+    private void OnServicingWaitChanged(object sender, RoutedEventArgs e)
+    {
+        string raw = ServicingWaitBox.Text.Trim();
+        if (!int.TryParse(raw, out int parsed) || parsed < 5 || parsed > 120)
+        {
+            // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
+            ServicingWaitBox.Text = (_settingsStore?.Load() ?? new AppSettings()).ServicingWaitMinutes.ToString();
+            return;
+        }
+
+        // parsed is already in [5, 120] (guarded above), so no clamp is needed — just normalize the field
+        // text (e.g. "020" → "20") so it never displays junk.
+        if (parsed.ToString() != raw)
+        {
+            ServicingWaitBox.Text = parsed.ToString();
+        }
+
+        // Personal, per operator — persists to the per-user store (not the machine-wide shared file).
+        PersistSettings(s => s.ServicingWaitMinutes = parsed);
     }
 
     private void OnLcuPackagesFolderChanged(object sender, RoutedEventArgs e)

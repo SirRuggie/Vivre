@@ -259,6 +259,17 @@ public partial class Computer : ObservableObject
     /// </summary>
     public bool UnverifiedRebootProbeOnly { get; set; }
 
+    /// <summary>
+    /// Runtime-only marker: set true when the operator fires the standalone right-click <b>Force reboot</b>
+    /// (Issued or Already-in-progress), so a hand reboot rejoins the same post-reboot verify arc the Reboot
+    /// Wave's Done arm runs. The background monitor consumes it ONCE on the box's definitive clean return (the
+    /// reboot-pending probe answers not-pending) to run the shared post-reboot outcome step, then clears it.
+    /// Cleared before that await so a concurrent monitor tick can't double-enter (single-shot).
+    /// MUST NOT be [ObservableProperty] — nothing binds it and it never feeds the live grid filter.
+    /// Runtime-only, not persisted (Computer is never serialized; the named-list store writes only host names).
+    /// </summary>
+    public bool ForceRebootAwaitingVerify { get; set; }
+
     /// <summary>The full vitals snapshot behind the score — the Machine Details triage panel's per-drive /
     /// per-reading breakdown binds THROUGH this (e.g. <c>Vitals.Drives</c>, <c>Vitals.SystemDriveFreePercent</c>,
     /// <c>Vitals.LastBootTime</c>). Observable so a Check Vitals run WHILE Machine Details is open re-resolves

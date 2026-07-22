@@ -21,6 +21,15 @@ public class RebootMessageTextTests
     // ride the "Back online" prefix, so a later scan/install auto-clears them (same lifecycle as above).
     [InlineData("Back online — rebooted. (committed in ~3 min)")]
     [InlineData("Back online — verifying…")]
+    // Pre-reboot wave terminals — HOST-PREFIXED, so matched by CONTAINS on the stable middle fragment.
+    // "isn't reboot-ready —" (the old hard-fail wording; defensive — no live path emits it today).
+    [InlineData("APVSQL1 isn't reboot-ready — TiWorker.exe is still running. Stage it (and let it finish) first.")]
+    // "not rebooted" fragment (em-dash deliberately excluded so the "; not rebooted" variant also clears):
+    [InlineData("APVSQL1: servicing still running after 20 min — not rebooted; use Force reboot to override, or re-run the wave when servicing finishes.")]
+    [InlineData("APVSQL1: couldn't confirm reboot-readiness for 20 min (TrustedInstaller state unreadable) — not rebooted.")]
+    [InlineData("APVSQL1: servicing finished without leaving a pending reboot (or the box already rebooted) — nothing to commit; not rebooted.")]
+    // "nothing staged to commit" fragment (this terminal says "no reboot needed", not "not rebooted"):
+    [InlineData("APVSQL1: nothing staged to commit — no reboot needed (no pending reboot — nothing is staged).")]
     public void Transient_past_event_notices_are_cleared(string message) =>
         Assert.True(RebootMessageText.IsTransientRebootNotice(message));
 

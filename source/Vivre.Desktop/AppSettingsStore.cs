@@ -54,6 +54,14 @@ public sealed class AppSettings
     /// default 2. 1 = sequential (the pre-parallel behaviour).</summary>
     public int WugStateConcurrency { get; set; } = 2;
 
+    /// <summary>How long (minutes) the Reboot Wave WAITS for in-progress Windows servicing to finish before it
+    /// issues the ordered reboot — per operator, not shared. The wave re-checks readiness on its poll interval
+    /// and reboots the instant servicing settles; if this window elapses first it stops WITHOUT rebooting (the
+    /// row says "not rebooted; use Force reboot to override") — it NEVER forces a reboot through active
+    /// servicing. Tunable in Settings → "Reboot wave — max wait for in-progress servicing (minutes)". Read +
+    /// clamped to 5–120 at wave-launch time; applied to waves started after the change. Default 20.</summary>
+    public int ServicingWaitMinutes { get; set; } = 20;
+
     /// <summary>Whether the left NavigationView pane is expanded (true) or collapsed/compact (false).
     /// Default false — starts collapsed so the icon-only pane takes minimal horizontal space.</summary>
     public bool NavPaneOpen { get; set; } = false;

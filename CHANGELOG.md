@@ -6,6 +6,26 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **Reboot & Verify now waits out in-progress servicing instead of failing instantly.** Firing the wave
+  on a box whose TrustedInstaller is still working no longer errors with "isn't reboot-ready" — the wave
+  watches servicing (up to a new Settings knob, "max wait for in-progress servicing", default 20 min) and
+  reboots the moment it finishes. If servicing never finishes in the window, the box is NOT rebooted and
+  the row says so plainly ("not rebooted; use Force reboot to override") — the wave never force-reboots
+  through active servicing.
+- **A wave fired at a box with nothing staged now reads as calm "Nothing to commit"** (neutral grey)
+  instead of a red error — and a permissions hiccup while checking can no longer masquerade as
+  "nothing staged".
+
+### Fixed
+- **A manual right-click Force reboot now rejoins the verify arc.** When the box comes back and the
+  monitor confirms the reboot completed, the row gets the same post-reboot recheck and verified outcome
+  the Reboot Wave gives — no more guessing when a hand-forced box is really back.
+- **Stale reboot-column messages and the stale amber "STAGED" tag now clear.** The old "isn't
+  reboot-ready" text clears when a new scan/install starts, and a hand-rebooted box that provably
+  committed (confirmed by the reboot-pending probe, never a scan alone) drops its staged-awaiting-reboot
+  state.
+
 ## 1.16.4 — 2026-07-21
 
 ### Fixed
