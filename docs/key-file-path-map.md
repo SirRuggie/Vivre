@@ -2,6 +2,39 @@
 
 > **Project knowledge note:** The load-bearing files, so new chats don't re-derive them. Paths are relative to the repo root (SirRuggie/Vivre).
 
+## Project & namespace map
+
+Moved here from CLAUDE.md ▸ Layout (which keeps one line per project). Inventory + the rules that ride each area.
+
+| Project / namespace | Purpose |
+|---|---|
+| **`Vivre.Core`** (net10.0) | All non-UI logic. |
+| ▸ `Models` | `Computer` + grid-row state (observability rules: ⚠ `Computer.cs` section below). |
+| ▸ `Net` | Ping / reachability (`ReachabilityConfirmation`). |
+| ▸ `PowerShell` | `PSRunspaceHost` — the ONE WinRM choke point, wrapped by `RoutingPowerShellHost`: on a Kerberos `0x80090322` rejection it flips the host to SMB/DCOM via the session-scoped `HostTransportCache`; Vitals scores the degradation (see windows-patching-lane.md ▸ "Kerberos-broken hosts"). |
+| ▸ `Sccm` | `ConfigMgrClient`, client actions. |
+| ▸ `Remoting` | `WinRmEnabler` (DCOM), `HostRebootProbe`, `OrphanRebootServiceReaper` — reaps orphaned `Vivre_Reboot_*` services on list load. |
+| ▸ `Credentials` | Operator credential handling. |
+| ▸ `Computers` | Named-list store. |
+| ▸ `IO` | `AtomicFileWriter` — crash-safe temp+swap writes behind the settings and list stores. |
+| ▸ `Scripts` | Script-library store. |
+| ▸ `Logging` | Serilog wiring. |
+| ▸ `Updates` | The WUA lane (see windows-patching-lane.md). |
+| ▸ `Vitals` | `VitalsProbe` + the pure `VitalityScorer` — the read-only 0-100 machine health score. |
+| ▸ `Remediation` | `RemediationService` — start a service / free disk / end a process from the Vitals triage view. |
+| ▸ `Deploy` | `DeploymentService` — **stage** a package: copy to a temp dir on the target, no execution; the admin runs installs. Transport prefers the **SMB admin share** (`\\host\C$`, fast single copy), falls back to **WinRM** (zip → chunked transfer → SHA-256 verify → expand) when SMB is blocked. Install-as-SYSTEM was dropped — EDR agents tear down watch sessions mid-install; delivering files is robust. |
+| ▸ `Software` | `SoftwareProbe` — registry-based, read-only installed check → the grid's Software column; on any WinRM-unavailable failure falls back to a read-only StdRegProv/DCOM read (`DcomSoftwareReader`, ambient login) — load-bearing RV rules: ▸ "Software check" below. |
+| ▸ `Columns` | `CustomColumnProbe` — user PowerShell one-liner per machine → custom grid column; the column manager hides/shows built-ins + adds custom/predefined columns, persisted to AppData. |
+| ▸ `Threading` | `SplitThrottle` — the split active/reserved sweep-concurrency budget that keeps passive fills (custom columns, client actions) from starving behind large sweeps. |
+| ▸ `Wug` | `WugMaintenance` — WhatsUp Gold enter/exit set + read-only per-machine state read, via WhatsUpGoldPS shelled out to Windows PowerShell 5.1 (the two 5.1 traps: CLAUDE.md ▸ Conventions); no reboot path. |
+| ▸ `Rdp` | `RdpHostStore` (folder/host tree); `RdpCredentialStore` (DPAPI-per-user saved logins + inheritance resolver); `RdpDisconnectClassifier` — keep-by-default: a session tab closes ONLY on a measured sign-out (`ExtendedDisconnectReasonCode` 12 while connected, no auto-reconnect in flight); every other/unknown code keeps the tab with Reconnect. UI-free — the RDP ActiveX control + WindowsFormsHost live in Vivre.Desktop. |
+| ▸ `Configuration` | `SharedSettingsStore` — machine-wide shared settings (rules: CLAUDE.md ▸ Building/running). |
+| **`Vivre.Desktop`** (net10.0-windows) | The WPF app (`Vivre.exe`): shell + workspace VMs, dialogs, composition root `App.xaml.cs`. RDP machine-gate + THE PIN CARDINAL: CLAUDE.md ▸ Layout. |
+| **`Vivre.UpdateAgent`** (net48) | SYSTEM-run WUA agent EXE, bundled beside `Vivre.exe` (see windows-patching-lane.md). |
+| **`Vivre.Core.Tests`** (net10.0) | xUnit suite. |
+| `tools/RemoteRun` | Dev console to exercise remote PowerShell (WinRM) against a host. |
+| `scripts/` | Curated PS7 script library, seeded to `%APPDATA%\Vivre\Scripts`, surfaced via right-click **Run script…** (grouped by category in the Run Script window). |
+
 ## Patch lane / 2016 LCU lane
 - `source/Vivre.Core/PowerShell/PSRunspaceHost.cs` — WSMan connect/execute; `MaxConnectionRetryCount=0` on both sites (the WSMan retry crash fix). **Also the PSModulePath contaminator — see gotcha below.**
 - `source/Vivre.Core/PowerShell/HostWinRmGate.cs` — per-host WinRM shell cap (≤4 concurrent/host; background probes capped at 2 so operator-clicked ops always have reserved slots). Acquired at the shell-open chokepoint in `PSRunspaceHost` via a `background` flag threaded through `IPowerShellHost`/`IHostRebootProbe`; the monitor's reboot-pending poll is the only `background: true` caller.
