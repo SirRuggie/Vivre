@@ -6,6 +6,20 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.16.4 — 2026-07-21
+
+### Fixed
+- **The WhatsUp Gold state check no longer returns a wave of false "unknown" on the first run after a
+  cold start.** The module's per-call SSL callback died on cold connections mid-check (308 of 329 rows
+  read "state unknown", then a rerun was clean); Vivre now installs its own compiled certificate trust
+  before connecting and never engages the module's fragile callback. A trust failure now stops the run
+  with a clear "Couldn't establish a trusted connection" error instead of failing silently, box by box.
+  Field-proven across three cold starts.
+- **Machines that aren't in WhatsUp Gold now read "no matching device" instead of "unknown".** The
+  IP fallback search substring-matched neighbors (an address ending .10 also returned .101/.109), and
+  those near-misses were mis-read as ambiguity; matching is now by exact address equality — one exact
+  match resolves, zero reads "no matching device", and only a genuinely shared IP reads "unknown".
+
 ## 1.16.3 — 2026-07-21
 
 ### Added
