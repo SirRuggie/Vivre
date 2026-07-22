@@ -79,226 +79,98 @@ Moved here from CLAUDE.md ▸ Layout (which keeps one line per project). Invento
 - `RebootMessageText` (Vivre.Core/Updates) — pure `IsTransientRebootNotice(msg)` for the per-host **Reboot message** column: a PAST-EVENT notice (prefix `"Reboot complete"`, `"Back online"`, or `"Forced reboot sent"`) is cleared when the row starts a new scan/install so it can't linger and look like a fresh reboot; the CURRENT-STATE notices (`"Offline since…"`, `"WinRM temporarily unavailable…"`) are EXCLUDED — each has its own condition-based clearer. Narration set-sites live in `WorkspaceViewModel`: `RebootWaveRowAsync` mirrors the Rebooting-phase progress into `Computer.RebootMessage`; the force-reboot branches write `"Rebooting (force)…"` / `"Forced reboot sent HH:mm (DCOM)"` / `"Reboot failed HH:mm — reason"` (only the three prefixes above are transient-cleared — a regression test locks them against drift).
 - TCP-445 reachability probe (`TcpReachabilityProbe`) — drives the offline-detection and online-return watch loops inside `RebootWave`.
 
-## ⚠ Two gotchas that make a Windows PowerShell 5.1 shell-out misbehave (load-bearing, reusable)
+## ⚠ PS 5.1 shell-out gotchas — canonical rules live in CLAUDE.md § Conventions
 
-These BOTH bit the WUG feature and together ate most of a debugging session. Any NEW code that
-writes a temp `.ps1` and shells out to **Windows PowerShell 5.1** must respect BOTH or it will fail
-in confusing, non-obvious ways. They are independent — fixing one does not fix the other. (Canonical short version: `CLAUDE.md` § Conventions; the file locations where each fix is applied are listed below.)
+- The two rules (write the temp `.ps1` UTF-8 **with BOM**; strip the inherited **`PSModulePath`**) are
+  stated canonically in **CLAUDE.md § Conventions** — read them there; this entry is the applied-at map.
+- **Applied at:** PSModulePath strip → `RunPreflightProcessAsync` AND `RunAsync` in `WugMaintenance.cs`;
+  BOM write → the ONE shared helper `WritePs51ScriptAsync` (`WugMaintenance.cs`), locked by regression
+  test `WritePs51Script_writes_utf8_with_bom`. Any new 5.1 launcher must use that helper.
+- Validation must mirror the real writer's exact bytes (`new UTF8Encoding(true)`) — a harness that writes
+  with `Set-Content -Encoding UTF8` silently adds a BOM in 5.1 and green-lights the very bug (also in
+  CLAUDE.md § Conventions).
 
-### Gotcha 1 — PS7 contaminates `PSModulePath` (module reads as "not installed")
-Vivre hosts an **in-process PowerShell 7 runspace** (`PSRunspaceHost`). When the PS7 SDK initializes
-that runspace it **rewrites the host process's `PSModulePath`** to PS7's module folders
-(`…\Documents\PowerShell\Modules`, `…\Program Files\PowerShell\Modules`, the SDK's own). Any child
-process started with `UseShellExecute=false` **inherits that contaminated path** — so a shelled-out
-**5.1** child looks only in PS7's module folders, NOT `WindowsPowerShell\Modules`, and
-`Get-Module -ListAvailable` comes back **empty for a module that is actually installed**.
-- **Symptom:** a 5.1 module reads as "not installed" from inside Vivre, though a plain 5.1 shell +
-  `Import-Module` finds it fine. (The original false "WhatsUpGoldPS isn't installed" report.)
-- **Fix — do this for ANY 5.1 shell-out:** after building the process env, call
-  `psi.Environment.Remove("PSModulePath")`. With no inherited value the 5.1 child rebuilds its native
-  path (CurrentUser + AllUsers `WindowsPowerShell\Modules` + `$PSHOME\Modules`) — exactly like a plain
-  admin shell. Harmless no-op if it isn't set.
-- **Applied at:** both `RunPreflightProcessAsync` AND `RunAsync` in `WugMaintenance.cs`.
+## WUG maintenance (WhatsUp Gold)
 
-### Gotcha 2 — BOM-less UTF-8 script → PS 5.1 reads it as ANSI → it won't even PARSE
-This was the REAL root cause of the WUG saga (after Gotcha 1 was already fixed). **Windows PowerShell
-5.1 treats a `.ps1` with no byte-order-mark as ANSI (Windows-1252), not UTF-8.** `File.WriteAllText` /
-`WriteAllTextAsync` with no explicit encoding write UTF-8 **without** a BOM. So any non-ASCII byte in
-the script — an em-dash `—` (UTF-8 `E2 80 94`), curly quotes, `✓`, etc. — is misread as 2–3 garbage
-ANSI characters, corrupting the token stream so **the whole script fails to parse before a single line
-runs**. Nothing executes, nothing is emitted, and the C# side defaults to a wrong/empty result.
-- **Symptom:** parse errors from a temp `Vivre_*.ps1` — "Unexpected token 'X'", "the string is
-  missing the terminator", "missing closing '}'" — all pointing at a line that contains a non-ASCII
-  character. The script never produces output, so a downstream feature silently shows its default
-  (here: the false "isn't installed").
-- **Fix:** write the temp script as **UTF-8 WITH BOM** — .NET
-  `new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)` (BOM bytes `239,187,191` = `EF BB BF`).
-  PS 5.1 sees the BOM and reads the file as UTF-8, so non-ASCII survives.
-- **In Vivre:** both 5.1 launchers write through ONE shared helper **`WritePs51ScriptAsync`**
-  (`WugMaintenance.cs`) so a new call site can't silently regress it; locked by regression test
-  **`WritePs51Script_writes_utf8_with_bom`**. Any new 5.1-shell-out script writer must use that helper
-  (or the same BOM encoding).
-- **VALIDATION TRAP that hid this for a whole session (meta-lesson):** a PowerShell validation harness
-  that writes the test script with `Set-Content -Encoding UTF8` **adds a BOM in 5.1** — so it tests a
-  file the real C# launcher (no BOM) NEVER produces, and **passes while the real thing fails**. When
-  validating a shelled-out script, reproduce the EXACT bytes the real launcher writes
-  (`new UTF8Encoding(...)`), or the test is theater. More broadly: *a validation that doesn't mirror
-  the real write/launch path can green-light the very bug it should catch.*
+Full story — root causes, the failed attempts, live evidence: **docs/wug-state-check-findings.md**
+(frozen case file). This is the path + rules stub; every rule below is current as-shipped (1.16.4).
 
-## WUG maintenance (WhatsUp Gold) — RESOLVED, committed
-- `source/Vivre.Core/Wug/WugMaintenance.cs` — talks to WUG via the **`WhatsUpGoldPS` PowerShell-
-  Gallery module** (NOT the REST API directly) by shelling out to **Windows PowerShell 5.1**
-  (`…\System32\WindowsPowerShell\v1.0\powershell.exe`) and running embedded scripts that call
-  `Connect-WUGServer` / `Get-WUGDevice` (name/IP → DeviceId) / `Set-WUGDeviceMaintenance`. Runs on
-  the **operator's workstation ONLY** — no target/managed box is ever contacted (names map to WUG
-  DeviceIds server-side), and there is **NO reboot path**. Holds `RunAsync` (the real set — delegates
-  to the internal `RunCoreAsync` seam so the cancel-kill contract is testable with a synthetic script),
-  the pre-flight `TestConnectionAsync` / `InstallModuleAsync`, the **read-only STREAMING state read**
-  `GetMaintenanceStateAsync` (embedded `StateScript` + `ParseMaintenanceState` →
-  `WugMaintenanceStateResult`: a per-input-name, case-insensitive `bool?` tri-state map — null =
-  unknown, never faked as not-in-maintenance. In-maintenance = `bestState`/`worstState` equals
-  "Maintenance"; the fields are presence-checked via `PSObject.Properties` because on PS 5.1 an
-  ABSENT property compares `-eq` to `$false` — a silent false "not in maintenance" otherwise), the
-  shared `RunPreflightProcessAsync` launcher (used by TestConnectionAsync, InstallModuleAsync AND the
-  state read), `ParsePreflight`, the `WritePs51ScriptAsync` BOM-write helper, and the three stdout
-  markers below. **All 5.1 shell-outs strip `PSModulePath` AND write UTF-8-with-BOM** — see the two
-  gotchas above.
-- **Per-name resolver — identity verify, single-sourced** (`b67ed55`): one shared `ResolveFunctionScript`
-  (three PS functions) is spliced ONCE into both the set path (`Script`) and the state read (`StateScript`),
-  so they can never diverge on how an input name maps to a WUG device. Outcome is exactly one of
-  **MatchedByName / MatchedByIp / NoDevice / Ambiguous / LookupError**. Matching is a normalized,
-  case-insensitive, DOT-BOUNDARY compare (`Test-WugNameMatch`) against the device's `name`/`hostName`/
-  `displayName` (each PRESENCE-guarded — a missing property can neither satisfy nor throw) plus a
-  `networkAddress`-equality clause for IP-literal inputs. It REPLACES the dead `displayName -eq $srv` verify
-  (null for FQDN-registered fleets) and the de-facto `$results[0]` pick; the dot boundary rejects prefix
-  collisions ("APVSQL1" must NOT match "APVSQL10.domain"). Control flow: name search (error-aware) → exact
-  name match → DNS→IP fall-through → exact `networkAddress` match, with NO silent `[0]`. **An errored search
-  is a `LookupError` (state UNKNOWN), NEVER a false "no matching device"** — only a clean-empty answer
-  everywhere is `NoDevice`, so a struggling server can't masquerade as a fleet of ghosts. On the set path a
-  `LookupError`/`Ambiguous` box is excluded from "unmatched" and folds into a FAIL-SAFE honesty report
-  (over-reports failure, since re-setting maintenance is idempotent — the one forbidden direction is a
-  silent "set" for a box never cleanly looked up).
-- **POOLED state read (the speed fix)** — a runspace pool INSIDE `StateResolveLoopScript` (composed into
-  `StateScript` after `$resolverText` + `$workerTail`). Concurrency comes from `VIVRE_WUG_CONCURRENCY`
-  (absent = 1 = the original, untouched sequential branch); the operator sets it in **Settings ▸ "WhatsUp
-  Gold state check — simultaneous lookups"** (`AppSettings.WugStateConcurrency`, default **2**, clamp
-  **1–4**), read at call time by `WorkspaceViewModel.GetWugMaintenanceStateAsync` and handed to
-  `GetMaintenanceStateAsync`, which `ClampConcurrency`es it into `[1, StateReadMaxConcurrency]`; the in-script
-  drain re-clamps 1–4 (defence in depth, so a hand-edited env var can't open an unbounded pool). The shared
-  `ResolveFunctionScript` is single-sourced via `$resolverText` — the sequential branch `Invoke-Expression`s
-  it into the main scope, each pooled worker EMBEDS the same text (never a second, forked resolver);
-  `Process-WugOutcome` (the outcome dispatch + tri-state read + `EmitDevice` + counters) is likewise shared,
-  and `__WUGDEV__` lines are written ONLY from the main drain thread (never a worker-thread DataAdded handler).
-  - **THE FOUR FAN-OUT TRAPS (named, all honoured):**
-    - **T1** — `[System.Net.ServicePointManager]::DefaultConnectionLimit = 32` is set BEFORE the first
-      request: .NET Framework defaults the per-host connection cap to **2** and the module never raises it,
-      silently throttling any pool otherwise.
-    - **T2** — connect **ONCE PER RUNSPACE** (the `if (-not $global:WUGBearerHeaders)` guard), never per
-      lookup; each worker reads server/user/pass from the process-global env and builds its OWN session —
-      the module's auth globals are NEVER shared across runspaces by reference (the headers dict isn't
-      thread-safe; sharing it produced garbage reads under load).
-    - **T3** — a **completion-order poll-drain** (emit each result as its handle completes), NOT
-      `WaitHandle.WaitAny` (64-handle cap) and NOT submission-order `EndInvoke` (head-of-line blocking would
-      starve stdout and trip the stall watchdog).
-    - **T4** — `PowerShell.Stop()` is cooperative and can't interrupt a blocked `Invoke-RestMethod`, so there
-      is deliberately NO per-lookup Stop plumbing here; the external C# stall watchdog + ceiling stay the
-      sole authority over a wedged run.
-  - **The cap — default 2, ceiling 4 — and WHY:** the live Gate 0 ramp measured the 1→2 halving as the whole
-    win; 2→4→8 stayed flat with per-lookup latency creeping UP (WUG serialises under load), so >4 is pure
-    extra load on the one box that monitors the whole fleet for no wall-time gain. Measured live: per-lookup
-    ~1.1s (1.0–1.7s); a 324-box run ≈ ~6.5 min sequential, ≈ ~3 min at N=2. **A bulk inventory prefetch was
-    measured and PERMANENTLY REJECTED** — one unfiltered pull took 426s for 1469 devices, SLOWER than the
-    per-name sequential lookups it was meant to beat (see `docs/vivre-backlog.md` ▸ DONE).
-  - **Per-lookup latency tally:** the script records each lookup's elapsed ms in completion order; the summary
-    carries `avgLookupMs` + `baselineLookupMs` (mean of the first up-to-5). When the average exceeds 2× the
-    baseline it APPENDS "WUG lookups slowed during the run…" to the run summary (plus "consider lowering the
-    concurrency setting" at N>1). The C# parser still ignores the two numeric fields — the appended error text
-    is the operator-visible signal.
-  - **Test seam `VIVRE_WUG_MODULE_OVERRIDE`** (test-only, NEVER set in production): rides the SAME
-    `$iss.ImportPSModule(<path>)` path with a lightweight COMMITTED fixture
-    (`Vivre.Core.Tests/Wug/Fixtures/WugStubModule.psm1`, copied to the test output) so the pool process tests
-    skip the real WhatsUpGoldPS ~8s-per-runspace cold-load; the ONE real-module smoke test omits the override
-    so the production `$iss.ImportPSModule('WhatsUpGoldPS')` branch fires and is asserted per worker runspace.
-- **Three stdout markers, distinct ON PURPOSE** (never overload one for another):
-  - `__WUGP__` (`ProgressMarker`) = a live step line → the activity log; **set path (`RunAsync`) only**.
-  - `__WUGDEV__` (`DeviceMarker`, internal) = one per-device state result, streamed by `StateScript`'s
-    `EmitDevice` AS each name resolves (matched and unmatched alike). Each line is its own
-    `ConvertTo-Json` object, so 5.1 escapes non-ASCII to `\uXXXX` — the payload is pure ASCII on the wire,
-    immune to the OEM code page of redirected stdout (never switch to a raw delimited format).
-    `RunPreflightProcessAsync` routes these OUT of the summary buffer and hands each to the caller's
-    `onDeviceLine` (marker stripped) — even when `onDeviceLine` is null, so the summary parse can never
-    mistake a device line for the result line.
-  - `__WUGRESULT__` (const `PreflightResultMarker`) = the final authoritative `{ ok, devices[], unmatched[],
-    error }` summary, emitted by both the pre-flight and the state `Emit`.
-- **Maintenance-detail enrichment (reason / who / since — 2026-07-20):** in-maintenance rows ONLY get two
-  read-only REST GETs (`/devices/{id}/config/polling` → `manual.reason`/`manual.user`;
-  `/devices/{id}/status` → `lastChangeUtc` = the entry time, operator-verified to the second against the
-  timeline's "Manual Maintenance - Start" row). **The cost contract is load-bearing:** a machine NOT in
-  maintenance costs exactly what it cost before (asserted by a process test counting the stub REST calls).
-  Detail fields ride the SAME `__WUGDEV__`/summary entries as optional `reason`/`user`/`sinceUtc` strings;
-  the ONE reader (`ReadDetail`, shared by `AddDevice` + `ParseDeviceLine`) keeps them lockstep, and a
-  malformed detail can only DROP display text — never touch the tri-state. Every enrichment failure fails
-  OPEN (plain "in maintenance") and is COUNTED into a "maintenance-reason lookup failed for N" summary
-  note — degraded detail is said out loud, never silent. Enrichment runs ONLY on the emitting thread
-  (sequential loop / pooled drain), so `EmitDevice` stays single-writer; each GET is capped at 15s, inside
-  the 90s stall window. The raw `Invoke-RestMethod` calls ride a COMPILED trust-all cert policy installed
-  in the HEAD (step 5): the module's scriptblock callback dies on a COLD TLS handshake (operator-reproduced
-  in a plain console), which is exactly where the pooled branch's first main-scope GET lands; install
-  failure is non-fatal (fields drop, note appears). Row text composes via
-  `WugRowText.ComposeInMaintenance` (ALWAYS prefixed with the exact plain `InMaintenance` string — the
-  prefix invariant is test-locked) and the activity log gets a `ComposeMaintenanceDigest` line naming
-  every in-maintenance machine (capped at 6 + "and N more").
-- **Marker-REQUIRED summary parse (`ParseMaintenanceState`) — a false-green guard:** the state parse now
-  REQUIRES the `__WUGRESULT__` marker; the old last-braced-line fallback was DELETED. With per-device
-  `__WUGDEV__` JSON lines on the wire, that fallback could parse a trailing device line AS the summary
-  (no `devices[]`, no `error`) → a fabricated clean-but-empty read, a quiet false green. No marker → the
-  fail-open no-result path (unknown-with-error, never "not in maintenance"). `ParseDeviceLine` is kept in
-  LOCKSTEP with `AddDevice` (a divergent per-line parser is the likeliest re-entry for the fabricated
-  "not in maintenance" bug). **`ParsePreflight` KEEPS its last-braced-line fallback** — it has no streamed
-  device lines, so the ambiguity can't arise there.
-- **Timeouts — the old `min(60+5·N, 600s)` total cap is GONE**, replaced by two constants:
-  - `StateReadStallTimeout` (90s) — a stall watchdog that resets ONLY on a `__WUGDEV__` line (chatter on
-    other stdout does NOT reset it) and kills a wedged run, naming the last machine that resolved
-    (`ComposeAbortError` → "Stalled after X — 47 of 324 checked (no result for 90s)"); surfaced as
-    `WugStallException` (derives from `TimeoutException`).
-  - `StateReadCeiling` (45min) — an absolute runaway backstop, sized far above a healthy 324-box run
-    (measured ~1.1s/lookup: ~6.5min sequential, ~3min at N=2); the stall timer, not this, is what catches hangs.
-- **Aborted read (stall / ceiling / stop) KEEPS the per-device results already streamed** — the partial
-  map is snapshot-COPIED under a lock against stragglers still draining from the killed child's async
-  output pump (a cross-thread write-during-read on the live `Dictionary` is this codebase's cardinal crash
-  class). Unreached rows are stamped the NEW distinct state `WugRowText.NotChecked` = "WhatsUp Gold: not
-  checked (read stopped)" — deliberately NOT "unknown" (WUG answered, no definite state) and NOT "no
-  matching device" (a name miss). The old "state unknown — {error}" hybrid is gone. All six row strings
-  live in **`Vivre.Core/Wug/WugRowText.cs`**, test-locked.
-- **Kill-on-cancel (BEHAVIOR CHANGE):** a caller-token cancel now KILLS the `powershell.exe` child in
-  BOTH launchers — `RunPreflightProcessAsync` (TestConnectionAsync, InstallModuleAsync, the state read)
-  AND the set path's `RunAsync` (via `RunCoreAsync`). Before, a cancelled maintenance SET kept running and
-  could still flip WUG maintenance after the UI said "cancelled" (operator-approved, 2026-07-14).
-  Regression-tested (cancel → child killed → no further mutation).
-- **Result-parse contract (the fix that made errors truthful):** "module missing" is reported ONLY on
-  an explicit signal from the script. A timeout / empty output / unparseable output now surfaces the
-  **real connection error** instead of a false reinstall prompt. The result line is tagged
-  `__WUGRESULT__` so cmdlet chatter can't corrupt the parse, and the script has a backstop trap so a
-  crash still emits a structured result (carrying `modulePresent=true`). Validated under real 5.1:
-  success → "Connected ✓"; bad creds → "username or password was rejected"; unreachable → "Couldn't
-  reach WhatsUp Gold at …"; crash → "Pre-flight error …" — every non-success keeps the module marked
-  present.
-- `MaintenanceWindow.xaml`(.cs) — the enter/exit dialog. **Test connection** + (hidden-until-needed)
-  **Install module** buttons. "Set maintenance" runs the pre-flight FIRST and keeps the dialog OPEN
-  until it passes (module present + server reachable + creds valid); only on pass does it close +
-  fire the real per-device set fire-and-forget. Reuses the existing `StatusText` line for inline
-  messages. The **Reason** field shows only in Enter mode (`e2946de` — a reason is only meaningful
-  when entering; retained text restores on switch-back).
-- `WugStateWindow.xaml`(.cs) — the right-click **Check WhatsUp Gold state…** dialog (`9569cec`; the
-  item appears on BOTH the Health and Patching grids via the shared context menu). Server is
-  **read-only, pre-filled from Settings** (no save-back), username/password entered per use; same
-  pre-flight gate + Install-module affordance as the maintenance dialog; on pass it fires
-  `WorkspaceViewModel.CheckWugStateAsync` fire-and-forget and closes.
-- **`CheckWugStateAsync` wiring (the streaming per-row writer):** runs as a PASSIVE operation
-  (`BeginOperation(..., registerRows: false)`) so the toolbar Stop LIGHTS (IsBusy) and cancels it — killing
-  the child — WITHOUT blocking other sweeps. Per-row writes stream through a `Progress<WugDeviceState>`
-  **constructed ON THE UI THREAD** (the dispatcher capture IS the thread-safety mechanism — never write
-  `CommandResult` from the stdout reader thread). The stream is the SOLE per-row writer; a post-exit
-  reconcile stamps ONLY rows that saw no line (order-tolerant — a straggler landing later overwrites with
-  the real result). A generation guard makes a second check supersede the first (old run cancelled + child
-  killed, its still-`Pending` rows stamped `NotChecked`). Stop / supersede logs "Stopped — N of M checked"
-  (`ComposeStoppedMessage`, test-locked) so an aborted run is never indistinguishable from a completed one.
-  Results land per row in the Command result column: in maintenance / not in maintenance / no matching device
-  (by IP) / state unknown / **not checked (read stopped)**, + one activity-log summary. **No
-  `ConfigureAwait(false)` in `CheckWugStateAsync`** — the dispatcher continuation keeps the post-await
-  reconcile + per-row writes UI-thread-safe (same mechanism as `SetWugMaintenanceAsync`); that note STILL
-  stands.
-- Callers: `WorkspaceViewModel.SetWugMaintenanceAsync` + `CheckWugStateAsync` (over the
-  `GetWugMaintenanceStateAsync` wrapper) + `TestWugConnectionAsync` / `InstallWugModuleAsync`.
-- **Credential invariant (DO NOT deviate):** the WUG password is a `SecureString` →
-  `new NetworkCredential(string.Empty, pw).Password` plaintext → handed to the child **only** via the
-  `VIVRE_WUG_PASS` environment variable — never on the command line, to disk, or in a log.
-- **SSL:** `Connect-WUGServer … -Protocol https -IgnoreSSLErrors` (self-signed WUG cert) — the
-  pre-flight connect-test must match the real run exactly, or it passes/fails differently.
-- **Persistence:** only the server address persists (`SharedSettings.WugServer`, the machine-wide shared
-  store); credentials are NEVER saved.
-- **Live-confirmed end to end** (10.70.25.111): Test connection → "Connected ✓"; Set → row narrates
-  "WhatsUp Gold: maintenance ON/OFF"; and the device shows **Maintenance** state in WUG's own console.
+- `source/Vivre.Core/Wug/WugMaintenance.cs` — ALL WUG logic: talks to WUG via the **WhatsUpGoldPS**
+  module (not raw REST), shelled out to **Windows PowerShell 5.1**; runs on the operator's workstation
+  ONLY (no target box is contacted), **no reboot path**. Holds the set path (`RunAsync` → internal
+  `RunCoreAsync` seam), pre-flight (`TestConnectionAsync` / `InstallModuleAsync`), the streaming state
+  read (`GetMaintenanceStateAsync` + `StateScript`), the shared launcher `RunPreflightProcessAsync`, the
+  BOM helper `WritePs51ScriptAsync`, and the three stdout markers. All 5.1 shell-outs strip
+  `PSModulePath` + write UTF-8-with-BOM (gotchas above).
+- **Resolver — single-sourced (`ResolveFunctionScript`, spliced into BOTH set and state paths; never
+  fork it):** outcome is exactly MatchedByName / MatchedByIp / NoDevice / Ambiguous / LookupError. Name
+  match is normalized, case-insensitive, DOT-BOUNDARY ("APVSQL1" ≠ "APVSQL10.domain"), presence-guarded
+  over name/hostName/displayName. **The IP fall-through classifies by the COUNT of EXACT
+  `networkAddress` equality matches** (WUG's SearchValue is a SUBSTRING search — ".10" also returns
+  ".101"/".109"): **1 exact → MatchedByIp; 0 exact (rows returned, none equal) → NoDevice ("no matching
+  device"); 2+ exact → Ambiguous ("unknown")**. **An errored search is LookupError (state UNKNOWN),
+  NEVER a false NoDevice** — only a clean-empty answer everywhere is NoDevice. Locked by
+  `WugResolverProcessTests`.
+- **SSL trust — the cold-start mass-unknown fix; invariants locked by `WugSslTrustTests`:**
+  - The module's `Get-WUGAPIResponse` `begin{}` **re-arms a scriptblock cert callback on every API call**
+    whenever it finds the callback null (gated on the module's ignore-SSL flag).
+  - A scriptblock callback **dies on I/O-completion-port threads** ("no Runspace available") during cold
+    TLS handshakes → mass LookupError → "state unknown", self-healing on the warm rerun.
+  - On .NET Framework a **non-null callback WINS** — `CertificatePolicy` is ignored while one is set.
+  - Fix invariants: **`-IgnoreSSLErrors` at ZERO connect sites** (pre-flight included — it must match the
+    real run; the flag gone gates off every module callback site); a **compiled, runspace-free
+    `RemoteCertificateValidationCallback`** (`VivreWugCertValidator`) installed at script HEAD **before
+    the first connect**; its `Add-Type -ReferencedAssemblies` **resolved at runtime from the live types'
+    `Assembly.Location`** (X509Chain is type-forwarded on some boxes — never a guessed assembly name);
+    trust is **non-optional** — a failed install hard-fails "Couldn't establish a trusted connection to
+    WhatsUp Gold", never a silent continue.
+- **Pooled state read:** concurrency from Settings (`AppSettings.WugStateConcurrency`, default **2**,
+  clamp **1–4** in C# AND re-clamped in-script; env absent = 1 = sequential). Cap rationale (measured):
+  1→2 halves wall time, 2→4→8 flat (~1.1s/lookup; WUG serialises under load); a bulk inventory prefetch
+  measured SLOWER (426s / 1469 devices) and is permanently rejected. **The four fan-out traps (all
+  honoured):** **T1** `ServicePointManager::DefaultConnectionLimit = 32` before the first request (.NET
+  Framework's per-host default of 2 silently throttles any pool); **T2** connect ONCE per runspace with
+  its OWN session — never share the module's auth globals across runspaces (the headers dict is not
+  thread-safe); **T3** completion-order poll-drain — not `WaitHandle.WaitAny` (64-handle cap), not
+  submission-order `EndInvoke` (head-of-line blocking starves stdout and trips the stall watchdog);
+  **T4** deliberately NO per-lookup `Stop()` (cooperative — can't interrupt a blocked request); the C#
+  stall watchdog + ceiling are the sole authority over a wedged run. Test seam
+  `VIVRE_WUG_MODULE_OVERRIDE` (never set in production) carries the committed stub module
+  (`Vivre.Core.Tests/Wug/Fixtures/WugStubModule.psm1`) through the SAME `ImportPSModule` path.
+- **Three stdout markers, distinct ON PURPOSE:** `__WUGP__` progress → activity log (set path only) ·
+  `__WUGDEV__` one JSON object per device as it resolves (routed OUT of the summary buffer; JSON-per-line
+  keeps the wire pure ASCII — never switch to a raw delimited format) · `__WUGRESULT__` the authoritative
+  summary. **`ParseMaintenanceState` REQUIRES the marker** (the last-braced-line fallback was DELETED —
+  it could parse a trailing device line as a clean-but-empty summary = a quiet false green);
+  `ParsePreflight` keeps its fallback (no device lines exist there). "Module missing" is reported ONLY on
+  an explicit script signal — a timeout/empty/unparseable output surfaces the real error, never a false
+  reinstall prompt.
+- **Timeouts + aborts:** `StateReadStallTimeout` **90s** — resets ONLY on a `__WUGDEV__` line, kills a
+  wedged run naming the last machine ("Stalled after X — 47 of 324 checked"); `StateReadCeiling`
+  **45min** — runaway backstop. An aborted read KEEPS the already-streamed results (snapshot-copied
+  under a lock against stragglers from the killed child — the live-Dictionary write-during-read is this
+  codebase's cardinal crash class); unreached rows read `WugRowText.NotChecked` ("not checked (read
+  stopped)") — deliberately NOT "unknown" and NOT "no matching device". **Kill-on-cancel:** a caller
+  token cancel KILLS the `powershell.exe` child in BOTH launchers (a cancelled SET must never still flip
+  maintenance afterward). All row strings live in `Vivre.Core/Wug/WugRowText.cs`, test-locked.
+- **Detail enrichment (reason / who / since):** in-maintenance rows ONLY — **the cost contract is
+  load-bearing** (a not-in-maintenance box costs exactly what it cost before; test-locked by counting
+  stub REST calls). Two 15s-capped GETs on the emitting thread; every failure fails OPEN (plain "in
+  maintenance") and is COUNTED into the "maintenance-reason lookup failed for N" summary note — degraded
+  detail is said out loud, never silent, never a state change.
+- **Dialogs + wiring:** `MaintenanceWindow` — pre-flight gate before the set fires; Reason field only in
+  Enter mode. `WugStateWindow` — server read-only from Settings; same gate; fires
+  `WorkspaceViewModel.CheckWugStateAsync`. `CheckWugStateAsync` — PASSIVE op (`registerRows: false`, so
+  Stop lights and cancels it, killing the child); per-row writes ONLY via a `Progress<>` constructed on
+  the UI thread (the dispatcher capture IS the thread-safety — never write `CommandResult` from the
+  stdout reader thread); post-exit reconcile stamps only rows that saw no line; a generation guard makes
+  a second check supersede the first; abort logs "Stopped — N of M checked" (test-locked). **No
+  `ConfigureAwait(false)` in `CheckWugStateAsync`** — the dispatcher continuation keeps the reconcile
+  UI-thread-safe.
+- **Credential invariant (DO NOT deviate):** the WUG password is a `SecureString` → plaintext only via
+  `new NetworkCredential(...).Password` → handed to the child ONLY via the `VIVRE_WUG_PASS` environment
+  variable — never on a command line, to disk, or in a log. Only the server address persists
+  (`SharedSettings.WugServer`); credentials are NEVER saved.
 
 ## Software check (installed-software column) — WinRM + DCOM fallback
 - `source/Vivre.Core/Software/SoftwareProbe.cs` — the WinRM-first probe (registry Uninstall hives via
@@ -502,8 +374,8 @@ Extracted UI/IO-free predicates, each unit-tested:
   `ComputerPatchStateTests`, `ScopeToggleRuleTests`, `RebootVerifyMenuTests`).
 
 ## Docs in repo
-- **Root:** `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
-- **`docs/`:** `windows-patching-lane.md` (the WUA / patching lane), `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`, `vivre-rdp-scaling-and-fcm-findings.md`, `cold-start-freeze-and-threadpool-findings.md`, `freeze-hunting-playbook.md` (the UI-freeze hunting instrument + protocol), `archive/vivre-audit-findings.md` (the 2026-07-01 five-lens audit — point-in-time, never edited; live status in the backlog).
+
+- The doc inventory (every doc, one-line purpose, read-when cue) lives in **docs/README.md** — the single map.
 - **`tools/`:** `Get-VivreFreezeLog.ps1` — the harvester for the freeze/disconnect instrument log lines (see docs/freeze-hunting-playbook.md ▸ Tools); `RemoteRun` — the dev console for exercising remote PowerShell.
 - Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / windows-patching-lane.md / this file.
 
