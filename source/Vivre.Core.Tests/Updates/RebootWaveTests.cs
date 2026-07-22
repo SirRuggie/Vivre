@@ -19,13 +19,16 @@ public class RebootWaveTests
     private const int TargetUbr = 9234;
     private const int OldUbr = 9060;
 
-    private static RebootWaveOptions Fast(int goOfflineMs = 2000, int ceilingMs = 5000, int hardCapMs = 10000) =>
+    private static RebootWaveOptions Fast(int goOfflineMs = 2000, int ceilingMs = 5000, int hardCapMs = 10000, int settleMs = 300) =>
         new(TimeSpan.FromMilliseconds(goOfflineMs), TimeSpan.FromMilliseconds(ceilingMs),
             TimeSpan.FromMilliseconds(5), TimeSpan.FromMilliseconds(hardCapMs))
         {
             // Generous by default so existing tests never accidentally trip the reachable-but-unconfirmed
             // bound; the Unverified/flap tests override it small per-test via a `with` copy.
             PostReturnConfirmWindow = TimeSpan.FromSeconds(5),
+            // Pre-reboot servicing/couldn't-confirm settle poll bound. Irrelevant to the ready-on-first-check
+            // tests (they never enter the poll); the settle tests pass a small/large value explicitly.
+            ServicingSettleWindow = TimeSpan.FromMilliseconds(settleMs),
         };
 
     [Fact]
@@ -57,18 +60,209 @@ public class RebootWaveTests
         Assert.True(reboot.Forced); // escalated to complete the operator-ordered reboot
     }
 
+    // ── Pre-reboot readiness settle poll ─────────────────────────────────────────
+    // The old pre-reboot hard-fail (a not-ready read → immediate Error) was replaced by the approved design:
+    // a not-ready box is WAITED on (never rebooted) and resolves to NothingToCommit (nothing staged) or a
+    // needs-action Unverified (never settled). The "never touched the box" cardinal is preserved + strengthened
+    // across the tests below (c/d/e/g).
+
     [Fact]
-    public async Task Not_reboot_ready_fails_without_rebooting()
+    public async Task Servicing_active_first_reading_polls_and_does_not_reboot_immediately()
     {
-        var box = new FakeBox { Ready = false };
+        // (a) A "servicing still running" first read must NOT hard-fail and must NOT reboot on the first read;
+        // the wave WAITS (a Rebooting "waiting for servicing" beat) and proceeds only once a fresh Ready arrives.
+        var box = new FakeBox
+        {
+            GracefulTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr,
+            ReadinessScript =
+            [
+                new RebootReadiness(false, "TrustedInstaller is still Running (online servicing in progress)", RebootReadinessKind.ServicingActive),
+                new RebootReadiness(false, "TrustedInstaller is still Running (online servicing in progress)", RebootReadinessKind.ServicingActive),
+                new RebootReadiness(true, "ready", RebootReadinessKind.Ready),
+            ],
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        var progress = new RecProgress();
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(), readiness, confirmation, progress, CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);                    // eventually proceeded and verified
+        Assert.True(box.ReadinessChecks >= 3);                          // it re-checked (polled), not a one-shot fail
+        Assert.Contains(progress.Reports, r => r.Phase == PatchPhase.Rebooting && r.Message.Contains("Waiting for servicing"));
+        Assert.True(reboot.Graceful);
+        Assert.False(reboot.Forced);
+    }
+
+    [Fact]
+    public async Task Servicing_active_then_ready_proceeds_and_escalation_still_works()
+    {
+        // (b) After the settle resolves to Ready, the DOWNSTREAM graceful→forced escalation is intact: a
+        // graceful reboot that won't take is still completed with a forced one (reuses the escalation shape).
+        var box = new FakeBox
+        {
+            GracefulTakesOffline = false, ForcedTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr,
+            ReadinessScript =
+            [
+                new RebootReadiness(false, "TiWorker.exe is still running", RebootReadinessKind.ServicingActive),
+                new RebootReadiness(true, "ready", RebootReadinessKind.Ready),
+            ],
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.True(reboot.Graceful);
+        Assert.True(reboot.Forced); // settle didn't disturb the escalation path
+    }
+
+    [Fact]
+    public async Task Servicing_active_that_never_settles_is_unverified_without_rebooting()
+    {
+        // (c) Replaces the old pre-reboot hard-fail: a box whose servicing never finishes is no longer failed
+        // outright — the wave WAITS (never rebooting), and on settle-window expiry returns a needs-action
+        // Unverified terminal that points the operator at Force reboot. Cardinal: the box is NEVER touched.
+        var box = new FakeBox
+        {
+            ReadinessScript = [new RebootReadiness(false, "TrustedInstaller is still Running (online servicing in progress)", RebootReadinessKind.ServicingActive)],
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(settleMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase);
+        Assert.Contains("not rebooted", result.Message);
+        Assert.Contains("Force reboot", result.Message);
+        Assert.False(reboot.Graceful);
+        Assert.False(reboot.Forced); // cardinal: never touched the box
+    }
+
+    [Fact]
+    public async Task Stop_during_the_settle_poll_propagates_cancellation_and_never_reboots()
+    {
+        // (d) An operator Stop during the settle wait → OperationCanceledException propagates; box never rebooted.
+        using var cts = new CancellationTokenSource();
+        var box = new FakeBox
+        {
+            ReadinessScript = [new RebootReadiness(false, "TiWorker.exe is still running", RebootReadinessKind.ServicingActive)],
+            CancelSource = cts,
+            CancelAfterReadinessChecks = 2, // Stop lands on the 2nd readiness read (mid-poll)
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        // Large settle window so the CANCEL — not the window — is what ends the poll. ThrowsAny: Task.Delay
+        // surfaces the derived TaskCanceledException, which must still satisfy "OperationCanceledException propagates".
+        RebootWaveOptions opts = Fast(settleMs: 10000);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), cts.Token));
+
+        Assert.False(reboot.Graceful);
+        Assert.False(reboot.Forced);
+    }
+
+    [Fact]
+    public async Task Cant_confirm_readings_do_not_count_as_cleared_and_end_unverified()
+    {
+        // (e) A CantConfirm read (probe threw / denied / unreadable) is NOT evidence the box cleared — the wave
+        // keeps waiting, never proceeds. Sequence servicing → couldn't-confirm → couldn't-confirm → expiry →
+        // the "couldn't confirm reboot-readiness" Unverified variant; the box is never rebooted.
+        var box = new FakeBox
+        {
+            ReadinessScript =
+            [
+                new RebootReadiness(false, "TrustedInstaller is still Running (online servicing in progress)", RebootReadinessKind.ServicingActive),
+                new RebootReadiness(false, "couldn't reach BOX to check reboot-readiness", RebootReadinessKind.CantConfirm),
+                new RebootReadiness(false, "couldn't reach BOX to check reboot-readiness", RebootReadinessKind.CantConfirm),
+            ],
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(settleMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase);
+        Assert.Contains("couldn't confirm", result.Message);
+        Assert.Contains("not rebooted", result.Message);
+        Assert.False(reboot.Graceful);
+        Assert.False(reboot.Forced);
+    }
+
+    [Fact]
+    public async Task The_settle_poll_rechecks_readiness_each_iteration()
+    {
+        // (f) The wave's job here is a FRESH readiness read per iteration (the full-triple property is the
+        // probe's, covered by the rv/kind tests). A held not-ready reading + a small window ⇒ several re-checks.
+        var box = new FakeBox
+        {
+            ReadinessScript = [new RebootReadiness(false, "TrustedInstaller is still Running (online servicing in progress)", RebootReadinessKind.ServicingActive)],
+        };
+        var (wave, _, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(settleMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase);
+        Assert.True(box.ReadinessChecks >= 3, $"expected multiple re-checks, saw {box.ReadinessChecks}");
+    }
+
+    [Fact]
+    public async Task Nothing_staged_on_the_first_check_is_an_immediate_nothing_to_commit_never_rebooting()
+    {
+        // (g.1) NothingStaged on the FIRST check → immediate NothingToCommit terminal, no poll delay, never rebooted.
+        var box = new FakeBox
+        {
+            ReadinessScript = [new RebootReadiness(false, "no pending reboot — nothing is staged", RebootReadinessKind.NothingStaged)],
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        // Large settle window: if the wave wrongly polled instead of returning at once, this would take seconds.
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(settleMs: 10000), readiness, confirmation, new RecProgress(), CancellationToken.None);
+        sw.Stop();
+
+        Assert.Equal(PatchPhase.NothingToCommit, result.Phase);
+        Assert.Contains("nothing staged to commit", result.Message);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2), $"should return immediately, took {sw.Elapsed}"); // « the 10s window
+        Assert.False(reboot.Graceful);
+        Assert.False(reboot.Forced);
+        Assert.Equal(1, box.ReadinessChecks); // one read, no poll
+    }
+
+    [Fact]
+    public async Task Nothing_staged_mid_poll_ends_nothing_to_commit_never_rebooting()
+    {
+        // (g.2) Servicing finishes leaving NO pending reboot (self-rebooted, or nothing was ever staged): the
+        // mid-poll NothingStaged read ends the wave with the calm NothingToCommit terminal — not a reboot.
+        var box = new FakeBox
+        {
+            ReadinessScript =
+            [
+                new RebootReadiness(false, "TrustedInstaller is still Running (online servicing in progress)", RebootReadinessKind.ServicingActive),
+                new RebootReadiness(false, "no pending reboot — nothing is staged", RebootReadinessKind.NothingStaged),
+            ],
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(settleMs: 10000), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.NothingToCommit, result.Phase);
+        Assert.Contains("nothing to commit", result.Message);
+        Assert.False(reboot.Graceful);
+        Assert.False(reboot.Forced);
+    }
+
+    [Fact]
+    public async Task Ready_on_the_first_check_proceeds_straight_to_graceful_with_no_settle_poll()
+    {
+        // (h) Regression lock: the common case (already reboot-ready) is unchanged — one readiness read, no
+        // settle poll, straight to the graceful reboot and a green verify.
+        var box = new FakeBox { GracefulTakesOffline = true, ComesBackAfterChecks = 2, UbrAfterReturn = TargetUbr };
         var (wave, reboot, readiness, confirmation) = Build(box);
 
         HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(), readiness, confirmation, new RecProgress(), CancellationToken.None);
 
-        Assert.Equal(PatchPhase.Error, result.Phase);
-        Assert.Contains("reboot-ready", result.Message);
-        Assert.False(reboot.Graceful);
-        Assert.False(reboot.Forced); // never touched the box
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.True(reboot.Graceful);
+        Assert.False(reboot.Forced);
+        Assert.Equal(1, box.ReadinessChecks); // exactly one readiness read — no poll
     }
 
     [Fact]
@@ -430,6 +624,12 @@ public class RebootWaveTests
         public int FlapEpisodes;                         // unconfirmed return→drop episodes before the final confirmed return
         public int FlapOfflineChecks = 1;                // offline checks between episodes
         public int FlapReturns;                          // unconfirmed/confirmed returns so far
+
+        // --- Pre-reboot readiness settle poll (new) ---
+        public List<RebootReadiness>? ReadinessScript;   // scripted CheckAsync results in order; HOLDS the last after exhaustion
+        public int ReadinessChecks;                       // how many times FakeReadiness.CheckAsync ran (poll vs one-shot proof)
+        public CancellationTokenSource? CancelSource;     // an operator Stop to fire mid-settle-poll
+        public int CancelAfterReadinessChecks;            // ...once this many readiness reads have happened
     }
 
     /// <summary>Models the target's own clock: LocalDateTime − LastBootUpTime is the uptime, LARGE (and slowly
@@ -483,10 +683,29 @@ public class RebootWaveTests
 
     private sealed class FakeReadiness(FakeBox box) : IRebootReadinessProbe
     {
-        public Task<RebootReadiness> CheckAsync(string host, CancellationToken cancellationToken) =>
-            Task.FromResult(box.Ready
-                ? new RebootReadiness(true, "ready")
-                : new RebootReadiness(false, "TrustedInstaller still running"));
+        public Task<RebootReadiness> CheckAsync(string host, CancellationToken cancellationToken)
+        {
+            box.ReadinessChecks++;
+
+            // Model an operator Stop landing mid-poll: cancel the shared CTS once enough reads have happened,
+            // so the wave's next Task.Delay(PollInterval, token) throws (cancellation "during the wait").
+            if (box.CancelSource is { } cts && box.CancelAfterReadinessChecks > 0 && box.ReadinessChecks >= box.CancelAfterReadinessChecks)
+            {
+                cts.Cancel();
+            }
+
+            if (box.ReadinessScript is { Count: > 0 } script)
+            {
+                int i = Math.Min(box.ReadinessChecks - 1, script.Count - 1); // hold the last reading after the script is exhausted
+                return Task.FromResult(script[i]);
+            }
+
+            // Default (no script): the simple ready/not-ready bool. A not-ready default models servicing still
+            // running (ServicingActive) — matching the harness's single not-ready reason.
+            return Task.FromResult(box.Ready
+                ? new RebootReadiness(true, "ready", RebootReadinessKind.Ready)
+                : new RebootReadiness(false, "TrustedInstaller still running", RebootReadinessKind.ServicingActive));
+        }
     }
 
     private sealed class FakeReach(FakeBox box) : IReachabilityProbe

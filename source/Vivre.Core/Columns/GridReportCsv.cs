@@ -89,6 +89,9 @@ public static class GridReportCsv
                 {
                     "Cleaning" => "Cleaning up",
                     "Staging" => "Staging",
+                    // NothingToCommit reduces to Idle (or amber RebootPending), so the base map would read
+                    // "Idle"/"Reboot pending" — this override keeps the CSV matching the grid's distinct chip.
+                    "NothingToCommit" => "Nothing to commit",
                     _ => PatchStateLabels.For(c.PatchState),
                 },
             },

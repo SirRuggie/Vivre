@@ -369,6 +369,11 @@ public partial class Computer : ObservableObject
             // Couldn't confirm/rescan after a reboot: neutral "Unverified" (never green). Mirrors Done's
             // pending-guard so a later monitor probe finding a genuine pending reboot upgrades it to amber.
             PatchPhase.Unverified => pending ? PatchState.RebootPending : PatchState.Unverified,
+            // Nothing staged/pending to commit (Reboot Wave found no CBS RebootPending): neutral grey Idle —
+            // never red, never green. The distinct "Nothing to commit" chip label comes from the UpdatePhase
+            // string (the Staging/Cleaning/Unreachable pattern). Amber wins only if a reboot is independently
+            // known pending.
+            PatchPhase.NothingToCommit => pending ? PatchState.RebootPending : PatchState.Idle,
             PatchPhase.Available => pending ? PatchState.RebootPending : PatchState.Available,
             _ => pending ? PatchState.RebootPending : PatchState.Idle,
         };

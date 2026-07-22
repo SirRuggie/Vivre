@@ -47,6 +47,12 @@ public class ComputerPatchStateTests
     // flag's exact value (a deferral always implies a pending reboot).
     [InlineData("Deferred", true, PatchState.RebootPending)]
     [InlineData("Deferred", null, PatchState.RebootPending)]
+    // NothingToCommit (Reboot Wave found no CBS RebootPending — nothing staged to commit): neutral grey Idle,
+    // never red and never green "up to date" (it doesn't prove currency). Amber only if a reboot is
+    // independently known pending. The distinct "Nothing to commit" chip label comes from the UpdatePhase string.
+    [InlineData("NothingToCommit", false, PatchState.Idle)]
+    [InlineData("NothingToCommit", null, PatchState.Idle)]
+    [InlineData("NothingToCommit", true, PatchState.RebootPending)]
     public void Derives_expected_state(string? phase, bool? rebootRequired, PatchState expected)
     {
         var c = new Computer("HOST") { UpdatePhase = phase, RebootRequired = rebootRequired };

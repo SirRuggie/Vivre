@@ -6,8 +6,12 @@ namespace Vivre.Core.Updates;
 /// The night step of the 2016 LCU lane: reboot a staged box and watch it commit. Per-box flow, built to
 /// the rules locked with the operator:
 /// <list type="number">
-///   <item>Re-check readiness in the instant before rebooting (TrustedInstaller stopped + RebootPending) —
-///   reboot only when the online phase is genuinely done, so we never hit the 2-hour Stopping hang.</item>
+///   <item>Re-check readiness in the instant before rebooting (TrustedInstaller stopped + RebootPending):
+///   reboot only when the online phase is genuinely done, so we never hit the 2-hour Stopping hang. A
+///   not-ready read no longer hard-fails — servicing-still-busy or unreadable (CantConfirm) readings are
+///   WAITED on with a bounded pre-reboot settle poll (proceeding the instant a fresh Ready arrives, giving
+///   up to a needs-action Unverified terminal on window-expiry), and a definitively "nothing staged" read
+///   stops calmly with a NothingToCommit terminal. NONE of these not-ready branches ever issues a reboot.</item>
 ///   <item>Reboot graceful first (let SQL/services flush); if the box won't drop off within the go-offline
 ///   window, escalate to a forced reboot to complete it. This escalation is scoped strictly: the wave only
 ///   runs on boxes the operator explicitly SELECTED and CONFIRMED, so the force is the tail of a reboot they
@@ -93,9 +97,55 @@ public sealed class RebootWave
         // 1) Re-check readiness right now — TI must already be stopped, or we'd reboot into the hang.
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Checking reboot-readiness…"));
         RebootReadiness ready = await readiness.CheckAsync(host, cancellationToken).ConfigureAwait(false);
+
+        // Not ready? The wave issues NO reboot in ANY of these branches until it reads a fresh positive Ready:
+        //   • NothingStaged  → a settled "nothing to commit" (CBS RebootPending definitively absent). Stop
+        //     calmly — no reboot, and NOT an error.
+        //   • ServicingActive / CantConfirm → a bounded pre-reboot SETTLE poll: re-check every PollInterval and
+        //     proceed the instant readiness reads Ready; on window-expiry return a needs-action terminal that
+        //     NEVER forces and NEVER reboots. (The only reboot-issuing lines remain the graceful/forced
+        //     IssueRebootAsync calls further below, reached ONLY on a positive Ready.)
+        if (!ready.IsReady && ready.Kind == RebootReadinessKind.NothingStaged)
+        {
+            var nothing = new HostPatchStatus(PatchPhase.NothingToCommit,
+                $"{host}: nothing staged to commit — no reboot needed ({ready.Reason}).");
+            progress.Report(nothing);
+            _trace?.Trace(host, "terminal (pre-reboot): nothing staged — no reboot needed");
+            return nothing;
+        }
+
         if (!ready.IsReady)
         {
-            return Fail(progress, $"{host} isn't reboot-ready — {ready.Reason}. Stage it (and let it finish) first.");
+            var settle = Stopwatch.StartNew();
+            while (!ready.IsReady)
+            {
+                if (settle.Elapsed >= options.ServicingSettleWindow)
+                {
+                    string m = ready.Kind == RebootReadinessKind.ServicingActive
+                        ? $"{host}: servicing still running after {settle.Elapsed.TotalMinutes:N0} min — not rebooted; use Force reboot to override, or re-run the wave when servicing finishes."
+                        : $"{host}: couldn't confirm reboot-readiness for {settle.Elapsed.TotalMinutes:N0} min ({ready.Reason}) — not rebooted.";
+                    var t = new HostPatchStatus(PatchPhase.Unverified, m);
+                    progress.Report(t);
+                    _trace?.Trace(host, $"terminal (pre-reboot settle): {ready.Kind} — window {options.ServicingSettleWindow} expired, not rebooted");
+                    return t;   // NO force. NO reboot. Needs-action terminal.
+                }
+
+                progress.Report(new HostPatchStatus(PatchPhase.Rebooting, ready.Kind == RebootReadinessKind.CantConfirm
+                    ? $"Waiting to reboot — couldn't re-check readiness ({ready.Reason}); retrying… ({settle.Elapsed.TotalMinutes:N0} min)"
+                    : $"Waiting for servicing to finish before rebooting — {settle.Elapsed.TotalMinutes:N0} min…"));
+                await Task.Delay(options.PollInterval, cancellationToken).ConfigureAwait(false);
+                ready = await readiness.CheckAsync(host, cancellationToken).ConfigureAwait(false);
+                if (!ready.IsReady && ready.Kind == RebootReadinessKind.NothingStaged)
+                {
+                    var t = new HostPatchStatus(PatchPhase.NothingToCommit,
+                        $"{host}: servicing finished without leaving a pending reboot (or the box already rebooted) — nothing to commit; not rebooted.");
+                    progress.Report(t);
+                    _trace?.Trace(host, "terminal (pre-reboot settle): nothing staged after servicing settled — not rebooted");
+                    return t;
+                }
+            }
+            // loop exits ONLY on ready.IsReady — a fresh Ready reading always wins, even if the window expired
+            // concurrently (the timeout branch runs only at the top of an iteration whose LAST reading was not-ready).
         }
 
         // Capture the pre-reboot baseline (e.g. LastBootUpTime) BEFORE issuing the reboot, so confirmation

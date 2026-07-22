@@ -16,5 +16,5 @@ public sealed class BasicReachabilityReadinessProbe : IRebootReadinessProbe
 {
     /// <inheritdoc/>
     public Task<RebootReadiness> CheckAsync(string host, CancellationToken cancellationToken) =>
-        Task.FromResult(new RebootReadiness(IsReady: true, "Ready (operator-ordered reboot)"));
+        Task.FromResult(new RebootReadiness(IsReady: true, "Ready (operator-ordered reboot)", RebootReadinessKind.Ready));
 }

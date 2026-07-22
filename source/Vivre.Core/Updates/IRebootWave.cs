@@ -26,9 +26,38 @@ public enum RebootDispatch
     AlreadyInProgress,
 }
 
+/// <summary>Why a box is (or isn't) reboot-ready — the discriminator the wave uses to decide whether to
+/// proceed, wait, or stop. Ordered from "go" through "never go".</summary>
+public enum RebootReadinessKind
+{
+    /// <summary>A positive, fully-read quiescent triple: TrustedInstaller stopped, TiWorker idle, AND a CBS
+    /// RebootPending key present. The ONLY verdict the wave proceeds to a graceful reboot on.</summary>
+    Ready,
+
+    /// <summary>Online servicing is PROVABLY still busy (TrustedInstaller not "Stopped", or TiWorker.exe
+    /// alive) — worth waiting for: rebooting now risks the 2-hour "Stopping" hang, so the wave polls until it
+    /// settles (a fresh <see cref="Ready"/>) or the settle window expires.</summary>
+    ServicingActive,
+
+    /// <summary>The CBS RebootPending key is DEFINITIVELY absent (a settled StdRegProv answer, ReturnValue 2)
+    /// — nothing is staged, so there is nothing to reboot for. A settled answer, not an error; the wave stops
+    /// calmly with a "nothing to commit" terminal.</summary>
+    NothingStaged,
+
+    /// <summary>The readiness read failed, was unreachable, or was unreadable (a query error / access-denied /
+    /// a null where a value was expected) — NOT evidence of anything. Fail-closed: the wave waits and
+    /// re-checks and NEVER proceeds to a reboot on this. The DEFAULT, so any un-migrated construction is
+    /// treated as "couldn't confirm", never as a green "go".</summary>
+    CantConfirm,
+}
+
 /// <summary>The pre-reboot readiness verdict: a box is safe to reboot only when its online servicing has
-/// finished (TrustedInstaller stopped) AND a reboot is actually queued (CBS RebootPending present).</summary>
-public sealed record RebootReadiness(bool IsReady, string Reason);
+/// finished (TrustedInstaller stopped) AND a reboot is actually queued (CBS RebootPending present). The
+/// <paramref name="Kind"/> discriminates WHY when <paramref name="IsReady"/> is false — so the wave can
+/// wait on transient servicing, stop calmly when nothing is staged, and never proceed on an unreadable
+/// probe. <paramref name="Kind"/> defaults to <see cref="RebootReadinessKind.CantConfirm"/> — fail-closed
+/// for any construction that doesn't set a kind explicitly.</summary>
+public sealed record RebootReadiness(bool IsReady, string Reason, RebootReadinessKind Kind = RebootReadinessKind.CantConfirm);
 
 /// <summary>Checks reboot-readiness right before the wave issues a reboot (TrustedInstaller stopped +
 /// CBS RebootPending present) — re-checked live so a box that quietly resumed servicing isn't rebooted
@@ -67,6 +96,20 @@ public sealed record RebootWaveOptions(
 {
     private readonly TimeSpan? _forcedGoOfflineWindow;
     private readonly TimeSpan? _postReturnConfirmWindow;
+    private readonly TimeSpan? _servicingSettleWindow;
+
+    /// <summary>Bounds the PRE-reboot wait for a box whose readiness comes back not-ready-but-worth-waiting
+    /// (servicing still running) or unreadable (couldn't confirm): the wave re-checks readiness every
+    /// <see cref="PollInterval"/> and proceeds the instant it reads a fresh positive <see cref="RebootReadiness.IsReady"/>;
+    /// once this window elapses WITHOUT a positive reading it stops and returns a needs-action terminal —
+    /// it NEVER forces and NEVER reboots on expiry. Its clock is SEPARATE from <see cref="HardCap"/> (which
+    /// starts at the graceful dispatch, i.e. after this settle wait has already succeeded). Defaults to
+    /// 20 minutes; inherited unchanged by <see cref="ForSlowCommit"/> via the <c>with</c> copy.</summary>
+    public TimeSpan ServicingSettleWindow
+    {
+        get => _servicingSettleWindow ?? TimeSpan.FromMinutes(20);
+        init => _servicingSettleWindow = value;
+    }
 
     /// <summary>Bound on the CONTINUOUSLY-reachable-but-unconfirmed phase: once a returned box has been
     /// reachable this long WITHOUT the confirmation strategy confirming (its UBR is unreadable, or it came

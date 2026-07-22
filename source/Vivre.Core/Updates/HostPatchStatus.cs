@@ -78,6 +78,17 @@ public enum PatchPhase
     /// unless a reboot is known pending, in which case amber RebootPending wins (more actionable).
     /// </summary>
     Unverified,
+
+    /// <summary>
+    /// The Reboot Wave found nothing staged/pending to commit — the CBS RebootPending key was definitively
+    /// absent (a settled StdRegProv answer), so there was nothing to reboot for and the wave stopped WITHOUT
+    /// issuing a reboot. Informational neutral: never red (it is not a failure) and never green "up to date"
+    /// (it does not prove currency). Reduces to <see cref="PatchState.Idle"/> (grey) — or amber
+    /// <see cref="PatchState.RebootPending"/> if a reboot is independently known pending — with its own
+    /// distinct "Nothing to commit" chip label carried by the UpdatePhase string, the shipped
+    /// Staging/Cleaning/Unreachable pattern.
+    /// </summary>
+    NothingToCommit,
 }
 
 /// <summary>
