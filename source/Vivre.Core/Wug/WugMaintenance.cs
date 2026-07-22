@@ -229,7 +229,21 @@ public static class WugMaintenance
         $sslTrustErr = $null
         try {
             if (-not ('VivreWugCertValidator' -as [type])) {
-                Add-Type -TypeDefinition 'using System; using System.Net; using System.Net.Security; using System.Security.Cryptography.X509Certificates; public static class VivreWugCertValidator { public static bool Validate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors) { return true; } public static void Install() { ServicePointManager.ServerCertificateValidationCallback = new RemoteCertificateValidationCallback(Validate); } }'
+                # Resolve references from the LIVE types: on some 5.1 boxes X509Chain / X509Certificate are
+                # type-forwarded OUT of System.dll, and Add-Type with no references fails to compile there
+                # ("type name 'X509Chain' could not be found ... forwarded"). Reflection type resolution
+                # follows forwards, so each type's Assembly.Location is the REAL holder on THIS box - never a
+                # guessed assembly name that may not exist. mscorlib ([object]) is included because passing
+                # -ReferencedAssemblies REPLACES Add-Type's default reference set - never rely on defaults once
+                # the param is used. Sort-Object -Unique collapses the duplicates (several types share System.dll).
+                $vivreSslRefs = @(
+                    [object].Assembly.Location,
+                    [System.Net.ServicePointManager].Assembly.Location,
+                    [System.Net.Security.RemoteCertificateValidationCallback].Assembly.Location,
+                    [System.Security.Cryptography.X509Certificates.X509Certificate].Assembly.Location,
+                    [System.Security.Cryptography.X509Certificates.X509Chain].Assembly.Location
+                ) | Sort-Object -Unique
+                Add-Type -ReferencedAssemblies $vivreSslRefs -TypeDefinition 'using System; using System.Net; using System.Net.Security; using System.Security.Cryptography.X509Certificates; public static class VivreWugCertValidator { public static bool Validate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors) { return true; } public static void Install() { ServicePointManager.ServerCertificateValidationCallback = new RemoteCertificateValidationCallback(Validate); } }'
             }
             [VivreWugCertValidator]::Install()
         } catch { $sslTrustErr = $_.Exception.Message }

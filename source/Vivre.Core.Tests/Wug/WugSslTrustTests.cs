@@ -119,4 +119,37 @@ public class WugSslTrustTests
             Assert.DoesNotContain("CertificatePolicy = New-Object", script);
         }
     }
+
+    // ── (e) The composed install carries the RUNTIME-resolved reference set (the field-fix lock) ──────
+
+    private const string Refs = "-ReferencedAssemblies";
+    private const string RuntimeMarker = "X509Chain].Assembly.Location";
+    private const string Install = "[VivreWugCertValidator]::Install()";
+
+    [Fact]
+    public void Ssl_install_resolves_references_at_runtime_before_installing()
+    {
+        // The Add-Type that compiles VivreWugCertValidator MUST pass -ReferencedAssemblies built from the
+        // LIVE types (the "X509Chain].Assembly.Location" marker). On boxes where X509Chain / X509Certificate
+        // are type-forwarded OUT of System.dll a reference-less Add-Type FAILS TO COMPILE AT RUNTIME (the
+        // field failure a green build never caught). Reflection type resolution follows the forward, so
+        // each type's Assembly.Location lands on the real holder. This locks the runtime-resolved reference
+        // set into the shared const AND every consumer, so a future edit can't silently drop it — and the
+        // -ReferencedAssemblies must appear BEFORE the Install() call it feeds.
+        foreach (string script in new[]
+        {
+            WugMaintenance.SslTrustInstallScript,
+            WugMaintenance.Script,
+            WugMaintenance.StateScript,
+            WugMaintenance.PreflightScript,
+        })
+        {
+            Assert.Contains(Refs, script);
+            Assert.Contains(RuntimeMarker, script);
+            int refs = script.IndexOf(Refs, StringComparison.Ordinal);
+            int install = script.IndexOf(Install, StringComparison.Ordinal);
+            Assert.True(install >= 0, "The script must call the compiled delegate's Install().");
+            Assert.True(refs < install, $"-ReferencedAssemblies (index {refs}) must precede Install() (index {install}).");
+        }
+    }
 }
