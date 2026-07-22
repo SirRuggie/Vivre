@@ -64,7 +64,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a
-  multi-agent code review (2026-06) and a five-lens audit (2026-07, `docs/vivre-audit-findings.md`) —
+  multi-agent code review (2026-06) and a five-lens audit (2026-07, `docs/archive/vivre-audit-findings.md`) —
   have been worked off; live status of any remaining findings is tracked in `docs/vivre-backlog.md`.
 
 ## Build & run

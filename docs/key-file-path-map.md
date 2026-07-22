@@ -470,7 +470,7 @@ Extracted UI/IO-free predicates, each unit-tested:
 
 ## Docs in repo
 - **Root:** `CHANGELOG.md`, `README.md`, `CLAUDE.md`.
-- **`docs/`:** `windows-patching-lane.md` (the WUA / patching lane), `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`, `vivre-rdp-scaling-and-fcm-findings.md`, `cold-start-freeze-and-threadpool-findings.md`, `freeze-hunting-playbook.md` (the UI-freeze hunting instrument + protocol), `vivre-audit-findings.md` (the 2026-07-01 five-lens audit — point-in-time, never edited; live status in the backlog).
+- **`docs/`:** `windows-patching-lane.md` (the WUA / patching lane), `key-file-path-map.md` (this file), `vivre-backlog.md`, `2016-LCU-lane-spec.md`, `2016-LCU-panel-spec.md`, `2016-LCU-red-team-review.md`, `vivre-rdp-scaling-and-fcm-findings.md`, `cold-start-freeze-and-threadpool-findings.md`, `freeze-hunting-playbook.md` (the UI-freeze hunting instrument + protocol), `archive/vivre-audit-findings.md` (the 2026-07-01 five-lens audit — point-in-time, never edited; live status in the backlog).
 - **`tools/`:** `Get-VivreFreezeLog.ps1` — the harvester for the freeze/disconnect instrument log lines (see docs/freeze-hunting-playbook.md ▸ Tools); `RemoteRun` — the dev console for exercising remote PowerShell.
 - Retired: the nav-refactor plan doc (refactor complete) and the overnight Kerberos status doc (spent) were removed; their content lives in CLAUDE.md / windows-patching-lane.md / this file.
 

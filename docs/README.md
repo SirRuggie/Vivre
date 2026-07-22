@@ -36,7 +36,7 @@ live status of anything they raise is tracked in the backlog.
 - **[vivre-rdp-scaling-and-fcm-findings.md](vivre-rdp-scaling-and-fcm-findings.md)** — the embedded-RDP
   scaling / Failover Cluster Manager saga: the 100% session-scale pin, client-side ZoomLevel. *Read
   when: touching Cross-Domain RDP scaling.*
-- **[vivre-audit-findings.md](vivre-audit-findings.md)** — the 2026-07-01 five-lens audit record (26
+- **[vivre-audit-findings.md](archive/vivre-audit-findings.md)** — the 2026-07-01 five-lens audit record (26
   agents, 20 confirmed findings); live status lives in the backlog. *Read when: mining for known debt
   or checking a finding's origin.*
 - **[2016-LCU-red-team-review.md](2016-LCU-red-team-review.md)** — the adversarial review of the 2016
