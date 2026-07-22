@@ -27,6 +27,9 @@ Full doc inventory with one-liners: **[docs/README.md](docs/README.md)**. Read-b
 
 Keep this file, the patching-lane doc, and README.md current when a decision changes or a feature
 lands — they're the human-readable source of truth.
+Any new case-file / findings doc ships with the "point-in-time record, never edited after the fact"
+header from creation (the wug-state-check-findings.md pattern) — that keeps docs/README.md's
+"never edited" claim true.
 
 ## Shell / tab hosting
 
