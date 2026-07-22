@@ -206,6 +206,35 @@ public static class WugMaintenance
         }
         """;
 
+    // ── Shared SSL-trust install (SINGLE-SOURCED into Script, StateScript, PreflightScript) ─────────
+    //
+    // The ONE place that establishes certificate trust for the HTTPS calls to WUG. Installs a COMPILED
+    // static delegate (VivreWugCertValidator) as the process-wide ServerCertificateValidationCallback,
+    // ONCE, before any TLS. A compiled delegate has no runspace affinity, so it validates on the
+    // I/O-completion threads that service cold TLS handshakes — exactly where the module's PowerShell
+    // SCRIPTBLOCK callback dies (the mass per-row LookupError bug). Because we install this ourselves and
+    // connect without asking the module to ignore SSL errors, the module never installs, re-arms, or
+    // clears its own scriptblock callback (every one of its callback sites is gated on that flag). Each
+    // host script splices this in BEFORE its Connect-WUGServer and hard-fails on $sslTrustErr its own way;
+    // the snippet itself neither emits nor returns. The compiled type name MUST NOT contain the old
+    // "VivreWugTrustAll" string (the absence tests depend on that). The delegate assignment lives inside
+    // the compiled Install() to dodge PowerShell delegate-cast quirks.
+    internal const string SslTrustInstallScript = """
+        # Compiled, runspace-free certificate validator installed as the process-wide callback BEFORE any
+        # TLS. A compiled delegate validates on I/O-completion threads (no runspace), where a PowerShell
+        # scriptblock callback dies on a cold handshake (the mass-LookupError bug). The module is connected
+        # without asking it to ignore SSL errors, so it never installs, re-arms, or clears its own
+        # scriptblock callback (all its callback sites are gated on that flag) and this compiled delegate
+        # stays the sole validator. ASCII only in this comment.
+        $sslTrustErr = $null
+        try {
+            if (-not ('VivreWugCertValidator' -as [type])) {
+                Add-Type -TypeDefinition 'using System; using System.Net; using System.Net.Security; using System.Security.Cryptography.X509Certificates; public static class VivreWugCertValidator { public static bool Validate(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors) { return true; } public static void Install() { ServicePointManager.ServerCertificateValidationCallback = new RemoteCertificateValidationCallback(Validate); } }'
+            }
+            [VivreWugCertValidator]::Install()
+        } catch { $sslTrustErr = $_.Exception.Message }
+        """;
+
     // The on-host run, reading its inputs from environment variables (so the password never appears
     // on a command line). Emits a single JSON result object: { ok, devicesSet, unmatched[], error }.
     // Built by concatenating the SHARED resolver (ResolveFunctionScript) into the body — see that const.
@@ -256,28 +285,24 @@ public static class WugMaintenance
             Emit $result; return
         }
 
-        # 2. Connect to the WUG server (HTTPS, ignoring the cert as the standalone script does).
+        """
+        + SslTrustInstallScript + "\n" +
+        """
+        # Connect now DEPENDS on the compiled delegate for cert trust (installed above): we do not ask the
+        # module to ignore SSL errors, so it never installs, re-arms, or clears its own scriptblock callback.
+        if ($sslTrustErr) {
+            $result.error = "Couldn't establish a trusted connection to WhatsUp Gold: $sslTrustErr."
+            Emit $result; return
+        }
+
+        # 2. Connect to the WUG server (HTTPS; cert trust is the compiled delegate installed above).
         try {
             Progress "Connecting to WhatsUp Gold at $server..."
-            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -ErrorAction Stop | Out-Null
         } catch {
             $result.error = "Couldn't connect to WhatsUp Gold at $server`: $($_.Exception.Message). Check the address, that the server is reachable, and the WUG username/password."
             Emit $result; return
         }
-
-        # 2b. Trust-all for the Get-WUGDevice / maintenance-set calls below: Connect's -IgnoreSSLErrors just
-        #     installed the module's scriptblock certificate callback (fragile on a cold TLS handshake), so
-        #     install a COMPILED trust-all policy and null the callback — inside the try, only if the install
-        #     succeeds (else the scriptblock stays the only trust-all). Install failure is NON-FATAL: the
-        #     calls then ride the module's callback and any failure surfaces normally.
-        $trustAllErr = $null
-        try {
-            if (-not ('VivreWugTrustAll' -as [type])) {
-                Add-Type -TypeDefinition 'using System; using System.Net; using System.Security.Cryptography.X509Certificates; public class VivreWugTrustAll : ICertificatePolicy { public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; } }'
-            }
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object VivreWugTrustAll
-            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
-        } catch { $trustAllErr = $_.Exception.Message }
 
         """
         + ResolveFunctionScript + "\n" +
@@ -528,7 +553,7 @@ public static class WugMaintenance
 
     // Emits ONE JSON line: { modulePresent, connected, error }.
     // Reads server/user/pass from env vars — password NEVER on the command line.
-    private const string PreflightScript = """
+    internal const string PreflightScript = """
         $ErrorActionPreference = 'Stop'
         # Tag the result line with a unique marker so the host extracts EXACTLY it, immune to any
         # banner / warning / object text a cmdlet might print to stdout (see ParsePreflight).
@@ -567,9 +592,19 @@ public static class WugMaintenance
             Emit $result; return
         }
 
-        # 4. Connect test — identical flags to the real run
+        """
+        + SslTrustInstallScript + "\n" +
+        """
+        # SSL trust hard-fail: the compiled delegate installed above is now the sole cert-trust path (we do
+        # not ask the module to ignore SSL errors, so it installs no scriptblock). Fail before the connect.
+        if ($sslTrustErr) {
+            $result.error = "Couldn't establish a trusted connection to WhatsUp Gold: $sslTrustErr."
+            Emit $result; return
+        }
+
+        # 4. Connect test (cert trust is the compiled delegate installed above)
         try {
-            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -ErrorAction Stop | Out-Null
             $result.connected = $true
         } catch {
             $msg = $_.Exception.Message
@@ -627,14 +662,10 @@ public static class WugMaintenance
         if (-not $global:WUGBearerHeaders) {
             $sec  = ConvertTo-SecureString $env:VIVRE_WUG_PASS -AsPlainText -Force
             $cred = New-Object System.Management.Automation.PSCredential($env:VIVRE_WUG_USER, $sec)
-            Connect-WUGServer -ServerUri $env:VIVRE_WUG_SERVER -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
-            # Connect's -IgnoreSSLErrors just re-installed the module's scriptblock callback (process-wide).
-            # Re-null it so the compiled trust-all policy installed at HEAD stays the active validator — but
-            # ONLY when that policy is actually in place; without it the scriptblock is the only trust-all.
-            $vivrePol = [System.Net.ServicePointManager]::CertificatePolicy
-            if ($vivrePol -and $vivrePol.GetType().Name -eq 'VivreWugTrustAll') {
-                [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
-            }
+            # No SSL-ignore flag: cert trust is the compiled process-wide delegate the HEAD installed once,
+            # which every worker runspace inherits (a process-global ServicePointManager setting). The module
+            # installs no scriptblock callback here, so there is nothing to re-null.
+            Connect-WUGServer -ServerUri $env:VIVRE_WUG_SERVER -Protocol https -Credential $cred -ErrorAction Stop | Out-Null
         }
         Resolve-WugName $srv
         """;
@@ -697,9 +728,8 @@ public static class WugMaintenance
                 if ($state -eq $true -and $global:WhatsUpServerBaseURI -and $global:WUGBearerHeaders) {
                     $devId = "$($match.id)"
                     if (-not [string]::IsNullOrWhiteSpace($devId)) {
-                        # Prefer the compiled trust-all policy over the module's scriptblock callback (HEAD
-                        # step 5) - the scriptblock dies on a cold handshake; the compiled policy cannot.
-                        if ($script:vivreTrustAllReady) { [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null }
+                        # The two detail GETs ride the process-wide compiled delegate the HEAD installed
+                        # before any fan-out - nothing to re-arm per read.
                         $detail = [ordered]@{}
                         try {
                             $mc = (Invoke-RestMethod -Uri "$($global:WhatsUpServerBaseURI)/api/v1/devices/$devId/config/polling" -Method Get -Headers $global:WUGBearerHeaders -TimeoutSec 15).data.maintenance.manual
@@ -713,7 +743,6 @@ public static class WugMaintenance
                             $script:reasonErrors++
                             if ($null -eq $script:firstReasonErr) {
                                 $script:firstReasonErr = "$($_.Exception.Message)"
-                                if ($script:trustAllErr) { $script:firstReasonErr += " (trust-all policy install also failed: $script:trustAllErr)" }
                             }
                         }
                         if ($detail.Count -eq 0) { $detail = $null }
@@ -966,41 +995,26 @@ public static class WugMaintenance
             Emit $result; return
         }
 
-        # 4. Connect (HTTPS, ignoring the cert as the standalone script does)
+        """
+        + SslTrustInstallScript + "\n" +
+        """
+        # SSL trust must be established before we open TLS to WUG: the compiled delegate installed above is
+        # the SOLE cert-trust path. We do not ask the module to ignore SSL errors, so it never installs,
+        # re-arms, or clears its own scriptblock callback (all its callback sites are gated on that flag).
+        # The delegate rides every worker handshake and every detail GET, validating on I/O-completion
+        # threads where a scriptblock callback would die on a cold handshake (the mass-LookupError bug).
+        if ($sslTrustErr) {
+            $result.error = "Couldn't establish a trusted connection to WhatsUp Gold: $sslTrustErr."
+            Emit $result; return
+        }
+
+        # 4. Connect (HTTPS; cert trust is the compiled delegate installed above)
         try {
-            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -IgnoreSSLErrors -ErrorAction Stop | Out-Null
+            Connect-WUGServer -ServerUri $server -Protocol https -Credential $cred -ErrorAction Stop | Out-Null
         } catch {
             $result.error = "Couldn't connect to WhatsUp Gold at $server`: $($_.Exception.Message). Check the address, that the server is reachable, and the WUG username/password."
             Emit $result; return
         }
-
-        # 5. Maintenance-detail support: a COMPILED trust-all certificate policy, plus the null-out of the
-        #    module's scriptblock callback — done HERE at HEAD, before any fan-out. Step 4's -IgnoreSSLErrors
-        #    installs a PowerShell scriptblock as the process-wide certificate callback, and a scriptblock
-        #    callback dies on a COLD TLS handshake ("The underlying connection was closed" —
-        #    operator-reproduced) — exactly where the raw detail reads in Process-WugOutcome can land, since
-        #    the pooled branch makes no main-scope HTTP call between Connect and the first detail read, and
-        #    where every pooled worker's own cold handshake lands. The compiled policy runs on any thread but
-        #    only governs while the callback is NULL (a non-null callback takes precedence), so we null the
-        #    callback here — inside the try, AFTER the install succeeds. Install failure is NON-FATAL: we
-        #    DON'T null (the scriptblock would then be the only trust-all), the detail reads then ride the
-        #    module's callback, and any failure surfaces via the reason-lookup note — never as a state
-        #    change. Process-scoped trust-all is acceptable: this child talks only to WUG.
-        $vivreTrustAllReady = $false
-        $trustAllErr = $null
-        try {
-            if (-not ('VivreWugTrustAll' -as [type])) {
-                Add-Type -TypeDefinition 'using System; using System.Net; using System.Security.Cryptography.X509Certificates; public class VivreWugTrustAll : ICertificatePolicy { public bool CheckValidationResult(ServicePoint sp, X509Certificate cert, WebRequest req, int problem) { return true; } }'
-            }
-            [System.Net.ServicePointManager]::CertificatePolicy = New-Object VivreWugTrustAll
-            # The compiled policy only governs while the callback is NULL — a non-null callback takes
-            # precedence, and step 4's -IgnoreSSLErrors just installed the module's fragile scriptblock one.
-            # Null it NOW, before any fan-out, so no worker handshake ever rides the scriptblock (the
-            # cold-TLS mass-LookupError bug). Inside the try: if the policy install threw we must NOT null —
-            # the scriptblock would then be the only trust-all in the process.
-            [System.Net.ServicePointManager]::ServerCertificateValidationCallback = $null
-            $vivreTrustAllReady = $true
-        } catch { $trustAllErr = $_.Exception.Message }
 
         """
         // The ONE resolver, single-sourced into a single-quoted here-string (literal — no compose-time
