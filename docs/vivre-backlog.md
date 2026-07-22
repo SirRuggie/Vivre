@@ -3,18 +3,13 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-17** (release **1.16.0** cut 2026-07-17 — WUG streaming
-> state-check + identity-verify, the personal/shared **settings split**, 2016 CU auto-read + month label,
-> the neutral **Unverified** patch state, and the **reboot arc** shipped; see the 1.16.0 DONE entries. Prior
-> release **1.15.0** cut 2026-07-12 — the embedded-RDP
-> arc shipped: client-side zoom + verified re-fit engine `a080685`; full-screen un-latch + quiet-hands
-> guard `f9b014e`; drag-deferred OCX host resize `48eba5b` (the 12s border-drag freeze — a render
-> regression, proven by instrumentation, tag `instrument/ui-freeze-watchdog`); disconnect classifier
-> `f9a0d94` (sign-out closes the tab, everything else keeps it). **Suite was 810 green** at that arc's
-> close (786 → 810 across the RDP arc).)
+> not a mandate). Last refreshed: **2026-07-21** (release **1.16.4** — the WUG state-check arc:
+> cold-start mass-unknown SSL fix + IP exact-match reclassification, see
+> docs/wug-state-check-findings.md; 1.16.1–1.16.3 were same-day fix releases, see CHANGELOG.md).
+> Older release narration lives with its DONE entries in docs/archive/vivre-backlog-done-archive.md.
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 984 green as of 2026-07-17).**
+> are point-in-time only (current suite is 1054 green as of 2026-07-21).**
 
 ---
 
@@ -180,20 +175,13 @@ standalone items further down, each "do only if it recurs / when a signal appear
 - **Staged-machine list "copy all / export" UX gap.** The Settings staged-patching management card lists /
   Removes / Clears the flagged machines but has no way to copy the whole list out (clipboard or file export),
   so an operator can't easily hand the staged set to a teammate or record it. Add a copy-all / export affordance.
-- **Clean "~30 of 51 cleaned" — RESOLVED (it was the Staged gate, NOT a concurrency cap) + Clean now
-  selection-driven.** The "only ~30 of 51 boxes cleaned" observation was **NOT a bug and NOT a thread-pool /
-  concurrency ceiling** — Clean was intentionally gated to Staged (flagged) 2016 boxes via
-  `StagePreconditions.IsStageTarget` (the same selector Stage/Verify use). ~30 of the 51 were flagged, so ~30
-  cleaned. Working as designed. **Now CHANGED:** `feat/clean-selection-driven` (`9133226`, merged to master) makes
-  Clean selection-driven and staged-state-agnostic — nothing selected → all 2016; some selected → those; non-2016
-  excluded; cardinal rule intact (Clean still never reboots). Clean targets `Clean2016Targets()`; Stage/Verify
-  still use `Server2016Targets()` (flagged-only), unchanged. **Confirmed accurate and retained:** Clean rides
-  `_patchThrottle` (the operator's "Max simultaneous installs" = 50) and honors it — there is no hidden 30-cap.
-  - **Clean UI-sluggishness (perf) — NOT resolved, but the premise CHANGED.** Clean now cleans ALL selected 2016
-    boxes (up to ~50), not just the ~30 flagged subset — so if the app lags at ~50 concurrent cleans that's now a
-    **live signal**, not a hypothetical. The measurement apparatus (Probe A thread-pool / Probe B cap / Probe C
-    layout, plus the `Width="Auto"` message-column A/B via `VIVRE_CLEAN_MSG_FIXEDWIDTH`) is parked on throwaway
-    branch `perf/clean-measure`. Keep it parked; only pursue if a real 50-box clean actually lags.
+- **Clean UI-sluggishness at ~50 concurrent cleans — watch item (perf).** Since Clean went
+  selection-driven (`9133226`, shipped 1.14.x-era — resolution record in
+  docs/archive/vivre-backlog-done-archive.md), it cleans ALL selected 2016 boxes (up to ~50), so a lag
+  at ~50 concurrent cleans is a **live signal**, not a hypothetical. The measurement apparatus (Probe
+  A thread-pool / Probe B cap / Probe C layout, plus the `Width="Auto"` message-column A/B via
+  `VIVRE_CLEAN_MSG_FIXEDWIDTH`) is parked on throwaway branch `perf/clean-measure`. Keep it parked;
+  only pursue if a real 50-box clean actually lags.
 - **Proactive gray-out of known-WinRM-broken boxes** — visually mark boxes that are known to fail WinRM
   so the operator isn't surprised, rather than only learning at action time. Design pass needed.
 - **Idle-monitor reachability throttle** — throttle added (d3b5ed0). Verify it holds at scale
