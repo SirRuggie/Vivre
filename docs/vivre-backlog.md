@@ -442,6 +442,15 @@ standalone items further down, each "do only if it recurs / when a signal appear
   Stop never lit for these loops (`IsBusy` stays false) and, if pressed, would have cancelled
   nothing.** Stop's darkness here shares its root line with Still-open #3 (MainWindow.xaml:436) but
   was the HONEST direction, so no Stop change shipped — that remains #3's decision.
+- **Patching-lane status snapshot (moved verbatim 2026-07-22 from windows-patching-lane.md ▸ Status):**
+  - **Done:** scan; install with live progress; uninstall (WUA + DISM, with the cumulative-update reason
+    surfaced); schedule (install + reboot + cancel); the reliability mechanisms above; the per-machine
+    detail window; force-reboot.
+  - **Verified live on real targets (2026-05):** scan (with counts), install with live progress,
+    uninstall (including a cumulative update correctly reporting "can't be removed" / `0x800F0825`),
+    a scheduled reboot firing at its set time, and the "WinRM unhealthy" degraded-host flag coming and
+    going as the self-heal re-tests. One box flapped WinRM-unhealthy intermittently — confirmed to be
+    the back-off / self-heal working as designed, not a regression.
 - Older DONE entries (pre-1.16.0 — 1.15.x and earlier, back to the shell refactor) moved verbatim to docs/archive/vivre-backlog-done-archive.md.
 
 ---

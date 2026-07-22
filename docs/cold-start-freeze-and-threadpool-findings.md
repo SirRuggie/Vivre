@@ -9,6 +9,9 @@
 >
 > **General method:** the reusable instrument + protocol distilled from this hunt (and the RDP drag
 > freeze) live in [freeze-hunting-playbook.md](freeze-hunting-playbook.md) — this doc is a case file.
+>
+> **Point-in-time case file — never edited after the fact** (this header line added 2026-07-22;
+> content unchanged).
 
 ---
 

@@ -1,8 +1,8 @@
 # Hunting a frozen UI thread — the playbook
 
-> **This doc is portable.** It was written from Vivre, but almost nothing in it is Vivre-specific.
-> Use it on any WPF / WinForms / desktop app that hangs, stutters, or "feels slow" and you don't
-> know why.
+> **Mostly portable.** The law, the instrument design, and the protocol sections were written from
+> Vivre but apply to any WPF / WinForms / desktop app that hangs, stutters, or "feels slow" and you
+> don't know why; the Tools and Case-files sections are Vivre-specific.
 >
 > **Three independent hunts in this codebase had the same disease and the same cure.** Each burned
 > hours or days on confident, wrong theories. Each was cracked — and could *only* have been cracked

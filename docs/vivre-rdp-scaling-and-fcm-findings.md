@@ -10,6 +10,10 @@
 >
 > **General method:** the reusable instrument + protocol distilled from this hunt (and the cold-start
 > freeze) live in [freeze-hunting-playbook.md](freeze-hunting-playbook.md) — this doc is a case file.
+>
+> **Point-in-time case file — never edited after the fact** (one exception: on 2026-07-22 the
+> duplicate lying-instruments catalogue was folded to a playbook pointer and a circular spike-tag
+> sentence condensed; content otherwise unchanged since the 2026-07-11 rewrite).
 
 ---
 
@@ -56,9 +60,8 @@ WPF  →  WindowsFormsHost (RdpHostElement)  →  WinForms Panel  →  AxMsRdpCl
 host: control creation, `LocalScale()` (the pin), framebuffer, SmartSizing, reconnect lifecycle.
 Per-host settings resolve via `_creds.Resolve(host, RdpTree.AncestorsOf(_tree, host))` in
 `CrossDomainRdpViewModel.ConnectTo`. The throwaway spike (pop-out + Step 0b hacks; never merged)
-is preserved under the `spike/rdp-popout` tag; the `feat/rdp-popout-window` branch is retained
-locally; the `spike/rdp-popout` tag (pushed to origin) is what preserves the spike — the branch can
-be deleted once the tag is confirmed on the remote.
+is preserved by the pushed `spike/rdp-popout` tag; the local `feat/rdp-popout-window` branch can be
+deleted once the tag is confirmed on the remote.
 
 ### The in-session DPI probe (measure, don't guess)
 
@@ -303,32 +306,10 @@ them.**
 ## Lying instruments — the transferable lesson of this whole arc
 
 Every wrong turn in this investigation was an instrument reporting something other than what it
-measured. Burn these in:
-
-1. **`Control.DeviceDpi` lies about per-window DPI contexts.** It returns the process-cached
-   system DPI (on a non-PerMonitorV2 thread, a static value captured at startup) and never
-   queries the HWND — in a genuinely DPI-unaware window it still reported 144. Use
-   `GetDpiForWindow(hwnd)` (96 = unaware) and `GetWindowDpiAwarenessContext`. This false negative
-   cost a full spike round.
-2. **`UpdateSessionDisplaySettings` returning cleanly means SUBMITTED, not APPLIED.** The server
-   silently drops protocol-invalid (odd-width) and back-to-back requests while the API reports
-   success. The only truth is the read-back (`DesktopWidth/Height`) or the
-   `OnRemoteDesktopSizeChange` event — hence the verify-and-retry engine.
-3. **A diagnostic that conflates two moments lies by construction.** The spike strip's single
-   `fb=` overwrote the connect-time request with later recomputations, which misread the status
-   bar's 32-DIP collapse as a server-side "height deficit that tracks the request". Split it
-   (`fbConnect=` vs `fbNow=`) and the mystery evaporated. Every number on an instrument must say
-   what it IS, not what the reader assumes it means.
-4. **"No sleep/wait/lock anywhere" does not prove the UI thread is unblocked.** Every
-   `DispatcherTimer` tick RUNS ON the UI thread, every OCX property get/set is a synchronous call
-   into an STA control, and — the round-2 lesson — a per-tick HWND re-layout can park the thread
-   for 12 seconds without ANY of them. Static code reading is a proxy that cannot observe
-   blocking; only a background-thread liveness watchdog (the cold-start poolwatch pattern)
-   measures it.
-5. **`comCalls=0` does not mean the OCX is idle.** The control's render path (HWND resize →
-   synchronous full repaint) never crosses a wrappable call site — an instrument that times CALLS
-   is structurally blind to work the control does inside the layout/paint pipeline. Pair call
-   timing with a UI-liveness gap measurement, or the biggest cost is invisible.
+measured. The traps burned during the spikes are stated inline above ("Instrumentation traps…" and
+the smoke-test rounds); the consolidated cross-project catalogue — including this arc's five,
+numbered 1–5 there — lives in [freeze-hunting-playbook.md](freeze-hunting-playbook.md) ▸ "The real
+enemy: instruments that lie".
 
 ### Spike round history (for the record; all on `feat/rdp-popout-window`)
 

@@ -1,7 +1,7 @@
 # Windows patching lane (WUA)
 
 How Vivre patches machines — the deep-dive that complements **[README.md](../README.md)** (overview)
-and **[CLAUDE.md](../CLAUDE.md)** (architecture + conventions). The lane is merged into `master`.
+and **[CLAUDE.md](../CLAUDE.md)** (architecture + conventions).
 
 ---
 
@@ -205,9 +205,9 @@ load-bearing point: the guard is scoped **by structure, not by assuming those pa
 
 **Two layers.** (1) The VM funnel above is the live fix and covers **all transports** — it also catches a
 **partial** failure (`installed > 0 && failed > 0`), which the agent still emits as Done/PendingReboot and the
-VM overrides to Error. (2) The agent's install `Summarize` now mirrors the uninstall path's all-failed guard
-(`installed == 0 && failed > 0 → Error`) so an all-failed run is classified at the source — ships on the next
-`publish.ps1` (the agent rebuilds on publish).
+VM overrides to Error. (2) The agent's install `Summarize` mirrors the uninstall path's all-failed guard
+(`installed == 0 && failed > 0 → Error`) so an all-failed run is classified at the source
+(`Vivre.UpdateAgent/Program.cs`).
 
 **No-reboot note.** An all-failed install that WUA flagged reboot-required no longer returns "reboot required"
 from the agent (consistent with the uninstall guard and the existing no-update early-returns) — don't reboot a
@@ -268,20 +268,25 @@ These mechanisms exist because of real production failures. Don't undo them with
   surfaced as silent stalls and the `InitialSessionState` type-initializer error. Don't go back to it.
 - **Don't reintroduce the Add-Type WUA COM-callback shims.** That path was tried and reverted (it
   hung `$searcher.Search()` after the managed CCW registration). The compiled agent is the answer.
-- **WinRM shell churn is bounded, and a flaky shell isn't assumed reboot-pending** — a shell-init
-  failure (the `InitialSessionState` error) is usually **transient**: the box is momentarily busy, or
-  too many WinRM shells are open (`MaxShellsPerUser`); occasionally a genuinely reboot-pending box fails
-  this way persistently. So the monitor must not hammer hosts: it re-probes reboot-pending on a single
-  **~5-min cadence for every box** (the 20s loop does only the cheap ping — not a fresh shell every 20s),
-  **backs off "degraded" hosts** on the shell-init error and re-tests them so they self-heal, and a
-  **per-host shell cap** (`HostWinRmGate` — ≤4 concurrent shells/host, with slots reserved for
-  operator-initiated work over background probes) stops several ops stacking shells on one box. The
-  shell-init message says it's a temporary hiccup that's been backed off — it **never** tells the user to
-  reboot a box that isn't actually reboot-pending (the known `RebootRequired` flag is the only authority).
-  The probe itself is bounded at **120s** (`RebootProbeTimeoutSeconds`, vitals-style linked CTS): the CCM
-  `DetermineIfRebootPending` provider can hang forever on a broken client, and an unbounded probe froze the
-  whole monitor pass fleet-wide (one hung box stalled the pass's `Task.WhenAll` indefinitely). A timeout is
-  swallowed as a quiet degraded back-off — no row-state write, `RebootRequired` keeps its last-known value.
+- **WinRM shell churn is bounded, and a flaky shell isn't assumed reboot-pending** — the monitor
+  must not hammer hosts:
+  - **~5-min reboot-pending re-probe cadence for every box** — the 20s loop does only the cheap
+    ping, never a fresh shell every 20s.
+  - **A flaky shell is NOT assumed reboot-pending** — a shell-init failure (the
+    `InitialSessionState` error) is usually transient (box momentarily busy, or too many WinRM
+    shells open — `MaxShellsPerUser`); occasionally a genuinely reboot-pending box fails this way
+    persistently. The message says it's a temporary hiccup that's been backed off — it never tells
+    the user to reboot a box that isn't actually reboot-pending (the known `RebootRequired` flag is
+    the only authority).
+  - **Degraded back-off** — hosts hitting the shell-init error are backed off and re-tested so they
+    self-heal.
+  - **Per-host shell cap** — `HostWinRmGate`: ≤4 concurrent shells/host, slots reserved for
+    operator-initiated work over background probes, so several ops can't stack shells on one box.
+  - **120s probe cap** (`RebootProbeTimeoutSeconds`, vitals-style linked CTS) — the CCM
+    `DetermineIfRebootPending` provider can hang forever on a broken client, and an unbounded probe
+    froze the whole monitor pass fleet-wide (one hung box stalled the pass's `Task.WhenAll`
+    indefinitely); a timeout is swallowed as a quiet degraded back-off — no row-state write,
+    `RebootRequired` keeps its last-known value.
 - **Heartbeat watchdog** — the on-target controller heartbeats every ~15s while the session is alive.
   The client fails a session that goes **fully silent** (no progress **and** no heartbeat) for
   `PatchOptions.NoResponseTimeout` (90s) so a dead/hung session surfaces instead of freezing on stale
@@ -294,18 +299,21 @@ These mechanisms exist because of real production failures. Don't undo them with
   startup check is latched behind `$progressSeen`, so "did not start" can only fire before any
   progress was ever relayed.
 - **Agent-death probe** — the heartbeat proves the **session**, not the agent (the controller
-  synthesizes it even if the agent process is gone). Agent death is caught separately: during a quiet
-  stretch the controller also probes the scheduled task's state (`Get-ScheduledTask`, in-session — no
-  extra WinRM shell) and, once the task has left `Running` with no terminal line written, emits a
-  terminal "stopped without reporting a result" error (~16s after the agent's last output; mirrors the
-  SMB lane's `service.Query()` guard). Fail-open: a failed/null state query is never treated as death,
-  and any drained progress line disarms a pending alarm. This covers **immediate** install/uninstall
-  runs only — a ScheduleAt task fires later with no watcher attached, so it keeps the tighter 6h task
-  `ExecutionTimeLimit` (run-now uses 12h, purely as the wedged-WUA backstop). Belt on the client side:
-  if the stream ever ends WITHOUT a terminal status (the progress log vanished mid-run, or the agent's
-  final line was dropped), the lane converts the mid-run last status into an honest *"ended without a
-  final result — re-scan to confirm"* failure — a mid-run phase is never presented as the final
-  outcome, and the message is pinned non-transient so the retry runner can't re-dispatch the install.
+  synthesizes it even if the agent process is gone). Agent death is caught separately:
+  - **Probe mechanics** — during a quiet stretch the controller also probes the scheduled task's
+    state (`Get-ScheduledTask`, in-session — no extra WinRM shell) and, once the task has left
+    `Running` with no terminal line written, emits a terminal "stopped without reporting a result"
+    error (~16s after the agent's last output; mirrors the SMB lane's `service.Query()` guard).
+  - **Fail-open** — a failed/null state query is never treated as death; any drained progress line
+    disarms a pending alarm.
+  - **Schedule vs run-now** — covers **immediate** install/uninstall runs only: a ScheduleAt task
+    fires later with no watcher attached, so it keeps the tighter 6h task `ExecutionTimeLimit`
+    (run-now uses 12h, purely as the wedged-WUA backstop).
+  - **Client-side belt** — if the stream ever ends WITHOUT a terminal status (progress log vanished
+    mid-run, or the agent's final line dropped), the lane converts the mid-run last status into an
+    honest *"ended without a final result — re-scan to confirm"* failure — a mid-run phase is never
+    presented as the final outcome, and the message is pinned non-transient so the retry runner
+    can't re-dispatch the install.
 - **Typed remoting exceptions** — `PSRunspaceHost.TranslateRemotingException` maps raw failures to
   `RemoteSessionLostException` / `RemoteShellInitException` (at both the connect and invoke phases),
   so the UI shows actionable messages, never "The pipeline has been stopped." or the raw
@@ -505,22 +513,13 @@ reboot-and-verify loop.
 
 ---
 
-## Status
+## Deferred
 
-**Done:** scan; install with live progress; uninstall (WUA + DISM, with the cumulative-update reason
-surfaced); schedule (install + reboot + cancel); the reliability mechanisms above; the per-machine
-detail window; force-reboot.
+(The done / verified-live status snapshot moved 2026-07-22 to docs/vivre-backlog.md ▸ DONE.)
 
-**Deferred:**
 - Reboot-and-wait as an install option (the agent can reboot; no UI toggle / "waiting…" status yet).
 - An SCCM-deployment update lane (only if updates ever get deployed through SCCM here).
 - An **update-centric pivot** view — one row per KB across the selected machines ("applies to N,
   install everywhere") for planning a maintenance window by update instead of by machine. Standard in
   fleet patch tools (WSUS/Action1/PDQ); worth building only if by-KB planning becomes a real need.
   The per-machine detail panel covers today's "install all applicable + reboot" workflow.
-
-**Verified live on real targets (2026-05):** scan (with counts), install with live progress,
-uninstall (including a cumulative update correctly reporting "can't be removed" / `0x800F0825`),
-a scheduled reboot firing at its set time, and the "WinRM unhealthy" degraded-host flag coming and
-going as the self-heal re-tests. One box flapped WinRM-unhealthy intermittently — confirmed to be
-the back-off / self-heal working as designed, not a regression.
