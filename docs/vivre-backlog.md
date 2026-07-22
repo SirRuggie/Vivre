@@ -34,28 +34,30 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    fast-fails before the credential parameter is consulted; the cache has no eviction or credential
    dimension. Research-first, remoting-cache zone. PARKED until it bites in practice.
 2. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
-3. **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — the toolbar
-   Stop's `IsEnabled="{Binding SelectedTab.IsBusy}"` (MainWindow.xaml:436) defeats `CanStop()`'s
-   monitor-only intent, and the Monitor tooltip repeats the claim ("Stop halts it"). The help now
-   documents the truth (the Monitor toggle is the only way to pause monitoring); the app-side fix
-   (rebind Stop's IsEnabled to the command, or reword the tooltip) is a separate decision. PARKED.
-   (Same root line, opposite symptom: MainWindow.xaml:436 also kept Stop honestly DARK during the
-   schedule/cancel loops — see the bounded-loops DONE entry. With those loops now 60s-bounded, wiring
-   Stop for them is optional polish contingent on this item's decision — fix the :436 binding once,
-   properly, if at all. **TRAP for whoever fixes this:** the schedule/cancel loops' outer-cancel
-   catches `return` silently — dead code today since nothing passes a token, but once Stop reaches
-   these loops it will quit with NO "Cancelled — N of M processed" activity line. The #3 fix must
-   ship a VISIBLE abort — add the summary line when wiring the token, or the operator can't tell a
-   completed run from an aborted one.)
-   **Update (WUG streaming state-check pass, 2026-07-14): a THIRD instance of this pattern is now CLOSED
-   — by construction, not by touching :436.** `CheckWugStateAsync` runs as a PASSIVE
-   `BeginOperation(..., registerRows: false)`, so Stop LIGHTS via `IsBusy` and genuinely cancels it
-   (killing the `powershell.exe` child), and the abort is VISIBLE exactly as this item's trap demands:
-   it logs "Stopped — N of M checked" (`ComposeStoppedMessage`) and stamps unreached rows
-   `WugRowText.NotChecked` ("not checked (read stopped)"). That passive-op rail is the right template
-   for wiring #3's remaining sites. **STILL OPEN and unchanged:** the monitor-only mismatch (`CanStop()`
-   true on `IsMonitoring` alone while :436 stays dark) and the schedule/cancel scheduled-task loops. The
-   MainWindow.xaml:436 binding itself was NOT changed.
+3. **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — PARKED; the
+   app-side fix (rebind Stop's `IsEnabled` to the command, or reword the tooltip) is a separate decision.
+   - **The issue:** the toolbar Stop's `IsEnabled="{Binding SelectedTab.IsBusy}"` (MainWindow.xaml:436)
+     defeats `CanStop()`'s monitor-only intent, and the Monitor tooltip repeats the false claim ("Stop
+     halts it"). The help already documents the truth: the Monitor toggle is the only way to pause
+     monitoring.
+   - **STILL OPEN, precisely:** the monitor-only mismatch (`CanStop()` true on `IsMonitoring` alone
+     while :436 stays dark) and the schedule/cancel scheduled-task loops; the MainWindow.xaml:436
+     binding itself is UNCHANGED. (Same root line, opposite symptom: :436 also kept Stop honestly DARK
+     during the schedule/cancel loops — see the bounded-loops DONE entry. With those loops now
+     60s-bounded, wiring Stop for them is optional polish contingent on this item's decision — fix the
+     :436 binding once, properly, if at all.)
+   - **TRAP for whoever fixes this (load-bearing):** the schedule/cancel loops' outer-cancel catches
+     `return` silently — dead code today since nothing passes a token, but once Stop reaches these
+     loops it will quit with NO "Cancelled — N of M processed" activity line. The fix MUST ship a
+     VISIBLE abort — add the summary line when wiring the token, or the operator can't tell a completed
+     run from an aborted one.
+   - **Resolved along the way (WUG streaming pass, 2026-07-14):** a THIRD instance of this pattern is
+     CLOSED by construction, not by touching :436 — `CheckWugStateAsync` runs as a PASSIVE
+     `BeginOperation(..., registerRows: false)`, so Stop LIGHTS via `IsBusy` and genuinely cancels it
+     (killing the `powershell.exe` child), with the abort VISIBLE exactly as the trap demands: it logs
+     "Stopped — N of M checked" (`ComposeStoppedMessage`) and stamps unreached rows
+     `WugRowText.NotChecked` ("not checked (read stopped)"). That passive-op rail is the right template
+     for wiring this item's remaining sites.
 4. **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
    re-raise; build nothing.** The facts stand: scheduled reboots have no burst stagger — every
    selected box fires `shutdown.exe /r /f /t 0` locally at the SAME absolute UTC instant
@@ -69,20 +71,23 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
 5. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
-   use.** *Prerequisite now IN:* the write path is `SharedSettingsStore.Update(Action<SharedSettings>)` — a
-   **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves every other
-   key (including a future build's), and **refuses (throws) if an existing file can't be read** instead of
-   stomping unread keys with defaults. That closes the *single-writer* wipe vector that once blanked
-   `StagedHosts` (a degraded `Load` returned defaults, then a whole-file `Save` wrote them back over
-   everything). What REMAINS is the *concurrent-writer* race: writes are still **whole-file last-writer-wins**
-   between operators — two operators editing at once, or one saving while another's Vivre holds an older
-   in-memory copy, each still merges onto the file **as they last read it**, so the later writer's merge can
-   revert a key the earlier writer just changed. Acceptable for the current single-admin reality — but before
-   this box is genuinely shared by concurrent operators, add an optimistic-concurrency guard (read a
-   version/mtime inside `Update`, re-check it just before the atomic write, and reject-and-reload on mismatch).
-   Adjacent small hardening while in there: `AtomicFileWriter` uses a **fixed-name `.tmp`** (`path + ".tmp"`),
-   so two processes writing the same file at once can collide on the temp — give it a per-write unique suffix.
-   No migration/copy/stomp-guard shipped with the initial split by design.
+   use.**
+   - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
+     — a **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves
+     every other key (including a future build's), and **refuses (throws) if an existing file can't be
+     read** instead of stomping unread keys with defaults. That closes the *single-writer* wipe vector
+     that once blanked `StagedHosts` (a degraded `Load` returned defaults, then a whole-file `Save`
+     wrote them back over everything).
+   - **What REMAINS — the concurrent-writer race:** writes are still **whole-file last-writer-wins**
+     between operators. Two operators editing at once, or one saving while another's Vivre holds an
+     older in-memory copy, each still merges onto the file **as they last read it** — so the later
+     writer's merge can revert a key the earlier writer just changed. Acceptable for the current
+     single-admin reality.
+   - **When building it:** add an optimistic-concurrency guard — read a version/mtime inside `Update`,
+     re-check it just before the atomic write, and reject-and-reload on mismatch. Adjacent small
+     hardening while in there: `AtomicFileWriter` uses a **fixed-name `.tmp`** (`path + ".tmp"`), so two
+     processes writing the same file at once can collide on the temp — give it a per-write unique
+     suffix. (No migration/copy/stomp-guard shipped with the initial split, by design.)
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
