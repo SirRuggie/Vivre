@@ -15,7 +15,7 @@
 
 ## ▶ DO NEXT — recommended order
 
-**Audit findings (2026-07-01) — status as of 2026-07-13 (release 1.15.0); suite now 984 green (2026-07-17):** the full five-lens audit
+**Audit findings (2026-07-01) — status as of 2026-07-21 (release 1.16.4; suite 1054 green):** the full five-lens audit
 record is `docs/archive/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
 **and every actionable MED is now closed** (the batch-sequential residue closed this pass — see the bounded-loops DONE entry)**:** Stop-during-SMB-copy + settings-save-invisible-in-Release
