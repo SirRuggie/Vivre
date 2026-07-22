@@ -313,6 +313,11 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ## DONE (committed) — recent
 
+- **WUG state-check arc — cold-start mass-unknown + IP substring false-classing — DONE, shipped 1.16.4**
+  (`c6463d2` · `a19d150` · `c49b4da`; `4b158c5` was a superseded intermediate). The module re-armed a runspace-bound
+  scriptblock cert callback per API call (cold TLS → mass LookupError), and 0-exact IP substring hits read
+  Ambiguous; now a compiled delegate + no `-IgnoreSSLErrors` + exact-count classing. Full story: `docs/wug-state-check-findings.md`.
+
 - **Reboot arc — Reboot & Verify reaches patch-failed boxes + Force reboot falls back to DCOM on Kerberos
   boxes — DONE, shipped 1.16.0** (`cabe230` · `e016c4f` · `039ce6f`, on master). (1) **Reboot & Verify is now enabled on a
   box in `Error` that still needs a reboot** — a patch that failed but left the box reboot-required could not be
