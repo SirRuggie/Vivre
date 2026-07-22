@@ -36,12 +36,18 @@ live status of anything they raise is tracked in the backlog.
 - **[vivre-rdp-scaling-and-fcm-findings.md](vivre-rdp-scaling-and-fcm-findings.md)** — the embedded-RDP
   scaling / Failover Cluster Manager saga: the 100% session-scale pin, client-side ZoomLevel. *Read
   when: touching Cross-Domain RDP scaling.*
-- **[vivre-audit-findings.md](archive/vivre-audit-findings.md)** — the 2026-07-01 five-lens audit record (26
-  agents, 20 confirmed findings); live status lives in the backlog. *Read when: mining for known debt
-  or checking a finding's origin.*
 - **[2016-LCU-red-team-review.md](2016-LCU-red-team-review.md)** — the adversarial review of the 2016
   LCU design and the traps that bite on box #7 of 30. *Read when: changing the 2016 install/verify/
   reboot logic.*
 - **[wug-state-check-findings.md](wug-state-check-findings.md)** — the WUG state-check cycle: the IP
   substring-match reclassification and the cold-start mass-unknown SSL chain (scriptblock callback →
   compiled delegate). *Read when: touching the WUG lane's resolver or SSL/connect path.*
+
+## Archive (closed records — kept for provenance, not routing)
+
+- **[archive/vivre-audit-findings.md](archive/vivre-audit-findings.md)** — the 2026-07-01 five-lens
+  audit record (26 agents, 20 confirmed findings); every finding closed or tracked live in the
+  backlog. *Read when: checking a finding's origin.*
+- **[archive/vivre-backlog-done-archive.md](archive/vivre-backlog-done-archive.md)** — the backlog's
+  DONE history, pre-1.16.0 era (1.15.x and earlier), moved verbatim. *Read when: tracing an old fix's
+  commit or rationale.*

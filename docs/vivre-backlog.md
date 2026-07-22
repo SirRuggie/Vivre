@@ -458,24 +458,6 @@ standalone items further down, each "do only if it recurs / when a signal appear
 
 ---
 
-## KNOWLEDGE DOCS — current set + refresh status
-Project knowledge now holds: `key-file-path-map.md`, `vivre-backlog.md`, `2016-LCU-lane-spec.md`,
-`2016-LCU-red-team-review.md`, `2016-LCU-panel-spec.md`, `vivre-rdp-scaling-and-fcm-findings.md`,
-`windows-patching-lane.md`, `cold-start-freeze-and-threadpool-findings.md` (the load-bearing
-`ThreadPool.SetMinThreads` saga), `freeze-hunting-playbook.md` (the reusable freeze-hunt instrument +
-protocol + lying-instruments catalogue), and `archive/vivre-audit-findings.md` (the 2026-07-01 five-lens audit
-— point-in-time, never edited; live status in this file's DO NEXT) — all under `docs/` — plus the
-top-level `CLAUDE.md`, `README.md`, `CHANGELOG.md`.
-All were refreshed in the **2026-06-23** code+docs audit against the as-built code:
-- `key-file-path-map.md` — refreshed: `Is2016` corrected to `LcuRouting` (not `Computer.cs`), the decaying
-  "Recent commits / restore-point" list removed (use `git log`), the duplicated PS 5.1 gotchas reduced to a
-  cross-reference to CLAUDE.md, and the new pure-decision helpers added (`RebootVerifyMenu`, `Lcu2016RowState`,
-  `ScopeToggleRule`, `ComponentCleanupClassifier`).
-- `2016-LCU-lane-spec.md` / `-panel-spec.md` / `-red-team-review.md` — refreshed: the install path is
-  `dism.exe /add-package` on expand.exe-extracted `.cab`s (not `Add-WindowsPackage`), the lane is **opt-in
-  per box** (`RequiresStagedPatching`), and the build-sequencing "future work" / resolved red-team risks were
-  retired. Cycle-specific KB/UBR is "this cycle" by design.
-- `vivre-rdp-scaling-and-fcm-findings.md` — rewritten 2026-07-11 (`457d6c3`) and current through
-  1.15.0: ZoomLevel proven and shipped, the dead ends closed, and the freeze + disconnect hunts recorded.
-- `windows-patching-lane.md` — refreshed: the agent's five operation modes (Install / Uninstall / Scan / AddPackage /
-  Cleanup), the scan-on-`RemoteSessionLostException` SMB fallback, and the component-store cleanup lane.
+## KNOWLEDGE DOCS
+
+The doc inventory (every doc, one-line purpose, read-when cue) lives in **docs/README.md** — the single map.
