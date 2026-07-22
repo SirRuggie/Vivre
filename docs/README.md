@@ -9,11 +9,14 @@ live status of anything they raise is tracked in the backlog.
 - **[vivre-backlog.md](vivre-backlog.md)** — the running tracker: open/parked/done work in recommended
   do-next order, with commit hashes. *Read when: deciding what to build next, or checking whether a
   finding was already fixed.*
-- **[key-file-path-map.md](key-file-path-map.md)** — the load-bearing file locations and their gotchas,
-  so new sessions don't re-derive them. *Read when: you need to know where something lives before
-  touching it.*
+- **[key-file-path-map.md](key-file-path-map.md)** — the load-bearing file locations and per-area
+  rules, so new sessions don't re-derive them. *Read when: you need to know where something lives
+  before touching it.*
 - **[../CLAUDE.md](../CLAUDE.md)** — architecture + conventions: layout, cardinals, commit/release
   rules. *Read when: starting any work in this repo.*
+
+Top-level (repo root): **[../README.md](../README.md)** — the human-facing overview + roadmap ·
+**[../CHANGELOG.md](../CHANGELOG.md)** — user-facing changes, newest first (work-in-progress under Unreleased).
 
 ## Lane specs / how-to
 

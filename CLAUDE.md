@@ -44,7 +44,7 @@ and retired. **Load-bearing constraints — DON'T break:**
 
 ## Layout
 
-One line per project; the namespace-by-namespace inventory lives in
+Short entry per project; the namespace-by-namespace inventory lives in
 **docs/key-file-path-map.md ▸ "Project & namespace map"**.
 
 - `source/Vivre.slnx` — the solution (`.slnx` format, the .NET 10 default).

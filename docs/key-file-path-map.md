@@ -4,7 +4,7 @@
 
 ## Project & namespace map
 
-Moved here from CLAUDE.md ▸ Layout (which keeps one line per project). Inventory + the rules that ride each area.
+Moved here from CLAUDE.md ▸ Layout (which keeps a short entry per project). Inventory + the rules that ride each area.
 
 | Project / namespace | Purpose |
 |---|---|
