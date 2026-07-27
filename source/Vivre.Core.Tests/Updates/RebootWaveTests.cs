@@ -64,7 +64,9 @@ public class RebootWaveTests
     // Windows refuses a GRACEFUL reboot with 1191 whenever a session exists on the box, so the trigger
     // completes the operator's ordered reboot by re-sending the FORCED form on the same healthy channel and
     // reports EscalatedToForced. The box is ALREADY going down forced: the wave must apply the FORCED
-    // go-offline window and must NEVER dispatch again. These four tests are the double-reboot proof.
+    // go-offline window and must NEVER dispatch again. These tests are the double-reboot proof — including
+    // the uptime rescue on the escalated leg, and the case where the escalation itself fails and the trigger
+    // falls back to SMB/SCM (which must then send the FORCED form, or the box stays up and costs a 2nd send).
 
     [Fact]
     public async Task An_escalated_dispatch_is_never_re_dispatched_exactly_one_send_per_click()
@@ -162,6 +164,107 @@ public class RebootWaveTests
         Assert.True(sw.Elapsed >= TimeSpan.FromMilliseconds(500),
             $"escalated box must wait the FORCED window ({forcedWindow.TotalMilliseconds:N0} ms), not the graceful one (20 ms) — failed after {sw.Elapsed.TotalMilliseconds:N0} ms");
         Assert.Equal(1, reboot.Dispatches);
+    }
+
+    [Fact]
+    public async Task An_escalated_dispatch_proven_rebooted_by_uptime_reaches_the_commit_watch_and_greens()
+    {
+        // THE RESCUE. The escalated FORCED reboot completed inside a single poll gap, so the wave never
+        // OBSERVED the drop and the forced window expires. Failing on expiry alone would red-flag a box that
+        // provably rebooted — and the escalation now happens at dispatch rather than 8 minutes later, so that
+        // gap is the whole window. The clock-immune uptime proof rescues it into the commit-watch, greens it,
+        // and still on exactly ONE dispatch (the proof unblocks confirmation; it never re-sends).
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = false,    // never seen leaving the network…
+            RebootsUnobservedAfterChecks = 2, // …but it really rebooted (uptime resets)
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        var progress = new RecProgress();
+
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(60) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, progress, CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);   // rescued and verified, NOT the red terminal
+        Assert.Equal(1, reboot.Dispatches);            // still ONE send for one operator click
+        Assert.False(reboot.Forced);                   // the wave itself never issued a forced dispatch
+        Assert.Contains(progress.Reports, r => r.Message.Contains("the forced reboot completed without being seen going down"));
+    }
+
+    [Fact]
+    public async Task An_escalated_dispatch_that_is_not_proven_rebooted_is_still_the_honest_forced_terminal()
+    {
+        // Guard on the rescue: it is PROOF-ONLY. A box that never drops AND never rebooted (uptime never
+        // resets) must still get the honest terminal, on exactly ONE dispatch and with no rescue message —
+        // an unproven box is never quietly greened.
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = false,
+            ForcedTakesOffline = false,
+            // no RebootsUnobservedAfterChecks → HasRebooted never flips, so the uptime proof is always false
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        var progress = new RecProgress();
+
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(60) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, progress, CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.Contains("hasn't gone offline after a forced reboot", result.Message);
+        Assert.Equal(1, reboot.Dispatches);
+        Assert.DoesNotContain(progress.Reports, r => r.Message.Contains("without being seen going down"));
+    }
+
+    [Fact]
+    public async Task An_escalated_dispatch_with_an_unreadable_uptime_proof_is_never_a_false_green()
+    {
+        // Same guard from the other side: an UNREADABLE boot time is a retry signal, never proof. The rescue
+        // must not fire on it, so the escalated box still ends on the honest terminal — one dispatch.
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = false,
+            ForcedTakesOffline = false,
+            BootReaderReturnsNull = true, // proof disabled — must NOT rescue
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(60) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.Contains("hasn't gone offline after a forced reboot", result.Message);
+        Assert.Equal(1, reboot.Dispatches);
+    }
+
+    [Fact]
+    public async Task A_failed_forced_escalation_falls_back_to_smb_FORCED_and_is_never_re_dispatched()
+    {
+        // THE (a) DOUBLE-REBOOT PROOF. The DCOM forced escalation FAILED, so the trigger fell back to SMB/SCM.
+        // The knowledge that the OS refuses the graceful form must travel with it: the fallback sends the
+        // FORCED form and the box — which has a session logged on, so it ignores ANY graceful shutdown —
+        // goes down on that ONE send. A graceful fallback would leave it up, and the wave would then spend a
+        // SECOND dispatch forcing it: one operator click, two reboots issued.
+        var box = new FakeBox
+        {
+            RebootEscalationFailsAndFallsBackToSmb = true,
+            OnlyAForcedSendTakesItOffline = true,
+            ComesBackAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(goOfflineMs: 40), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal(1, reboot.Dispatches);     // ONE send for one operator click — no double reboot
+        Assert.True(reboot.SmbFallbackForced);  // the fallback sent /f — not the form the box had just refused
+        Assert.Single(reboot.ForcedArgs);
+        Assert.False(reboot.ForcedArgs[0]);     // and the wave asked only for the graceful form
+        Assert.False(reboot.Forced);            // the wave itself never issued a forced dispatch
     }
 
     // ── Pre-reboot readiness settle poll ─────────────────────────────────────────
@@ -710,6 +813,8 @@ public class RebootWaveTests
         public int ChecksBeforeOffline;                 // >0: answers (at the OLD build) this many reach checks, then drops off (a box slow to leave the network)
         public bool RebootRefusesGracefulAndEscalates;  // 1191: Windows refused the graceful form (a session is logged on) and the trigger escalated to forced on the same channel
         public bool EscalatedTakesOffline;              // ...and the box then drops off under that forced reboot
+        public bool RebootEscalationFailsAndFallsBackToSmb; // 1191 refusal, then the DCOM forced escalation FAILED too, so the trigger fell back to the SMB/SCM channel
+        public bool OnlyAForcedSendTakesItOffline;      // a session is logged on: the box ignores a GRACEFUL shutdown on ANY channel and drops only for a forced one
 
         // --- Uptime-proof fidelity ---
         // A modeled REAL reboot has completed: the boot reader then reports a small (reset) uptime; until then
@@ -778,6 +883,10 @@ public class RebootWaveTests
         /// many sends happened but which form each one asked for.</summary>
         public List<bool> ForcedArgs { get; } = [];
 
+        /// <summary>The form the trigger's SMB/SCM fallback actually put on the wire, or null when the
+        /// fallback never ran. Taken from the REAL production decision, not modelled here.</summary>
+        public bool? SmbFallbackForced { get; private set; }
+
         public Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken)
         {
             Dispatches++;
@@ -789,6 +898,17 @@ public class RebootWaveTests
                 // A shutdown is already in progress — the box goes offline on its own (no extra reboot needed).
                 if (box.GoesOfflineWhenAlreadyInProgress) { box.Online = false; }
                 return Task.FromResult(RebootDispatch.AlreadyInProgress);
+            }
+
+            if (box.RebootEscalationFailsAndFallsBackToSmb && !forced)
+            {
+                // Models the real trigger end-to-end for ONE graceful send: Windows refused the GRACEFUL form
+                // (1191), the DCOM forced escalation then FAILED, so the trigger fell back to the SMB/SCM
+                // channel and issued the reboot there. WHICH form that fallback sends is production's call —
+                // ask DcomRebootTrigger rather than re-implementing (and thereby faking) the decision here.
+                SmbFallbackForced = DcomRebootTrigger.FallbackForced(requested: forced, gracefulRefusedByTheOs: true);
+                if (SmbFallbackForced == true || !box.OnlyAForcedSendTakesItOffline) { box.Online = false; }
+                return Task.FromResult(RebootDispatch.Issued);
             }
 
             if (box.RebootRefusesGracefulAndEscalates && !forced)

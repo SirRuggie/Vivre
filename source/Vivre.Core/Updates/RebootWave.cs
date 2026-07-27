@@ -218,23 +218,37 @@ public sealed class RebootWave
             // this branch does NOT wait the graceful window and does NOT run the escalation below — that
             // second dispatch, against a box already executing a forced reboot, IS the double reboot. Wait
             // the FORCED window (strictly longer: a box mid-CBS-commit can hold the network for many more
-            // minutes) and, on expiry, return the same honest terminal the post-force failure uses — with
-            // no second dispatch.
+            // minutes) and, on expiry, consult the clock-immune uptime proof before failing anything — with
+            // no second dispatch on ANY of these legs.
             _trace?.Trace(host, $"WaitForOffline(forced — escalated at the trigger) window={options.ForcedGoOfflineWindow}");
             bool droppedEscalated = await WaitForOfflineAsync(host, options.ForcedGoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false);
             _trace?.Trace(host, $"WaitForOffline(forced — escalated at the trigger) result={(droppedEscalated ? "observed-offline" : "window-expired")} sinceOrdered={sinceOrdered.Elapsed}");
 
-            if (!droppedEscalated)
+            if (droppedEscalated)
+            {
+                // Observed the drop — fall into the commit-watch below exactly as any other rebooting box does.
+                sawOffline = true;
+                progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                    "Forced reboot taken (a user was logged on, so the graceful form was refused) — watching it commit…"));
+            }
+            else if (await ProvenRebootedAsync(host, uptimeBaseline, sinceOrdered.Elapsed, cancellationToken).ConfigureAwait(false))
+            {
+                // The forced reboot already COMPLETED — we just never saw the box leave the network (the dead
+                // window fell between polls, or it dropped and returned inside one). The escalation now happens
+                // at the dispatch rather than 8 minutes later, so that gap is the WHOLE forced window: failing
+                // on expiry alone would red-flag a box that provably rebooted. Same rescue the graceful path
+                // uses; still NO second dispatch — the proof only unblocks the commit-watch.
+                sawOffline = true;
+                _trace?.Trace(host, "uptime proof shows the escalated forced reboot already completed (never seen going down — NOT re-dispatched)");
+                progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                    "Rebooted already — the forced reboot completed without being seen going down; verifying…"));
+            }
+            else
             {
                 _trace?.Trace(host, "terminal: hasn't gone offline after forced reboot (escalated at the trigger — NOT re-dispatched)");
                 return Fail(progress,
                     $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
             }
-
-            // Observed the drop — fall into the commit-watch below exactly as any other rebooting box does.
-            sawOffline = true;
-            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
-                "Forced reboot taken (a user was logged on, so the graceful form was refused) — watching it commit…"));
         }
         else if (!alreadyGoingOffline)
         {

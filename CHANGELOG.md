@@ -29,6 +29,16 @@ it ships, then gets a dated heading.
 - **A reboot the OS never acknowledged is no longer reported as issued.** A missing result code from the
   DCOM reboot call used to read as success; it now falls back (and surfaces) instead of claiming a box is
   going down when nothing confirmed it.
+- **A box that refused the graceful reboot no longer gets a graceful one down the back-up channel either.**
+  When the forced retry over DCOM can't be completed and Vivre falls back to SMB, it now sends the FORCED
+  form — the box has already told Windows it won't take a graceful shutdown, so the old fallback simply
+  bounced off it and cost the box a second reboot attempt.
+- **A forced box that reboots too fast to be seen going down is no longer marked red.** If it dropped and
+  returned between two polls, Vivre now checks its uptime (which a real reboot resets) before failing it,
+  exactly as it already did for graceful reboots — and still without ever re-sending the reboot.
+- **The Reboot & verify confirm and the how-to guide now say the reboot rules in one line each** — graceful
+  with an 8-minute force (20 for staged 2016), immediate force for any box with a session on it (including
+  disconnected ones), unsaved work lost.
 - **A manual right-click Force reboot now rejoins the verify arc.** When the box comes back and the
   monitor confirms the reboot completed, the row gets the same post-reboot recheck and verified outcome
   the Reboot Wave gives — no more guessing when a hand-forced box is really back.

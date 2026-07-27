@@ -68,4 +68,20 @@ public class ShutdownReturnCodeTests
         Assert.Equal(ShutdownCallOutcome.NoResultCode, ShutdownReturnCode.Classify(null));
         Assert.NotEqual(ShutdownCallOutcome.Accepted, ShutdownReturnCode.Classify(null));
     }
+
+    // ── What a 1191 refusal means for the SMB/SCM fallback ───────────────────────
+    // A 1191 is the OS itself refusing the GRACEFUL form. When DCOM then can't resolve the box (the forced
+    // escalation failed, or the call was already forced), that knowledge must travel to the fallback: sending
+    // the very form the box just refused, down a second channel, only gets refused again — and costs the wave
+    // a second dispatch to fix. This is the FORM of an already-ordered reboot, never a decision to reboot.
+
+    [Theory]
+    [InlineData(false, false, false)] // graceful call, no 1191 (a throw/timeout — the Kerberos-broken path) → graceful, unchanged
+    [InlineData(false, true, true)]   // graceful call the OS REFUSED with 1191 → the fallback must force
+    [InlineData(true, false, true)]   // forced call → forced, unchanged
+    [InlineData(true, true, true)]    // forced call the OS refused → forced
+    public void The_smb_fallback_forces_exactly_when_the_os_refused_the_graceful_form(bool requested, bool gracefulRefusedByTheOs, bool expected)
+    {
+        Assert.Equal(expected, DcomRebootTrigger.FallbackForced(requested, gracefulRefusedByTheOs));
+    }
 }
