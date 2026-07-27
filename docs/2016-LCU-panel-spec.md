@@ -102,8 +102,10 @@ this session, never show it.
 Never bound straight to a command. The button runs the **generalized fleet-wide reboot-and-verify**
 over the current selection (any OS — routing per box via `LcuRouting.RebootVerifyLaneFor`; 2016
 boxes get the build-verified LCU commit lane): a confirm dialog first, then the wave tracks each
-box offline → back → verified. Each box is rebooted **gracefully first**; if it doesn't drop off
-the network within the go-offline window — **8 min** (`RebootWaveOptions.Default`) or **20 min**
+box offline → back → verified. Each box is rebooted **gracefully first** — unless Windows refuses that
+form because a session is logged on (**1191**, Active *or* merely disconnected), in which case the box
+is forced **immediately** on the same call and never waits the graceful window at all. Otherwise, if it
+doesn't drop off the network within the go-offline window — **8 min** (`RebootWaveOptions.Default`) or **20 min**
 (`ForSlowCommit`, the staged-2016 lane) — the wave **escalates to a forced reboot** to complete the
 one the operator ordered, then waits 2× the graceful window (16/40 min) before going red. Defense
 in depth: button gate (selection) → operator confirm → the wave's own per-box routing.

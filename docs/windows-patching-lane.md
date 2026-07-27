@@ -52,7 +52,8 @@ credential prompt): `Vivre.Core/Updates/SmbAgentLane.cs` + `Remoting/RemoteServi
 4. **Teardown:** stop → wait for stopped → `DeleteService` → delete the per-run drop files.
 
 The **reboot fallback** rides the same channel: when the DCOM `Win32Shutdown` call comes back with ANY
-non-zero code other than 1115 (or throws), `DcomRebootTrigger.RebootViaSmbScm` creates a one-shot
+non-zero code other than 1115, with NO result code at all, with no `Win32_OperatingSystem` instance to
+call on, or throws, `DcomRebootTrigger.RebootViaSmbScm` creates a one-shot
 demand-start `Vivre_Reboot_<guid>` service whose image is
 `cmd /c shutdown /r [/f] /t 5 /c "Vivre Reboot Wave"` — i.e. **cmd.exe with `shutdown` as a child
 process**, not `shutdown.exe` directly; that two-process remote creation is what EDR scores. **A 1191
@@ -61,8 +62,8 @@ the channel is healthy, so the trigger re-sends the FORCED form on the SAME sess
 `RebootDispatch.EscalatedToForced`, and the wave applies the FORCED go-offline window without ever
 re-dispatching. The fallback is reached only when DCOM THROWS (connect/auth/timeout — the
 Kerberos-broken boxes), when the escalated send itself fails or throws, or on any other
-non-zero/missing code — and after a 1191 it sends `/f` and likewise reports `EscalatedToForced`, so a
-box going down forced is never timed on the graceful window (see
+non-zero/missing code — and after a 1191 on a GRACEFUL call it sends `/f` and likewise reports
+`EscalatedToForced`, so a box going down forced is never timed on the graceful window (see
 docs/dcom-1191-reboot-fallback-findings.md). Its best-effort delete can lose the race with the reboot,
 leaving a Stopped orphan behind — the **list-load reaper** (`Remoting/OrphanRebootServiceReaper`,
 gated by *auto-check on load*) enumerates each loaded host once per session over the same SCM channel
@@ -413,9 +414,15 @@ reboot shifts the expectation by the whole pre-reboot session uptime plus downti
 days). Any unreadable read returns null and is **never** a false success.
 
 Flow per box:
-1. Pre-reboot readiness check (fails fast with a clear message if not ready).
+1. Pre-reboot readiness check — it does **not** fail fast (`945a4cb`): if servicing is still in
+   progress the wave **waits it out** on a bounded settle poll (default **20 min**, operator-configurable
+   in Settings) and reboots the moment servicing finishes; on window expiry it stops **without rebooting**
+   and the row says so.
 2. Graceful reboot issued; the since-**ordered** stopwatch starts here (it drives the HardCap/Overdue
-   bounds and the "N min since the reboot was ordered" messages).
+   bounds and the "N min since the reboot was ordered" messages). If Windows refuses the graceful form
+   because a session is logged on (**1191** — Active *or* merely disconnected), the FORCED form goes out
+   **immediately** on the SAME DCOM session (`5f6d437`) and that box is timed on the forced window from
+   the start — it never waits out the graceful window in step 3.
 3. Wait up to the go-offline window for the box to drop off TCP-445 — `GoOfflineWindow` = **8 min**
    (`RebootWaveOptions.Default`, the WUA lane) or **20 min** (`ForSlowCommit`, the staged-2016 LCU
    lane — a CBS-heavy box can hold port 445 for 15-20+ min while flushing patches). If it doesn't

@@ -3772,9 +3772,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // and StageLcuForAsync — the same shared workflow the decision dialog's "Stage CU first" uses.
 
     /// <summary>Fleet-wide reboot + verify: reboots ALL selected machines (graceful first, forced after the
-    /// go-offline window), then tracks each until it is confirmed back online. 2016 boxes verify by build/UBR;
-    /// others verify by re-scan. Long-running — the View must confirm first (production reboot). Acts ONLY on
-    /// the explicit selection; never reboots the whole fleet by default.</summary>
+    /// go-offline window — or forced immediately, never waiting that window, when Windows refuses the graceful
+    /// form because a session is logged on, Active or merely disconnected), then tracks each until it is
+    /// confirmed back online. 2016 boxes verify by build/UBR; others verify by re-scan. Long-running — the View
+    /// must confirm first (production reboot). Acts ONLY on the explicit selection; never reboots the whole
+    /// fleet by default.</summary>
     [RelayCommand(AllowConcurrentExecutions = true)]
     private Task RebootAndVerifyAsync()
     {

@@ -33,6 +33,11 @@ it ships, then gets a dated heading.
   When the forced retry over DCOM can't be completed and Vivre falls back to SMB, it now sends the FORCED
   form — the box has already told Windows it won't take a graceful shutdown, so the old fallback simply
   bounced off it and cost the box a second reboot attempt.
+- **A box forced down over the back-up channel is now given the forced wait, not the graceful one.** When
+  Windows refuses a graceful reboot and Vivre has to reach the box over the back-up channel, it is now
+  timed on the FORCED go-offline window — 16 minutes, or 40 for a staged 2016 box — instead of the
+  graceful 8/20, so a slow box is no longer flagged before it has had time to go down. It also no longer
+  gets a second reboot command it did not need.
 - **A forced box that reboots too fast to be seen going down is no longer marked red.** If it dropped and
   returned between two polls, Vivre now checks its uptime (which a real reboot resets) before failing it,
   exactly as it already did for graceful reboots — and still without ever re-sending the reboot.
