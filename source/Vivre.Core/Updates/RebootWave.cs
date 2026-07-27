@@ -189,9 +189,10 @@ public sealed class RebootWave
         bool alreadyGoingOffline = graceful == RebootDispatch.AlreadyInProgress;
 
         // Windows REFUSED the graceful form because a session is logged on (1191) and the trigger completed
-        // the operator's ordered reboot by escalating to the FORCED form on the same healthy DCOM channel.
-        // The box is ALREADY going down FORCED, so it gets the FORCED go-offline window and must NEVER be
-        // dispatched again — a second send here is the double reboot.
+        // the operator's ordered reboot by sending the FORCED form — on the same healthy DCOM session, or
+        // over the SMB/SCM fallback (with /f) when DCOM couldn't resolve the box after that refusal. Either
+        // way the box is ALREADY going down FORCED, so it gets the FORCED go-offline window and must NEVER
+        // be dispatched again — a second send here is the double reboot.
         bool escalatedToForced = graceful == RebootDispatch.EscalatedToForced;
 
         if (alreadyGoingOffline)

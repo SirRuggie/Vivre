@@ -267,6 +267,44 @@ public class RebootWaveTests
         Assert.False(reboot.Forced);            // the wave itself never issued a forced dispatch
     }
 
+    [Fact]
+    public async Task An_smb_forced_fallback_gets_the_FORCED_window_and_is_never_re_dispatched()
+    {
+        // THE (b) PROOF — the SMB-CHANNEL half of the forced window. Same 1191 story as above, but DCOM
+        // couldn't resolve it, so the FORCED form went out over the SMB/SCM fallback (/f). The box is going
+        // down FORCED, yet the caller asked for graceful — so if the fallback reported a plain Issued, the
+        // wave would put a /f'd box on the GRACEFUL window and, when that short window expired, spend a
+        // SECOND dispatch forcing a box already executing a forced reboot: one operator click, two reboots.
+        //
+        // The box holds the network for 6 reach checks — comfortably past the 20 ms graceful window, well
+        // inside the 5 s forced one — so only a wave on the FORCED window can still be waiting when it
+        // finally drops. Green + exactly one send + no escalation beat is the whole claim.
+        var box = new FakeBox
+        {
+            RebootEscalationFailsAndFallsBackToSmb = true,
+            OnlyAForcedSendTakesItOffline = true,
+            SmbFallbackTakesOffline = false, // doesn't drop the instant the fallback lands…
+            ChecksBeforeOffline = 6,         // …it holds the network past the graceful window, then drops
+            ComesBackAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        var progress = new RecProgress();
+
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromSeconds(5) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, progress, CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal(1, reboot.Dispatches);      // ONE send for one operator click — no double reboot
+        Assert.True(reboot.SmbFallbackForced);   // the fallback did send /f
+        Assert.Single(reboot.ForcedArgs);
+        Assert.False(reboot.ForcedArgs[0]);      // and the wave asked only for the graceful form
+        Assert.False(reboot.Forced);             // the wave itself never issued a forced dispatch
+        // The graceful-window branch is the ONLY thing that emits this beat, so its absence proves the box
+        // was waited on under the FORCED window instead.
+        Assert.DoesNotContain(progress.Reports, r => r.Message.Contains("escalating to a forced reboot"));
+    }
+
     // ── Pre-reboot readiness settle poll ─────────────────────────────────────────
     // The old pre-reboot hard-fail (a not-ready read → immediate Error) was replaced by the approved design:
     // a not-ready box is WAITED on (never rebooted) and resolves to NothingToCommit (nothing staged) or a
@@ -815,6 +853,7 @@ public class RebootWaveTests
         public bool EscalatedTakesOffline;              // ...and the box then drops off under that forced reboot
         public bool RebootEscalationFailsAndFallsBackToSmb; // 1191 refusal, then the DCOM forced escalation FAILED too, so the trigger fell back to the SMB/SCM channel
         public bool OnlyAForcedSendTakesItOffline;      // a session is logged on: the box ignores a GRACEFUL shutdown on ANY channel and drops only for a forced one
+        public bool SmbFallbackTakesOffline = true;     // ...and the box drops off the network the instant that fallback send lands (false = it holds the network, so ChecksBeforeOffline governs when it drops)
 
         // --- Uptime-proof fidelity ---
         // A modeled REAL reboot has completed: the boot reader then reports a small (reset) uptime; until then
@@ -904,11 +943,16 @@ public class RebootWaveTests
             {
                 // Models the real trigger end-to-end for ONE graceful send: Windows refused the GRACEFUL form
                 // (1191), the DCOM forced escalation then FAILED, so the trigger fell back to the SMB/SCM
-                // channel and issued the reboot there. WHICH form that fallback sends is production's call —
-                // ask DcomRebootTrigger rather than re-implementing (and thereby faking) the decision here.
+                // channel and issued the reboot there. WHICH form that fallback sends — and WHICH dispatch it
+                // reports back — are BOTH production's call: ask DcomRebootTrigger rather than
+                // re-implementing (and thereby faking) either decision here.
                 SmbFallbackForced = DcomRebootTrigger.FallbackForced(requested: forced, gracefulRefusedByTheOs: true);
-                if (SmbFallbackForced == true || !box.OnlyAForcedSendTakesItOffline) { box.Online = false; }
-                return Task.FromResult(RebootDispatch.Issued);
+                if ((SmbFallbackForced == true || !box.OnlyAForcedSendTakesItOffline) && box.SmbFallbackTakesOffline)
+                {
+                    box.Online = false;
+                }
+
+                return Task.FromResult(DcomRebootTrigger.FallbackDispatch(requested: forced, sentForced: SmbFallbackForced == true));
             }
 
             if (box.RebootRefusesGracefulAndEscalates && !forced)

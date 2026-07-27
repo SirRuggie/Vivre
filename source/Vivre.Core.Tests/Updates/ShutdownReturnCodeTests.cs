@@ -84,4 +84,30 @@ public class ShutdownReturnCodeTests
     {
         Assert.Equal(expected, DcomRebootTrigger.FallbackForced(requested, gracefulRefusedByTheOs));
     }
+
+    // ── What the fallback REPORTS, so the wave picks the right go-offline window ──
+    // A box the fallback sent /f to is going down FORCED. If that were reported as a plain Issued, a wave
+    // that had asked for graceful would time it on the SHORT graceful window and then spend a SECOND
+    // dispatch forcing a box already executing a forced reboot — one operator click, two reboots.
+
+    [Theory]
+    [InlineData(false, false, RebootDispatch.Issued)]            // graceful asked, graceful sent → nothing escalated
+    [InlineData(false, true, RebootDispatch.EscalatedToForced)]  // graceful asked, /f sent: the force came from the OS's refusal → forced window
+    [InlineData(true, true, RebootDispatch.Issued)]              // the CALLER asked for forced → not an escalation; that leg is already on the forced window
+    [InlineData(true, false, RebootDispatch.Issued)]             // (unreachable in production — FallbackForced never de-escalates a forced request)
+    public void The_smb_fallback_reports_an_escalation_only_when_the_force_came_from_the_os(bool requested, bool sentForced, RebootDispatch expected)
+    {
+        Assert.Equal(expected, DcomRebootTrigger.FallbackDispatch(requested, sentForced));
+    }
+
+    [Fact]
+    public void A_1191_refusal_that_reaches_the_fallback_sends_forced_AND_reports_the_forced_window()
+    {
+        // The two decisions composed, on the path that matters: an operator-ordered GRACEFUL reboot the OS
+        // refused with 1191, which DCOM then couldn't resolve. The fallback must put /f on the wire AND tell
+        // the wave the box is going down forced. Either half alone leaves a real gap.
+        bool smbForced = DcomRebootTrigger.FallbackForced(requested: false, gracefulRefusedByTheOs: true);
+        Assert.True(smbForced);
+        Assert.Equal(RebootDispatch.EscalatedToForced, DcomRebootTrigger.FallbackDispatch(requested: false, sentForced: smbForced));
+    }
 }

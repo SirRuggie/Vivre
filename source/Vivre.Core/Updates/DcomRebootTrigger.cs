@@ -89,8 +89,15 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         try
         {
             RebootViaSmbScm(host, smbForced);
-            _trace?.Trace(host, $"reboot channel: SMB/SCM issued forced={smbForced}");
-            return RebootDispatch.Issued;
+
+            // The box may be going down FORCED on a form the CALLER never asked for (the OS refused the
+            // graceful one) — the wave has to know that, or it applies the graceful go-offline window to a
+            // box under /f. FallbackDispatch is that report; the trace keeps the two channels apart.
+            RebootDispatch smbDispatch = FallbackDispatch(forced, smbForced);
+            _trace?.Trace(host, smbDispatch == RebootDispatch.EscalatedToForced
+                ? $"reboot channel: SMB/SCM issued forced={smbForced} → EscalatedToForced (the OS refused the graceful form over DCOM; the force came from that refusal, and this is the SMB/SCM channel — NOT the DCOM escalation)"
+                : $"reboot channel: SMB/SCM issued forced={smbForced} → Issued");
+            return smbDispatch;
         }
         catch (Exception smbEx)
         {
@@ -118,6 +125,22 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     /// <para>Internal rather than private so the reboot-wave harness can drive the REAL decision instead of
     /// duplicating it.</para></summary>
     internal static bool FallbackForced(bool requested, bool gracefulRefusedByTheOs) => requested || gracefulRefusedByTheOs;
+
+    /// <summary>What the SMB/SCM fallback REPORTS for a reboot it issued. Normally
+    /// <see cref="RebootDispatch.Issued"/> — but <see cref="RebootDispatch.EscalatedToForced"/> when the
+    /// forced form came from the OS REFUSING the graceful one (1191) rather than from the caller, because
+    /// that is exactly what the wave must do with such a box: apply the FORCED go-offline window (a box under
+    /// <c>/f</c> mid-CBS-commit can hold the network well past the graceful window) and NEVER dispatch again.
+    /// The channel it travelled is a trace concern, not a dispatch one.
+    /// <para>A caller-REQUESTED forced reboot stays <see cref="RebootDispatch.Issued"/>: that leg is already
+    /// on the forced window, and the wave asserts the trigger never escalates a call that already asked for
+    /// the forced form.</para>
+    /// <para><b>Cardinal scope:</b> pure reporting — it picks no flags, sends nothing, and cannot widen WHICH
+    /// boxes reboot. The reboot was already issued by the line above it.</para>
+    /// <para>Internal rather than private so the reboot-wave harness can drive the REAL decision instead of
+    /// duplicating it.</para></summary>
+    internal static RebootDispatch FallbackDispatch(bool requested, bool sentForced) =>
+        sentForced && !requested ? RebootDispatch.EscalatedToForced : RebootDispatch.Issued;
 
     /// <summary>True when an error indicates a shutdown is ALREADY in progress on the target (Win32 1115 /
     /// ERROR_SHUTDOWN_IN_PROGRESS, HRESULT 0x8007045B) — i.e. the box is already going offline, so a reboot
@@ -149,10 +172,12 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     /// <para>A NULL <c>Dispatch</c> plus a reason means DCOM did NOT resolve it and the caller falls back to
     /// the SMB/SCM channel: a thrown connect/auth/timeout failure, a missing result code (never success —
     /// an accepted call always answers with an explicit 0), or a non-zero code with no escalation left.</para>
-    /// <para><c>ForceRequired</c> is true on exactly the arms the OS reached by REFUSING the GRACEFUL form
-    /// (1191): the escalated-then-failed one and the already-forced one. It tells the fallback that a
-    /// graceful <c>shutdown.exe</c> would be refused too, so it must send <c>/f</c>. Every other arm leaves
-    /// it false, so the fallback behaves exactly as before there.</para>
+    /// <para><c>ForceRequired</c> is true on exactly the arms where the OS ITSELF answered 1191 on this call:
+    /// the escalated-then-failed one, the already-forced one, and a THROW from the ESCALATED send (the
+    /// refusal came first, so the throw cannot un-prove it). It tells the fallback that a graceful
+    /// <c>shutdown.exe</c> would be refused too, so it must send <c>/f</c>. Every other arm — including a
+    /// throw with NO prior 1191, the Kerberos-broken-box path — leaves it false, so the fallback behaves
+    /// exactly as before there.</para>
     /// <para><b>Loop guard:</b> the escalation fires ONLY when the caller asked for the graceful form
     /// (<c>!forced</c>). A forced call that itself comes back 1191 is NEVER retried — it falls back instead.
     /// That guard is monotone because <c>forced</c> is a by-value parameter that is never reassigned, so the
@@ -166,6 +191,12 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         // trace line (DCOM and SMB/SCM alike) reports the same countable field with the same meaning.
         bool sentForced = forced;
         int sentFlags = forced ? EwxReboot | EwxForce : EwxReboot;
+
+        // Has the OS ITSELF answered 1191 on THIS call? Once it has, that refusal is proven knowledge no
+        // later failure can erase — including a THROW from the escalated send — so it must travel out as
+        // ForceRequired. Deliberately NOT sentForced: that is also true when the CALLER asked for forced,
+        // which would blur "the OS refused the graceful form" into "the caller wanted force".
+        bool gracefulRefusedByTheOs = false;
         try
         {
             using var options = new DComSessionOptions { Timeout = CimTimeout };
@@ -203,6 +234,10 @@ public sealed class DcomRebootTrigger : IRebootTrigger
                         // session and the SAME instance we still hold. One extra send, never a loop.
                         case ShutdownCallOutcome.GracefulRefused when !forced:
                         {
+                            // The OS has now REFUSED the graceful form on this call. Record it BEFORE the
+                            // escalated send, so a throw from that send still carries the refusal out.
+                            gracefulRefusedByTheOs = true;
+
                             int forcedFlags = EwxReboot | EwxForce;
                             _trace?.Trace(host,
                                 $"reboot channel: DCOM refused the GRACEFUL reboot — a user session is logged on (1191); the channel is healthy, escalating to the FORCED form on the same session to complete the operator's ordered reboot: forced=True flags={forcedFlags}");
@@ -278,10 +313,15 @@ public sealed class DcomRebootTrigger : IRebootTrigger
                 return (RebootDispatch.AlreadyInProgress, string.Empty, false);
             }
 
-            // A THROW is not a refusal: the OS never answered 1191 here, so there is nothing proving the
-            // graceful form would be rejected. ForceRequired stays false and the fallback sends the caller's
-            // form, exactly as before — this is the Kerberos-broken-box path.
-            return (null, $"{ex.GetType().Name}: {ex.Message}", false);
+            // A THROW is not ITSELF a refusal — but it does not erase one the OS already gave, so which of
+            // the two throws this is decides ForceRequired:
+            //   • NO prior 1191 (the connect, auth, query or FIRST send failed outright): nothing proves the
+            //     graceful form would be rejected, so ForceRequired stays false and the fallback sends the
+            //     caller's form, exactly as before — this is the Kerberos-broken-box path.
+            //   • The ESCALATED send threw: the OS ALREADY answered 1191 on the send before it, so the
+            //     refusal is proven. ForceRequired travels out with the failure and the fallback sends /f —
+            //     without this, the fallback would send the very graceful form Windows just refused.
+            return (null, $"{ex.GetType().Name}: {ex.Message}", gracefulRefusedByTheOs);
         }
     }
 

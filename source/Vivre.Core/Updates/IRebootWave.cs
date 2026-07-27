@@ -27,10 +27,18 @@ public enum RebootDispatch
 
     /// <summary>The GRACEFUL reboot was REFUSED because a user session exists on the box (Win32 1191 /
     /// <c>ERROR_SHUTDOWN_USERS_LOGGED_ON</c> — Active <em>or</em> merely disconnected), so the trigger
-    /// completed the operator's already-ordered reboot by escalating to the FORCED form on the SAME healthy
-    /// DCOM channel, and the OS accepted it. The channel never failed — authentication, the query and the
-    /// method call all succeeded; only the graceful form was refused, and the force flag is the only thing
-    /// that clears it.
+    /// completed the operator's already-ordered reboot by sending the FORCED form instead, on whichever of
+    /// its two channels could deliver it:
+    /// <list type="bullet">
+    ///   <item>the SAME healthy DCOM session (the common case). The channel never failed — authentication,
+    ///   the query and the method call all succeeded; only the graceful form was refused, and the force flag
+    ///   is the only thing that clears it; or</item>
+    ///   <item>the SMB/SCM fallback, when DCOM could not resolve the box after that refusal (the escalated
+    ///   send failed or threw). It then sends <c>/f</c> rather than the form the OS just refused.</item>
+    /// </list>
+    /// Either way the FORCE came from the OS's refusal, never from the caller — a caller-REQUESTED forced
+    /// reboot reports <see cref="Issued"/>, so the wave's "the trigger never escalates an already-forced
+    /// call" assertion still holds.
     /// <para><b>Cardinal scope:</b> this escalation is the COMPLETION of a reboot the operator explicitly
     /// selected and CONFIRMED on this box — exactly like the wave's own graceful→forced escalation. It is
     /// never an independent decision to reboot or to force a box the operator didn't pick.</para>

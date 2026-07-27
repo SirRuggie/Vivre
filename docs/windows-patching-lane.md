@@ -51,9 +51,19 @@ credential prompt): `Vivre.Core/Updates/SmbAgentLane.cs` + `Remoting/RemoteServi
    JSON update array.
 4. **Teardown:** stop → wait for stopped → `DeleteService` → delete the per-run drop files.
 
-The **reboot fallback** rides the same channel: when DCOM `Win32Shutdown` is rejected, the wave
-creates a one-shot demand-start `Vivre_Reboot_<guid>` service whose image runs `shutdown.exe`
-(`DcomRebootTrigger.RebootViaSmbScm`). Its best-effort delete can lose the race with the reboot,
+The **reboot fallback** rides the same channel: when the DCOM `Win32Shutdown` call comes back with ANY
+non-zero code other than 1115 (or throws), `DcomRebootTrigger.RebootViaSmbScm` creates a one-shot
+demand-start `Vivre_Reboot_<guid>` service whose image is
+`cmd /c shutdown /r [/f] /t 5 /c "Vivre Reboot Wave"` — i.e. **cmd.exe with `shutdown` as a child
+process**, not `shutdown.exe` directly; that two-process remote creation is what EDR scores. **A 1191
+(`ERROR_SHUTDOWN_USERS_LOGGED_ON`) refusal on a GRACEFUL call no longer takes that path** (`5f6d437`):
+the channel is healthy, so the trigger re-sends the FORCED form on the SAME session and reports
+`RebootDispatch.EscalatedToForced`, and the wave applies the FORCED go-offline window without ever
+re-dispatching. The fallback is reached only when DCOM THROWS (connect/auth/timeout — the
+Kerberos-broken boxes), when the escalated send itself fails or throws, or on any other
+non-zero/missing code — and after a 1191 it sends `/f` and likewise reports `EscalatedToForced`, so a
+box going down forced is never timed on the graceful window (see
+docs/dcom-1191-reboot-fallback-findings.md). Its best-effort delete can lose the race with the reboot,
 leaving a Stopped orphan behind — the **list-load reaper** (`Remoting/OrphanRebootServiceReaper`,
 gated by *auto-check on load*) enumerates each loaded host once per session over the same SCM channel
 and deletes exact `Vivre_Reboot_*` matches that are fully stopped (never anything running, never

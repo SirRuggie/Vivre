@@ -15,10 +15,13 @@
 
 ## ▶ DO NEXT — recommended order
 
-**DCOM 1191 → SMB/SCM fallback (the SentinelOne "Lateral Movement" source) — INVESTIGATED 2026-07-27, fix direction approved, UNBUILT.**
-Vivre reads `ERROR_SHUTDOWN_USERS_LOGGED_ON` (1191) as a dead DCOM channel and falls back to a `cmd /c shutdown` service that S1 scores —
-and that silently failed to actually reboot 3 of 6 sampled boxes. Agreed direction: treat 1191 as "graceful refused" and escalate to forced
-DCOM (flags 6) instead of switching transports. Full case file: **docs/dcom-1191-reboot-fallback-findings.md** (feasibility, blast radius, red team).
+**DCOM 1191 → SMB/SCM fallback (the SentinelOne "Lateral Movement" source) — BUILT 2026-07-27.** Shipped: `5f6d437` (a 1191 on a GRACEFUL call now
+escalates to the FORCED form on the same DCOM session instead of switching transports — new `RebootDispatch.EscalatedToForced`, forced go-offline
+window, null-ReturnValue fix), `81d8a2f` (the SMB fallback sends `/f` after a failed escalation, + the uptime rescue on the escalated branch), and this
+commit (an escalated send that THROWS still reports `ForceRequired`; an SMB-FORCED fallback reports `EscalatedToForced` so it too gets the forced window).
+**Still open:** the trigger has no direct test seam (`CimSession.Create` is inline inside the private `TryDcomShutdown`, so the throw-after-1191 leg is
+unprovable from tests), and the premise that `shutdown.exe /r` without `/f` is refused on a session-logged-on box is unproven from code. Full case file:
+**docs/dcom-1191-reboot-fallback-findings.md** (feasibility, blast radius, red team).
 
 **Audit findings (2026-07-01) — status as of 2026-07-21 (release 1.16.4; suite 1054 green):** the full five-lens audit
 record is `docs/archive/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
