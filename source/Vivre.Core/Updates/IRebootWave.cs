@@ -24,6 +24,20 @@ public enum RebootDispatch
     /// the box is going offline on its own, so the wave should drop into the commit-watch loop rather than
     /// escalating to a forced reboot or declaring a false "reboot isn't taking" failure.</summary>
     AlreadyInProgress,
+
+    /// <summary>The GRACEFUL reboot was REFUSED because a user session exists on the box (Win32 1191 /
+    /// <c>ERROR_SHUTDOWN_USERS_LOGGED_ON</c> — Active <em>or</em> merely disconnected), so the trigger
+    /// completed the operator's already-ordered reboot by escalating to the FORCED form on the SAME healthy
+    /// DCOM channel, and the OS accepted it. The channel never failed — authentication, the query and the
+    /// method call all succeeded; only the graceful form was refused, and the force flag is the only thing
+    /// that clears it.
+    /// <para><b>Cardinal scope:</b> this escalation is the COMPLETION of a reboot the operator explicitly
+    /// selected and CONFIRMED on this box — exactly like the wave's own graceful→forced escalation. It is
+    /// never an independent decision to reboot or to force a box the operator didn't pick.</para>
+    /// <para><b>What the wave must do with it:</b> the box is ALREADY going down under a FORCED reboot, so
+    /// the wave applies its FORCED go-offline window (not the graceful one) and must NOT escalate again —
+    /// a second dispatch would be a double reboot of one box on one operator click.</para></summary>
+    EscalatedToForced,
 }
 
 /// <summary>Why a box is (or isn't) reboot-ready — the discriminator the wave uses to decide whether to

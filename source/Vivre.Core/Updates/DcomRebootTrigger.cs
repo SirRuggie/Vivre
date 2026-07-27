@@ -7,18 +7,30 @@ namespace Vivre.Core.Updates;
 
 /// <inheritdoc cref="IRebootTrigger"/>
 /// <remarks>
-/// Reboots over DCOM via <c>Win32_OperatingSystem.Win32Shutdown</c> on the ambient Windows login — the
-/// same channel vitals use. Flags: 2 = reboot (graceful — services get their normal stop sequence so SQL
-/// flushes), 6 = reboot + force (2 | 4) for the escalation when a graceful reboot won't take.
+/// Reboots over DCOM via the <c>Win32_OperatingSystem</c> shutdown method on the ambient Windows login —
+/// the same channel vitals use. Flags: 2 = reboot (graceful — services get their normal stop sequence so
+/// SQL flushes), 6 = reboot + force (2 | 4) for the escalation when a graceful reboot won't take or is
+/// refused.
 ///
-/// <para><b>SMB/SCM fallback:</b> on the Kerberos-broken Vision boxes the DCOM Win32Shutdown call is
-/// rejected (it returns 1191, or throws an access/Kerberos error) for the same reason WinRM is — the
-/// http SPN belongs to the SSRS service account, not the box. When DCOM doesn't take the reboot, we fall
-/// back to the <em>proven</em> SMB/SCM channel that already delivers the update agent: create a one-shot
+/// <para><b>1191 is NOT a broken channel.</b> Windows answers the GRACEFUL form with 1191
+/// (<c>ERROR_SHUTDOWN_USERS_LOGGED_ON</c>) whenever any session exists on the box — Active <em>or</em>
+/// merely disconnected. Authentication, the CIM query and the method invocation all SUCCEEDED; the OS
+/// simply refused that form, and the force flag is the only thing that clears it (the shutdown-tracker
+/// method returns 1191 too). It has nothing to do with the SPN/Kerberos cause that breaks WinRM — a
+/// Kerberos-broken box fails EARLIER, as a thrown access/authentication error, never as a return code.
+/// So a 1191 on a graceful call is answered here by re-sending the FORCED form on the SAME session —
+/// never by switching transports. That escalation completes a reboot the operator already ordered and
+/// confirmed on this box (see <see cref="RebootDispatch.EscalatedToForced"/>); it is never an independent
+/// decision to reboot or force anything.</para>
+///
+/// <para><b>SMB/SCM fallback:</b> reserved for boxes DCOM genuinely cannot REACH or that refuse outright —
+/// a connect/auth failure (the Kerberos-broken Vision boxes, whose http SPN belongs to the SSRS service
+/// account rather than the box), a timeout, a missing result code, or a non-zero code with no escalation
+/// left. Those all arrive on a different path from a numeric refusal: a transport failure THROWS. The
+/// fallback is the <em>proven</em> channel that already delivers the update agent: create a one-shot
 /// LocalSystem service whose image runs <c>shutdown.exe</c> (NTLM SSO over <c>\\host\IPC$\svcctl</c>, no
-/// Kerberos). The graceful→force escalation is unchanged — only the reboot primitive falls back, and the
-/// <paramref name="forced"/> flag is honored in the fallback too (graceful = no <c>/f</c>, force = <c>/f</c>).
-/// Healthy boxes that accept DCOM never touch the fallback.</para>
+/// Kerberos). The <c>forced</c> flag is honored in the fallback too (graceful = no <c>/f</c>, force =
+/// <c>/f</c>). Boxes DCOM can reach never touch it.</para>
 /// </remarks>
 public sealed class DcomRebootTrigger : IRebootTrigger
 {
@@ -51,24 +63,21 @@ public sealed class DcomRebootTrigger : IRebootTrigger
 
     private RebootDispatch RebootSync(string host, bool forced, CancellationToken cancellationToken)
     {
-        // 1) Preferred path: DCOM Win32Shutdown (works on healthy, domain-correct boxes).
-        (bool ok, bool alreadyInProgress, string dcomFailure) = TryDcomShutdown(host, forced, cancellationToken);
-        if (ok)
+        // 1) Preferred path: DCOM (works on healthy, domain-correct boxes — including the ones that refuse a
+        //    GRACEFUL shutdown with 1191, which TryDcomShutdown resolves in-place by escalating to forced).
+        //    A non-null dispatch means DCOM RESOLVED the reboot; null means it must fall back.
+        (RebootDispatch? dispatch, string dcomFailure) = TryDcomShutdown(host, forced, cancellationToken);
+        if (dispatch is { } resolved)
         {
-            _trace?.Trace(host, $"reboot channel: DCOM accepted (forced={forced})");
-            return RebootDispatch.Issued;
+            // Accepted (0), accepted after the graceful→forced escalation, or a shutdown ALREADY in progress
+            // (1115 — the box is going offline on its own). All three are traced at the send site with the
+            // real flags; nothing further to try on this box.
+            return resolved;
         }
 
-        // A shutdown was ALREADY in progress (1115) — the box is going offline on its own. Report that so the
-        // wave watches the commit instead of escalating to another reboot or declaring a false failure.
-        if (alreadyInProgress)
-        {
-            _trace?.Trace(host, "reboot channel: DCOM reports a shutdown already in progress (1115)");
-            return RebootDispatch.AlreadyInProgress;
-        }
-
-        // 2) DCOM didn't take it (e.g. 1191 / access denied on a Kerberos-broken box). Fall back to the
-        //    SMB/SCM channel — the same transport that delivers the agent, which authenticates over NTLM.
+        // 2) DCOM did NOT resolve it — a connect/auth failure (Kerberos-broken box), a timeout, a missing
+        //    result code, or a code the OS refused with no escalation left. Fall back to the SMB/SCM
+        //    channel — the same transport that delivers the agent, which authenticates over NTLM.
         cancellationToken.ThrowIfCancellationRequested();
         _trace?.Trace(host, $"reboot channel: DCOM failed ({dcomFailure}) — falling back to SMB/SCM");
         try
@@ -116,11 +125,21 @@ public sealed class DcomRebootTrigger : IRebootTrigger
             || m.Contains("shutdown is in progress", StringComparison.OrdinalIgnoreCase);
     }
 
-    /// <summary>Issues the reboot over DCOM. Returns (true, false, "") when the OS accepted it; (false, true,
-    /// reason) when a shutdown is already in progress (1115 — the box is already going offline); (false,
-    /// false, reason) when it returned another non-zero code or the call failed (so the caller can fall
-    /// back). Cancellation propagates.</summary>
-    private static (bool Ok, bool AlreadyInProgress, string Failure) TryDcomShutdown(string host, bool forced, CancellationToken cancellationToken)
+    /// <summary>Issues the reboot over DCOM and reports whether DCOM RESOLVED it.
+    /// <para>A NON-NULL <c>Dispatch</c> means DCOM took the reboot and nothing else must be tried:
+    /// <see cref="RebootDispatch.Issued"/> (code 0), <see cref="RebootDispatch.EscalatedToForced"/> (a
+    /// graceful call refused with 1191 and re-sent forced on the same session, accepted), or
+    /// <see cref="RebootDispatch.AlreadyInProgress"/> (1115 — the box is already going offline).</para>
+    /// <para>A NULL <c>Dispatch</c> plus a reason means DCOM did NOT resolve it and the caller falls back to
+    /// the SMB/SCM channel: a thrown connect/auth/timeout failure, a missing result code (never success —
+    /// an accepted call always answers with an explicit 0), or a non-zero code with no escalation left.</para>
+    /// <para><b>Loop guard:</b> the escalation fires ONLY when the caller asked for the graceful form
+    /// (<c>!forced</c>). A forced call that itself comes back 1191 is NEVER retried — it falls back instead.
+    /// That guard is monotone because <c>forced</c> is a by-value parameter that is never reassigned, so the
+    /// escalated send can never re-enter this decision; keying the guard on the return code instead of on
+    /// <c>forced</c> would NOT terminate.</para>
+    /// Cancellation propagates, and is re-checked immediately before the escalated send.</summary>
+    private (RebootDispatch? Dispatch, string Failure) TryDcomShutdown(string host, bool forced, CancellationToken cancellationToken)
     {
         int flags = forced ? EwxReboot | EwxForce : EwxReboot;
         try
@@ -138,44 +157,76 @@ public sealed class DcomRebootTrigger : IRebootTrigger
             {
                 using (os)
                 {
-                    using var inParams = new CimMethodParametersCollection
-                    {
-                        CimMethodParameter.Create("Flags", flags, CimType.SInt32, CimFlags.In),
-                    };
+                    uint? code = SendShutdown(session, os, flags, cimOptions);
+                    _trace?.Trace(host, $"reboot channel: DCOM shutdown sent flags={flags} → returned {Describe(code)}");
 
-                    using CimMethodResult result = session.InvokeMethod(@"root\cimv2", os, "Win32Shutdown", inParams, cimOptions);
-                    object? rv = result.ReturnValue?.Value;
-                    uint? code = rv is null ? null : Convert.ToUInt32(rv);
-
-                    return ShutdownReturnCode.Classify(code) switch
+                    switch (ShutdownReturnCode.Classify(code))
                     {
                         // 0 — the OS took the reboot.
-                        ShutdownCallOutcome.Accepted => (true, false, string.Empty),
-
-                        // KNOWN DEFECT, PRESERVED DELIBERATELY AND TEMPORARILY: a null ReturnValue (no result
-                        // code at all) is reported here as success, exactly as the previous
-                        // `rv is null ? 0 : …` coercion did. An accepted call always answers with an explicit
-                        // 0, so a missing code CANNOT confirm a reboot — cf. the sibling guard in
-                        // WinRmEnabler.InterpretCreateReturn (WinRmEnabler.cs:77-81), which throws on it. This
-                        // commit is behaviour-preserving by design; the next chunk fixes this branch.
-                        ShutdownCallOutcome.NoResultCode => (true, false, string.Empty),
+                        case ShutdownCallOutcome.Accepted:
+                            _trace?.Trace(host, $"reboot channel: DCOM accepted (flags={flags})");
+                            return (RebootDispatch.Issued, string.Empty);
 
                         // 1115 = a shutdown is already in progress → the box IS going offline; not a failure.
-                        ShutdownCallOutcome.AlreadyInProgress =>
-                            (false, true, "Win32Shutdown: a shutdown is already in progress (1115)"),
+                        case ShutdownCallOutcome.AlreadyInProgress:
+                            _trace?.Trace(host, "reboot channel: DCOM reports a shutdown already in progress (1115)");
+                            return (RebootDispatch.AlreadyInProgress, string.Empty);
 
-                        // 1191 = Windows refused the GRACEFUL form because a session exists — the channel is
-                        // healthy. Chunk 2 diverts this to a forced escalation; today it deliberately behaves
-                        // exactly as before, i.e. identically to any other failure (fall back to SMB/SCM).
-                        ShutdownCallOutcome.GracefulRefused => (false, false, $"Win32Shutdown returned {code}"),
+                        // 1191 on a GRACEFUL call = Windows refused THAT FORM because a session is logged on
+                        // (Active or merely disconnected). The channel is HEALTHY — the query and the method
+                        // call both worked — so switching transports fixes nothing. Complete the reboot the
+                        // operator already ordered and confirmed by re-sending the FORCED form on the SAME
+                        // session and the SAME instance we still hold. One extra send, never a loop.
+                        case ShutdownCallOutcome.GracefulRefused when !forced:
+                        {
+                            int forcedFlags = EwxReboot | EwxForce;
+                            _trace?.Trace(host,
+                                $"reboot channel: DCOM refused the GRACEFUL reboot — a user session is logged on (1191); the channel is healthy, escalating to the FORCED form (flags={forcedFlags}) on the same session to complete the operator's ordered reboot");
+
+                            // An operator Stop between reading the refusal and sending the escalation must
+                            // PREVENT the escalated send — nothing goes down after Stop.
+                            cancellationToken.ThrowIfCancellationRequested();
+
+                            uint? escalatedCode = SendShutdown(session, os, forcedFlags, cimOptions);
+                            _trace?.Trace(host, $"reboot channel: DCOM shutdown sent flags={forcedFlags} → returned {Describe(escalatedCode)}");
+
+                            switch (ShutdownReturnCode.Classify(escalatedCode))
+                            {
+                                case ShutdownCallOutcome.Accepted:
+                                    _trace?.Trace(host, $"reboot channel: DCOM accepted the forced escalation (flags={forcedFlags}) — the box is going down FORCED");
+                                    return (RebootDispatch.EscalatedToForced, string.Empty);
+
+                                case ShutdownCallOutcome.AlreadyInProgress:
+                                    _trace?.Trace(host, "reboot channel: DCOM reports a shutdown already in progress (1115)");
+                                    return (RebootDispatch.AlreadyInProgress, string.Empty);
+
+                                default:
+                                    // Name BOTH codes: the refusal and what the escalation answered, so the
+                                    // fallback line says exactly why DCOM couldn't resolve this box.
+                                    return (null,
+                                        $"the graceful reboot was refused ({Describe(code)}) and the forced escalation returned {Describe(escalatedCode)}");
+                            }
+                        }
+
+                        // 1191 on a call that was ALREADY forced — there is no stronger form to send, so it is
+                        // NOT retried (that is the loop guard; see the method doc). Fall back.
+                        case ShutdownCallOutcome.GracefulRefused:
+                            return (null, $"the forced reboot was refused ({Describe(code)})");
+
+                        // No result code at all. NEVER success: an accepted call always answers with an
+                        // explicit 0, so a missing code cannot confirm the reboot — the same guard the sibling
+                        // DCOM call site enforces (WinRmEnabler.InterpretCreateReturn, WinRmEnabler.cs:77-81).
+                        case ShutdownCallOutcome.NoResultCode:
+                            return (null, "the shutdown method returned no result code — the reboot can't be confirmed");
 
                         // Any other non-zero code — the call didn't take; let the caller fall back.
-                        _ => (false, false, $"Win32Shutdown returned {code}"),
-                    };
+                        default:
+                            return (null, $"the shutdown method returned {Describe(code)}");
+                    }
                 }
             }
 
-            return (false, false, "Win32_OperatingSystem instance not found");
+            return (null, "Win32_OperatingSystem instance not found");
         }
         catch (OperationCanceledException)
         {
@@ -183,14 +234,40 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         }
         catch (Exception ex)
         {
-            // A shutdown already in progress can surface as a typed/HRESULT error too — treat it as
-            // going-offline, not a fall-back-worthy failure. Otherwise (Kerberos / access / timeout) let
-            // the SMB/SCM fallback try.
-            return IsShutdownInProgress(ex)
-                ? (false, true, $"A shutdown is already in progress: {ex.Message}")
-                : (false, false, $"{ex.GetType().Name}: {ex.Message}");
+            // A THROWN failure is a completely different path from a numeric refusal: the connect, the auth,
+            // the query or the invoke itself failed, so DCOM never delivered anything. A shutdown already in
+            // progress can surface this way too — treat that as going-offline, not a fall-back-worthy
+            // failure. Everything else (Kerberos / access denied / timeout) falls back to SMB/SCM, exactly
+            // as before, which is what keeps the Kerberos-broken boxes working.
+            if (IsShutdownInProgress(ex))
+            {
+                _trace?.Trace(host, $"reboot channel: DCOM reports a shutdown already in progress (1115): {ex.Message}");
+                return (RebootDispatch.AlreadyInProgress, string.Empty);
+            }
+
+            return (null, $"{ex.GetType().Name}: {ex.Message}");
         }
     }
+
+    /// <summary>ONE send of the DCOM shutdown method on an instance we already hold, returning the raw
+    /// result code (<c>null</c> when the method answered with none). Factored so the graceful send and the
+    /// forced escalation are literally the same call with different flags — same session, same instance,
+    /// one primitive call site.</summary>
+    private static uint? SendShutdown(CimSession session, CimInstance os, int flags, CimOperationOptions cimOptions)
+    {
+        using var inParams = new CimMethodParametersCollection
+        {
+            CimMethodParameter.Create("Flags", flags, CimType.SInt32, CimFlags.In),
+        };
+
+        using CimMethodResult result = session.InvokeMethod(@"root\cimv2", os, "Win32Shutdown", inParams, cimOptions);
+        object? rv = result.ReturnValue?.Value;
+        return rv is null ? null : Convert.ToUInt32(rv);
+    }
+
+    /// <summary>Renders a raw result code for a trace/reason string, keeping "no result code at all"
+    /// visibly distinct from any number (it must never read like a success).</summary>
+    private static string Describe(uint? code) => code?.ToString() ?? "(no result code)";
 
     /// <summary>
     /// Fallback reboot via the SMB/SCM channel: create a one-shot LocalSystem demand-start service whose

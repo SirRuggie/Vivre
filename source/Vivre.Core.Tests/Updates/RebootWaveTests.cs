@@ -60,6 +60,110 @@ public class RebootWaveTests
         Assert.True(reboot.Forced); // escalated to complete the operator-ordered reboot
     }
 
+    // ── 1191: the graceful form was refused and the trigger escalated to forced ───
+    // Windows refuses a GRACEFUL reboot with 1191 whenever a session exists on the box, so the trigger
+    // completes the operator's ordered reboot by re-sending the FORCED form on the same healthy channel and
+    // reports EscalatedToForced. The box is ALREADY going down forced: the wave must apply the FORCED
+    // go-offline window and must NEVER dispatch again. These four tests are the double-reboot proof.
+
+    [Fact]
+    public async Task An_escalated_dispatch_is_never_re_dispatched_exactly_one_send_per_click()
+    {
+        // THE DOUBLE-REBOOT PROOF. The box is going down forced already, but slowly enough that the graceful
+        // window would have expired — the old structure would have fired a SECOND forced reboot at that point.
+        // Count the dispatches: exactly one, and it asked for the graceful form (the escalation happened
+        // inside the trigger, on one send).
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = false, // doesn't drop immediately…
+            ChecksBeforeOffline = 6,       // …it holds the network for a while, past the graceful window
+            ComesBackAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromSeconds(5) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal(1, reboot.Dispatches);       // ONE send for one operator click — no double reboot
+        Assert.Single(reboot.ForcedArgs);
+        Assert.False(reboot.ForcedArgs[0]);       // and the wave asked only for the graceful form
+        Assert.False(reboot.Forced);              // the wave itself never issued a forced dispatch
+    }
+
+    [Fact]
+    public async Task An_escalated_dispatch_that_goes_offline_reaches_the_commit_watch_and_verifies_green()
+    {
+        // The escalated box behaves like any other rebooting box once it drops: normal commit-watch, normal
+        // confirmation, green — and the operator is told WHY it was forced (Vivre didn't decide to force it).
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = true,
+            ComesBackAfterChecks = 3,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        var progress = new RecProgress();
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", Fast(), readiness, confirmation, progress, CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal(1, reboot.Dispatches);
+        Assert.Contains(progress.Reports, r => r.Message.Contains("refused the graceful reboot"));
+        Assert.Contains(progress.Reports, r => r.Message.Contains("Committing (offline)"));
+    }
+
+    [Fact]
+    public async Task An_escalated_dispatch_that_never_goes_offline_is_the_honest_forced_terminal_with_one_send()
+    {
+        // Window expiry after an escalation returns the SAME honest terminal the post-force failure uses —
+        // and still exactly ONE dispatch. It must never "try again" on the way out.
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = false, // never drops…
+            ForcedTakesOffline = false,    // …and would not drop for a second forced send either
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(60) };
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.Contains("hasn't gone offline after a forced reboot", result.Message);
+        Assert.Equal(1, reboot.Dispatches); // no second dispatch on the failure path either
+    }
+
+    [Fact]
+    public async Task An_escalated_dispatch_waits_the_FORCED_window_not_the_graceful_one()
+    {
+        // Budget proof: with a 20 ms graceful window and a 600 ms FORCED window, a box that never drops must
+        // not be failed until the FORCED window elapses. If the wave used the graceful window it would fail
+        // at ~20 ms; the elapsed-time assertion catches that.
+        var box = new FakeBox
+        {
+            RebootRefusesGracefulAndEscalates = true,
+            EscalatedTakesOffline = false, // never drops, so only the window decides when it fails
+            ForcedTakesOffline = false,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        var forcedWindow = TimeSpan.FromMilliseconds(600);
+        RebootWaveOptions opts = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = forcedWindow };
+
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        HostPatchStatus result = await wave.RebootAndCommitAsync("BOX", opts, readiness, confirmation, new RecProgress(), CancellationToken.None);
+        sw.Stop();
+
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.True(sw.Elapsed >= TimeSpan.FromMilliseconds(500),
+            $"escalated box must wait the FORCED window ({forcedWindow.TotalMilliseconds:N0} ms), not the graceful one (20 ms) — failed after {sw.Elapsed.TotalMilliseconds:N0} ms");
+        Assert.Equal(1, reboot.Dispatches);
+    }
+
     // ── Pre-reboot readiness settle poll ─────────────────────────────────────────
     // The old pre-reboot hard-fail (a not-ready read → immediate Error) was replaced by the approved design:
     // a not-ready box is WAITED on (never rebooted) and resolves to NothingToCommit (nothing staged) or a
@@ -604,6 +708,8 @@ public class RebootWaveTests
         public bool RebootReportsAlreadyInProgress;     // the trigger reports 1115 (a shutdown is already underway)
         public bool GoesOfflineWhenAlreadyInProgress;   // ...and the box then drops off the network on its own
         public int ChecksBeforeOffline;                 // >0: answers (at the OLD build) this many reach checks, then drops off (a box slow to leave the network)
+        public bool RebootRefusesGracefulAndEscalates;  // 1191: Windows refused the graceful form (a session is logged on) and the trigger escalated to forced on the same channel
+        public bool EscalatedTakesOffline;              // ...and the box then drops off under that forced reboot
 
         // --- Uptime-proof fidelity ---
         // A modeled REAL reboot has completed: the boot reader then reports a small (reset) uptime; until then
@@ -664,8 +770,18 @@ public class RebootWaveTests
         public bool Graceful { get; private set; }
         public bool Forced { get; private set; }
 
+        /// <summary>EVERY call to the trigger, graceful or forced — the double-reboot counter. One operator
+        /// click on one box must never produce more than one dispatch to that box.</summary>
+        public int Dispatches { get; private set; }
+
+        /// <summary>The <c>forced</c> argument of each dispatch, in order — so a test can prove not just how
+        /// many sends happened but which form each one asked for.</summary>
+        public List<bool> ForcedArgs { get; } = [];
+
         public Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken)
         {
+            Dispatches++;
+            ForcedArgs.Add(forced);
             if (forced) { Forced = true; } else { Graceful = true; }
 
             if (box.RebootReportsAlreadyInProgress)
@@ -673,6 +789,15 @@ public class RebootWaveTests
                 // A shutdown is already in progress — the box goes offline on its own (no extra reboot needed).
                 if (box.GoesOfflineWhenAlreadyInProgress) { box.Online = false; }
                 return Task.FromResult(RebootDispatch.AlreadyInProgress);
+            }
+
+            if (box.RebootRefusesGracefulAndEscalates && !forced)
+            {
+                // Models the real trigger: Windows refused the GRACEFUL form because a session is logged on
+                // (1191), so the trigger re-sent the FORCED form on the same healthy channel and the OS took
+                // it. ONE send from the wave's point of view; the box is now going down FORCED.
+                if (box.EscalatedTakesOffline) { box.Online = false; }
+                return Task.FromResult(RebootDispatch.EscalatedToForced);
             }
 
             if (forced) { if (box.ForcedTakesOffline) box.Online = false; }

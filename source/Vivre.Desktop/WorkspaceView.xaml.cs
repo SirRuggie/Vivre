@@ -1202,8 +1202,10 @@ public partial class WorkspaceView : UserControl
         {
             Title = "Reboot & verify",
             Content = $"This will reboot {selected.Count} machine(s):\n\n{names}\n\n"
-                      + "Each reboots gracefully; if one won't go down within 8 minutes it is "
-                      + "forced, to complete the reboot you ordered. Vivre then tracks each box "
+                      + "Each reboots gracefully — but Windows refuses a graceful reboot on any box "
+                      + "with a logged-on session, so those are completed as a FORCED reboot straight "
+                      + "away (unsaved work on them is lost). Any other box that won't go down within "
+                      + "8 minutes is forced too, to complete the reboot you ordered. Vivre then tracks each box "
                       + "until it is verified back online (2016 boxes verify by build/UBR; others "
                       + "by re-scan).\n\n"
                       + "Run this when the boxes are safe to restart (typically overnight).",

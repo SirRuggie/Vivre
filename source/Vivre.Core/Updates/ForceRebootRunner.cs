@@ -17,7 +17,11 @@ public enum ForceRebootChannel
 /// <summary>Outcome of one force-reboot attempt. <see cref="Error"/> non-null means the WinRM channel
 /// itself WORKED but <c>shutdown.exe</c> reported an error (e.g. "a shutdown is already in progress",
 /// access denied) — the reboot was NOT issued and no fallback fired (falling back on a command the box
-/// already ran and refused is the double-act risk). <see cref="Dispatch"/> is null in that case.</summary>
+/// already ran and refused is the double-act risk). <see cref="Dispatch"/> is null in that case.
+/// <para><see cref="RebootDispatch.EscalatedToForced"/> cannot arise from this runner: it only ever asks
+/// the trigger for the FORCED form, and the trigger escalates only a refused GRACEFUL call. If it ever did
+/// appear it would mean the same thing <see cref="RebootDispatch.Issued"/> means here — the box is going
+/// down under a forced reboot — so every consumer may treat it identically to Issued.</para></summary>
 public sealed record ForceRebootResult(ForceRebootChannel Channel, RebootDispatch? Dispatch, string? Error);
 
 /// <summary>
@@ -77,6 +81,8 @@ public sealed class ForceRebootRunner
             // the operator's already-confirmed reboot over the proven DCOM → SMB/SCM trigger, forced,
             // exactly once. AlreadyInProgress from the trigger means the box is going down on its own
             // (1115) — reported, never re-fired. A both-channels failure throws with both reasons.
+            // forced: true also means the trigger's 1191 graceful→forced escalation is unreachable from
+            // here (it fires only on a refused GRACEFUL call), so this stays a single send either way.
             status?.Report("WinRM auth rejected (Kerberos) — trying the DCOM channel…");
             RebootDispatch dispatch = await _dcomFallback.RebootAsync(host, forced: true, cancellationToken).ConfigureAwait(false);
             return new ForceRebootResult(ForceRebootChannel.Dcom, dispatch, Error: null);

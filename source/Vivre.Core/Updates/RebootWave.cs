@@ -178,15 +178,29 @@ public sealed class RebootWave
         // for the uptime proof. The sub-second gap between capturing uptimeBaseline just above and starting this
         // stopwatch is far inside UptimeProofMargin, so reusing it as the proof's elapsed is safe.
         var sinceOrdered = Stopwatch.StartNew();
-        _trace?.Trace(host, $"reboot dispatched forced=false: {graceful}");
+        _trace?.Trace(host, $"reboot dispatched: requested=graceful returned={graceful}");
 
         // A shutdown ALREADY in progress means the box is going offline on its own — don't escalate or
         // wait-then-fail; drop straight into the commit-watch below ("slow, not hung").
         bool alreadyGoingOffline = graceful == RebootDispatch.AlreadyInProgress;
+
+        // Windows REFUSED the graceful form because a session is logged on (1191) and the trigger completed
+        // the operator's ordered reboot by escalating to the FORCED form on the same healthy DCOM channel.
+        // The box is ALREADY going down FORCED, so it gets the FORCED go-offline window and must NEVER be
+        // dispatched again — a second send here is the double reboot.
+        bool escalatedToForced = graceful == RebootDispatch.EscalatedToForced;
+
         if (alreadyGoingOffline)
         {
             progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
                 "A shutdown is already in progress — still committing (slow, not hung); watching for it to finish…"));
+        }
+        else if (escalatedToForced)
+        {
+            // Say WHY it was forced: Vivre did not decide to force this box — Windows refused the graceful
+            // reboot the operator ordered, and the force flag is the only thing that clears that refusal.
+            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                "A user is logged on, so Windows refused the graceful reboot — the reboot you ordered was completed as a FORCED reboot. Watching for it to go down…"));
         }
 
         // 3) Wait for it to drop off the network; if the graceful reboot the operator ordered won't take
@@ -198,7 +212,31 @@ public sealed class RebootWave
         // false-fails as "rolled back". The "already in progress" paths leave it false (we never observed the
         // drop), so the watch waits for the real offline before confirming.
         bool sawOffline = false;
-        if (!alreadyGoingOffline)
+        if (escalatedToForced)
+        {
+            // The trigger already sent the FORCED reboot (the graceful form was refused, never issued), so
+            // this branch does NOT wait the graceful window and does NOT run the escalation below — that
+            // second dispatch, against a box already executing a forced reboot, IS the double reboot. Wait
+            // the FORCED window (strictly longer: a box mid-CBS-commit can hold the network for many more
+            // minutes) and, on expiry, return the same honest terminal the post-force failure uses — with
+            // no second dispatch.
+            _trace?.Trace(host, $"WaitForOffline(forced — escalated at the trigger) window={options.ForcedGoOfflineWindow}");
+            bool droppedEscalated = await WaitForOfflineAsync(host, options.ForcedGoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false);
+            _trace?.Trace(host, $"WaitForOffline(forced — escalated at the trigger) result={(droppedEscalated ? "observed-offline" : "window-expired")} sinceOrdered={sinceOrdered.Elapsed}");
+
+            if (!droppedEscalated)
+            {
+                _trace?.Trace(host, "terminal: hasn't gone offline after forced reboot (escalated at the trigger — NOT re-dispatched)");
+                return Fail(progress,
+                    $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
+            }
+
+            // Observed the drop — fall into the commit-watch below exactly as any other rebooting box does.
+            sawOffline = true;
+            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                "Forced reboot taken (a user was logged on, so the graceful form was refused) — watching it commit…"));
+        }
+        else if (!alreadyGoingOffline)
         {
             _trace?.Trace(host, $"WaitForOffline(graceful) window={options.GoOfflineWindow}");
             bool droppedGraceful = await WaitForOfflineAsync(host, options.GoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false);
@@ -226,7 +264,15 @@ public sealed class RebootWave
                 progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
                     $"Still up after {options.GoOfflineWindow.TotalMinutes:N0} min — escalating to a forced reboot to complete it…"));
                 RebootDispatch forced = await IssueRebootAsync(forced: true).ConfigureAwait(false);
-                _trace?.Trace(host, $"reboot dispatched forced=true: {forced}");
+                _trace?.Trace(host, $"reboot dispatched: requested=forced returned={forced}");
+
+                // RebootDispatch.EscalatedToForced is UNREACHABLE here: the trigger escalates a 1191 refusal
+                // only when the caller asked for the GRACEFUL form, and this call asks for forced. If it ever
+                // appeared it would mean the same thing this leg already did — the box is going down forced —
+                // and the wait below is already the FORCED window, so it needs no separate arm and can never
+                // produce a second dispatch either way.
+                Debug.Assert(forced != RebootDispatch.EscalatedToForced,
+                    "The trigger must never escalate a call that already asked for the forced form.");
 
                 if (forced == RebootDispatch.AlreadyInProgress)
                 {

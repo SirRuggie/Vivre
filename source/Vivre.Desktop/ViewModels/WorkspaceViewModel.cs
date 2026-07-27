@@ -5913,6 +5913,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 }
                 else
                 {
+                    // Issued — or, in theory only, EscalatedToForced. The runner always asks the trigger for
+                    // the FORCED form and the trigger escalates only a refused GRACEFUL call, so that value
+                    // is unreachable here; if it ever arrived it would mean exactly what this arm already
+                    // says (the box is going down under a forced reboot), so it is handled identically.
                     computer.LastStatus = "Reboot forced — going down";
                     computer.WasConfirmedOnline = true; // the reboot ran over WinRM or DCOM/SMB — genuinely managed, so track its return
                     computer.RebootMessage = result.Channel == ForceRebootChannel.Dcom

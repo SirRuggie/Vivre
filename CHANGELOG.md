@@ -18,6 +18,17 @@ it ships, then gets a dated heading.
   "nothing staged".
 
 ### Fixed
+- **The Reboot Wave no longer creates a remote `Vivre_Reboot_*` service (the thing SentinelOne flags as
+  Lateral Movement) on a box that has someone logged on.** Windows refuses a *graceful* reboot whenever
+  any session exists — Active or merely disconnected — and Vivre was misreading that refusal as a dead
+  DCOM channel, then re-sending the reboot over SMB: EDR alerts on every such box, and on the sampled
+  ones it often didn't actually reboot them. The refusal is now answered on the same (healthy) channel by
+  completing the reboot you ordered as a FORCED one, and the row says why it was forced. Boxes DCOM
+  genuinely can't reach still fall back to SMB exactly as before, and every box still gets exactly ONE
+  reboot per click.
+- **A reboot the OS never acknowledged is no longer reported as issued.** A missing result code from the
+  DCOM reboot call used to read as success; it now falls back (and surfaces) instead of claiming a box is
+  going down when nothing confirmed it.
 - **A manual right-click Force reboot now rejoins the verify arc.** When the box comes back and the
   monitor confirms the reboot completed, the row gets the same post-reboot recheck and verified outcome
   the Reboot Wave gives — no more guessing when a hand-forced box is really back.

@@ -65,6 +65,26 @@ public class ForceRebootRunnerTests
     }
 
     [Fact]
+    public async Task Kerberos_fallback_passes_an_escalated_forced_dispatch_through_unchanged()
+    {
+        // EscalatedToForced (the trigger's 1191 graceful→forced escalation) is UNREACHABLE in production from
+        // this runner — it always asks for forced: true, and the trigger escalates only a refused GRACEFUL
+        // call. Injected here anyway to lock the contract: the new member is passed through verbatim, still on
+        // exactly one invoke, and is never mistaken for an error or a reason to re-fire.
+        var host = new FakeHost { RemoteThrow = new KerberosWrongPrincipalException("HOST", new Exception("0x80090322")) };
+        var trigger = new FakeTrigger { Result = RebootDispatch.EscalatedToForced };
+        var runner = new ForceRebootRunner(host, trigger);
+
+        ForceRebootResult result = await runner.RebootAsync(Host, credential: null, CancellationToken.None);
+
+        Assert.Equal(ForceRebootChannel.Dcom, result.Channel);
+        Assert.Equal(RebootDispatch.EscalatedToForced, result.Dispatch);
+        Assert.Null(result.Error);
+        Assert.Equal(1, trigger.CallCount);
+        Assert.True(trigger.LastForced);
+    }
+
+    [Fact]
     public async Task Kerberos_fallback_failure_propagates_after_a_single_invoke()
     {
         var host = new FakeHost { RemoteThrow = new KerberosWrongPrincipalException("HOST", new Exception("0x80090322")) };
