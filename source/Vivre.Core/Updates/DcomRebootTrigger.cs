@@ -29,7 +29,9 @@ public sealed class DcomRebootTrigger : IRebootTrigger
 
     // Win32 ERROR_SHUTDOWN_IN_PROGRESS (HRESULT 0x8007045B). A reboot call that comes back with this means
     // a shutdown is ALREADY underway — the box is going offline on its own, so it is NOT a reboot failure.
-    private const int ErrorShutdownInProgress = 1115;
+    // Single source of truth lives on the classifier; this int alias is what IsShutdownInProgress compares
+    // a Win32Exception.NativeErrorCode against.
+    private const int ErrorShutdownInProgress = (int)ShutdownReturnCode.AlreadyInProgress;
 
     private readonly Vivre.Core.Logging.IActivityLog? _trace;
 
@@ -143,16 +145,33 @@ public sealed class DcomRebootTrigger : IRebootTrigger
 
                     using CimMethodResult result = session.InvokeMethod(@"root\cimv2", os, "Win32Shutdown", inParams, cimOptions);
                     object? rv = result.ReturnValue?.Value;
-                    uint code = rv is null ? 0 : Convert.ToUInt32(rv);
-                    if (code == 0)
-                    {
-                        return (true, false, string.Empty);
-                    }
+                    uint? code = rv is null ? null : Convert.ToUInt32(rv);
 
-                    // 1115 = a shutdown is already in progress → the box IS going offline; not a failure.
-                    return code == ErrorShutdownInProgress
-                        ? (false, true, "Win32Shutdown: a shutdown is already in progress (1115)")
-                        : (false, false, $"Win32Shutdown returned {code}");
+                    return ShutdownReturnCode.Classify(code) switch
+                    {
+                        // 0 — the OS took the reboot.
+                        ShutdownCallOutcome.Accepted => (true, false, string.Empty),
+
+                        // KNOWN DEFECT, PRESERVED DELIBERATELY AND TEMPORARILY: a null ReturnValue (no result
+                        // code at all) is reported here as success, exactly as the previous
+                        // `rv is null ? 0 : …` coercion did. An accepted call always answers with an explicit
+                        // 0, so a missing code CANNOT confirm a reboot — cf. the sibling guard in
+                        // WinRmEnabler.InterpretCreateReturn (WinRmEnabler.cs:77-81), which throws on it. This
+                        // commit is behaviour-preserving by design; the next chunk fixes this branch.
+                        ShutdownCallOutcome.NoResultCode => (true, false, string.Empty),
+
+                        // 1115 = a shutdown is already in progress → the box IS going offline; not a failure.
+                        ShutdownCallOutcome.AlreadyInProgress =>
+                            (false, true, "Win32Shutdown: a shutdown is already in progress (1115)"),
+
+                        // 1191 = Windows refused the GRACEFUL form because a session exists — the channel is
+                        // healthy. Chunk 2 diverts this to a forced escalation; today it deliberately behaves
+                        // exactly as before, i.e. identically to any other failure (fall back to SMB/SCM).
+                        ShutdownCallOutcome.GracefulRefused => (false, false, $"Win32Shutdown returned {code}"),
+
+                        // Any other non-zero code — the call didn't take; let the caller fall back.
+                        _ => (false, false, $"Win32Shutdown returned {code}"),
+                    };
                 }
             }
 

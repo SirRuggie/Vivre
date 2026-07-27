@@ -35,6 +35,21 @@ public class ReadyConfirmationTests
     }
 
     [Fact]
+    public async Task A_small_positive_drift_is_currently_Confirmed_zero_margin()
+    {
+        // CHARACTERIZATION: ReadyConfirmation compares with a strict `>` and NO margin, so a +20s
+        // difference between two reads — far smaller than any real server reboot — reads as a
+        // confirmed reboot today. A later chunk applies the wave's existing UptimeProofMargin here;
+        // when it does, this expectation flips to NotReady.
+        var sut = new ReadyConfirmation(Sequence(BootBefore, BootBefore.AddSeconds(20)));
+        await sut.CaptureBaselineAsync("BOX", CancellationToken.None); // baseline = BootBefore
+
+        RebootConfirmationResult result = await sut.ConfirmAsync("BOX", CancellationToken.None);
+
+        Assert.Equal(RebootConfirmationOutcome.Confirmed, result.Outcome);
+    }
+
+    [Fact]
     public async Task A_flicker_same_boot_time_is_NOT_accepted_as_the_reboot()
     {
         // The box dropped off the network briefly during reboot-prep and answered again on the SAME boot —
