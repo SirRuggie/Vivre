@@ -40,7 +40,11 @@ public sealed class RebootWave
     // jitter can make two uptime samples disagree by a few seconds; 2 minutes swamps that noise while staying
     // far below the smallest REAL signal — a genuine reboot drops the expected uptime by the entire pre-reboot
     // session uptime plus the downtime, always minutes to days. See ProvenRebootedAsync.
-    private static readonly TimeSpan UptimeProofMargin = TimeSpan.FromMinutes(2);
+    //
+    // THE ONE DECLARATION of this value: ReadyConfirmation reuses it (as RebootWave.UptimeProofMargin) for the
+    // analogous two-read LastBootUpTime comparison, so the two boot-time checks can never drift apart. Don't
+    // copy the literal anywhere — change it here and both move together.
+    internal static readonly TimeSpan UptimeProofMargin = TimeSpan.FromMinutes(2);
 
     /// <param name="bootTime">Optional clock-immune uptime reader. When supplied, the wave can PROVE a reboot
     /// completed even if it never saw the box drop off the network (a dead window between polls, or a fast

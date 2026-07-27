@@ -36,8 +36,13 @@ public sealed class PatchService : IPatchService
     // stage / cleanup / reboot-wave). Verify is read-only and deliberately not claimed.
     private readonly ConcurrentDictionary<string, byte> _inFlight = new(StringComparer.OrdinalIgnoreCase);
 
+    // Kept so the per-call confirmation strategies built below get the same sink the wave and the reboot
+    // trigger already use (Trace is file-only — it never reaches the UI activity panel).
+    private readonly IActivityLog? _activity;
+
     public PatchService(IPowerShellHost powerShell, IActivityLog? activity = null)
     {
+        _activity = activity;
         _wua = new WuaUpdateLane(powerShell, activityLog: activity);
         _lcu = new FullPackageLcuLane(_wua.Smb);
         _wave = new RebootWave(new DcomRebootTrigger(activity), new TcpReachabilityProbe(), new DcomBootTimeReader(), activity);
@@ -235,7 +240,7 @@ public sealed class PatchService : IPatchService
         try
         {
             var readiness = new BasicReachabilityReadinessProbe();
-            var confirmation = new ReadyConfirmation();
+            var confirmation = new ReadyConfirmation(_activity);
             return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate).ConfigureAwait(false);
         }
         finally

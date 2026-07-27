@@ -46,6 +46,12 @@ it ships, then gets a dated heading.
   reboot-ready" text clears when a new scan/install starts, and a hand-rebooted box that provably
   committed (confirmed by the reboot-pending probe, never a scan alone) drops its staged-awaiting-reboot
   state.
+- **A box can no longer go green on a "reboot" that took seconds.** Reboot & Verify decided a non-2016 box
+  had rebooted the instant its reported boot time ticked up at all, so a few seconds of noise between two
+  reads could read as a completed restart (two boxes went green in 43–45 seconds on 17 Jul). The boot time
+  must now advance by more than 2 minutes — the same margin the wave's uptime proof already used, far below
+  any real reboot — and both readings are written to the log file so a suspicious green can be checked
+  after the fact.
 
 ## 1.16.4 — 2026-07-21
 

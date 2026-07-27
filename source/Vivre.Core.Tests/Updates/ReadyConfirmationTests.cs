@@ -5,14 +5,16 @@ namespace Vivre.Core.Tests.Updates;
 
 /// <summary>
 /// Tests for <see cref="ReadyConfirmation"/> via the injected boot-time-query seam. The rule: a reboot is
-/// confirmed ONLY when the box returns with a NEWER LastBootUpTime than it had before the reboot — a brief
-/// reachability flicker that comes back on the SAME boot is NOT a reboot (the bug this fixes), and it never
-/// returns Failed.
+/// confirmed ONLY when the box returns with a LastBootUpTime NEWER by more than
+/// <see cref="RebootWave.UptimeProofMargin"/> than it had before the reboot — a brief reachability flicker
+/// that comes back on the SAME boot is NOT a reboot (the bug this fixes), a few seconds of read jitter
+/// between the two DCOM reads is not one either, and it never returns Failed.
 /// </summary>
 public class ReadyConfirmationTests
 {
     private static readonly DateTime BootBefore = new(2026, 6, 15, 8, 0, 0, DateTimeKind.Utc);
-    private static readonly DateTime BootAfter = BootBefore.AddMinutes(5); // a real reboot → later boot time
+    // A real reboot → a later boot time, comfortably past the 2-minute read-jitter margin.
+    private static readonly DateTime BootAfter = BootBefore.AddMinutes(5);
 
     // Returns the queued boot times in order (CaptureBaseline reads the first, then each ConfirmAsync the
     // next), clamping to the last once exhausted.
@@ -35,18 +37,59 @@ public class ReadyConfirmationTests
     }
 
     [Fact]
-    public async Task A_small_positive_drift_is_currently_Confirmed_zero_margin()
+    public async Task A_small_positive_drift_inside_the_margin_is_NOT_a_reboot()
     {
-        // CHARACTERIZATION: ReadyConfirmation compares with a strict `>` and NO margin, so a +20s
-        // difference between two reads — far smaller than any real server reboot — reads as a
-        // confirmed reboot today. A later chunk applies the wave's existing UptimeProofMargin here;
-        // when it does, this expectation flips to NotReady.
+        // THE RULE: the verdict rests on two independent DCOM reads of LastBootUpTime, and read jitter can
+        // make them disagree by a few seconds. A +20s difference is that jitter, not a server reboot — no real
+        // server restarts in 20 seconds — so it must read NotReady (keep watching). Before the margin landed
+        // this drift minted a terminal green, which is what a box "rebooting" in 43 seconds looked like.
         var sut = new ReadyConfirmation(Sequence(BootBefore, BootBefore.AddSeconds(20)));
         await sut.CaptureBaselineAsync("BOX", CancellationToken.None); // baseline = BootBefore
 
         RebootConfirmationResult result = await sut.ConfirmAsync("BOX", CancellationToken.None);
 
+        Assert.Equal(RebootConfirmationOutcome.NotReady, result.Outcome);
+    }
+
+    [Fact]
+    public async Task A_drift_just_below_the_margin_is_NotReady()
+    {
+        // One second under the margin — still inside the jitter band we distrust.
+        var sut = new ReadyConfirmation(Sequence(BootBefore, BootBefore + RebootWave.UptimeProofMargin - TimeSpan.FromSeconds(1)));
+        await sut.CaptureBaselineAsync("BOX", CancellationToken.None);
+
+        RebootConfirmationResult result = await sut.ConfirmAsync("BOX", CancellationToken.None);
+
+        Assert.Equal(RebootConfirmationOutcome.NotReady, result.Outcome);
+    }
+
+    [Fact]
+    public async Task A_drift_just_above_the_margin_is_Confirmed()
+    {
+        // One second over the margin — past the jitter band, so it counts as a real new boot.
+        var sut = new ReadyConfirmation(Sequence(BootBefore, BootBefore + RebootWave.UptimeProofMargin + TimeSpan.FromSeconds(1)));
+        await sut.CaptureBaselineAsync("BOX", CancellationToken.None);
+
+        RebootConfirmationResult result = await sut.ConfirmAsync("BOX", CancellationToken.None);
+
         Assert.Equal(RebootConfirmationOutcome.Confirmed, result.Outcome);
+    }
+
+    [Fact]
+    public async Task A_drift_exactly_on_the_margin_is_NotReady()
+    {
+        // BOUNDARY, pinned deliberately: the comparison is STRICTLY greater (`advance > margin`), so a
+        // difference sitting exactly ON the margin lands on the NotReady side. Chosen because the margin is
+        // the width of the band we distrust — a value on the edge is still inside it — and because
+        // RebootWave.ProvenRebootedAsync uses the same strict `>` against the same constant, so both boot-time
+        // checks treat the boundary identically. Erring toward NotReady only costs another poll; erring toward
+        // Confirmed mints a terminal green on a box that may not have rebooted.
+        var sut = new ReadyConfirmation(Sequence(BootBefore, BootBefore + RebootWave.UptimeProofMargin));
+        await sut.CaptureBaselineAsync("BOX", CancellationToken.None);
+
+        RebootConfirmationResult result = await sut.ConfirmAsync("BOX", CancellationToken.None);
+
+        Assert.Equal(RebootConfirmationOutcome.NotReady, result.Outcome);
     }
 
     [Fact]

@@ -5,7 +5,8 @@ namespace Vivre.Core.Updates;
 
 /// <summary>
 /// Post-reboot confirmation for non-2016 boxes. Confirms a reboot ONLY when the box returns with a
-/// <b>newer <c>LastBootUpTime</c></b> than it had before the reboot — querying <c>Win32_OperatingSystem</c>
+/// <b>newer <c>LastBootUpTime</c></b> than it had before the reboot — <b>newer by more than
+/// <see cref="RebootWave.UptimeProofMargin"/> (2 minutes)</b> — querying <c>Win32_OperatingSystem</c>
 /// over DCOM/CIM (8-second timeout, ambient login — works on Kerberos-broken boxes).
 ///
 /// <para><b>Why the boot time, not just "the OS answered":</b> a reboot-pending box briefly drops off the
@@ -14,6 +15,15 @@ namespace Vivre.Core.Updates;
 /// reboot and declared success in ~0 min — then the post-reboot rescan ran on a box that hadn't rebooted.
 /// Gating on a newer boot time fixes that: a flicker (same boot) stays <see cref="RebootConfirmationOutcome.NotReady"/>
 /// (keep watching) until the boot time advances or the wave's offline ceiling / hard cap is reached.</para>
+///
+/// <para><b>Why a margin and not a bare <c>&gt;</c>:</b> the verdict rests on TWO independent DCOM reads of
+/// <c>LastBootUpTime</c>, and read latency/jitter can make two samples disagree by <i>a few seconds</i> (the
+/// same noise <see cref="RebootWave"/> sizes at RebootWave.cs:40-42). With a zero-margin <c>&gt;</c>, seconds
+/// of positive drift mint a terminal green — which is what a box "rebooting" in 43 seconds looks like. The
+/// margin cannot mask a genuine reboot: a real server reboot moves the boot time by minutes to days, orders of
+/// magnitude past 2 minutes. It reuses <see cref="RebootWave.UptimeProofMargin"/> — the SAME constant the
+/// wave's clock-immune uptime proof uses — so the two boot-time checks can never drift apart. Strictly
+/// greater: a difference sitting exactly ON the margin is still inside the band we distrust.</para>
 ///
 /// <para>This strategy NEVER returns <see cref="RebootConfirmationOutcome.Failed"/>: whether updates "took"
 /// on a non-2016 box is decided later by the WUA rescan, not here.</para>
@@ -29,13 +39,22 @@ public sealed class ReadyConfirmation : IPostRebootConfirmation
     /// the wave's hard-cap / the standalone Verify), never a false success.</summary>
     private DateTime? _baselineBootTime;
 
+    /// <summary>Optional file-only diagnostic breadcrumb sink. Records BOTH boot-time reads and the verdict, so
+    /// a "rebooted in 43 seconds" can be resolved from the log instead of guessed at. Null = no tracing.</summary>
+    private readonly Vivre.Core.Logging.IActivityLog? _trace;
+
     /// <summary>Production constructor — uses a real DCOM CIM query for LastBootUpTime.</summary>
-    public ReadyConfirmation() : this(DcomBootTimeQueryAsync) { }
+    /// <param name="trace">Optional file-only diagnostic breadcrumb sink — never mirrored to the UI activity
+    /// panel. Purely observational: it changes no logic, no branch, and no verdict. Null = no tracing.</param>
+    public ReadyConfirmation(Vivre.Core.Logging.IActivityLog? trace = null) : this(DcomBootTimeQueryAsync, trace) { }
 
     /// <summary>Test constructor — supply a delegate that returns the simulated LastBootUpTime (or null).</summary>
-    internal ReadyConfirmation(Func<string, CancellationToken, Task<DateTime?>> bootTimeQuery)
+    internal ReadyConfirmation(
+        Func<string, CancellationToken, Task<DateTime?>> bootTimeQuery,
+        Vivre.Core.Logging.IActivityLog? trace = null)
     {
         _queryBootTime = bootTimeQuery ?? throw new ArgumentNullException(nameof(bootTimeQuery));
+        _trace = trace;
     }
 
     /// <inheritdoc/>
@@ -55,6 +74,10 @@ public sealed class ReadyConfirmation : IPostRebootConfirmation
             // waiting rather than ever confirming without proof of a newer boot (no false success).
             _baselineBootTime = null;
         }
+
+        _trace?.Trace(host, _baselineBootTime is null
+            ? "boot-time baseline: unreadable — no proof of a reboot is possible; confirmation will keep waiting"
+            : $"boot-time baseline: LastBootUpTime={_baselineBootTime.Value:o}");
     }
 
     /// <inheritdoc/>
@@ -89,9 +112,20 @@ public sealed class ReadyConfirmation : IPostRebootConfirmation
             return NotReady("Back online — confirming the reboot…");
         }
 
-        // The reboot is REAL only when the box reports a NEWER boot time than before it. A box that merely
-        // flickered offline and came back on the SAME boot has NOT rebooted → keep watching.
-        return bootTime > _baselineBootTime
+        // The reboot is REAL only when the box reports a boot time newer than before it by MORE than the read-
+        // jitter margin. A box that merely flickered offline and came back on the SAME boot has NOT rebooted →
+        // keep watching; and a few seconds of positive drift between two independent DCOM reads is that same
+        // non-reboot, not a 43-second server restart. Strictly greater — exactly-on-the-margin stays NotReady.
+        DateTime baseline = _baselineBootTime.Value;
+        DateTime current = bootTime.Value;
+        TimeSpan advance = current - baseline;
+        bool rebooted = advance > RebootWave.UptimeProofMargin;
+
+        _trace?.Trace(host,
+            $"boot-time confirmation: baseline={baseline:o} current={current:o} advance={advance} " +
+            $"margin={RebootWave.UptimeProofMargin} → {(rebooted ? "Confirmed" : "NotReady")}");
+
+        return rebooted
             ? new RebootConfirmationResult(RebootConfirmationOutcome.Confirmed, "Back online — rebooted.")
             : NotReady("Back online, but it hasn't rebooted yet (no new boot time) — still waiting for the reboot to take…");
     }
