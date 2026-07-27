@@ -15,6 +15,11 @@
 
 ## ▶ DO NEXT — recommended order
 
+**DCOM 1191 → SMB/SCM fallback (the SentinelOne "Lateral Movement" source) — INVESTIGATED 2026-07-27, fix direction approved, UNBUILT.**
+Vivre reads `ERROR_SHUTDOWN_USERS_LOGGED_ON` (1191) as a dead DCOM channel and falls back to a `cmd /c shutdown` service that S1 scores —
+and that silently failed to actually reboot 3 of 6 sampled boxes. Agreed direction: treat 1191 as "graceful refused" and escalate to forced
+DCOM (flags 6) instead of switching transports. Full case file: **docs/dcom-1191-reboot-fallback-findings.md** (feasibility, blast radius, red team).
+
 **Audit findings (2026-07-01) — status as of 2026-07-21 (release 1.16.4; suite 1054 green):** the full five-lens audit
 record is `docs/archive/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
 HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
@@ -290,10 +295,17 @@ standalone items further down, each "do only if it recurs / when a signal appear
 - **Force-reboot-over-RPC/SMB** as an additional wave fallback path — only if the DCOM + SMB reboot
   paths prove insufficient at scale.
 - **APVPATCHING — "New-ScheduledTaskAction is not recognized" — PARKED by the operator (known; do NOT
-  troubleshoot ad hoc).** Scheduling an action on APVPATCHING fails with `New-ScheduledTaskAction` not
-  recognized (the ScheduledTasks module cmdlet is unavailable on that host). The operator has parked this
-  deliberately — it is a known condition of that one box, not a Vivre bug to chase. Do not investigate or
-  "fix" it opportunistically; act only if the operator re-raises it.
+  troubleshoot ad hoc).** **Cause corrected 2026-07-27: this is NOT a property of that box.**
+  `Get-Command New-ScheduledTaskAction` resolves fine in a plain console on APVPATCHING (Function,
+  ScheduledTasks, 1.0.0.0). The failure is Vivre's own **in-process PS7 runspace not carrying the Windows
+  PowerShell 5.1 module paths**: a self-targeted host takes the `HostName.IsLocal` branch to
+  `RunLocalAsync` (`WuaUpdateLane.cs:421`), which runs in that runspace — and Vivre's PS7 host rewrites the
+  process `PSModulePath` to PS7 folders (the repo states this itself at `WugMaintenance.cs:1098-1101`, which
+  is why the WUG lane strips `PSModulePath` before shelling to 5.1). A REMOTE target's own session has its
+  native module path and is unaffected. **Scope is wider than "Schedule":** the cmdlet sits in the install
+  bootstrap at `WuaUpdateLane.cs:960`, so a **self-targeted Install/Uninstall hits it too**, not only
+  Schedule ▸ Install/Reboot (`WorkspaceViewModel.cs:1930`). Still parked — the operator has chosen not to
+  chase it; act only if he re-raises it. Do not "fix" it opportunistically.
 - **Per-host RDP display-scale toggle — CLOSED / DISPROVEN, do not build.** The old theory
   (mRemoteNG = WinForms framework DPI scaling; recommended lever = a **per-host display-scale
   toggle**) was disproven: mRemoteNG ships DPI-unaware, and ANY session scale above 100% breaks FCM
