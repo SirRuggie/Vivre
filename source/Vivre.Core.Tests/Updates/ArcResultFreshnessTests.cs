@@ -88,6 +88,39 @@ public class ArcResultFreshnessTests
     }
 
     [Fact]
+    public void A_row_an_operation_has_CLAIMED_is_stale_even_when_the_generation_is_untouched()
+    {
+        // Detaching the arc widened the window in which it can write a row a sweep now owns. The claim is
+        // checked at arc START (ShouldRunVerify's IsPatching leg) but nothing re-checked it afterwards, so a
+        // Check All begun mid-arc could have its results overwritten. Generation alone does not catch this:
+        // a claim is not a reboot-state write.
+        long captured = CaptureAtArcStart();
+
+        Assert.True(ArcResultFreshness.IsCurrent(captured, _generation, rowClaimed: false));
+        Assert.False(ArcResultFreshness.IsCurrent(captured, _generation, rowClaimed: true));
+    }
+
+    [Fact]
+    public void Either_leg_alone_is_enough_to_discard()
+    {
+        long captured = CaptureAtArcStart();
+        MonitorProbeWritesRebootState();
+
+        // Superseded but unclaimed, and claimed but not superseded — both must discard.
+        Assert.False(ArcResultFreshness.IsCurrent(captured, _generation, rowClaimed: false));
+        Assert.False(ArcResultFreshness.IsCurrent(captured, _generation, rowClaimed: true));
+    }
+
+    [Fact]
+    public void The_already_running_line_names_the_host_and_says_no_second_arc_started()
+    {
+        string line = ArcResultFreshness.AlreadyRunningLine("NYC-FP1");
+
+        Assert.Contains("NYC-FP1", line, StringComparison.Ordinal);
+        Assert.Contains("already running", line, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void The_stale_line_names_the_host_and_says_the_result_was_discarded()
     {
         string line = ArcResultFreshness.StaleLine("NYC-FP1");

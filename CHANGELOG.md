@@ -34,6 +34,11 @@ it ships, then gets a dated heading.
   other machines. It is a warning only: nothing is blocked, and exactly the same machines reboot.
 
 ### Fixed
+- **A running post-reboot recheck now gets out of the way of anything newer.** Its result is discarded if a
+  Check All / Check Vitals / wave / verify has updated that machine's reboot state in the meantime, or if
+  any operation has claimed the row since the recheck started — and only one recheck runs per machine at a
+  time, so a second Force reboot while one is still going no longer starts a duplicate. Force reboot itself
+  is never blocked.
 - **The post-reboot recheck no longer holds up monitoring at all.** It now runs alongside the monitor
   instead of inside it, so one machine's recheck can never pause the online/offline tracking for the other
   machines on that tab — the recheck itself no longer contributes to that pause at all. If a

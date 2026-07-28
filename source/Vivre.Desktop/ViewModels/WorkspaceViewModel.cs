@@ -239,6 +239,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private long RebootGeneration(string host) => _rebootStateGeneration.TryGetValue(host, out long g) ? g : 0;
 
     private void BumpRebootGeneration(string host) => _rebootStateGeneration.AddOrUpdate(host, 1, (_, g) => g + 1);
+
+    // Hosts with a detached verify arc in flight. A second Force reboot on a row whose arc is still running
+    // re-arms ForceRebootAwaitingVerify, which would start a SECOND arc writing the same row — the exact
+    // interleaving the freshness guard exists to stop, but from a writer the guard can't distinguish. This
+    // claim blocks the duplicate ARC only; the reboot itself is never gated (see RebootForceSelectedAsync).
+    private readonly ConcurrentDictionary<string, byte> _verifyArcsInFlight = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Whether an operation owns this row right now — a claimed row is treated as stale by the arc.</summary>
+    private bool IsRowClaimed(string host) => _heldRows.ContainsKey(host) || _monitorSkipRows.ContainsKey(host);
     // The unified reboot-pending probe cadence: every box (pending or not) is re-probed at most this often.
     // A box known reboot-pending self-clears its amber pill on a later poll if it rebooted out-of-band; a
     // not-pending box notices a newly-pending state — both at this slow rate, never every 20s.
@@ -3978,7 +3987,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// reboot first. <see cref="Computer.RebootRequired"/> is only ever forced true here (never cleared, so a
     /// true set elsewhere survives), matching the prior behaviour. Non-terminal progress ticks fall through to
     /// the live-progress default.</summary>
-    private static void ApplyLcuStageStatus(Computer computer, HostPatchStatus status, string kb)
+    // Instance (was static) only so it can bump the reboot generation: a stage that forces reboot-pending is
+    // newer knowledge than any verify arc still in flight. The mapping decision itself stays pure in
+    // Lcu2016RowState.MapStageTerminal; both call sites are already instance context.
+    private void ApplyLcuStageStatus(Computer computer, HostPatchStatus status, string kb)
     {
         switch (status.Phase)
         {
@@ -3991,6 +4003,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 if (outcome.RebootRequired)
                 {
                     computer.RebootRequired = true;
+                    BumpRebootGeneration(computer.Name);
                 }
                 computer.StagedThisSession = outcome.Staged; // Verify uses this (not RebootRequired) to tell rollback from never-staged
                 if (outcome.Staged)
@@ -4227,6 +4240,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (final.Phase == PatchPhase.Done)
             {
                 computer.RebootRequired = false; // committed — clear the staged/reboot-pending flag (→ green)
+                BumpRebootGeneration(computer.Name);
                 computer.StagedThisSession = false; // committed — no longer a pending stage
                 if (lane == RebootVerifyLane.Lcu2016)
                 {
@@ -4269,6 +4283,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // actual not-pending PROBE reading, NOT a scan inference — so it satisfies the cardinal rule that
                 // RebootRequired=false may be written only from a definite probe answer.
                 computer.RebootRequired = false;
+                BumpRebootGeneration(computer.Name);
                 computer.StagedThisSession = false;
                 _activity.Info(computer.Name, final.Message);
             }
@@ -4330,7 +4345,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             await ReportPostRebootOutcomeAsync(
                 computer, is2016, arcCts.Token,
-                () => ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name)));
+                () => ArcResultFreshness.IsCurrent(
+                    generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)));
         }
         catch (OperationCanceledException) when (
             VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, monitorToken.IsCancellationRequested))
@@ -4357,6 +4373,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
+            // Release the one-arc-per-host claim BEFORE disposing, so a later Force reboot on this row can
+            // always start a fresh arc even if disposal were to throw.
+            _verifyArcsInFlight.TryRemove(computer.Name, out _);
             arcCts.Dispose();
         }
     }
@@ -4368,7 +4387,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     private void MarkArcUnverifiedIfStillCurrent(Computer computer, long generationAtStart, string line, bool isError = false)
     {
-        if (!ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name)))
+        if (!ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)))
         {
             _activity.Warn(computer.Name, ArcResultFreshness.StaleLine(computer.Name), InstanceTag);
             return;
@@ -4469,7 +4488,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     return;
                 }
 
-                ApplyStatus(computer, status, UpdateScope.Applicable);
+                ApplyStatus(computer, status, UpdateScope.Applicable, fromDetachedArc: isStillCurrent is not null);
                 // Read-only readiness: the post-reboot rescan surfaces what's STILL applicable. Auto-select
                 // those updates for THIS box so the operator can one-click Install them — the same readiness
                 // a fresh scan gives. (ApplyStatus → ReplaceUpdatesForScope preserves prior selection, which
@@ -4624,6 +4643,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 case LcuVerifyOutcome.Verified:
                     computer.RebootRequired = false;
+                    BumpRebootGeneration(computer.Name);
                     computer.StagedThisSession = false; // committed — no longer a pending stage
                     computer.LcuVerifiedThisSession = true; // CU confirmed at target UBR → minor updates now go via WUA
                     computer.UpdatePhase = PatchPhase.Done.ToString();
@@ -4703,7 +4723,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// phase (red pill) so a partial/total failure can never read green "Up to date" or hide behind amber
     /// reboot-pending. Default false so scan / cleanup / reboot-verify (which share this method) are never
     /// painted red by an unrelated count.</summary>
-    private void ApplyStatus(Computer computer, HostPatchStatus status, UpdateScope? scopeForScan = null, bool failuresAreErrors = false)
+    /// <param name="fromDetachedArc">True ONLY for the monitor's detached verify arc. Suppresses the
+    /// reboot-generation bump below: the arc must not invalidate its own verdict, and it has already passed
+    /// the freshness gate to get here. Every other caller represents newer knowledge and bumps.</param>
+    private void ApplyStatus(Computer computer, HostPatchStatus status, UpdateScope? scopeForScan = null, bool failuresAreErrors = false, bool fromDetachedArc = false)
     {
         UpdateScope scope = scopeForScan ?? _patchOptions.Scope;
 
@@ -4777,6 +4800,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (status.RebootPending)
         {
             computer.RebootRequired = true;
+            if (!fromDetachedArc)
+            {
+                BumpRebootGeneration(computer.Name);
+            }
         }
 
         // Unreachable (transient retries exhausted) is a failure too — record it as the row error and log
@@ -5388,9 +5415,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // data-bound write inside the arc stays on the UI thread. Same shape as the other
                     // `_ = ...Async()` starts in this file. arcCts is deliberately NOT a `using` — that would
                     // dispose it at this brace and cancel the arc instantly; the runner disposes it instead.
-                    var arcCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-                    arcCts.CancelAfter(VerifyArcTimeout.Ceiling);
-                    _ = RunDetachedVerifyArcAsync(computer, is2016, arcCts, token, RebootGeneration(computer.Name));
+                    // One arc per host at a time. A second Force reboot mid-arc re-arms the marker above, and
+                    // without this claim that would start a concurrent arc writing the same row. The claim is
+                    // released in the runner's finally; the reboot itself is never blocked by it.
+                    if (!_verifyArcsInFlight.TryAdd(computer.Name, 0))
+                    {
+                        _activity.Info(computer.Name, ArcResultFreshness.AlreadyRunningLine(computer.Name), InstanceTag);
+                    }
+                    else
+                    {
+                        var arcCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                        arcCts.CancelAfter(VerifyArcTimeout.Ceiling);
+                        _ = RunDetachedVerifyArcAsync(computer, is2016, arcCts, token, RebootGeneration(computer.Name));
+                    }
                 }
             }
         }
@@ -5513,6 +5550,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.SiteCode = null;
         computer.AgentVersion = null;
         computer.RebootRequired = null;
+        // Check All / Check Vitals is newer knowledge than any arc still in flight — see ArcResultFreshness.
+        BumpRebootGeneration(computer.Name);
         computer.MissingUpdates = null;
         computer.RunningUpdates = null;
         computer.UserLoggedOn = null;
@@ -5570,6 +5609,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             computer.SiteCode = health.SiteCode;
             computer.AgentVersion = health.ClientVersion;
             computer.RebootRequired = health.RebootRequired;
+            BumpRebootGeneration(computer.Name);
             if (health.ClientSdkFailed)
             {
                 // The ClientSDK namespace didn't answer (corrupt/denied WMI): Missing/Running
@@ -5758,6 +5798,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (v.RebootPending is { } pending)
         {
             computer.RebootRequired = pending;
+            BumpRebootGeneration(computer.Name);
         }
 
         // OS comes free with the vitals CIM pull — set it now so Details/grid don't lazy-load it later.

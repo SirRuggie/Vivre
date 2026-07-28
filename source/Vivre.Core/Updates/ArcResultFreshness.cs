@@ -38,6 +38,21 @@ public static class ArcResultFreshness
     public static bool IsCurrent(long generationAtStart, long generationNow) =>
         generationAtStart == generationNow;
 
+    /// <summary>
+    /// As <see cref="IsCurrent(long, long)"/>, plus: a row an operation has CLAIMED since the arc started is
+    /// never current. Detaching the arc widened the window in which it can write a row a sweep now owns —
+    /// the claim is checked at start (<c>ShouldRunVerify</c>'s <c>IsPatching</c> leg) but nothing re-checked
+    /// it afterwards, so a Check All / Check Vitals begun mid-arc could have its results overwritten by an
+    /// arc that started before it. A claimed row is treated exactly like a superseded one: discard, log, and
+    /// leave the row to its owner.
+    /// </summary>
+    public static bool IsCurrent(long generationAtStart, long generationNow, bool rowClaimed) =>
+        IsCurrent(generationAtStart, generationNow) && !rowClaimed;
+
+    /// <summary>The line emitted when a second verify arc is skipped because one is already running.</summary>
+    public static string AlreadyRunningLine(string host) =>
+        $"{host}: a post-reboot verify is already running — not starting a second one.";
+
     /// <summary>The one activity line a discarded verdict emits. The caller supplies the tab tag as origin.</summary>
     public static string StaleLine(string host) =>
         $"{host}: post-reboot verify finished after a newer reboot check — discarded its result rather than overwrite fresher state.";
