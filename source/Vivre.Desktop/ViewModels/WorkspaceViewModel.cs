@@ -4962,9 +4962,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             await RefreshLastBootTimeAsync(computer, token);
         }
 
-        // While the Windows Update view is up, keep the Pending Reboot column live — a small
-        // registry/SCCM-aggregated probe over WinRM, throttled so a large fleet doesn't open dozens
-        // of runspaces at once. DON'T re-probe on every 20s pass: that churns a fresh WinRM shell per
+        // Keep the Pending Reboot column live — a small registry/SCCM-aggregated probe over WinRM,
+        // throttled so a large fleet doesn't open dozens of runspaces at once. NOTE the column exists on
+        // BOTH grids, so the IsUpdateMode admission below is a COST bound, not a relevance one: it is why
+        // the Health grid's Pending Reboot column is only as fresh as the last Check/Vitals sweep. The
+        // second admission (a row awaiting force-reboot verification) is scoped per row and budget-bounded
+        // precisely so that cost stays proportional to force-reboots, never to fleet size.
+        // DON'T re-probe on every 20s pass: that churns a fresh WinRM shell per
         // online box each pass (which can poison a degraded target). Instead probe every box — pending
         // or not — on a single slow cadence (RebootPendingRecheckInterval, ~5 min); the 20s loop above
         // does only the cheap ping. The brief post-boot recheck window and a degraded-retry still probe
