@@ -67,6 +67,10 @@ public class VerifyArcTimeoutTests
         // never completed its rescan, so it must not qualify — otherwise the next clean probe would quietly
         // turn an unverified box green, which is the same class of lie by a slower route.
         Computer row = MidArcRow();
+        // Arrange it TRUE: a prior CouldntConfirm arc leaves this armed, and re-entry does not clear it
+        // before the ceiling can fire. Defaulting to false would let this test pass even if MarkUnverified
+        // stopped clearing the flag — i.e. it would not bite on the very regression it exists to catch.
+        row.UnverifiedRebootProbeOnly = true;
 
         VerifyArcTimeout.MarkUnverified(row);
 
