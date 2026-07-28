@@ -1,4 +1,5 @@
 using System.Windows;
+using Vivre.Core.Updates;
 using Wpf.Ui.Controls;
 
 namespace Vivre.Desktop;
@@ -8,7 +9,11 @@ namespace Vivre.Desktop;
 public partial class ScheduleWindow : FluentWindow
 {
     /// <param name="action">What's being scheduled ("install" or "reboot") — tunes the title + blurb.</param>
-    public ScheduleWindow(string action = "install")
+    /// <param name="targetNames">The machines being scheduled. Used for ONE thing: when the action is a reboot
+    /// and this machine is in the list, the intro discloses that by name. Schedule ▸ Reboot has no
+    /// MessageBox confirm — this window IS the gate — so the intro is the only honest place for it, and adding
+    /// a new confirm dialog would change the action's shape. Nothing here filters or blocks a target.</param>
+    public ScheduleWindow(string action = "install", IEnumerable<string?>? targetNames = null)
     {
         InitializeComponent();
 
@@ -20,6 +25,13 @@ public partial class ScheduleWindow : FluentWindow
               + "SYSTEM at that time and force-restarts the box — any unsaved work on it is lost."
             : "Pick when the install should run on the selected machine(s). A one-time task runs as "
               + "SYSTEM at that time; reboot is reported, not forced.";
+
+        // DISCLOSURE ONLY, and only on the reboot branch (a scheduled INSTALL never restarts this box —
+        // "reboot is reported, not forced"). Every scheduled machine is still scheduled exactly as before.
+        if (reboot && LocalHostRebootWarning.WarningOrNull(targetNames) is { } localWarning)
+        {
+            Intro.Text += "\n\n" + localWarning;
+        }
 
         for (int h = 0; h < 24; h++)
         {

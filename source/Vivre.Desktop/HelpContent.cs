@@ -350,11 +350,12 @@ public static class HelpContent
         new HelpTopic
         {
             Category = Machines, Icon = SymbolRegular.ArrowClockwise24, Title = "How do I reboot machines now?",
-            Keywords = "reboot restart force shutdown",
+            Keywords = "reboot restart force shutdown this pc own machine local host vivre host",
             Lines =
             [
                 "Select the machines, right-click ▸ Reboot (force now)…, and confirm (it lists the count + names).",
                 "Runs shutdown /r /f /t 5 (a 5-second grace so the command returns cleanly) — any unsaved work on those machines is lost.",
+                "If your OWN machine is in the selection, the confirm names it and warns that rebooting it terminates Vivre and abandons any wave in flight against the other machines. It's a warning only — nothing is blocked, and the same machines still reboot.",
             ],
             Tip = "To reboot at a set time instead, use right-click ▸ Schedule ▸ Reboot…. Housekeeping is automatic: when a list loads (with auto-check on load on), Vivre quietly removes any leftover Vivre_Reboot_* helper services an earlier reboot left behind.",
         },
@@ -517,6 +518,7 @@ public static class HelpContent
                 "A box that doesn't answer within about a minute fails on its own row and the rest of the list still completes — one dead box no longer holds everything up. A schedule that couldn't be confirmed still shows as Scheduled with 'couldn't confirm — verify on the box' (never silently unscheduled: a hidden armed reboot is worse than a reboot that never comes), and a cancel that couldn't be confirmed keeps the Scheduled marker.",
                 "The time you pick is YOUR local time (this PC's). Every selected machine runs at that same moment — a box in another time zone (e.g. a UTC cloud VM) still fires at your chosen instant, not its own local clock.",
                 "A scheduled task shows as a neutral 'Scheduled' status pill and a '<action> scheduled for <time> (your time)' message in the Windows update row; the Scheduled filter chip lists those machines. It clears once the time passes.",
+                "If your OWN machine is in the selection, the Schedule reboot window names it and warns that rebooting it terminates Vivre and abandons any wave in flight against the other machines. It's a warning only — nothing is blocked, and the same machines are still scheduled. (Scheduling an install doesn't warn: a scheduled install reports a reboot, it doesn't force one.)",
             ],
             Tip = "Scheduling registers a one-time task that runs as SYSTEM, so it needs admin rights on the target.",
         },
@@ -546,6 +548,7 @@ public static class HelpContent
                 "Before rebooting, Vivre makes sure each box is safe to restart. If Windows is still installing updates (servicing is active), it WAITS — re-checking on a short interval — and reboots the moment servicing finishes, so it never reboots into a long \"Stopping\" hang. If servicing hasn't finished within the max wait (default 20 minutes; change it in Settings ▸ \"Reboot wave — max wait for in-progress servicing\"), Vivre stops WITHOUT rebooting: it does NOT force a reboot through active servicing. The row then reads \"servicing still running … — not rebooted; use Force reboot to override,\" so the decision stays yours.",
                 "If a box has nothing staged or pending to commit (no reboot is queued for it), Vivre stops calmly and the row shows a neutral \"Nothing to commit\" — that's informational (grey), not an error: there was simply nothing to reboot for.",
                 "Machines with nobody logged on reboot gracefully — forced after 8 minutes (20 for staged 2016). Machines with anyone logged on, including disconnected sessions, are forced immediately. Unsaved work is lost.",
+                "If your OWN machine is in the selection, the confirm names it and warns that rebooting it terminates Vivre and abandons the rest of the wave against the other machines. It's a warning only — nothing is blocked, and the same machines still reboot.",
                 "While offline, Vivre keeps watching — the row shows how long it's been down, flagging \"Overdue\" past ~90 minutes. After ~4½ hours it stops live-tracking and marks the row red (\"hasn't returned after N min — no longer tracking it live. Use Verify once it's back up.\"); a box that never goes down after the forced reboot is also marked red rather than watched forever.",
                 "When a box comes back online:",
                 "• Server 2016 boxes flagged for staged patching: the build number (UBR) is read over DCOM and compared to the expected value. If it matches, the update committed — the row turns green. A rolled-back UBR is caught and shown as failed (red). A non-flagged 2016 box verifies via the normal re-scan like any other box.",

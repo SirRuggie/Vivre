@@ -16,6 +16,10 @@ it ships, then gets a dated heading.
 - **A wave fired at a box with nothing staged now reads as calm "Nothing to commit"** (neutral grey)
   instead of a red error — and a permissions hiccup while checking can no longer masquerade as
   "nothing staged".
+- **Rebooting the machine Vivre itself is running on now says so, by name, before you click.** Reboot &
+  verify, Force reboot, and Schedule ▸ Reboot each add one line when your own box is in the selection —
+  naming it and warning that rebooting it terminates Vivre and abandons any wave in flight against the
+  other machines. It is a warning only: nothing is blocked, and exactly the same machines reboot.
 
 ### Fixed
 - **"Last reboot" now refreshes when a machine comes back from a reboot.** The column was only ever

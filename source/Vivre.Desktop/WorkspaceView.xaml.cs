@@ -755,11 +755,16 @@ public partial class WorkspaceView : UserControl
             names += $", +{count - 8} more";
         }
 
+        // DISCLOSURE ONLY — appended when the selection includes the box Vivre is running on. It does not
+        // gate, filter, or reorder anything: every selected machine still reboots exactly as before.
+        string? localWarning = LocalHostRebootWarning.WarningOrNull(vm.SelectedComputers.Select(c => c.Name));
+
         var confirm = new MessageBox
         {
             Title = "Force reboot",
             Content = $"Force-reboot {count} machine(s) now?\n\n{names}\n\n"
-                      + "Runs 'shutdown /r /f /t 5' — any unsaved work on those machines is lost.",
+                      + "Runs 'shutdown /r /f /t 5' — any unsaved work on those machines is lost."
+                      + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
             PrimaryButtonText = $"Reboot {count}",
             CloseButtonText = "Cancel",
         };
@@ -1067,7 +1072,9 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        var dialog = new ScheduleWindow("reboot") { Owner = OwnerWindow };
+        // This path has no MessageBox confirm — the ScheduleWindow is the whole gate — so the target names go
+        // in so its intro can disclose (name only, no filtering) when this machine is one of them.
+        var dialog = new ScheduleWindow("reboot", targets.Select(c => c.Name)) { Owner = OwnerWindow };
         if (dialog.ShowDialog() == true && dialog.Value is { } at)
         {
             await vm.ScheduleRebootSelectedAsync(targets, at);
@@ -1198,6 +1205,10 @@ public partial class WorkspaceView : UserControl
             names += $", +{selected.Count - MaxInline} more";
         }
 
+        // DISCLOSURE ONLY — appended when the selection includes the box Vivre is running on. It does not
+        // gate, filter, or reorder anything: every selected machine still reboots exactly as before.
+        string? localWarning = LocalHostRebootWarning.WarningOrNull(selected.Select(c => c.Name));
+
         var confirm = new MessageBox
         {
             Title = "Reboot & verify",
@@ -1207,7 +1218,8 @@ public partial class WorkspaceView : UserControl
                       + "sessions, are forced immediately. Unsaved work is lost. Vivre then tracks each box "
                       + "until it is verified back online (2016 boxes verify by build/UBR; others "
                       + "by re-scan).\n\n"
-                      + "Run this when the boxes are safe to restart (typically overnight).",
+                      + "Run this when the boxes are safe to restart (typically overnight)."
+                      + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
             PrimaryButtonText = "Reboot & verify",
             CloseButtonText = "Cancel",
         };
