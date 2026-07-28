@@ -34,6 +34,11 @@ it ships, then gets a dated heading.
   other machines. It is a warning only: nothing is blocked, and exactly the same machines reboot.
 
 ### Fixed
+- **The post-reboot recheck no longer holds up monitoring at all.** It now runs alongside the monitor
+  instead of inside it, so one machine's recheck can never pause the online/offline tracking for the other
+  machines on that tab — the worst case drops from minutes to the reboot-pending probe's own limit. If a
+  newer reboot check lands while a recheck is still running, the older recheck's result is **discarded**
+  rather than allowed to overwrite the fresher one, and says so in the log.
 - **Fixed a freeze that could stop a whole tab's grid updating after a Force reboot.** The automatic
   post-reboot recheck had no time limit, and if the machine went offline part-way through it, the recheck
   could hang — silently stalling that tab's monitoring for every machine on it, so Online pills stayed

@@ -229,6 +229,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // (heavy shell churn that can poison a degraded target). The 20s loop now does only the cheap
     // online/offline ping; this stamp gates the reboot probe. Read-only (a registry/SCCM marker read); no reboot.
     private readonly ConcurrentDictionary<string, DateTime> _lastRebootProbeAt = new(StringComparer.OrdinalIgnoreCase);
+
+    // Monotonic per-host counter bumped ONLY when the monitor's own probe writes RebootRequired. The verify
+    // arc captures it before it starts and re-checks before writing its verdict: since the arc is no longer
+    // awaited by the pass, a slow arc can otherwise finish holding an answer a newer probe already
+    // superseded. See ArcResultFreshness for why this is a counter and not a timestamp.
+    private readonly ConcurrentDictionary<string, long> _rebootStateGeneration = new(StringComparer.OrdinalIgnoreCase);
+
+    private long RebootGeneration(string host) => _rebootStateGeneration.TryGetValue(host, out long g) ? g : 0;
+
+    private void BumpRebootGeneration(string host) => _rebootStateGeneration.AddOrUpdate(host, 1, (_, g) => g + 1);
     // The unified reboot-pending probe cadence: every box (pending or not) is re-probed at most this often.
     // A box known reboot-pending self-clears its amber pill on a later poll if it rebooted out-of-band; a
     // not-pending box notices a newly-pending state — both at this slow rate, never every 20s.
@@ -4306,7 +4316,53 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// This method is pure outcome-reporting: it never triggers a reboot, install, or uninstall.
     /// </para>
     /// </summary>
-    private async Task ReportPostRebootOutcomeAsync(Computer computer, bool is2016, CancellationToken token)
+    /// <summary>
+    /// Runs the verify arc OFF the monitor's critical path and owns everything that detaching makes the
+    /// caller's responsibility: the arc's own deadline, its <see cref="CancellationTokenSource"/> lifetime,
+    /// and the fact that nothing awaits it — so every exit, including a fault, must land the row somewhere
+    /// honest and leave a record. Started (never awaited) from the monitor's UI context, and with no
+    /// <c>ConfigureAwait(false)</c> anywhere on the path, so the arc's data-bound writes stay UI-thread-safe.
+    /// </summary>
+    private async Task RunDetachedVerifyArcAsync(
+        Computer computer, bool is2016, CancellationTokenSource arcCts, CancellationToken monitorToken, long generationAtStart)
+    {
+        try
+        {
+            await ReportPostRebootOutcomeAsync(
+                computer, is2016, arcCts.Token,
+                () => ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name)));
+        }
+        catch (OperationCanceledException) when (
+            VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, monitorToken.IsCancellationRequested))
+        {
+            // OUR ceiling, not a Stop: land the row honest — a cut-short arc proved nothing, so it must never
+            // leave the row looking rebooted or up to date.
+            VerifyArcTimeout.MarkUnverified(computer);
+            _activity.Warn(computer.Name, VerifyArcTimeout.ActivityLine(computer.Name), InstanceTag);
+        }
+        catch (OperationCanceledException)
+        {
+            // Monitoring stopped (Stop / toggle off / tab closed). We learned nothing and the operator is
+            // no longer watching this tab — leave the row exactly as the last completed step left it.
+        }
+        catch (Exception ex)
+        {
+            // Nothing detached may fail silently. Without this the task faults UNOBSERVED and the row sits on
+            // "rechecking for updates…" forever with no record anywhere — the same invisible-failure family
+            // this whole arc has been about. A faulted arc proved nothing, so it lands Unverified too.
+            VerifyArcTimeout.MarkUnverified(computer);
+            _activity.Error(computer.Name, $"Post-reboot verify failed — {ex.Message}", InstanceTag);
+        }
+        finally
+        {
+            arcCts.Dispose();
+        }
+    }
+
+    /// <param name="isStillCurrent">Freshness checker, supplied ONLY by the monitor's detached call. Null (the
+    /// reboot wave) keeps the previous behaviour exactly: the wave awaits this inline, so nothing can race it.</param>
+    private async Task ReportPostRebootOutcomeAsync(
+        Computer computer, bool is2016, CancellationToken token, Func<bool>? isStillCurrent = null)
     {
         string name = computer.Name;
 
@@ -4410,6 +4466,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         catch
         {
             // Kerberos, WinRM, or any other probe failure — unknown, never clean/pending.
+        }
+
+        // ── c2) staleness guard (monitor-detached arc only; the wave passes no checker) ───────────
+        // The arc is no longer awaited by the monitor pass, so the monitor's 20s probe keeps running while
+        // this arc is in flight. If a newer probe already wrote the row's reboot state, THIS verdict is
+        // stale and must not land. Placed BEFORE the count consumption below so a discarded verdict doesn't
+        // silently eat LastInstall* either — a stale arc must change nothing at all.
+        if (isStillCurrent is not null && !isStillCurrent())
+        {
+            _activity.Warn(name, ArcResultFreshness.StaleLine(name), InstanceTag);
+            return;
         }
 
         // ── d) install counts from the last meaningful install, consumed once ─────────────────────
@@ -5191,6 +5258,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (pending.HasValue)
             {
                 computer.RebootRequired = pending.Value;
+                // A newer answer than anything a detached verify arc is still carrying — see ArcResultFreshness.
+                BumpRebootGeneration(computer.Name);
 
                 // A confirmed NEW pending reboot invalidates the self-heal marker: the box has changed
                 // since the clean rescan that armed it, so its "only the reboot was unconfirmed" premise
@@ -5258,22 +5327,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // linked source never cancels its parent) — and because this await sits inside the pass's
                     // Task.WhenAll, an arc that never returned froze EVERY row on the tab, silently. Sizing
                     // argument (and why NOT 120s) lives on VerifyArcTimeout.
-                    using var arcCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    // STARTED, NOT AWAITED. This call sits inside the pass's Task.WhenAll, so awaiting it made
+                    // one slow verify freeze EVERY row on the tab (field-reproduced: 7 rows, 2m52s of total
+                    // log silence, green pills over boxes that were down). Detaching keeps the 20s cadence.
+                    // NOT Task.Run and NOT ConfigureAwait(false): an un-awaited async method started here
+                    // still captures THIS UI SynchronizationContext at each of its own awaits, so every
+                    // data-bound write inside the arc stays on the UI thread. Same shape as the other
+                    // `_ = ...Async()` starts in this file. arcCts is deliberately NOT a `using` — that would
+                    // dispose it at this brace and cancel the arc instantly; the runner disposes it instead.
+                    var arcCts = CancellationTokenSource.CreateLinkedTokenSource(token);
                     arcCts.CancelAfter(VerifyArcTimeout.Ceiling);
-                    try
-                    {
-                        await ReportPostRebootOutcomeAsync(computer, is2016, arcCts.Token);
-                    }
-                    catch (OperationCanceledException) when (
-                        VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, token.IsCancellationRequested))
-                    {
-                        // OUR ceiling, not a Stop. Swallow it — rethrowing would read as monitoring being
-                        // cancelled — and land the row honest: a cut-short arc proved nothing, so it must not
-                        // leave the row looking rebooted or up to date. Same UI context as every other write
-                        // here (no ConfigureAwait on this path), which UpdatePhase requires.
-                        VerifyArcTimeout.MarkUnverified(computer);
-                        _activity.Warn(computer.Name, VerifyArcTimeout.ActivityLine(computer.Name), InstanceTag);
-                    }
+                    _ = RunDetachedVerifyArcAsync(computer, is2016, arcCts, token, RebootGeneration(computer.Name));
                 }
             }
         }
