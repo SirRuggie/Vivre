@@ -20,6 +20,22 @@ public interface IActivityLog
     void Error(string? machine, string message);
 
     /// <summary>
+    /// <paramref name="origin"/> overloads: same entry, plus a FILE-ONLY attribution tag naming which tab
+    /// emitted it (e.g. <c>Health · Fleet #3</c>). The operator-facing panel entry is byte-identical to the
+    /// two-argument form — the tag exists so a line can be traced to one instance when several tabs hold the
+    /// same host, which is otherwise impossible: <see cref="LogEntry"/> carries the machine but no tab identity.
+    /// Default implementations forward to the untagged overload, so existing implementations and test doubles
+    /// need no change (same pattern as <see cref="Trace"/>).
+    /// </summary>
+    void Info(string? machine, string message, string? origin) => Info(machine, message);
+
+    /// <inheritdoc cref="Info(string?, string, string?)"/>
+    void Warn(string? machine, string message, string? origin) => Warn(machine, message);
+
+    /// <inheritdoc cref="Info(string?, string, string?)"/>
+    void Error(string? machine, string message, string? origin) => Error(machine, message);
+
+    /// <summary>
     /// A high-volume diagnostic breadcrumb: file-only in the Desktop implementation, NEVER mirrored to the UI
     /// panel (it would drown the operator-facing history). Used by long-running state machines (the reboot
     /// wave) to leave a durable per-beat trace in the daily log for post-hoc diagnosis. Default no-op so

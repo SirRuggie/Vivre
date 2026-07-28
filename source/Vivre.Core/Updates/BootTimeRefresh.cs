@@ -52,16 +52,23 @@ public static class BootTimeRefresh
     /// <param name="cancellationToken">The monitor's token. Cancellation propagates and writes nothing.</param>
     /// <param name="onUnexpectedError">Optional sink for a reader that THREW (a contract violation — the
     /// documented failure mode is a null result). The cell is still blanked.</param>
+    /// <param name="onUnreadable">Optional sink fired whenever the cell ends up BLANK — i.e. the reader
+    /// returned null (its documented failure mode) or threw. Without this the expected failure is completely
+    /// silent: <c>DcomBootTimeReader</c> swallows offline / still-booting / DCOM-not-up / denied into a bare
+    /// <c>return null</c>, so nothing anywhere records that the read was attempted and failed. Blanking is
+    /// unchanged — this only makes the blank explainable after the fact.</param>
     public static async Task RefreshAsync(
         IBootTimeReader reader,
         Computer computer,
         CancellationToken cancellationToken,
-        Action<Exception>? onUnexpectedError = null)
+        Action<Exception>? onUnexpectedError = null,
+        Action? onUnreadable = null)
     {
         ArgumentNullException.ThrowIfNull(reader);
         ArgumentNullException.ThrowIfNull(computer);
 
         BootTimeReading? reading;
+        bool threw = false;
         try
         {
             // NO ConfigureAwait(false) — load-bearing, see the remarks above: the write after this await
@@ -78,9 +85,19 @@ public static class BootTimeRefresh
             // never leave a stale timestamp standing on a machine we just watched reboot.
             onUnexpectedError?.Invoke(ex);
             reading = null;
+            threw = true;
         }
 
         // Unconditional on purpose. null reading -> null cell. See the remarks: no vitals-style null-guard.
         computer.LastBootTime = reading?.LastBootUpTime;
+
+        // Fired AFTER the write so it can never pre-empt the blanking it describes, and ONLY when the reader
+        // returned null without throwing — the throw path already emitted its own line via onUnexpectedError,
+        // and one failure must not produce two log lines. A silent blank is what made the earlier incidents
+        // undiagnosable; a double-logged one would just be noise.
+        if (reading is null && !threw)
+        {
+            onUnreadable?.Invoke();
+        }
     }
 }

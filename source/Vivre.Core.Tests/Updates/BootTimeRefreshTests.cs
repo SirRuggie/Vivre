@@ -82,6 +82,67 @@ public class BootTimeRefreshTests
     }
 
     [Fact]
+    public async Task A_null_read_reports_the_blank_instead_of_failing_silently()
+    {
+        // The reader's DOCUMENTED failure mode is a bare null (offline / still booting / DCOM down / denied),
+        // which used to emit nothing anywhere — the blind spot that made the frozen-grid incidents
+        // undiagnosable from the log. The blank itself is unchanged; it just has to be explainable now.
+        var computer = new Computer("BOX01") { LastBootTime = StaleBoot };
+        int reported = 0;
+
+        await BootTimeRefresh.RefreshAsync(
+            new StubReader(null), computer, CancellationToken.None, onUnreadable: () => reported++);
+
+        Assert.Null(computer.LastBootTime);
+        Assert.Equal(1, reported);
+    }
+
+    [Fact]
+    public async Task A_reader_that_throws_reports_once_not_twice()
+    {
+        // Both sinks describe the same failure, so a throw must NOT light up both — one failure, one line.
+        var computer = new Computer("BOX01") { LastBootTime = StaleBoot };
+        var errors = new List<Exception>();
+        int unreadable = 0;
+
+        await BootTimeRefresh.RefreshAsync(
+            new ThrowingReader(), computer, CancellationToken.None, errors.Add, () => unreadable++);
+
+        Assert.Single(errors);
+        Assert.Equal(0, unreadable);
+        Assert.Null(computer.LastBootTime);
+    }
+
+    [Fact]
+    public async Task A_successful_read_reports_nothing_unreadable()
+    {
+        var computer = new Computer("BOX01") { LastBootTime = StaleBoot };
+        int reported = 0;
+
+        await BootTimeRefresh.RefreshAsync(
+            new StubReader(FreshReading), computer, CancellationToken.None, onUnreadable: () => reported++);
+
+        Assert.Equal(FreshBoot, computer.LastBootTime);
+        Assert.Equal(0, reported);
+    }
+
+    [Fact]
+    public async Task Cancellation_reports_nothing_because_nothing_was_learned()
+    {
+        var computer = new Computer("BOX01") { LastBootTime = StaleBoot };
+        int reported = 0;
+        using var cts = new CancellationTokenSource();
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            () => BootTimeRefresh.RefreshAsync(
+                new StubReader(FreshReading), computer, cts.Token, onUnreadable: () => reported++));
+
+        Assert.Equal(0, reported);
+        Assert.Equal(StaleBoot, computer.LastBootTime);
+    }
+
+    [Fact]
     public async Task Cancellation_propagates_and_leaves_the_previous_value_untouched()
     {
         // Monitoring was stopped mid-read: we learned nothing, so we must not blank anything. The monitor's

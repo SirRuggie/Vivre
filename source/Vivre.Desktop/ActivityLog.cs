@@ -42,6 +42,12 @@ public sealed class ActivityLog : IActivityLog
 
     public void Error(string? machine, string message) => Add(LogSeverity.Error, machine, message);
 
+    public void Info(string? machine, string message, string? origin) => Add(LogSeverity.Info, machine, message, origin);
+
+    public void Warn(string? machine, string message, string? origin) => Add(LogSeverity.Warning, machine, message, origin);
+
+    public void Error(string? machine, string message, string? origin) => Add(LogSeverity.Error, machine, message, origin);
+
     public void Clear()
     {
         OnUi(Entries.Clear);
@@ -84,8 +90,11 @@ public sealed class ActivityLog : IActivityLog
         }
     }
 
-    private void Add(LogSeverity severity, string? machine, string message)
+    private void Add(LogSeverity severity, string? machine, string message, string? origin = null)
     {
+        // NOTE the entry uses `message` UNTAGGED: the origin tag is a diagnostic for the rolling file only, so
+        // the operator-facing panel line stays byte-identical to what it has always been. Only the file write
+        // below carries it.
         var entry = new LogEntry(DateTime.Now, severity, machine, message);
 
         OnUi(() =>
@@ -104,7 +113,10 @@ public sealed class ActivityLog : IActivityLog
         // cause. The message is already in Entries, so on a sink failure there's nothing to surface.
         try
         {
-            _file.Write(ToLevel(severity), "{Machine} {Message}", machine ?? "-", message);
+            // The tag is pre-formatted into a suffix (rather than a bare "{Origin}" slot) so an untagged call
+            // writes EXACTLY the line it wrote before — no trailing separator, no empty brackets.
+            string tag = string.IsNullOrWhiteSpace(origin) ? string.Empty : $"  [{origin}]";
+            _file.Write(ToLevel(severity), "{Machine} {Message}{Origin}", machine ?? "-", message, tag);
         }
         catch
         {

@@ -367,6 +367,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     [ObservableProperty]
     public partial string Title { get; set; } = "New tab";
 
+    // Monotonic per-tab number, assigned once at construction and never reused. Titles alone can't identify a
+    // tab (two Patching tabs are both "New tab" until renamed), so this is what actually disambiguates them.
+    private static int _instanceCounter;
+    private readonly int _instanceId = Interlocked.Increment(ref _instanceCounter);
+
+    /// <summary>
+    /// FILE-LOG-ONLY attribution tag for monitor lines, e.g. <c>Health · Fleet #3</c>. The activity log records
+    /// the machine but not which tab wrote the line, so when several tabs hold one host its lines are
+    /// indistinguishable — that ambiguity is exactly what blocked diagnosing the frozen-Health-grid incidents.
+    /// Section FIRST because Health-vs-Patching is the suspected discriminator. Never shown in the grid or the
+    /// activity panel; see <see cref="IActivityLog.Info(string?, string, string?)"/>.
+    /// </summary>
+    private string InstanceTag => $"{(IsUpdateMode ? "Patching" : "Health")} · {Title} #{_instanceId}";
+
     /// <summary>Machine workspaces are always closeable (<see cref="ITabViewModel"/>).</summary>
     public bool CanClose => true;
 
@@ -5052,11 +5066,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     : $"Back online {DateTime.Now:HH:mm}";
 
                 computer.RebootMessage = back;
-                _activity.Info(computer.Name, back);
+                _activity.Info(computer.Name, back, InstanceTag);
             }
             else
             {
-                _activity.Info(computer.Name, previous is null ? "Online" : "Came online");
+                _activity.Info(computer.Name, previous is null ? "Online" : "Came online", InstanceTag);
             }
 
             computer.WentOfflineAt = null;
@@ -5074,7 +5088,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.RebootMessage = $"Offline since {DateTime.Now:HH:mm} — waiting for it to come back…";
             }
 
-            _activity.Warn(computer.Name, trackReturn ? $"Went offline — {error}" : $"Offline — {error}");
+            _activity.Warn(computer.Name, trackReturn ? $"Went offline — {error}" : $"Offline — {error}", InstanceTag);
         }
     }
 
@@ -5113,7 +5127,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 _bootTime,
                 computer,
                 token,
-                ex => _activity.Warn(computer.Name, $"Couldn't re-read the last boot time — {ex.Message}"));
+                ex => _activity.Warn(computer.Name, $"Couldn't re-read the last boot time — {ex.Message}", InstanceTag),
+                () => _activity.Warn(computer.Name, "Couldn't re-read the last boot time (host unreadable over DCOM — offline, still booting, or access denied) — \"Last reboot\" left blank.", InstanceTag));
         }
         finally
         {
@@ -5159,7 +5174,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.RebootMessage = null;
                 }
 
-                _activity.Info(computer.Name, "WinRM healthy again — resuming reboot probes.");
+                _activity.Info(computer.Name, "WinRM healthy again — resuming reboot probes.", InstanceTag);
             }
 
             if (pending.HasValue)
@@ -5197,7 +5212,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                         ? "Reboot confirmed complete — rescan to confirm updates"
                         : UpdateMessageText.WithoutRebootRequiredTail(computer.UpdateMessage);
 
-                    _activity.Info(computer.Name, "Reboot complete — back online, no reboot pending");
+                    _activity.Info(computer.Name, "Reboot complete — back online, no reboot pending", InstanceTag);
                 }
                 else if (!pending.Value && MonitorSelfHeal.ShouldSelfHeal(computer.UpdatePhase, computer.UnverifiedRebootProbeOnly, pending))
                 {
@@ -5211,7 +5226,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     computer.RebootMessage = $"Reboot complete — back online {DateTime.Now:HH:mm}";
                     computer.WentOfflineAt = null;
                     computer.UnverifiedRebootProbeOnly = false;
-                    _activity.Info(computer.Name, "Post-reboot verify self-healed — reboot confirmed clean, up to date.");
+                    _activity.Info(computer.Name, "Post-reboot verify self-healed — reboot confirmed clean, up to date.", InstanceTag);
                 }
 
                 // A hand Force reboot rejoins the verify arc. The operator's standalone Force reboot armed
@@ -5241,7 +5256,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (firstTime)
             {
                 _activity.Warn(computer.Name,
-                    $"Reboot probe timed out after {RebootProbeTimeoutSeconds}s — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min).");
+                    $"Reboot probe timed out after {RebootProbeTimeoutSeconds}s — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min).", InstanceTag);
             }
         }
         catch (OperationCanceledException)
@@ -5256,7 +5271,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // ends the "Reboot probe failing every 5 min" spam on the Vision boxes.
             if (_winRmRebootProbeUnsupported.TryAdd(computer.Name, 0))
             {
-                _activity.Info(computer.Name, "WinRM reboot probe not supported here (Kerberos) — using the 2016 lane's Verify instead; stopping reboot probes for this host.");
+                _activity.Info(computer.Name, "WinRM reboot probe not supported here (Kerberos) — using the 2016 lane's Verify instead; stopping reboot probes for this host.", InstanceTag);
             }
         }
         catch (Exception ex)
@@ -5284,7 +5299,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                         : $"WinRM temporarily unavailable on {computer.Name} — backing off, will retry.";
                 }
 
-                _activity.Warn(computer.Name, $"Reboot probe failing — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min). {ex.Message}");
+                _activity.Warn(computer.Name, $"Reboot probe failing — backing off (retry every {DegradedRetryInterval.TotalMinutes:N0} min). {ex.Message}", InstanceTag);
             }
         }
         finally
