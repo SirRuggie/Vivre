@@ -17,7 +17,8 @@ it ships, then gets a dated heading.
   instead of a red error — and a permissions hiccup while checking can no longer masquerade as
   "nothing staged".
 - **Rebooting the machine Vivre itself is running on now says so, by name, before you click.** Reboot &
-  verify, Force reboot, and Schedule ▸ Reboot each add one line when your own box is in the selection —
+  verify, Force reboot, Schedule ▸ Reboot, and the "reboot these first" prompt you get before an install
+  each add one line when your own box is among the machines about to reboot —
   naming it and warning that rebooting it terminates Vivre and abandons any wave in flight against the
   other machines. It is a warning only: nothing is blocked, and exactly the same machines reboot.
 
@@ -59,8 +60,9 @@ it ships, then gets a dated heading.
   verified outcome the Reboot Wave gives — no more guessing when a hand-forced box is really back. This
   now completes on a Health tab as well as a Patching one: the check that confirms the reboot used to run
   only on Patching tabs, so a box force-rebooted from Health never got its verified outcome. Only the
-  boxes you actually force-rebooted are re-checked, and only for a short window after they return, so a
-  large list costs nothing extra.
+  boxes you actually force-rebooted are re-checked, and only for a short window after they return — so the
+  cost tracks how many rows you force-reboot, not how many are in the tab, and a tab you haven't
+  force-rebooted anything on costs nothing.
 - **Stale reboot-column messages and the stale amber "STAGED" tag now clear.** The old "isn't
   reboot-ready" text clears when a new scan/install starts, and a hand-rebooted box that provably
   committed (confirmed by the reboot-pending probe, never a scan alone) drops its staged-awaiting-reboot
