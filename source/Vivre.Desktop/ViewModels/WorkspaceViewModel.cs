@@ -4332,15 +4332,26 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         for (int attempt = 1; ; attempt++)
         {
             HostPatchStatus status;
+            // Per-attempt ceiling, mirroring the one ScanRowAsync already applies. Without it a single
+            // rescan against a box that dropped mid-scan runs unbounded — the arc's share of the freeze.
+            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+            attemptCts.CancelAfter(TimeSpan.FromSeconds(ScanAttemptTimeoutSeconds));
             try
             {
                 PatchOptions applicableOptions = _patchOptions.Clone();
                 applicableOptions.Scope = UpdateScope.Applicable;
-                status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, token);
+                status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, attemptCts.Token);
+            }
+            catch (OperationCanceledException) when (attemptCts.IsCancellationRequested && !token.IsCancellationRequested)
+            {
+                // THIS attempt's deadline only — not a Stop, and not the arc ceiling (which cancels `token`
+                // too and so falls through to the rethrow below). Treat it as a failed attempt so the
+                // settle-retry still gets its turn, and so it lands on the honest couldn't-rescan path.
+                status = HostPatchStatus.Failed("rescan timed out");
             }
             catch (OperationCanceledException)
             {
-                throw; // Propagate cancellation — don't swallow it.
+                throw; // Stop, or the arc ceiling — don't swallow it.
             }
             catch
             {
@@ -5242,7 +5253,27 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 {
                     computer.ForceRebootAwaitingVerify = false;
                     bool is2016 = LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.RequiresStagedPatching) == RebootVerifyLane.Lcu2016;
-                    await ReportPostRebootOutcomeAsync(computer, is2016, token);
+                    // The arc gets its OWN deadline, and it MUST be a token the arc actually receives. It
+                    // previously got the raw monitor token, so `perHost`'s 120s covered nothing (cancelling a
+                    // linked source never cancels its parent) — and because this await sits inside the pass's
+                    // Task.WhenAll, an arc that never returned froze EVERY row on the tab, silently. Sizing
+                    // argument (and why NOT 120s) lives on VerifyArcTimeout.
+                    using var arcCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+                    arcCts.CancelAfter(VerifyArcTimeout.Ceiling);
+                    try
+                    {
+                        await ReportPostRebootOutcomeAsync(computer, is2016, arcCts.Token);
+                    }
+                    catch (OperationCanceledException) when (
+                        VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, token.IsCancellationRequested))
+                    {
+                        // OUR ceiling, not a Stop. Swallow it — rethrowing would read as monitoring being
+                        // cancelled — and land the row honest: a cut-short arc proved nothing, so it must not
+                        // leave the row looking rebooted or up to date. Same UI context as every other write
+                        // here (no ConfigureAwait on this path), which UpdatePhase requires.
+                        VerifyArcTimeout.MarkUnverified(computer);
+                        _activity.Warn(computer.Name, VerifyArcTimeout.ActivityLine(computer.Name), InstanceTag);
+                    }
                 }
             }
         }

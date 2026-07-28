@@ -34,6 +34,13 @@ it ships, then gets a dated heading.
   other machines. It is a warning only: nothing is blocked, and exactly the same machines reboot.
 
 ### Fixed
+- **Fixed a freeze that could stop a whole tab's grid updating after a Force reboot.** The automatic
+  post-reboot recheck had no time limit, and if the machine went offline part-way through it, the recheck
+  could hang — silently stalling that tab's monitoring for every machine on it, so Online pills stayed
+  green for boxes that were provably down and nothing appeared in the log. The recheck is now capped (5
+  minutes overall, and 5 minutes per rescan attempt). A recheck that runs out of time leaves the machine
+  **Unverified** with "Couldn't rescan after reboot — re-check" — never a green "up to date" — and writes
+  one log line naming the machine and tab so you can see it happened.
 - **"Last reboot" now refreshes when a machine comes back from a reboot.** The column was only ever
   filled by Check All / Check Vitals, so after a Force reboot or a Reboot & Verify wave the grid kept
   showing the machine's PREVIOUS boot time. Vivre now re-reads it the moment the monitor sees a box go
