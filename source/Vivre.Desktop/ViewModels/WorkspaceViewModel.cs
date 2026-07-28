@@ -126,6 +126,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly ICustomColumnProbe _customColumns;
     private readonly ICatalogSizeService _catalogSize;
     private readonly OrphanRebootServiceReaper _reaper;
+    // Fresh "Last reboot" reads for the monitor's offline→online transition. Ambient DCOM (no Kerberos),
+    // so it answers on the boxes _winRmRebootProbeUnsupported tracks too. Interface, not the concrete
+    // reader, so the refresh razor is testable against a fake.
+    private readonly IBootTimeReader _bootTime;
     // Personal, per-user (Roaming) preferences: auto-check-on-load, the grid column layout, the install cap
     // (MaxSimultaneousInstalls) and the WUG state-check concurrency (WugStateConcurrency) — each operator's own.
     private readonly AppSettingsStore _appSettings = new();
@@ -195,6 +199,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // stays bounded; 32 is wide enough that a single tab still sweeps quickly. The reboot-pending probe
     // keeps its own separate, smaller cap above.
     private static readonly SemaphoreSlim _monitorThrottle = new(32);
+    // Caps the parallel "Last reboot" re-reads the monitor fires on an offline→online transition (an
+    // ambient DCOM/CIM read, 8s timeout). Deliberately its OWN cap, not _monitorThrottle: that slot is
+    // already released by the time we get here, and borrowing it would let these reads narrow the cheap
+    // reachability fan-out. 8 mirrors _rebootProbeThrottle for the same reason — the read fires only on a
+    // transition (normally zero rows a pass), but a whole cohort returning from one reboot wave in the
+    // same 20s pass would otherwise open one CIM session per row at once. Shared across tabs.
+    private static readonly SemaphoreSlim _bootTimeThrottle = new(8);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
     // MaxShellsPerUser). Value = the next time we'll RE-TEST it: we back off from probing every 20s
     // (hammering a degraded box makes it worse) but still retry every few minutes so we notice when
@@ -803,7 +814,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime)
     {
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -836,6 +847,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _customColumns = customColumns;
         _catalogSize = catalogSize;
         _reaper = reaper;
+        _bootTime = bootTime;
         LoadColumnLayout();
         SelectedSource = patchOptions.Source;
         ExcludeText = string.Join(", ", patchOptions.ExcludeNameContains);
@@ -4941,6 +4953,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             _degradedHosts.TryRemove(computer.Name, out _);
             _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
+            // ...and re-read "Last reboot", which is stale by definition on a box that just came back:
+            // LastBootTime is only ever written by Check All / Check Vitals, so before this the grid kept
+            // showing the PREVIOUS boot after every reboot. This transition is the one place that catches
+            // BOTH the Reboot & Verify wave and a one-off Force reboot, and it isn't gated to Patching.
+            // Fires once per transition (not per pass) and blanks the cell on a failed read — see
+            // BootTimeRefresh for why an honest blank beats a stale timestamp here.
+            await RefreshLastBootTimeAsync(computer, token);
         }
 
         // While the Windows Update view is up, keep the Pending Reboot column live — a small
@@ -5069,6 +5088,33 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
 
         return $"{(int)d.TotalHours}h {d.Minutes}m";
+    }
+
+    /// <summary>
+    /// Re-reads the grid's "Last reboot" value for a row the monitor has just watched come back
+    /// (offline → online), throttled so a whole returning cohort can't open one CIM session per row at
+    /// once. A failed read blanks the cell — <see cref="BootTimeRefresh"/> owns that rule (and its test).
+    /// </summary>
+    private async Task RefreshLastBootTimeAsync(Computer computer, CancellationToken token)
+    {
+        // No ConfigureAwait(false) on either await: BootTimeRefresh.RefreshAsync writes the data-bound
+        // Computer.LastBootTime after ITS await, so the continuation must stay on the captured UI context
+        // (losing it at the throttle wait would strand that write off-thread just the same). Unlike
+        // RebootRequired/UpdatePhase, an off-thread LastBootTime write trips no DEBUG assert — it would
+        // fail silently, so this is a comment AND a rule, not a preference.
+        await _bootTimeThrottle.WaitAsync(token);
+        try
+        {
+            await BootTimeRefresh.RefreshAsync(
+                _bootTime,
+                computer,
+                token,
+                ex => _activity.Warn(computer.Name, $"Couldn't re-read the last boot time — {ex.Message}"));
+        }
+        finally
+        {
+            _bootTimeThrottle.Release();
+        }
     }
 
     /// <summary>

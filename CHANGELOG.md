@@ -18,6 +18,12 @@ it ships, then gets a dated heading.
   "nothing staged".
 
 ### Fixed
+- **"Last reboot" now refreshes when a machine comes back from a reboot.** The column was only ever
+  filled by Check All / Check Vitals, so after a Force reboot or a Reboot & Verify wave the grid kept
+  showing the machine's PREVIOUS boot time. Vivre now re-reads it the moment the monitor sees a box go
+  from offline back to online (works on the Kerberos-broken boxes too — it reads over the same channel
+  the wave's proof uses). If that read can't be taken, the cell goes BLANK rather than keeping a stale
+  timestamp, and fills in again on the next successful read.
 - **The Reboot Wave no longer creates a remote `Vivre_Reboot_*` service (the thing SentinelOne flags as
   Lateral Movement) on a box that has someone logged on.** Windows refuses a *graceful* reboot whenever
   any session exists — Active or merely disconnected — and Vivre was misreading that refusal as a dead

@@ -129,7 +129,10 @@ public partial class App : Application
         // Force reboot's runner: WinRM shutdown + the narrow Kerberos-auth fallback onto the SAME
         // DCOM → SMB/SCM trigger the Reboot Wave uses. Fires only inside the operator's confirmed click.
         var forceReboot = new ForceRebootRunner(powerShell, new DcomRebootTrigger(activity));
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper, forceReboot);
+        // Fresh "Last reboot" reads on the monitor's offline→online transition. Ambient DCOM, stateless
+        // and shareable across tabs (each ReadAsync builds and disposes its own CimSession).
+        var bootTime = new DcomBootTimeReader();
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper, forceReboot, bootTime);
 
         // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.
         // The nav section's DataContext binds to ShellViewModel.RdpViewModel.
