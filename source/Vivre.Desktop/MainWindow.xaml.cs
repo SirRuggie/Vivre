@@ -1110,12 +1110,20 @@ public partial class MainWindow : FluentWindow
 
         if (pending.Count > 0)
         {
+            // DISCLOSURE ONLY — appended when the PENDING set (what this dialog's primary button reboots)
+            // includes the box Vivre is running on. Same razor and same wording as the other three reboot
+            // confirms; it does not gate, filter, or reorder anything — `pending` is passed on untouched.
+            // This is the highest-exposure path: it needs no selection, is reachable by Ctrl+Enter, and
+            // scopes to every reboot-pending box in the tab.
+            string? localWarning = LocalHostRebootWarning.WarningOrNull(pending.Select(c => c.Name));
+
             var nudge = new MessageBox
             {
                 Title = "Reboot pending",
                 Content = $"{pending.Count} of {count} target machine(s) have a reboot pending.\n\n"
                           + "A pending reboot can jam WinRM and make the install fail. You can reboot those first "
-                          + "(then install once they're back), or install anyway.",
+                          + "(then install once they're back), or install anyway."
+                          + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
                 PrimaryButtonText = $"Reboot the {pending.Count} first",
                 SecondaryButtonText = "Install anyway",
                 CloseButtonText = "Cancel",
