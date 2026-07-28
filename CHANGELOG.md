@@ -14,9 +14,10 @@ it ships, then gets a dated heading.
   updating looked identical in the log to one that was working. **The activity panel and every grid
   column are unchanged** — this tag exists only in the rolling file at `%LOCALAPPDATA%\Vivre\logs\`.
 - **A "Last reboot" read that fails is no longer silent.** When the boot-time read can't be taken the
-  cell still goes blank (unchanged), but Vivre now logs one line naming the machine and the tab saying
-  the host was unreadable and the column was left blank — previously the expected failure produced no
-  record anywhere, which made a blank cell impossible to tell apart from one that was never refreshed.
+  cell still goes blank (unchanged), but Vivre now logs one line saying the host was unreadable and the
+  column was left blank (the log file also carries the tab tag above) — previously the expected failure
+  produced no record anywhere, which made a blank cell impossible to tell apart from one that was never
+  refreshed.
 - **Reboot & Verify now waits out in-progress servicing instead of failing instantly.** Firing the wave
   on a box whose TrustedInstaller is still working no longer errors with "isn't reboot-ready" — the wave
   watches servicing (up to a new Settings knob, "max wait for in-progress servicing", default 20 min) and

@@ -52,11 +52,12 @@ public static class BootTimeRefresh
     /// <param name="cancellationToken">The monitor's token. Cancellation propagates and writes nothing.</param>
     /// <param name="onUnexpectedError">Optional sink for a reader that THREW (a contract violation — the
     /// documented failure mode is a null result). The cell is still blanked.</param>
-    /// <param name="onUnreadable">Optional sink fired whenever the cell ends up BLANK — i.e. the reader
-    /// returned null (its documented failure mode) or threw. Without this the expected failure is completely
-    /// silent: <c>DcomBootTimeReader</c> swallows offline / still-booting / DCOM-not-up / denied into a bare
-    /// <c>return null</c>, so nothing anywhere records that the read was attempted and failed. Blanking is
-    /// unchanged — this only makes the blank explainable after the fact.</param>
+    /// <param name="onUnreadable">Optional sink fired when the reader returned null WITHOUT throwing — its
+    /// documented failure mode, and the one that was previously silent: <c>DcomBootTimeReader</c> swallows
+    /// offline / still-booting / DCOM-not-up / denied into a bare <c>return null</c>, so nothing anywhere
+    /// recorded that the read was attempted and failed. NOT fired on the throw path, which already reports
+    /// through <paramref name="onUnexpectedError"/> — one failure, one line. Blanking is unchanged either
+    /// way; this only makes the blank explainable after the fact.</param>
     public static async Task RefreshAsync(
         IBootTimeReader reader,
         Computer computer,

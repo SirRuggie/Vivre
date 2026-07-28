@@ -4439,7 +4439,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // to false on CouldntRescan and every green/remaining/failed outcome — a later definite-clean
             // monitor probe may then lift only a probe-only Unverified row (MonitorSelfHeal.ShouldSelfHeal).
             computer.UnverifiedRebootProbeOnly = kind == RebootOutcomeKind.CouldntConfirm;
-            _activity.Info(name, outcome);
+            _activity.Info(name, outcome, InstanceTag);
         }
         else
         {
@@ -4460,17 +4460,17 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // Couldn't-rescan is NOT probe-only — don't let a later clean probe self-heal it. Set false
                 // explicitly rather than relying on the wave's earlier ApplyStatus clear alone (red-team amendment).
                 computer.UnverifiedRebootProbeOnly = false;
-                _activity.Info(name, $"{name}: couldn't rescan — re-check");
+                _activity.Info(name, $"{name}: couldn't rescan — re-check", InstanceTag);
             }
             else if (remaining > 0)
             {
                 computer.UpdateMessage = $"{remaining} update(s) still applicable — run a WUA pass";
-                _activity.Info(name, $"{name}: {remaining} update(s) still applicable — run a WUA pass");
+                _activity.Info(name, $"{name}: {remaining} update(s) still applicable — run a WUA pass", InstanceTag);
             }
             else
             {
                 computer.UpdateMessage = "Up to date";
-                _activity.Info(name, $"{name}: up to date");
+                _activity.Info(name, $"{name}: up to date", InstanceTag);
             }
         }
     }
