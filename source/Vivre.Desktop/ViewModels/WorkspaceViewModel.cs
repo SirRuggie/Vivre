@@ -4336,9 +4336,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, monitorToken.IsCancellationRequested))
         {
             // OUR ceiling, not a Stop: land the row honest — a cut-short arc proved nothing, so it must never
-            // leave the row looking rebooted or up to date.
-            VerifyArcTimeout.MarkUnverified(computer);
-            _activity.Warn(computer.Name, VerifyArcTimeout.ActivityLine(computer.Name), InstanceTag);
+            // leave the row looking rebooted or up to date. Freshness-gated for the same reason the verdict
+            // is: a newer probe may have answered while this arc hung, and MarkUnverified would both undo
+            // that fresher truth AND clear UnverifiedRebootProbeOnly, stranding the row amber because
+            // MonitorSelfHeal keys off exactly that flag.
+            MarkArcUnverifiedIfStillCurrent(computer, generationAtStart, VerifyArcTimeout.ActivityLine(computer.Name));
         }
         catch (OperationCanceledException)
         {
@@ -4349,13 +4351,37 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             // Nothing detached may fail silently. Without this the task faults UNOBSERVED and the row sits on
             // "rechecking for updates…" forever with no record anywhere — the same invisible-failure family
-            // this whole arc has been about. A faulted arc proved nothing, so it lands Unverified too.
-            VerifyArcTimeout.MarkUnverified(computer);
-            _activity.Error(computer.Name, $"Post-reboot verify failed — {ex.Message}", InstanceTag);
+            // this whole arc has been about. A faulted arc proved nothing, so it lands Unverified too —
+            // freshness-gated, for the reason given on the ceiling arm above.
+            MarkArcUnverifiedIfStillCurrent(computer, generationAtStart, $"Post-reboot verify failed — {ex.Message}", isError: true);
         }
         finally
         {
             arcCts.Dispose();
+        }
+    }
+
+    /// <summary>
+    /// Lands a detached arc's failure on the row, but ONLY while its result is still the newest thing known
+    /// about that row. A stale failure is logged and dropped: overwriting a fresher probe answer is the same
+    /// defect whether the arc succeeded or died, and here it would also clear the self-heal flag.
+    /// </summary>
+    private void MarkArcUnverifiedIfStillCurrent(Computer computer, long generationAtStart, string line, bool isError = false)
+    {
+        if (!ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name)))
+        {
+            _activity.Warn(computer.Name, ArcResultFreshness.StaleLine(computer.Name), InstanceTag);
+            return;
+        }
+
+        VerifyArcTimeout.MarkUnverified(computer);
+        if (isError)
+        {
+            _activity.Error(computer.Name, line, InstanceTag);
+        }
+        else
+        {
+            _activity.Warn(computer.Name, line, InstanceTag);
         }
     }
 
@@ -4378,6 +4404,23 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdateMessage = committedMessage.Length > 0
             ? $"{committedMessage} · rechecking for updates…"
             : "Back online — rechecking for updates…";
+
+        // Stale exit, shared by BOTH freshness checks below. It undoes the arc's OWN progress stamp — and
+        // only that, and only if nothing fresher has already replaced it — so a discarded arc can never
+        // strand the row reading "rechecking for updates…" with no terminal state. A bare `return` here is
+        // what the first cut of this guard did, and on the scan-failed path (where ApplyStatus never runs and
+        // the honest "couldn't rescan" write lives BELOW the guard) that left the row stuck on the progress
+        // text permanently — a new invisible-wrong-state bug introduced by the fix for the old one.
+        void AbandonAsStale()
+        {
+            if (computer.UpdateMessage is { } shown
+                && shown.EndsWith("rechecking for updates…", StringComparison.Ordinal))
+            {
+                computer.UpdateMessage = committedMessage.Length > 0 ? committedMessage : null;
+            }
+
+            _activity.Warn(name, ArcResultFreshness.StaleLine(name), InstanceTag);
+        }
 
         // ── a) Applicable rescan (read-only: ScanAsync only, never Install/Uninstall/Reboot) ──────
         // The box JUST rebooted (boot-time-confirmed) but may still be settling; a transient unreachable
@@ -4416,6 +4459,16 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             if (status.Phase != PatchPhase.Error)
             {
+                // Freshness BEFORE the row writes, not only before the verdict: ApplyStatus writes UpdatePhase,
+                // UpdateMessage and — on a reboot-pending scan — RebootRequired itself. Checking only at the
+                // verdict let a stale arc mutate the row first and then "discard" a decision that had already
+                // landed, which is precisely what this guard exists to prevent.
+                if (isStillCurrent is not null && !isStillCurrent())
+                {
+                    AbandonAsStale();
+                    return;
+                }
+
                 ApplyStatus(computer, status, UpdateScope.Applicable);
                 // Read-only readiness: the post-reboot rescan surfaces what's STILL applicable. Auto-select
                 // those updates for THIS box so the operator can one-click Install them — the same readiness
@@ -4475,7 +4528,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // silently eat LastInstall* either — a stale arc must change nothing at all.
         if (isStillCurrent is not null && !isStillCurrent())
         {
-            _activity.Warn(name, ArcResultFreshness.StaleLine(name), InstanceTag);
+            AbandonAsStale();
             return;
         }
 

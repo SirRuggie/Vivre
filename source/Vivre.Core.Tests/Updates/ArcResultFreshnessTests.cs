@@ -68,9 +68,10 @@ public class ArcResultFreshnessTests
     [Fact]
     public void A_stale_verdict_is_discarded_before_it_can_touch_the_row()
     {
-        // Mirrors the guard's placement: the check runs BEFORE any outcome write, so a row overtaken by a
-        // newer probe keeps that probe's state. Here the newer probe said "still pending"; a stale arc
-        // carrying "clean" must not turn that into a green, cleared row.
+        // Models the DECISION only — the `if` below stands in for the production guard, which lives in
+        // WorkspaceViewModel and is unreachable from this net10.0 test project. It shows what the decision
+        // is for: the newer probe said "still pending", and a stale arc carrying "clean" must not turn that
+        // into a green, cleared row. It does NOT prove the guard is wired, or wired in the right place.
         var row = new Computer("BOX01") { RebootRequired = true };
         long captured = CaptureAtArcStart();
 
