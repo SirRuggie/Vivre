@@ -1,3 +1,5 @@
+using Vivre.Core.Models;
+
 namespace Vivre.Core.Updates;
 
 /// <summary>
@@ -48,6 +50,28 @@ public static class ArcResultFreshness
     /// </summary>
     public static bool IsCurrent(long generationAtStart, long generationNow, bool rowClaimed) =>
         IsCurrent(generationAtStart, generationNow) && !rowClaimed;
+
+    /// <summary>Tail of the arc's own in-progress row message, in both forms it is written in.</summary>
+    public const string ProgressSuffix = "rechecking for updates…";
+
+    /// <summary>
+    /// Removes the arc's OWN in-progress stamp from a row it is abandoning — and only that stamp, only if
+    /// nothing fresher has replaced it. Without this a discarded arc leaves the row reading
+    /// "…rechecking for updates…" with no terminal state and no recovery path, which is the same
+    /// invisible-wrong-state failure the arc's own timeout handling exists to prevent.
+    /// </summary>
+    public static void ClearProgressStamp(Computer computer)
+    {
+        ArgumentNullException.ThrowIfNull(computer);
+
+        if (computer.UpdateMessage is not { } shown || !shown.EndsWith(ProgressSuffix, StringComparison.Ordinal))
+        {
+            return;   // something fresher already replaced it — leave the newer text alone
+        }
+
+        int sep = shown.IndexOf(" · " + ProgressSuffix, StringComparison.Ordinal);
+        computer.UpdateMessage = sep > 0 ? shown[..sep] : null;
+    }
 
     /// <summary>The line emitted when a second verify arc is skipped because one is already running.</summary>
     public static string AlreadyRunningLine(string host) =>

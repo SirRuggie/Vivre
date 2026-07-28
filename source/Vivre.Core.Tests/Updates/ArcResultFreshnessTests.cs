@@ -101,14 +101,22 @@ public class ArcResultFreshnessTests
     }
 
     [Fact]
-    public void Either_leg_alone_is_enough_to_discard()
+    public void An_abandoned_arc_strips_its_OWN_progress_stamp_and_nothing_else()
     {
-        long captured = CaptureAtArcStart();
-        MonitorProbeWritesRebootState();
+        // The stranding bug: a discarded arc used to leave the row reading "…rechecking for updates…" with
+        // no terminal state and no recovery path. Both stamp forms must clear, and a message something
+        // fresher already wrote must be left completely alone.
+        var withCommitNote = new Computer("A") { UpdateMessage = $"Back online — rebooted. · {ArcResultFreshness.ProgressSuffix}" };
+        var bare = new Computer("B") { UpdateMessage = $"Back online — {ArcResultFreshness.ProgressSuffix}" };
+        var overwrittenBySomethingNewer = new Computer("C") { UpdateMessage = "3 update(s) still applicable — run a WUA pass" };
 
-        // Superseded but unclaimed, and claimed but not superseded — both must discard.
-        Assert.False(ArcResultFreshness.IsCurrent(captured, _generation, rowClaimed: false));
-        Assert.False(ArcResultFreshness.IsCurrent(captured, _generation, rowClaimed: true));
+        ArcResultFreshness.ClearProgressStamp(withCommitNote);
+        ArcResultFreshness.ClearProgressStamp(bare);
+        ArcResultFreshness.ClearProgressStamp(overwrittenBySomethingNewer);
+
+        Assert.Equal("Back online — rebooted.", withCommitNote.UpdateMessage);
+        Assert.Null(bare.UpdateMessage);
+        Assert.Equal("3 update(s) still applicable — run a WUA pass", overwrittenBySomethingNewer.UpdateMessage);
     }
 
     [Fact]

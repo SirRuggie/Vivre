@@ -4339,17 +4339,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <c>ConfigureAwait(false)</c> anywhere on the path, so the arc's data-bound writes stay UI-thread-safe.
     /// </summary>
     private async Task RunDetachedVerifyArcAsync(
-        Computer computer, bool is2016, CancellationTokenSource arcCts, CancellationToken monitorToken, long generationAtStart)
+        Computer computer, bool is2016, CancellationToken monitorToken, long generationAtStart)
     {
+        CancellationTokenSource? arcCts = null;
         try
         {
+            arcCts = CancellationTokenSource.CreateLinkedTokenSource(monitorToken);
+            arcCts.CancelAfter(VerifyArcTimeout.Ceiling);
             await ReportPostRebootOutcomeAsync(
                 computer, is2016, arcCts.Token,
                 () => ArcResultFreshness.IsCurrent(
                     generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)));
         }
         catch (OperationCanceledException) when (
-            VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, monitorToken.IsCancellationRequested))
+            arcCts is not null
+            && VerifyArcTimeout.IsArcDeadline(arcCts.IsCancellationRequested, monitorToken.IsCancellationRequested))
         {
             // OUR ceiling, not a Stop: land the row honest — a cut-short arc proved nothing, so it must never
             // leave the row looking rebooted or up to date. Freshness-gated for the same reason the verdict
@@ -4376,7 +4380,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // Release the one-arc-per-host claim BEFORE disposing, so a later Force reboot on this row can
             // always start a fresh arc even if disposal were to throw.
             _verifyArcsInFlight.TryRemove(computer.Name, out _);
-            arcCts.Dispose();
+            arcCts?.Dispose();
         }
     }
 
@@ -4389,6 +4393,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         if (!ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)))
         {
+            // Stale: leave the verdict to whoever owns the row now — but still strip OUR OWN in-progress
+            // stamp, or a ceiling-cut arc that never reached the rescan leaves the row reading
+            // "…rechecking for updates…" permanently, with no terminal state and nothing to recover it.
+            ArcResultFreshness.ClearProgressStamp(computer);
             _activity.Warn(computer.Name, ArcResultFreshness.StaleLine(computer.Name), InstanceTag);
             return;
         }
@@ -4430,12 +4438,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // what the first cut of this guard did, and on the scan-failed path (where ApplyStatus never runs and
         // the honest "couldn't rescan" write lives BELOW the guard) that left the row stuck on the progress
         // text permanently — a new invisible-wrong-state bug introduced by the fix for the old one.
+        bool appliedStatus = false;
         void AbandonAsStale()
         {
-            if (computer.UpdateMessage is { } shown
-                && shown.EndsWith("rechecking for updates…", StringComparison.Ordinal))
+            if (appliedStatus)
             {
-                computer.UpdateMessage = committedMessage.Length > 0 ? committedMessage : null;
+                // We already wrote scan results onto this row — and a zero-applicable scan writes a GREEN
+                // Done "Up to date". Staleness discovered after that point cannot be undone by clearing a
+                // message: leaving it would be a false green on a box whose reboot we never confirmed. Mark
+                // it Unverified instead — the safe direction, and it is our own write we are correcting.
+                VerifyArcTimeout.MarkUnverified(computer);
+            }
+            else
+            {
+                ArcResultFreshness.ClearProgressStamp(computer);
             }
 
             _activity.Warn(name, ArcResultFreshness.StaleLine(name), InstanceTag);
@@ -4489,6 +4505,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 }
 
                 ApplyStatus(computer, status, UpdateScope.Applicable, fromDetachedArc: isStillCurrent is not null);
+                appliedStatus = true;   // from here on, abandoning must correct our own write, not just clear it
                 // Read-only readiness: the post-reboot rescan surfaces what's STILL applicable. Auto-select
                 // those updates for THIS box so the operator can one-click Install them — the same readiness
                 // a fresh scan gives. (ApplyStatus → ReplaceUpdatesForScope preserves prior selection, which
@@ -5400,7 +5417,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 // context (no ConfigureAwait) so its data-bound writes stay UI-thread-safe.
                 if (ForceRebootVerifyGate.ShouldRunVerify(computer.ForceRebootAwaitingVerify, computer.IsPatching, pending))
                 {
-                    computer.ForceRebootAwaitingVerify = false;
                     bool is2016 = LcuRouting.RebootVerifyLaneFor(computer.OsBuild, computer.RequiresStagedPatching) == RebootVerifyLane.Lcu2016;
                     // The arc gets its OWN deadline, and it MUST be a token the arc actually receives. It
                     // previously got the raw monitor token, so `perHost`'s 120s covered nothing (cancelling a
@@ -5415,18 +5431,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // data-bound write inside the arc stays on the UI thread. Same shape as the other
                     // `_ = ...Async()` starts in this file. arcCts is deliberately NOT a `using` — that would
                     // dispose it at this brace and cancel the arc instantly; the runner disposes it instead.
-                    // One arc per host at a time. A second Force reboot mid-arc re-arms the marker above, and
-                    // without this claim that would start a concurrent arc writing the same row. The claim is
-                    // released in the runner's finally; the reboot itself is never blocked by it.
+                    // One arc per host at a time. A second Force reboot mid-arc re-arms the marker, and without
+                    // this claim that would start a concurrent arc writing the same row. The claim is taken
+                    // BEFORE the marker is consumed on purpose: if an arc is already running we leave the
+                    // marker ARMED, so the second reboot still gets verified once the first arc finishes,
+                    // rather than losing its verification silently. The claim is released in the runner's
+                    // finally; it gates only the arc — never the operator's reboot.
                     if (!_verifyArcsInFlight.TryAdd(computer.Name, 0))
                     {
                         _activity.Info(computer.Name, ArcResultFreshness.AlreadyRunningLine(computer.Name), InstanceTag);
                     }
                     else
                     {
-                        var arcCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-                        arcCts.CancelAfter(VerifyArcTimeout.Ceiling);
-                        _ = RunDetachedVerifyArcAsync(computer, is2016, arcCts, token, RebootGeneration(computer.Name));
+                        // Single-shot: consume the marker only now that this pass owns the arc, and before the
+                        // start, so a later pass can't double-enter while this arc runs.
+                        computer.ForceRebootAwaitingVerify = false;
+                        // The linked CTS is created INSIDE the runner: nothing may throw between the claim
+                        // above and the try/finally that releases it, or the host keeps a claim it can never
+                        // shed and never gets another verify arc for the tab's lifetime.
+                        _ = RunDetachedVerifyArcAsync(computer, is2016, token, RebootGeneration(computer.Name));
                     }
                 }
             }
