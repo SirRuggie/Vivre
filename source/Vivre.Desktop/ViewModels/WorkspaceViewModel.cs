@@ -4958,12 +4958,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // probe it at all, or it spams "Reboot probe failing" every cycle. Its reboot state comes from
         // the 2016 lane's DCOM Verify instead.
         bool winRmUnsupported = _winRmRebootProbeUnsupported.ContainsKey(computer.Name);
+        // Read the post-boot recheck budget BEFORE the gate: it is both a prompt override inside the block
+        // (as always) AND the BOUND on the force-reboot admission below. Plain ConcurrentDictionary reads,
+        // no side effects, so hoisting past the old short-circuit changes nothing but evaluation order.
+        bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
         // Closes the row-became-held-mid-pass race for the one expensive WinRM write: if an op claimed
         // this row after the whole-pass snapshot was taken, don't fire the reboot-pending probe on it.
-        if (online && IsUpdateMode && !backoffActive && !winRmUnsupported
-            && !_heldRows.ContainsKey(computer.Name) && !_monitorSkipRows.ContainsKey(computer.Name))
+        // The second admission is the Force-reboot verify arc: Force reboot is NOT mode-gated, so an
+        // operator on a Health tab arms ForceRebootAwaitingVerify on a row the old patching-only gate then
+        // never probed — leaving the arc dead exactly where it's used. Admit that row on EITHER tab, but
+        // PER ROW (read off this computer) and only while its recheck budget lasts, so the cost scales with
+        // how many boxes were force-rebooted, never with fleet size.
+        if (RebootProbeAdmission.ShouldProbeRebootPending(
+                online, IsUpdateMode, computer.ForceRebootAwaitingVerify, recheck, backoffActive, winRmUnsupported,
+                _heldRows.ContainsKey(computer.Name) || _monitorSkipRows.ContainsKey(computer.Name)))
         {
-            bool recheck = _rebootRecheckBudget.TryGetValue(computer.Name, out int budget) && budget > 0;
             // Every box — pending or not — is re-probed on a single slow cadence (RebootPendingRecheckInterval,
             // ~5 min) rather than on every 20s pass. A not-pending box notices it became pending; a pending box
             // self-clears if it rebooted out-of-band — both without churning a fresh WinRM shell each pass.

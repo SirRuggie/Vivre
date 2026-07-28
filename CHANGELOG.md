@@ -44,9 +44,13 @@ it ships, then gets a dated heading.
 - **The Reboot & verify confirm and the how-to guide now say the reboot rules in one line each** — graceful
   with an 8-minute force (20 for staged 2016), immediate force for any box with a session on it (including
   disconnected ones), unsaved work lost.
-- **A manual right-click Force reboot now rejoins the verify arc.** When the box comes back and the
-  monitor confirms the reboot completed, the row gets the same post-reboot recheck and verified outcome
-  the Reboot Wave gives — no more guessing when a hand-forced box is really back.
+- **A manual right-click Force reboot now rejoins the verify arc — on Health tabs too.** When the box
+  comes back and the monitor confirms the reboot completed, the row gets the same post-reboot recheck and
+  verified outcome the Reboot Wave gives — no more guessing when a hand-forced box is really back. This
+  now completes on a Health tab as well as a Patching one: the check that confirms the reboot used to run
+  only on Patching tabs, so a box force-rebooted from Health never got its verified outcome. Only the
+  boxes you actually force-rebooted are re-checked, and only for a short window after they return, so a
+  large list costs nothing extra.
 - **Stale reboot-column messages and the stale amber "STAGED" tag now clear.** The old "isn't
   reboot-ready" text clears when a new scan/install starts, and a hand-rebooted box that provably
   committed (confirmed by the reboot-pending probe, never a scan alone) drops its staged-awaiting-reboot
