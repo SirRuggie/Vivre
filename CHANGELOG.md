@@ -6,7 +6,17 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.0 — 2026-07-28
+
 ### Changed
+- **⚠ READ THIS BEFORE YOU REBOOT ANYTHING — machines with someone logged on are now forced immediately,
+  with no countdown.** Windows refuses a graceful reboot whenever any session exists on the box (Active
+  **or** merely disconnected). Vivre now answers that refusal by completing the reboot you ordered as a
+  **forced** one, straight away. Previously those boxes got a 5-second warned shutdown before going down.
+  **Any unsaved work on a machine with a session on it is lost, with no warning to the person logged on.**
+  Machines with nobody logged on are completely unaffected — they still get the graceful reboot and the
+  usual 8-minute (20 for staged 2016) window before Vivre forces them. Nothing auto-reboots: this only
+  changes *how* a reboot you clicked is carried out, never *whether* one happens.
 - **The log file now says WHICH TAB each monitor line came from.** Monitor lines (went offline / back
   online / the reboot-probe lines / the boot-time lines) gain a trailing tag naming the section, tab and
   instance — e.g. `NYC-FP1 Went offline — TimedOut  [Health · Fleet #3]`. With one machine open in
@@ -64,7 +74,9 @@ it ships, then gets a dated heading.
   ones it often didn't actually reboot them. The refusal is now answered on the same (healthy) channel by
   completing the reboot you ordered as a FORCED one, and the row says why it was forced. Boxes DCOM
   genuinely can't reach still fall back to SMB exactly as before, and every box still gets exactly ONE
-  reboot per click.
+  reboot per click. **Confirmed in the field on 2026-07-28:** four machines hit the refusal and all four
+  escalated on the DCOM channel — zero SMB fallbacks, zero EDR alerts. See the behaviour-change note under
+  **Changed** for what this means for machines with someone logged on.
 - **A reboot the OS never acknowledged is no longer reported as issued.** A missing result code from the
   DCOM reboot call used to read as success; it now falls back (and surfaces) instead of claiming a box is
   going down when nothing confirmed it.
@@ -80,6 +92,11 @@ it ships, then gets a dated heading.
 - **A forced box that reboots too fast to be seen going down is no longer marked red.** If it dropped and
   returned between two polls, Vivre now checks its uptime (which a real reboot resets) before failing it,
   exactly as it already did for graceful reboots — and still without ever re-sending the reboot.
+- **A forced reboot no longer fills the grid with a paragraph.** The row now reads simply
+  "Forced — user logged on", then "Escalated to a forced reboot." — the same short wording every other
+  forced reboot already used. One event used to write a full sentence into both the Reboot message and
+  Windows update message columns at once, consuming the whole width. **The full explanation is unchanged
+  in the log file**, including which machine, which session state, and exactly what was sent.
 - **The Reboot & verify confirm and the how-to guide now say the reboot rules in one line each** — graceful
   with an 8-minute force (20 for staged 2016), immediate force for any box with a session on it (including
   disconnected ones), unsaved work lost.
