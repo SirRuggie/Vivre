@@ -89,7 +89,7 @@ public sealed class WuaUpdateLane
         {
             // WinRM rejects Kerberos on this host — scan over the SMB + SCM agent lane instead. Same
             // result shape; the degradation is surfaced only through Vitals, never on this result.
-            _activity?.Trace(host, "scan lane: WinRM rejected Kerberos — falling back to the SMB/SCM agent lane");
+            _activity?.Trace(host, "scan lane: WinRM rejected Kerberos — SMB/SCM fallback ALWAYS PERMITTED here (never gated by AllowSmbScanFallback); falling back to the agent lane");
             HostPatchStatus viaSmbKerberos = await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
             _activity?.Trace(host, $"scan lane: SMB/SCM agent scan returned {viaSmbKerberos.Phase} (lane entered; a Vivre_WUA_* service is created only once the agent drop succeeds)");
             return viaSmbKerberos;
@@ -102,7 +102,22 @@ public sealed class WuaUpdateLane
             // Per-attempt only: unlike the stable Kerberos condition (which RoutingPowerShellHost caches as
             // SmbDcom), a generic WinRM drop is often transient and is deliberately NOT cached, so the host
             // returns to the fast WinRM path automatically once WinRM recovers (mirrors VitalsProbe).
-            _activity?.Trace(host, "scan lane: WinRM session lost (NOT Kerberos) — falling back to the SMB/SCM agent lane");
+            //
+            // ONE EXCEPTION, and it is a CALLER decision, never a guess made here: a caller that knows WinRM
+            // is merely still starting — the post-reboot rescan, which fires the instant TCP 445 answers —
+            // sets AllowSmbScanFallback=false on its NON-FINAL attempts so it doesn't drop an agent EXE and
+            // create a remote service on a healthy box for a result it will retry anyway. Branching INSIDE the
+            // catch rather than adding a `when` filter is deliberate: a filter would let
+            // RemoteSessionLostException escape ScanAsync to its callers for the first time and silently change
+            // this method's exception contract. Default is TRUE, so a caller that forgets keeps the fallback.
+            if (!options.AllowSmbScanFallback)
+            {
+                _activity?.Trace(host, "scan lane: WinRM session lost (NOT Kerberos) — SMB/SCM fallback SUPPRESSED by caller (no agent drop, no service created); surfacing the reach failure instead");
+                return HostPatchStatus.Failed(
+                    "Can't reach over WinRM yet — not retried over SMB on this attempt.");
+            }
+
+            _activity?.Trace(host, "scan lane: WinRM session lost (NOT Kerberos) — SMB/SCM fallback PERMITTED; falling back to the agent lane");
             HostPatchStatus viaSmb = await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
             _activity?.Trace(host, $"scan lane: SMB/SCM agent scan returned {viaSmb.Phase} (lane entered; a Vivre_WUA_* service is created only once the agent drop succeeds)");
             return viaSmb.Phase == PatchPhase.Error

@@ -101,15 +101,19 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    `RebootForceSelectedAsync` never calls `RebootWave`, so the graceful→8min→force escalation does not apply;
    there is nothing to escalate to (the command already carries `/f`). A stalled box is SURFACED — the watch
    gives up and lands it **Unverified**. A second unrequested send would breach the cardinal. **Not a bug.**
-7. **The 1.17.0 escalation is INERT on the Kerberos fallback leg — "1.17.0 fixed the SMB/SCM exposure" is
+7. **Post-reboot rescan no longer drops an agent EXE while WinRM is still starting — BUILT 2026-07-29.**
+   `PatchOptions.AllowSmbScanFallback` (default TRUE) suppresses the SMB fallback on the rescan's non-final
+   attempts only; the final attempt permits it, so every cohort keeps its rescue. Retry delay 20s→60s.
+   **Option B (mirroring the install `when` filter) is DEAD** — see case file ▸ "SMB scan fallback".
+8. **The 1.17.0 escalation is INERT on the Kerberos fallback leg — "1.17.0 fixed the SMB/SCM exposure" is
    true ONLY for a graceful 1191.** `ForceRebootRunner.cs:87` calls the trigger with `forced: true`, and the
    escalation branch is guarded `when !forced` (`DcomRebootTrigger.cs:241`), so it cannot execute there; every
    other null-dispatch arm still reaches `:95` → `:377` service creation. Recorded so the fix is not over-credited.
-8. **2016 Stage creates a remote service unconditionally, on every flagged box, every cycle — BY DESIGN, not a
+9. **2016 Stage creates a remote service unconditionally, on every flagged box, every cycle — BY DESIGN, not a
    defect.** `FullPackageLcuLane.cs:160-161` (`InstallFullPackageAsync`) and `:68` (`RunComponentCleanupAsync`)
    go straight to the SMB agent lane with no try/catch and no Kerberos condition. Unrelated to reboots.
    **EDR-conversation scope** — if SentinelOne policy is being discussed, Stage belongs in it. Build nothing.
-9. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
+10. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
    use.**
    - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
      — a **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves
@@ -494,7 +498,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
   `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
   prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer optimistic concurrency and the
-  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #9). No migration/copy shipped with the
+  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #10). No migration/copy shipped with the
   split by design.
 - **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
   DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the

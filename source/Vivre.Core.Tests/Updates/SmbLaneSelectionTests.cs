@@ -132,6 +132,74 @@ public class SmbLaneSelectionTests
         Assert.Contains("scheduling isn't available", result.Message);
     }
 
+    // ── AllowSmbScanFallback: the post-reboot rescan's per-attempt opt-out ────────────────────────────
+    // The rescan fires the instant TCP 445 answers, i.e. before WinRM is listening, so its early attempts
+    // were dropping an agent EXE and creating a remote service on healthy boxes. It suppresses the fallback
+    // on non-final attempts and permits it on the last one, so every cohort still gets its rescue.
+
+    [Fact]
+    public async Task Scan_does_NOT_fall_back_when_the_caller_suppressed_the_smb_fallback()
+    {
+        // A non-final post-reboot attempt: WinRM is merely still starting, so the reach failure is surfaced
+        // and NO agent drop / service creation happens.
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new SessionLostHost(atConnect: true), agentBytesProvider: () => StubAgent, smbLane: smb);
+        var options = new PatchOptions { AllowSmbScanFallback = false };
+
+        HostPatchStatus result = await lane.ScanAsync("REBOOTING-BOX", options, credential: null, CancellationToken.None);
+
+        Assert.Null(smb.LastCall);
+        Assert.Equal(PatchPhase.Error, result.Phase);
+        Assert.Contains("not retried over SMB", result.Message);
+    }
+
+    [Fact]
+    public async Task Scan_DOES_fall_back_when_the_caller_permits_the_smb_fallback()
+    {
+        // The FINAL post-reboot attempt sets it back to true — this is what keeps the Kerberos-broken
+        // cohort (and any genuinely WinRM-dead box) able to resolve after a reboot.
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new SessionLostHost(atConnect: true), agentBytesProvider: () => StubAgent, smbLane: smb);
+        var options = new PatchOptions { AllowSmbScanFallback = true };
+
+        HostPatchStatus result = await lane.ScanAsync("REBOOTING-BOX", options, credential: null, CancellationToken.None);
+
+        Assert.Equal("Scan", smb.LastCall);
+        Assert.Equal("ran on the SMB lane", result.Message);
+    }
+
+    [Fact]
+    public void AllowSmbScanFallback_defaults_to_true_and_survives_Clone()
+    {
+        // DEFAULT-TRUE IS LOAD-BEARING: a caller that forgets the flag must keep the fallback, because the
+        // SMB lane is the only way to scan a Kerberos-broken box. Clone is MemberwiseClone, so the bool must
+        // carry — the post-reboot site sets the flag on a per-call clone and must not affect the shared one.
+        var shared = new PatchOptions();
+        Assert.True(shared.AllowSmbScanFallback);
+
+        PatchOptions clone = shared.Clone();
+        Assert.True(clone.AllowSmbScanFallback);
+
+        clone.AllowSmbScanFallback = false;
+        Assert.False(clone.AllowSmbScanFallback);
+        Assert.True(shared.AllowSmbScanFallback);   // the shared session options are untouched
+    }
+
+    [Fact]
+    public async Task The_kerberos_catch_is_NOT_gated_by_AllowSmbScanFallback()
+    {
+        // A host already known to reject Kerberos falls back on attempt 1 regardless of the flag: it verifies
+        // immediately and creates exactly one service, which is the intended outcome for that cohort.
+        var smb = new RecordingSmbLane();
+        var lane = new WuaUpdateLane(new KerberosRejectingHost(), agentBytesProvider: () => StubAgent, smbLane: smb);
+        var options = new PatchOptions { AllowSmbScanFallback = false };
+
+        HostPatchStatus result = await lane.ScanAsync("VISION-BOX", options, credential: null, CancellationToken.None);
+
+        Assert.Equal("Scan", smb.LastCall);
+        Assert.Equal("ran on the SMB lane", result.Message);
+    }
+
     private sealed class RecordingSmbLane : ISmbAgentLane
     {
         public string? LastCall { get; private set; }

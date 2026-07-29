@@ -6,6 +6,18 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- **The re-scan after a reboot no longer copies a helper program onto machines that are simply still starting
+  up.** Vivre re-scans a machine the moment it answers on the network, which is normally before the remote-
+  management service inside it has finished starting — so the first attempt would fail, quietly switch to the
+  backup channel, and copy a small helper program onto the machine and run it as a temporary service. That is
+  the same pattern your security software flags as suspicious, and it was happening on perfectly healthy
+  machines for no reason: the scan was going to be retried anyway. Vivre now waits for the retries instead,
+  and only uses the backup channel on the **last** attempt — so machines that genuinely need it (the ones
+  where remote management is broken for good) still get scanned and still resolve, exactly as before. The gap
+  between retries is also longer, 60 seconds instead of 20, which covers the two minutes a machine typically
+  needs to finish coming up. **Nothing about which machines are scanned, or what a scan reports, changed.**
+
 ### Added
 - **The log file now says when a scan fell back to the SMB channel, and why.** Vivre scans over WinRM and
   quietly switches to a slower backup channel when WinRM can't be reached — but a successful backup-channel

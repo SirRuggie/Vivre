@@ -659,6 +659,61 @@ Vivre deciding to reboot, which the cardinal forbids. **Do not log this as a bug
 cancelled by Stop, monitoring-off or tab close, and the per-host claim is held for the whole window. A SECOND
 Force reboot on that host inside it gets no watch. See docs/vivre-backlog.md.
 
+### SMB scan fallback on the post-reboot rescan — why it is gated per attempt (2026-07-29)
+
+**The defect.** The post-reboot rescan fires the instant TCP 445 answers — the wave's back-online gate is
+`TcpReachabilityProbe` on its default **port 445** — which is by construction **before WinRM is listening**.
+A non-Kerberos WinRM failure lands on the scan's `catch (RemoteSessionLostException)`, which fell back to the
+SMB/SCM agent lane: an EXE dropped to `\\host\C$\ProgramData\Vivre\agent` and a temporary `Vivre_WUA_*`
+LocalSystem service — the pattern SentinelOne scores as Lateral Movement — created on a **healthy** box purely
+because WinRM had not finished starting. Field-confirmed 2026-07-28 (eight "couldn't rescan" events, three on
+the tagged 1.17.1 build). Note the drop **precedes** service creation, so an event that fails at the UNC path
+never reached `CreateService`; "entered the lane" and "created a service" are different counts.
+
+**The fix — a CALL-SITE opt-out, gated per attempt.** `PatchOptions.AllowSmbScanFallback` defaults to
+**TRUE**, and only the post-reboot rescan sets it false, and only on its **non-final** attempts. The lane
+branches *inside* the catch and returns a `Failed` status. Three deliberate choices:
+
+- **Default TRUE is load-bearing.** The SMB lane is the only way to scan a Kerberos-broken box, so the
+  failure polarity is one-way on purpose: a caller that *forgets* the flag re-opens an EDR-noise hole
+  (recoverable), never silently strips a cohort's only scan transport (not recoverable).
+- **The Kerberos catch is NOT gated.** A host already known to reject Kerberos falls back on attempt 1,
+  verifies immediately, and creates exactly one service. That is the intended outcome for that cohort.
+- **Branch inside the catch, never a `when` filter.** A filter would let `RemoteSessionLostException` escape
+  `ScanAsync` to its callers for the first time and silently change the method's exception contract.
+
+**Why LAST-ATTEMPT-ONLY, and not a blanket suppression.** A red-team pass broke blanket suppression on two
+routes, and permitting the fallback on the final attempt closes both:
+
+1. **An unmarked Kerberos box would have lost its rescue.** The wave is all-DCOM (`PatchService` builds it
+   with a DCOM trigger, a TCP probe and a DCOM boot-time reader) and makes **no WinRM call**, so nothing has
+   marked `HostTransportCache`. A genuine Kerberos rejection requires WinRM to *answer* —
+   `PSRunspaceHost.TranslateRemotingException` classifies Kerberos ahead of the transport branch — so a box
+   whose listener is not up yet throws **session-lost, not the Kerberos type**, and would have been suppressed
+   on every attempt. The final attempt rescues it.
+2. **Green rows would have flipped to non-self-healing Unverified.** A successful SMB-lane Applicable scan
+   with zero updates maps to `Done` (green); `CouldntRescan` sets `UnverifiedRebootProbeOnly = false`, which
+   `MonitorSelfHeal` can never lift. Permitting the last attempt keeps those rows resolvable.
+
+**Why the retry delay went 20s → 60s (attempt count unchanged at 3).** The three attempts now span **~120s**
+of delay instead of ~40s, so the final, fallback-permitted attempt lands after the window in which WinRM is
+usually still starting. 120s is not a guess — it is the codebase's two existing, independently-reasoned
+statements of how long a box may still be coming up after a reboot: `RebootProbeTimeoutSeconds` (120s) and
+`FastRebootWatch.Window` (2 min, *"room for a slow-booting VM"*). **The delay was widened rather than the
+attempt count** so worst-case scan *work* is unchanged (still 3 attempts at the same per-attempt cap): raising
+the count would grow the pathological ceiling on the wave path, where `ScanAttemptCap.For` deliberately
+returns null, and could push a row Unverified *later* than it is today. On the detached-arc path
+`VerifyArcTimeout.Ceiling` (5 min) is untouched and still trips first, so that deadline is identical, and the
+fast-watch clock is not involved.
+
+**Option B — mirroring the install lane's `when` filter onto the scan — is DEAD.** Two independent reasons.
+It is locked out by an existing test (`SmbLaneSelectionTests.Scan_falls_back_to_the_smb_lane_on_a_generic_session_loss`
+constructs `SessionLostHost(atConnect: false)` and asserts the SMB lane IS called), and `AtConnect` cannot
+distinguish the cases anyway: the scan reaches WinRM through `RunRemoteAsync`, whose connect-phase catch sets
+`atConnect: true`, so the post-reboot case carries the *same* flag value as the install filter's admitted case.
+There is no signal at that layer that separates "WinRM still starting" from "box that needs the lane" — which
+is precisely why the decision has to come from the caller.
+
 ### Readiness vs offline-detection distinction
 
 - **Readiness probe** (`IRebootReadinessProbe`) — PRE-reboot question: "may we reboot this box

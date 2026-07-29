@@ -272,7 +272,20 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int OfflineConfirmThreshold = 2;
     // The post-reboot rescan runs on a box that JUST rebooted (boot-time-confirmed) but may still be
     // settling; a transient unreachable mid-settle gets a short wait + retry rather than a stuck red Error.
-    private static readonly TimeSpan PostRebootRescanRetryDelay = TimeSpan.FromSeconds(20);
+    //
+    // 60s (was 20s) so the 3 attempts span ~120s instead of ~40s. The rescan fires the instant TCP 445
+    // answers (the wave's back-online gate is TcpReachabilityProbe's default port 445), which is BEFORE
+    // WinRM is listening — so the old 40s span could exhaust every attempt while WinRM was still starting.
+    // 120s is not a guess: it is the codebase's two existing, independently-reasoned statements of how long
+    // a box may still be coming up after a reboot — RebootProbeTimeoutSeconds (120s) and
+    // FastRebootWatch.Window (2 min, "room for a slow-booting VM").
+    //
+    // WIDENED THE DELAY, NOT THE ATTEMPT COUNT, on purpose. Attempts stay at 3 so the worst-case scan WORK
+    // is unchanged (3 × ScanAttemptTimeoutSeconds): raising the count would grow the pathological ceiling on
+    // the wave path, where the per-attempt cap is deliberately null (ScanAttemptCap.For), and could push a
+    // row Unverified LATER than it is today. On the detached-arc path VerifyArcTimeout.Ceiling still trips
+    // first and is untouched, so that deadline is identical. The fast-watch clock is not involved.
+    private static readonly TimeSpan PostRebootRescanRetryDelay = TimeSpan.FromSeconds(60);
     private const int PostRebootRescanAttempts = 3;
     // Machines with a pending scheduled task — install or reboot (name → trigger time). Drives the
     // "Scheduled task" columns and lets the monitor clear them once the time has passed (client-side).
@@ -4499,6 +4512,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 PatchOptions applicableOptions = _patchOptions.Clone();
                 applicableOptions.Scope = UpdateScope.Applicable;
+
+                // This rescan fires the instant TCP 445 answers, i.e. BEFORE WinRM is listening — so a
+                // non-Kerberos session loss here usually means "WinRM isn't up yet", not "this box needs the
+                // SMB lane". Suppress the SMB fallback on the NON-FINAL attempts so we don't drop an agent EXE
+                // and create a remote Vivre_WUA_* service on a healthy box for a result we're about to retry.
+                // The FINAL attempt leaves it TRUE, which is what keeps every cohort's rescue intact — including
+                // a Kerberos-broken box whose transport cache is still empty (the wave is all-DCOM and makes no
+                // WinRM call, so nothing has marked it yet, and its failure arrives as a session loss rather
+                // than the Kerberos type). Set on the per-call CLONE only; the shared _patchOptions is never
+                // touched, so the operator-initiated scan keeps its unconditional fallback.
+                bool finalAttempt = attempt >= PostRebootRescanAttempts;
+                applicableOptions.AllowSmbScanFallback = finalAttempt;
+                // Trace has no origin overload (IActivityLog.Trace is 2-arg), so the tab tag rides in the
+                // message rather than adding an interface member for one line.
+                _activity.Trace(
+                    name,
+                    $"post-reboot rescan: attempt {attempt} of {PostRebootRescanAttempts} — SMB/SCM fallback "
+                    + $"{(finalAttempt ? "PERMITTED (final attempt)" : "SUPPRESSED")}  [{InstanceTag}]");
+
                 status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, attemptCts?.Token ?? token);
             }
             catch (OperationCanceledException) when (

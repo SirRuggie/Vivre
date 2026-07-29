@@ -104,6 +104,25 @@ public sealed class PatchOptions
     public TimeSpan PollInterval { get; set; } = TimeSpan.FromSeconds(3);
 
     /// <summary>
+    /// Whether a SCAN may fall back to the SMB/SCM agent lane when WinRM is lost for a NON-Kerberos reason
+    /// (the box unreachable over WinRM, the service not up yet, or a mid-scan drop).
+    /// <para><b>DEFAULT TRUE, deliberately.</b> The SMB lane is the only way to scan a Kerberos-broken box, so
+    /// a caller that FORGETS this flag must keep the fallback. The failure polarity is one-way on purpose: a
+    /// forgotten flag re-opens an EDR-noise hole (a temporary remote <c>Vivre_WUA_*</c> service is created),
+    /// which is recoverable; silently stripping a cohort's only scan transport is not.</para>
+    /// <para><b>Only the post-reboot rescan sets this false</b>, and only on its non-final attempts
+    /// (<c>WorkspaceViewModel.ReportPostRebootOutcomeAsync</c>): that path fires the instant TCP 445 answers,
+    /// i.e. by construction BEFORE WinRM is listening, so early attempts were dropping an agent EXE and creating
+    /// a service on healthy boxes purely because WinRM had not finished starting. The FINAL attempt leaves it
+    /// true, so every cohort — including a Kerberos-broken box with no cache entry yet — still gets its rescue
+    /// and the row still resolves. Operator-initiated scans, install, uninstall and 2016 Stage are unaffected:
+    /// their fallback is unconditional and this flag never reaches them.</para>
+    /// <para>The Kerberos catch is NOT gated by this — a host already known to reject Kerberos falls back on
+    /// attempt 1, verifies immediately, and creates exactly one service. That is the intended outcome.</para>
+    /// </summary>
+    public bool AllowSmbScanFallback { get; set; } = true;
+
+    /// <summary>
     /// A shallow copy, so a per-host install scope (<see cref="IncludeKbArticleIds"/>) can be set
     /// without mutating the shared session options that concurrent hosts read. The list properties
     /// are treated as immutable (always reassigned, never mutated), so a shallow copy is safe.
