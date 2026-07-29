@@ -248,6 +248,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Whether an operation owns this row right now — a claimed row is treated as stale by the arc.</summary>
     private bool IsRowClaimed(string host) => _heldRows.ContainsKey(host) || _monitorSkipRows.ContainsKey(host);
+
+    // Hosts with a post-Force-reboot fast watch running. One per host: a second Force reboot inside the
+    // window would otherwise start a second watch racing the first to write the same row.
+    private readonly ConcurrentDictionary<string, byte> _fastRebootWatches = new(StringComparer.OrdinalIgnoreCase);
     // The unified reboot-pending probe cadence: every box (pending or not) is re-probed at most this often.
     // A box known reboot-pending self-clears its amber pill on a later poll if it rebooted out-of-band; a
     // not-pending box notices a newly-pending state — both at this slow rate, never every 20s.
@@ -6185,6 +6189,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // without this the whole attempt is invisible there — the incident's blind spot). The
             // runner's narration hook then reports the DCOM hand-off live if the Kerberos fallback fires.
             computer.RebootMessage = "Rebooting (force)…";
+            // Boot-time baseline BEFORE the box is told to go down — the same order the wave uses. This is
+            // the ONLY thing that lets a machine which reboots faster than the monitor's ~40s detection floor
+            // still prove it rebooted (field: a VM back in ~20s left its row stuck on "going down" forever).
+            // Read-only: ReadyConfirmation queries LastBootUpTime and can issue nothing.
+            var rebootProof = new ReadyConfirmation(_activity);
+            await CaptureRebootBaselineAsync(rebootProof, computer.Name, token);
             try
             {
                 ForceRebootResult result = await _forceReboot.RebootAsync(
@@ -6212,6 +6222,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // A hand Force reboot rejoins the verify arc: when the box returns and the monitor's probe
                     // answers definitively clean, it runs the same post-reboot recheck the wave's Done arm does.
                     computer.ForceRebootAwaitingVerify = true;
+                    StartFastRebootWatch(computer, rebootProof, token);
                 }
                 else
                 {
@@ -6233,6 +6244,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // A hand Force reboot rejoins the verify arc: when the box returns and the monitor's probe
                     // answers definitively clean, it runs the same post-reboot recheck the wave's Done arm does.
                     computer.ForceRebootAwaitingVerify = true;
+                    StartFastRebootWatch(computer, rebootProof, token);
                 }
             }
             catch (OperationCanceledException)
@@ -6250,6 +6262,164 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 _activity.Error(computer.Name, $"Force reboot failed — {ex.Message}");
             }
         }
+    }
+
+    /// <summary>Reads the pre-reboot boot time through the SAME 8-slot throttle every other boot-time read
+    /// uses — the fast watch must not get its own private lane.</summary>
+    private async Task CaptureRebootBaselineAsync(IPostRebootConfirmation proof, string host, CancellationToken token)
+    {
+        await _bootTimeThrottle.WaitAsync(token);
+        try
+        {
+            await proof.CaptureBaselineAsync(host, token);
+        }
+        finally
+        {
+            _bootTimeThrottle.Release();
+        }
+    }
+
+    /// <summary>Starts the per-row fast watch, at most one per host. Started (never awaited) from the UI
+    /// context so its own awaits keep it — no <c>Task.Run</c>, no <c>ConfigureAwait(false)</c>.</summary>
+    private void StartFastRebootWatch(Computer computer, IPostRebootConfirmation proof, CancellationToken token)
+    {
+        if (!_fastRebootWatches.TryAdd(computer.Name, 0))
+        {
+            return;   // a watch is already running for this host — one writer, not two
+        }
+
+        _ = RunFastRebootWatchAsync(computer, proof, RebootGeneration(computer.Name), token);
+    }
+
+    /// <summary>
+    /// Watches ONE force-rebooted row closely enough to catch a machine that reboots faster than the monitor
+    /// can see. Proof is a boot time that advanced past <see cref="RebootWave.UptimeProofMargin"/> — the wave's
+    /// own evidence — NOT an observed drop, which is exactly what the monitor misses on a fast VM.
+    /// <para>
+    /// It defers rather than competes: it stands down the moment the monitor sees the box go offline (that
+    /// path writes everything correctly), and every write is gated by the SAME three-leg freshness check the
+    /// detached verify arc uses, so a newer probe or a sweep that claimed the row always wins.
+    /// </para>
+    /// </summary>
+    private async Task RunFastRebootWatchAsync(
+        Computer computer, IPostRebootConfirmation proof, long generationAtStart, CancellationToken token)
+    {
+        try
+        {
+            var sinceDispatch = System.Diagnostics.Stopwatch.StartNew();
+            while (sinceDispatch.Elapsed < FastRebootWatch.Window)
+            {
+                await Task.Delay(FastRebootWatch.Interval, token);
+
+                if (FastRebootWatch.ShouldStandDown(computer.IsOnline))
+                {
+                    return;   // the monitor saw the drop — the normal transition owns this row
+                }
+
+                if (!ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)))
+                {
+                    _activity.Warn(computer.Name, ArcResultFreshness.StaleLine(computer.Name), InstanceTag);
+                    return;
+                }
+
+                RebootConfirmationResult result;
+                await _bootTimeThrottle.WaitAsync(token);
+                try
+                {
+                    result = await proof.ConfirmAsync(computer.Name, token);
+                }
+                finally
+                {
+                    _bootTimeThrottle.Release();
+                }
+
+                if (result.Outcome == RebootConfirmationOutcome.Confirmed)
+                {
+                    await ApplyProvenReturnAsync(computer, token);
+                    return;
+                }
+            }
+
+            await GiveUpUnprovenRebootAsync(computer, sinceDispatch.Elapsed, generationAtStart, token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Stop / tab closed — we learned nothing, so change nothing.
+        }
+        catch (Exception ex)
+        {
+            // Detached: nothing observes this task, so a fault must not vanish.
+            _activity.Error(computer.Name, $"Post-reboot watch failed — {ex.Message}", InstanceTag);
+        }
+        finally
+        {
+            _fastRebootWatches.TryRemove(computer.Name, out _);
+        }
+    }
+
+    /// <summary>
+    /// Writes everything the offline→online transition would have written for a row whose reboot was proven
+    /// by boot time instead of by an observed drop. Deliberately reuses the transition's OWN strings and
+    /// bookkeeping so the two paths cannot drift apart.
+    /// </summary>
+    private async Task ApplyProvenReturnAsync(Computer computer, CancellationToken token)
+    {
+        // Same bookkeeping the transition does: a box that just booted must be re-probed, and a degraded
+        // flag from before the reboot is stale. Leaving these is how a row ends up in a state nothing ever
+        // probes again — which is exactly how the field row got permanently stuck.
+        _degradedHosts.TryRemove(computer.Name, out _);
+        _rebootRecheckBudget[computer.Name] = PostBootRebootRechecks;
+
+        // No drop was observed, so there is no honest down-duration to report — the transition's own
+        // no-downtime wording is precisely this case, reused verbatim rather than approximated.
+        computer.WentOfflineAt = null;
+        computer.LastStatus = "Online";
+        string back = $"Back online {DateTime.Now:HH:mm}";
+        computer.RebootMessage = back;
+        _activity.Info(computer.Name, back, InstanceTag);
+
+        // Last, because it awaits: re-read "Last reboot" through the same helper the transition calls.
+        await RefreshLastBootTimeAsync(computer, token);
+    }
+
+    /// <summary>
+    /// The backstop that makes "stuck on <c>Reboot forced — going down</c> forever" impossible. Fires only
+    /// once the wave's FORCED go-offline window has passed with neither an observed drop nor a boot-time
+    /// advance — standing down at the fast window is not the same as giving up, and a genuinely slow box
+    /// must not be called failed while it is still legitimately committing.
+    /// </summary>
+    private async Task GiveUpUnprovenRebootAsync(
+        Computer computer, TimeSpan alreadyWatched, long generationAtStart, CancellationToken token)
+    {
+        TimeSpan forcedWindow = RebootWaveOptions.Default.ForcedGoOfflineWindow;
+        TimeSpan remaining = forcedWindow - alreadyWatched;
+        if (remaining > TimeSpan.Zero)
+        {
+            await Task.Delay(remaining, token);
+        }
+
+        if (FastRebootWatch.ShouldStandDown(computer.IsOnline)
+            || !ArcResultFreshness.IsCurrent(generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)))
+        {
+            return;   // someone with better information owns this row now
+        }
+
+        // Only rewrite the row if it is still sitting on the force-reboot text — anything else means some
+        // other path already resolved it and this backstop has nothing to correct.
+        if (!string.Equals(computer.LastStatus, "Reboot forced — going down", StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        // Honest landing, existing semantics: never green, never left mid-progress. The box has answered
+        // every probe for the whole window, so "Online" is true; what could NOT be established is that it
+        // rebooted, and that is what the Unverified chip and message carry.
+        computer.LastStatus = "Online";
+        VerifyArcTimeout.MarkUnverified(computer);
+        _activity.Warn(
+            computer.Name,
+            $"Force reboot: no reboot could be proven within {forcedWindow.TotalMinutes:N0} min — the box never went offline and its boot time never advanced. Left Unverified.",
+            InstanceTag);
     }
 
     /// <summary>
