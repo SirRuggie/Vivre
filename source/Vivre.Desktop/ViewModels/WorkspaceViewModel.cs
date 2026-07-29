@@ -6340,7 +6340,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             {
                 _activity.Warn(
                     computer.Name,
-                    "Couldn't read the uptime before the reboot, so this reboot can't be proven — falling back to normal monitoring.",
+                    "Couldn't read the uptime before the reboot, so this reboot can't be proven — falling back to normal monitoring. If monitoring doesn't see it go offline either, the row will be left Unverified and will need a re-check.",
                     InstanceTag);
                 await GiveUpUnprovenRebootAsync(computer, sinceDispatch.Elapsed, expectedStatus, token);
                 return;
@@ -6447,9 +6447,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         TimeSpan forcedWindow = RebootWaveOptions.Default.ForcedGoOfflineWindow;
         TimeSpan remaining = forcedWindow - alreadyWatched;
-        if (remaining > TimeSpan.Zero)
+
+        // Sliced, not one long sleep. A single Delay for the whole remainder held this host's watch claim —
+        // and so blocked any later Force reboot's watch — for the full window even when the monitor had
+        // already seen the box drop seconds in. Re-checking on the monitor's own cadence lets the common
+        // case release in seconds. No DCOM here: these are field reads, so slicing costs nothing.
+        while (remaining > TimeSpan.Zero)
         {
-            await Task.Delay(remaining, token);
+            TimeSpan slice = remaining < FastRebootWatch.GiveUpPollInterval ? remaining : FastRebootWatch.GiveUpPollInterval;
+            await Task.Delay(slice, token);
+            remaining -= slice;
+
+            if (FastRebootWatch.ShouldStandDown(computer.IsOnline) || IsRowClaimed(computer.Name))
+            {
+                return;   // someone with better information owns this row now
+            }
         }
 
         if (FastRebootWatch.ShouldStandDown(computer.IsOnline) || IsRowClaimed(computer.Name))

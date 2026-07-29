@@ -36,6 +36,15 @@ public static class FastRebootWatch
     /// monitor's own transition is reliable and owns the row.</summary>
     public static readonly TimeSpan Window = TimeSpan.FromMinutes(2);
 
+    /// <summary>
+    /// How often the give-up backstop re-checks whether someone else has taken the row. It waits out the
+    /// wave's forced go-offline window, and doing that as ONE long sleep held the per-host watch claim for
+    /// the whole window even when the monitor resolved the row seconds in — which blocked a later Force
+    /// reboot's watch. These are in-memory field reads, so slicing is free; matched to the monitor's own
+    /// cadence because the monitor is what it is waiting to hear from.
+    /// </summary>
+    public static readonly TimeSpan GiveUpPollInterval = TimeSpan.FromSeconds(20);
+
     /// <summary>Reads this row can take before the window is spent — the added load for ONE rebooted row.</summary>
     public static int MaxReads => (int)(Window.Ticks / Interval.Ticks);
 

@@ -10,7 +10,10 @@ it ships, then gets a dated heading.
 - **Force-rebooting several machines at once no longer waits on the slow ones.** The uptime reading Vivre
   takes before each reboot is now taken for the whole selection at once instead of one machine at a time, so
   an unreachable box no longer holds up the reboot command for every machine behind it in the list — the
-  wait is now the slowest single machine rather than all of them added together. The machines rebooted, and
+  time to get the LAST machine rebooted is now bounded by the slowest single machine rather than by all of
+  them added together. (The trade: with a selection full of unreachable machines the FIRST reboot now goes
+  out a little later, because the readings are taken together before any of them are sent.) The machines
+  rebooted, and
   the order they are rebooted in, are exactly as before. A machine whose reading can't be taken is still
   rebooted; it just falls back to normal monitoring and says so in the log.
 - **A machine that reboots faster than Vivre can see no longer gets stuck on "Reboot forced — going down".**
