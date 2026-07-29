@@ -154,6 +154,29 @@ standalone items further down, each "do only if it recurs / when a signal appear
   and the `DcomRebootReadinessProbe` machinery already exists — wiring it in rescues that cohort so its boxes
   can verify like the rest. (Design settled, build pending; related to the parked Kerberos remoting-cache
   work in DO NEXT #1 and the drift-hunt "stale reboot-pending dot on DCOM-only boxes" note below.)
+- **Desktop wiring has NO regression guard — the verify-arc fixes are untestable where they live.** Reverting
+  `arcCts.Token` back to `token` (the original freeze defect) leaves the whole suite green; the same holds for
+  the generation bumps, the freshness gate and the one-arc claim. `Vivre.Core.Tests` (net10.0) cannot reference
+  `Vivre.Desktop` (net10.0-windows), so the tests cover the razors and none of the wiring. Closing it needs
+  either a net10.0-windows test project or extracting the monitor/arc orchestration behind a UI-free seam.
+- **Tab-count correlation: REFUTED, recorded so it is not re-investigated.** Three rounds chased "one host in
+  several tabs" as the cause of the silent grid freeze. Field reproduction killed it: a SINGLE tab, host in no
+  other tab, still froze with the activity log silent for 2m 52s. The cause was the unbounded verify arc racing
+  the box going offline — not instance count. `HostWinRmGate` contention was refuted separately (background
+  acquires can never hold more than 2 of 4 slots, and admission requires `online`, so contention drops to zero
+  for the whole outage).
+- **Worst-case monitor stall is NOT 120s.** `_rebootProbeThrottle` is a `static SemaphoreSlim(8)` shared across
+  every open tab and waited on the RAW monitor token, so with M wedged rows fleet-wide the real bound is
+  ceil(M/8) × 120s, not one probe's ceiling. Pre-existing and unchanged by the verify-arc work; worth tracking
+  because the arc's detachment removed the other unbounded term and left this as the dominant one.
+- **TAB SCOPE — one decision governs two open items that pull in OPPOSITE directions.** Decide the principle
+  once, then apply it to both. (i) The verify-arc guards (`_verifyArcsInFlight`, `_rebootStateGeneration`) are
+  per-tab instance fields, so one host open in two tabs gets two concurrent arcs, each invisible to the other's
+  guard — this asks whether a per-tab guard should be app-wide. (ii) The per-tab Update Source arc asks the
+  reverse: `PatchOptions` is a single SHARED instance (`App.xaml.cs:83`), `Clone()` at `:132` is the fix token,
+  and Option A is per-tab clone + tab-header badge + stale banner + source lock during patch work — making a
+  global setting per-tab. Deciding these separately risks making tab scope mean one thing for settings and the
+  opposite for guards.
 
 ---
 
