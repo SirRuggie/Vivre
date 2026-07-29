@@ -74,6 +74,10 @@ public class SmbLaneSelectionTests
     {
         // WinRM is down for a NON-Kerberos reason (RemoteSessionLostException). Scan is read-only, so it
         // must fall back to the SMB agent on ANY session loss — even a mid-run drop (AtConnect == false).
+        // CAVEAT (2026-07-29): "ANY" is scoped to the DEFAULT options this test constructs. Since
+        // AllowSmbScanFallback shipped, a caller may opt OUT per call — the post-reboot rescan does, on its
+        // non-final attempts. The flag defaults TRUE, which is why this assertion is unchanged and must stay
+        // that way: if it ever goes red, the DEFAULT is wrong, not this test.
         var smb = new RecordingSmbLane();
         var lane = new WuaUpdateLane(new SessionLostHost(atConnect: false), agentBytesProvider: () => StubAgent, smbLane: smb);
 

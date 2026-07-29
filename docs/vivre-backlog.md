@@ -51,13 +51,16 @@ code excised" (audit doc ▸ LOW, Program.cs :58/:826/:911) is **CLOSED** — al
 reported-only truth, plus a fourth of the same class found in the sweep (the `Summarize` docstring's
 "the actual reboot is the caller's job").
 
-**Still open** (none is day-to-day work — no urgent items remain):
-1. **Transport-cache staleness — RE-RATED 2026-07-29 from parked convenience to a REACHABILITY item.**
+**Still open** (none is day-to-day work — no urgent items remain). **Each item carries a `[named-anchor]` —
+cite those, never a position.** They were ordinals until 2026-07-29 and three cross-references broke in one
+arc because inserting an item renumbered everything below it; anchors are stable across inserts and reorders.
+The list is still in recommended do-next order.
+- **[transport-cache-staleness]** — **Transport-cache staleness — RE-RATED 2026-07-29 from parked convenience to a REACHABILITY item.**
    `RoutingPowerShellHost.cs:59` fast-fails before the credential is consulted, and `HostTransportCache`
    has **no eviction of any kind** — so a stale Kerberos mark routes a now-HEALTHY box down DCOM/SMB until
    Vivre restarts. Still research-first; no longer "wait until it bites".
-2. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
-3. **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — PARKED; the
+- **[details-window-leak]** — **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
+- **[stop-monitor-only-tab]** — **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — PARKED; the
    app-side fix (rebind Stop's `IsEnabled` to the command, or reword the tooltip) is a separate decision.
    - **The issue:** the toolbar Stop's `IsEnabled="{Binding SelectedTab.IsBusy}"` (MainWindow.xaml:436)
      defeats `CanStop()`'s monitor-only intent, and the Monitor tooltip repeats the false claim ("Stop
@@ -81,7 +84,7 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
      "Stopped — N of M checked" (`ComposeStoppedMessage`) and stamps unreached rows
      `WugRowText.NotChecked` ("not checked (read stopped)"). That passive-op rail is the right template
      for wiring this item's remaining sites.
-4. **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
+- **[scheduled-reboot-stampede]** — **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
    re-raise; build nothing.** The facts stand: scheduled reboots have no burst stagger — every
    selected box fires `shutdown.exe /r /f /t 0` locally at the SAME absolute UTC instant
    (`ScheduleTimeFormatter` StartBoundary=…Z), and the wave's `_rebootTriggerThrottle`(12)+jitter
@@ -93,27 +96,27 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
-5. **Warn-then-force reboot (a countdown instead of an immediate force) — CLOSED, CONSCIOUS ACCEPT
+- **[warn-then-force]** — **Warn-then-force reboot (a countdown instead of an immediate force) — CLOSED, CONSCIOUS ACCEPT
    (operator decision, 2026-07-29). Do not re-chase; build no part of it.** Field-proven to WORK and still
    declined: reboots run inside an agreed maintenance window, so a per-box countdown only adds latency and a
    new Abort surface. Rationale + evidence: **windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED"**.
-6. **Force reboot sends once and never escalates or re-dispatches — DOCUMENTED FACT, not a defect.**
+- **[force-reboot-no-escalation]** — **Force reboot sends once and never escalates or re-dispatches — DOCUMENTED FACT, not a defect.**
    `RebootForceSelectedAsync` never calls `RebootWave`, so the graceful→8min→force escalation does not apply;
    there is nothing to escalate to (the command already carries `/f`). A stalled box is SURFACED — the watch
    gives up and lands it **Unverified**. A second unrequested send would breach the cardinal. **Not a bug.**
-7. **Post-reboot rescan no longer drops an agent EXE while WinRM is still starting — BUILT 2026-07-29.**
+- **[post-reboot-smb-optout]** — **Post-reboot rescan no longer drops an agent EXE while WinRM is still starting — BUILT 2026-07-29.**
    `PatchOptions.AllowSmbScanFallback` (default TRUE) suppresses the SMB fallback on the rescan's non-final
    attempts only; the final attempt permits it, so every cohort keeps its rescue. Retry delay 20s→60s.
    **Option B (mirroring the install `when` filter) is DEAD** — see case file ▸ "SMB scan fallback".
-8. **The 1.17.0 escalation is INERT on the Kerberos fallback leg — "1.17.0 fixed the SMB/SCM exposure" is
+- **[1191-fix-inert-on-kerberos-leg]** — **The 1.17.0 escalation is INERT on the Kerberos fallback leg — "1.17.0 fixed the SMB/SCM exposure" is
    true ONLY for a graceful 1191.** `ForceRebootRunner.cs:87` calls the trigger with `forced: true`, and the
    escalation branch is guarded `when !forced` (`DcomRebootTrigger.cs:241`), so it cannot execute there; every
    other null-dispatch arm still reaches `:95` → `:377` service creation. Recorded so the fix is not over-credited.
-9. **2016 Stage creates a remote service unconditionally, on every flagged box, every cycle — BY DESIGN, not a
+- **[2016-stage-service-creation]** — **2016 Stage creates a remote service unconditionally, on every flagged box, every cycle — BY DESIGN, not a
    defect.** `FullPackageLcuLane.cs:160-161` (`InstallFullPackageAsync`) and `:68` (`RunComponentCleanupAsync`)
    go straight to the SMB agent lane with no try/catch and no Kerberos condition. Unrelated to reboots.
    **EDR-conversation scope** — if SentinelOne policy is being discussed, Stage belongs in it. Build nothing.
-10. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
+- **[shared-settings-stomp-guard]** — **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
    use.**
    - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
      — a **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves
@@ -173,10 +176,12 @@ standalone items further down, each "do only if it recurs / when a signal appear
    The runner executes ungated, "All machines…" needs no selection, and the shipped reboot scripts include a
    forced restart — missed by every reboot-command inventory because it arrives as a script.
    **Same class as #2 and #3 — scope the three together.** → case file ▸ finding 4.
-5. **The cardinal gate grep guards ONE of at least FOUR reboot primitives.** OPEN, none fixed.
-   Keying on the WMI token alone misses the `shutdown.exe` lines in the WinRM runner, the scheduled task, the
-   SMB/SCM service image and the script library, so the guard on the one non-negotiable rule proves less than
-   it appears to. **BLOCKED ON #12** — can't re-scope against an open inventory. → case file ▸ finding 5.
+5. **The cardinal gate grep guarded ONE of five reboot primitives — FIXED 2026-07-29 by
+   `tools/reboot-primitive-gate.sh`** (cited by path, not hash: a commit cannot contain its own hash, and an
+   amend invalidated the first attempt — `git log -- tools/reboot-primitive-gate.sh` is authoritative)**.**
+   All five sites pinned at exact counts, every file type
+   scanned, plus a containment check that fails on a SIXTH primitive anywhere. Old one-line grep SUBSUMED as
+   SITE 1/5. Proven to fail on demand (4 evasion forms). → case file ▸ finding 5.
 6. **The SMB/SCM fallback cannot report a failed start — in Release it reports to nobody.** OPEN, none fixed.
    It never reads an exit code and its only failure surface is `Debug.WriteLine`, which compiles to nothing in
    Release, while the caller returns a success value regardless. → case file ▸ finding 6.
@@ -196,7 +201,9 @@ standalone items further down, each "do only if it recurs / when a signal appear
 11. **`HostName.IsLocal`'s alias branch is case-sensitive.** OPEN, none fixed.
     An FQDN or an upper-case `LOCALHOST` row gets no self-target warning while the reboot still lands on the
     Vivre host. **Latent** — the operator's lists are short-name today. → case file ▸ finding 11.
-12. **The "/t 300" warned-reboot path — RESOLVED, IT EXISTS; the silent-no-op concern is CLOSED.** Nothing fixed.
+12. **The "/t 300" warned-reboot path — CLOSED 2026-07-29 as #5's prerequisite; it EXISTS and the
+    silent-no-op concern is closed.** Its resolution is what let the inventory close at five, which is what
+    made #5's gate buildable — the two shipped together.
     Real, in the script library (a warned, non-forced 5-min countdown), so the earlier inventory was incomplete.
     **Field-demonstrated 2026-07-29, not merely accepted:** it ARMS *and* COMPLETES on an occupied box — see
     windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED". **PREREQUISITE FOR #5.** → case file ▸ finding 12.
@@ -256,7 +263,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   **guaranteed Unverified** every cycle. Add a DCOM fallback: the reboot-pending registry legs need no WinRM,
   and the `DcomRebootReadinessProbe` machinery already exists — wiring it in rescues that cohort so its boxes
   can verify like the rest. (Design settled, build pending; related to the parked Kerberos remoting-cache
-  work in DO NEXT #1 and the drift-hunt "stale reboot-pending dot on DCOM-only boxes" note below.)
+  work in DO NEXT ▸ [transport-cache-staleness] and the drift-hunt "stale reboot-pending dot on DCOM-only boxes" note below.)
 - **Desktop wiring has NO regression guard — the verify-arc fixes are untestable where they live.** Reverting
   `arcCts.Token` back to `token` (the original freeze defect) leaves the whole suite green; the same holds for
   the generation bumps, the freshness gate and the one-arc claim. `Vivre.Core.Tests` (net10.0) cannot reference
@@ -498,7 +505,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
   `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
   prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer optimistic concurrency and the
-  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #10). No migration/copy shipped with the
+  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT ▸ [shared-settings-stomp-guard]). No migration/copy shipped with the
   split by design.
 - **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
   DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the

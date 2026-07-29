@@ -135,18 +135,29 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - **Reboot cardinal — NOTHING auto-reboots.** Every reboot path (the Reboot & Verify wave, Force reboot
   including its narrow Kerberos-auth DCOM fallback in `ForceRebootRunner`, Schedule reboot, the script
   library) fires only from an operator's explicit per-box click + confirm — never an independent decision.
-  The shutdown primitive `Win32Shutdown` lives in EXACTLY ONE file (`DcomRebootTrigger.cs`). Gate grep
-  after ANY commit touching reboot code: `grep -rl --include=*.cs "Win32Shutdown" source/` → exactly that
-  one file. Don't write the primitive's name in other source prose/comments — it breaks the gate.
-  **CAVEAT — the gate grep is KNOWN-INCOMPLETE. Keep running it exactly as written above; just don't read a
-  pass as proof the cardinal is mechanically enforced.** That token covers ONE of five reboot-issuing sites.
-  Confirmed missing from it: the WinRM `shutdown.exe` command line in `ForceRebootRunner.cs`, the scheduled
-  task's `shutdown.exe` in `WorkspaceViewModel.cs` (a different project), the SMB/SCM service image
-  (`cmd /c shutdown …`, same file as the token but not matched by it), and the whole shipped script library
-  `scripts/Reboot/*.ps1` — which `--include=*.cs` structurally excludes, and which is where the product's
-  only warned non-forced reboot (`/r /t 300`) lives. A change to any of those passes the grep untouched, so
-  reboot work needs a human read of the paths, not just a green grep. Full site inventory and the
-  re-scoping prerequisite: docs/reboot-path-and-guardrail-findings.md ▸ findings 5 and 12.
+  **GATE — run after ANY commit touching reboot code.** One command, and it must print PASS / exit 0:
+
+  ```bash
+  bash tools/reboot-primitive-gate.sh
+  ```
+
+  It pins **all five** reboot-issuing sites at exact counts — the WMI method (`DcomRebootTrigger.cs`), the
+  SMB/SCM service image (same file, different primitive), the WinRM command line (`ForceRebootRunner.cs`),
+  the scheduled-task action (`WorkspaceViewModel.cs`, a different project), and the shipped script library
+  (`scripts/Reboot/*.ps1`, not `.cs` at all) — plus a **containment check**: any reboot token in a file
+  outside the known 10-file manifest fails the gate, which is what catches a SIXTH primitive. It scans every
+  text file regardless of extension (a red-team pass proved a `.cmd` evaded an extension allowlist) and
+  excludes itself by path, which is the reason this is a script and not a grep pasted into this file —
+  documentation that greps for a token matches itself and perturbs its own count.
+  **The old one-line check is SUBSUMED, not retired:** SITE 1/5 is exactly
+  `grep -rl --include=*.cs "Win32Shutdown" source/` → one file, and that still holds. You may still run it
+  standalone; just don't mistake it for the whole gate. The "don't write the primitive's name in other source
+  prose" rule is likewise **retired as a requirement** — the gate now counts prose files explicitly instead of
+  needing the token to stay exotic.
+  **If the gate fails, do NOT adjust the numbers to make it pass** until a human agrees the code is right; the
+  gate adapts to the code, never the reverse. Residual limits (obfuscated/encoded commands, and paths outside
+  `source/ scripts/ tools/`) are stated in the script's header. Full site inventory:
+  docs/reboot-path-and-guardrail-findings.md ▸ findings 5 and 12.
 - All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see docs/windows-patching-lane.md).
 - **Shelling out to Windows PowerShell 5.1** (the WUG lane in `Wug/WugMaintenance.cs`, and any
