@@ -237,7 +237,14 @@ standalone items further down, each "do only if it recurs / when a signal appear
   delay cannot be cancelled by Stop, monitoring-off or tab close, and `_fastRebootWatches` stays claimed for
   the whole window — so a SECOND Force reboot on that host inside it gets no watch and can end up in exactly
   the stuck state this arc fixed. Needs a view-model lifetime token. **Deferred by operator decision**
-  (2026-07-28) — a repeat Force reboot inside 16 minutes is rare.
+  (2026-07-28) — a repeat Force reboot inside 16 minutes is rare. **TRAP for whoever wires that token up:**
+  the concurrent baseline phase has no `OperationCanceledException` arm, so cancelling there would leave
+  EVERY row reading "Rebooting (force)…" with no reboot sent and no error — latent only because no caller
+  passes a token today. Mirror the dispatch loop's existing OCE arm before enabling cancellation.
+- **The fast watch can overwrite the monitor's richer "back online" text.** Both mechanisms can resolve the
+  same row; if the monitor observed the drop but the watch proves the reboot first, the watch's plain
+  "Back online HH:mm" replaces the monitor's "Back online HH:mm (down 1m 48s)" form. Cosmetic — the row is
+  correct, the operator just loses the down-duration on rows where both fired.
 - **TAB SCOPE — one decision governs two open items that pull in OPPOSITE directions.** Decide the principle
   once, then apply it to both. (i) The verify-arc guards (`_verifyArcsInFlight`, `_rebootStateGeneration`) are
   per-tab instance fields, so one host open in two tabs gets two concurrent arcs, each invisible to the other's

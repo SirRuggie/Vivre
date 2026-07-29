@@ -22,6 +22,9 @@ Full doc inventory with one-liners: **[docs/README.md](docs/README.md)**. Read-b
 - App.OnStartup, the sweep, or large-list load → docs/cold-start-freeze-and-threadpool-findings.md
   (the load-bearing `ThreadPool.SetMinThreads` fix — don't delete it).
 - ANY freeze / hang / "it's slow" → docs/freeze-hunting-playbook.md, BEFORE theorizing.
+- The monitor loop, the post-reboot verify arc, or a row stuck after a reboot →
+  docs/reboot-monitor-arc-findings.md FIRST — it records three formally refuted hypotheses (tab count,
+  throttle starvation, HostWinRmGate) so they don't get re-chased, plus the clock-immunity requirement.
 - The WUG lane's resolver or SSL/connect path → docs/wug-state-check-findings.md.
 - Priorities + live finding status → docs/vivre-backlog.md · file locations → docs/key-file-path-map.md.
 

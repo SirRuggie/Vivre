@@ -45,6 +45,15 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
 - **[wug-state-check-findings.md](wug-state-check-findings.md)** — the WUG state-check cycle: the IP
   substring-match reclassification and the cold-start mass-unknown SSL chain (scriptblock callback →
   compiled delegate). *Read when: touching the WUG lane's resolver or SSL/connect path.*
+- **[dcom-1191-reboot-fallback-findings.md](dcom-1191-reboot-fallback-findings.md)** — why Windows refuses a
+  graceful reboot when any session is logged on (1191), and why misreading that as a dead channel produced
+  the SMB/SCM service SentinelOne scored as Lateral Movement. *Read when: touching the reboot trigger, the
+  DCOM/SMB channel choice, or the forced-window selection.*
+- **[reboot-monitor-arc-findings.md](reboot-monitor-arc-findings.md)** — the monitor/verify-arc arc: the
+  unbounded inline verify arc that froze a whole tab, the ~40 s detection floor that made fast-rebooting VMs
+  stick forever, THREE formally refuted hypotheses (tab count, throttle starvation, HostWinRmGate), and the
+  clock-immunity requirement. *Read when: touching the monitor loop, the verify arc, or the fast reboot
+  watch — and BEFORE re-investigating a stuck row, so you don't re-chase a refuted theory.*
 
 ## Archive (closed records — kept for provenance, not routing)
 
