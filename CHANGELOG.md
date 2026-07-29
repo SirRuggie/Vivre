@@ -6,6 +6,15 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- **The log file now says when a scan fell back to the SMB channel, and why.** Vivre scans over WinRM and
+  quietly switches to a slower backup channel when WinRM can't be reached — but a successful backup-channel
+  scan used to look identical in the log to a normal one, so there was no way to tell after the fact how
+  often it happened or on which machines. Two lines now record it: one naming the reason it switched
+  (Kerberos rejected, or the WinRM session simply dropped) and one recording what the backup scan returned.
+  Diagnostic only — it goes to the rolling file at `%LOCALAPPDATA%\Vivre\logs\`, never the activity panel,
+  and nothing about how scanning works changed.
+
 ### Changed
 - **The reboot confirm and its help topic no longer claim Windows refuses a graceful reboot.** Both used to
   say that a machine with anyone logged on — Active or disconnected — is forced immediately, phrased as

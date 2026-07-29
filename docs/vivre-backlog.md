@@ -52,9 +52,10 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
 "the actual reboot is the caller's job").
 
 **Still open** (none is day-to-day work — no urgent items remain):
-1. **Credentialed WinRM blocked by ambient Kerberos rejection** — `RoutingPowerShellHost.cs:59`
-   fast-fails before the credential parameter is consulted; the cache has no eviction or credential
-   dimension. Research-first, remoting-cache zone. PARKED until it bites in practice.
+1. **Transport-cache staleness — RE-RATED 2026-07-29 from parked convenience to a REACHABILITY item.**
+   `RoutingPowerShellHost.cs:59` fast-fails before the credential is consulted, and `HostTransportCache`
+   has **no eviction of any kind** — so a stale Kerberos mark routes a now-HEALTHY box down DCOM/SMB until
+   Vivre restarts. Still research-first; no longer "wait until it bites".
 2. **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
 3. **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — PARKED; the
    app-side fix (rebind Stop's `IsEnabled` to the command, or reword the tooltip) is a separate decision.
@@ -100,7 +101,15 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    `RebootForceSelectedAsync` never calls `RebootWave`, so the graceful→8min→force escalation does not apply;
    there is nothing to escalate to (the command already carries `/f`). A stalled box is SURFACED — the watch
    gives up and lands it **Unverified**. A second unrequested send would breach the cardinal. **Not a bug.**
-7. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
+7. **The 1.17.0 escalation is INERT on the Kerberos fallback leg — "1.17.0 fixed the SMB/SCM exposure" is
+   true ONLY for a graceful 1191.** `ForceRebootRunner.cs:87` calls the trigger with `forced: true`, and the
+   escalation branch is guarded `when !forced` (`DcomRebootTrigger.cs:241`), so it cannot execute there; every
+   other null-dispatch arm still reaches `:95` → `:377` service creation. Recorded so the fix is not over-credited.
+8. **2016 Stage creates a remote service unconditionally, on every flagged box, every cycle — BY DESIGN, not a
+   defect.** `FullPackageLcuLane.cs:160-161` (`InstallFullPackageAsync`) and `:68` (`RunComponentCleanupAsync`)
+   go straight to the SMB agent lane with no try/catch and no Kerberos condition. Unrelated to reboots.
+   **EDR-conversation scope** — if SentinelOne policy is being discussed, Stage belongs in it. Build nothing.
+9. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
    use.**
    - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
      — a **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves
@@ -167,9 +176,10 @@ standalone items further down, each "do only if it recurs / when a signal appear
 6. **The SMB/SCM fallback cannot report a failed start — in Release it reports to nobody.** OPEN, none fixed.
    It never reads an exit code and its only failure surface is `Debug.WriteLine`, which compiles to nothing in
    Release, while the caller returns a success value regardless. → case file ▸ finding 6.
-7. **Force reboot silently drops the operator's alternate credential on the Kerberos fallback.** OPEN, none fixed.
-   A different principal reaches the box than the one the operator selected, and the UI reports the channel
-   switch but never the identity change. → case file ▸ finding 7.
+7. **Force reboot AND the Reboot Wave both drop the operator's alternate credential on the DCOM/SMB leg.**
+   OPEN, none fixed. **RE-SCOPED 2026-07-29 — wider than first written:** `IRebootWave.cs:14` has no credential
+   parameter at all, so BOTH paths authenticate on the ambient process token; a different principal reaches the
+   box and the UI reports the channel switch, never the identity change. → case file ▸ finding 7.
 8. **Custom columns auto-run arbitrary operator PowerShell on every host on list load.** OPEN, none fixed.
    No click and no confirm on a path that base64-wraps into `ScriptBlock::Create` (gated only on Auto-check
    on load); invisible to every gate grep. **A capability risk, not a live one.** → case file ▸ finding 8.
@@ -484,7 +494,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
   `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
   prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer optimistic concurrency and the
-  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #7). No migration/copy shipped with the
+  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #9). No migration/copy shipped with the
   split by design.
 - **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
   DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the

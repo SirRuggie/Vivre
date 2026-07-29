@@ -29,6 +29,13 @@ public sealed class WuaUpdateLane
     private readonly Func<byte[]> _agentBytes;
     private readonly ISmbAgentLane _smb;
 
+    // MEASUREMENT ONLY (Trace is file-only — never the UI activity panel). A successful SMB-lane scan
+    // used to be indistinguishable in the log from a successful WinRM scan, so how often the scan path
+    // actually leaves WinRM — and how often that reaches remote service creation — was unknowable after
+    // the fact. Kept as a field purely so the two scan fall-throughs below can say so; it changes no
+    // decision and gates nothing.
+    private readonly IActivityLog? _activity;
+
     /// <param name="powerShell">The remoting host all transport goes through.</param>
     /// <param name="watchdogPollInterval">How often the liveness watchdog wakes to check for total
     /// silence. Defaults to 15s; overridden only by tests so the watchdog can be exercised without a
@@ -52,6 +59,7 @@ public sealed class WuaUpdateLane
         _watchdogPollInterval = watchdogPollInterval ?? TimeSpan.FromSeconds(15);
         _agentBytes = agentBytesProvider ?? ReadAgentBytes;
         _smb = smbLane ?? new SmbAgentLane(_agentBytes, activityLog: activityLog);
+        _activity = activityLog;
     }
 
     /// <summary>The SMB/DCOM lane this WUA lane uses, exposed so the sibling 2016 full-package lane
@@ -81,7 +89,10 @@ public sealed class WuaUpdateLane
         {
             // WinRM rejects Kerberos on this host — scan over the SMB + SCM agent lane instead. Same
             // result shape; the degradation is surfaced only through Vitals, never on this result.
-            return await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
+            _activity?.Trace(host, "scan lane: WinRM rejected Kerberos — falling back to the SMB/SCM agent lane");
+            HostPatchStatus viaSmbKerberos = await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
+            _activity?.Trace(host, $"scan lane: SMB/SCM agent scan returned {viaSmbKerberos.Phase} (lane entered; a Vivre_WUA_* service is created only once the agent drop succeeds)");
+            return viaSmbKerberos;
         }
         catch (RemoteSessionLostException)
         {
@@ -91,7 +102,9 @@ public sealed class WuaUpdateLane
             // Per-attempt only: unlike the stable Kerberos condition (which RoutingPowerShellHost caches as
             // SmbDcom), a generic WinRM drop is often transient and is deliberately NOT cached, so the host
             // returns to the fast WinRM path automatically once WinRM recovers (mirrors VitalsProbe).
+            _activity?.Trace(host, "scan lane: WinRM session lost (NOT Kerberos) — falling back to the SMB/SCM agent lane");
             HostPatchStatus viaSmb = await _smb.ScanAsync(host, options, cancellationToken).ConfigureAwait(false);
+            _activity?.Trace(host, $"scan lane: SMB/SCM agent scan returned {viaSmb.Phase} (lane entered; a Vivre_WUA_* service is created only once the agent drop succeeds)");
             return viaSmb.Phase == PatchPhase.Error
                 ? HostPatchStatus.Failed(
                     $"Can't reach over WinRM or SMB — not manageable right now ({viaSmb.Message}).")
