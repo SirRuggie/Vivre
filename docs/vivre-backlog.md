@@ -29,8 +29,13 @@ escalates to the FORCED form on the same DCOM session instead of switching trans
 window, null-ReturnValue fix), `81d8a2f` (the SMB fallback sends `/f` after a failed escalation, + the uptime rescue on the escalated branch), and this
 commit (an escalated send that THROWS still reports `ForceRequired`; an SMB-FORCED fallback reports `EscalatedToForced` so it too gets the forced window).
 **Still open:** the trigger has no direct test seam (`CimSession.Create` is inline inside the private `TryDcomShutdown`, so the throw-after-1191 leg is
-unprovable from tests), and the premise that `shutdown.exe /r` without `/f` is refused on a session-logged-on box is unproven from code. Full case file:
-**docs/dcom-1191-reboot-fallback-findings.md** (feasibility, blast radius, red team).
+unprovable from tests). Full case file: **docs/dcom-1191-reboot-fallback-findings.md** (feasibility, blast radius, red team).
+**DISPROVEN AT THE `shutdown.exe` LAYER (2026-07-29, NYC-FP1) — was "unproven from code", now settled the other way:** `shutdown.exe /r` without `/f` is
+**NOT** refused on a session-logged-on box (disconnected session confirmed by `quser`, exit 0), and a warned countdown COMPLETES on an occupied box
+(`/r /t 60`, Active RDP session → offline at 69 s; repeated with Notepad holding unsaved text → offline at 77 s). **The 1191 refusal is a property of the
+WMI primitive, not of Windows** — the DCOM behaviour and everything built on it are unchanged. Evidence, the stock-configuration control, and the limits
+(one box, one OS, Notepad is a weak blocker, unsaved data still LOST) live in **docs/windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED"**. The frozen
+1191 case file is NOT edited; it is partially superseded, as noted in docs/README.md.
 
 **Audit findings (2026-07-01) — status as of 2026-07-21 (release 1.16.4; suite 1054 green):** the full five-lens audit
 record is `docs/archive/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
@@ -169,10 +174,10 @@ standalone items further down, each "do only if it recurs / when a signal appear
 11. **`HostName.IsLocal`'s alias branch is case-sensitive.** OPEN, none fixed.
     An FQDN or an upper-case `LOCALHOST` row gets no self-target warning while the reboot still lands on the
     Vivre host. **Latent** — the operator's lists are short-name today. → case file ▸ finding 11.
-12. **The "/t 300" warned-reboot path — RESOLVED, IT EXISTS.** Still OPEN as inventory work, nothing fixed.
-    It is real and lives in the script library (a warned, non-forced 5-minute countdown), so the earlier
-    inventory was incomplete rather than the reference being wrong. **PREREQUISITE FOR #5** — the gate grep
-    can't be completed against an unclosed primitive inventory. → case file ▸ finding 12.
+12. **The "/t 300" warned-reboot path — RESOLVED, IT EXISTS; the silent-no-op concern is CLOSED.** Nothing fixed.
+    Real, in the script library (a warned, non-forced 5-min countdown), so the earlier inventory was incomplete.
+    **Field-demonstrated 2026-07-29, not merely accepted:** it ARMS *and* COMPLETES on an occupied box — see
+    windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED". **PREREQUISITE FOR #5.** → case file ▸ finding 12.
 13. **HelpContent's Install topic never got the self-target line.** OPEN, none fixed.
     Three how-to topics received it; the "reboot these first" nudge — the broadest-scope reboot surface
     (see #3) — did not, so the help describes three of the four surfaces that warn. **This one is code, not

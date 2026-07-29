@@ -45,10 +45,14 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
 - **[wug-state-check-findings.md](wug-state-check-findings.md)** — the WUG state-check cycle: the IP
   substring-match reclassification and the cold-start mass-unknown SSL chain (scriptblock callback →
   compiled delegate). *Read when: touching the WUG lane's resolver or SSL/connect path.*
-- **[dcom-1191-reboot-fallback-findings.md](dcom-1191-reboot-fallback-findings.md)** — why Windows refuses a
-  graceful reboot when any session is logged on (1191), and why misreading that as a dead channel produced
-  the SMB/SCM service SentinelOne scored as Lateral Movement. *Read when: touching the reboot trigger, the
-  DCOM/SMB channel choice, or the forced-window selection.*
+- **[dcom-1191-reboot-fallback-findings.md](dcom-1191-reboot-fallback-findings.md)** — why the DCOM/WMI reboot
+  call Vivre sends is refused when any session is logged on (1191), and why misreading that as a dead channel
+  produced the SMB/SCM service SentinelOne scored as Lateral Movement. **PARTIALLY SUPERSEDED — see
+  [windows-patching-lane.md](windows-patching-lane.md) ▸ "WHAT IS ACTUALLY REFUSED"**: the 1191 evidence stands,
+  but field tests on 2026-07-29 showed the refusal belongs to the WMI primitive, not to Windows — `shutdown.exe
+  /r` without `/f` is not refused, and a warned countdown completes on an occupied box. The case file is frozen
+  and stays as written. *Read when: touching the reboot trigger, the DCOM/SMB channel choice, or the
+  forced-window selection — then read the patching-lane passage for what has since been narrowed.*
 - **[reboot-path-and-guardrail-findings.md](reboot-path-and-guardrail-findings.md)** — the thirteen 2026-07-28
   reboot-path / guardrail findings in full, citations re-verified against `99995b6`: the approve-vs-execute gap,
   three reboot paths shipping with no confirm, and the known-incomplete `Win32Shutdown` gate grep (one of five

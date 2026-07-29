@@ -456,6 +456,47 @@ Flow per box:
 vs SMB/SCM took), each offline-wait entry/exit, one line per commit-watch beat, the proof decisions, and
 the terminal result — for post-hoc diagnosis of a box that behaved oddly.
 
+### WHAT IS ACTUALLY REFUSED — the 1191 refusal is a property of the WMI primitive, not of Windows
+
+**Read this before repeating "Windows refuses a graceful reboot when a session exists."** That sentence is
+over-broad and appears in several places written before 2026-07-29. What follows supersedes the general
+claim; it does **not** change any code, and the DCOM/WMI behaviour it corrects is itself unchanged.
+
+Four distinct facts, each with its evidence:
+
+1. **The WMI/DCOM shutdown call Vivre sends IS refused when any session exists.** Error **1191**
+   (`ERROR_SHUTDOWN_USERS_LOGGED_ON`), returned for the graceful flag; the force flag bypasses it.
+   **Evidence:** live operator tests plus **38-of-38** DCOM failures across six Vivre log files
+   (2026-07-22 → 07-24) being code 1191 with zero other codes — Active **and** disconnected sessions both
+   tested directly. **Unchanged and still true.** Full record: docs/dcom-1191-reboot-fallback-findings.md
+   § 2.1–2.2 (frozen case file). Everything the 1191 escalation does — `ShutdownReturnCode.Classify`,
+   `DcomRebootTrigger`'s same-session escalation, `FallbackForced` — rests on this fact and is unaffected.
+
+2. **`shutdown.exe /r` WITHOUT `/f` is NOT refused.** **Evidence:** 2026-07-29, NYC-FP1, a disconnected
+   session confirmed present by `quser`, the call returned **exit 0**. So the refusal belongs to the **WMI
+   primitive**, not to Windows: two different shutdown primitives aimed at the same occupied box answer
+   differently. Vivre's Force reboot already uses `shutdown.exe` (over WinRM) and has never depended on the
+   general claim.
+
+3. **A warned countdown COMPLETES on an occupied box.** **Evidence:** 2026-07-29, NYC-FP1, an **Active RDP
+   session**, `/r /t 60` with no `/f` — the box went offline at **69 s** and came back with uptime collapsed.
+   Repeated with **Notepad holding UNSAVED text**: offline at **77 s**, rebooted. Unsaved data did not block
+   the shutdown. This is the fact that makes a warned-reboot option worth designing at all — the shipped
+   `scripts/Reboot/Restart - warn users (5 min).ps1` (`/r /t 300`, no `/f`) both arms **and** completes.
+
+4. **The target box had NO shutdown-timeout tuning.** `AutoEndTasks`, `HungAppTimeout` and
+   `WaitToKillAppTimeout` were all **unset** under `HKU\<sid>\Control Panel\Desktop`. Completion therefore
+   happened under **stock configuration**, not because the box was configured to auto-kill applications.
+   This is recorded because "it only worked because that box was tuned" is the first thing a sceptical reader
+   would assume, and it is not the case.
+
+**LIMITS — recorded here so no future reader overstates the above.** One box, one OS version, one blocker
+class. **Notepad is a WEAK blocker**: a modal save dialog, a `WM_QUERYENDSESSION` veto, or a slow-stopping
+service is **untested**, and any of those could hold or fail a countdown that Notepad did not. Nothing here
+establishes a general Windows guarantee — it establishes what one stock box did, twice. And the plainest
+limit of all: **the unsaved data was still LOST.** The gain from a warned countdown is *warning time* — a
+chance for a person who is present to react — **not data safety**. Do not describe it as protecting work.
+
 ### Scale model — two throttles, one gate per wave
 
 `_waveThrottle` (static `SemaphoreSlim(256)`) is the concurrency width for the per-box watch
