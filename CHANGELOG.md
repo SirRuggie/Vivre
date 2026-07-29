@@ -6,28 +6,41 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.1 — 2026-07-28
+
 ### Fixed
-- **Force-rebooting several machines at once no longer waits on the slow ones.** The uptime reading Vivre
-  takes before each reboot is now taken for the whole selection at once instead of one machine at a time, so
-  an unreachable box no longer holds up the reboot command for every machine behind it in the list — the
-  time to get the LAST machine rebooted is now bounded by the slowest single machine rather than by all of
-  them added together. (The trade: with a selection full of unreachable machines the FIRST reboot now goes
-  out a little later, because the readings are taken together before any of them are sent.) The machines
-  rebooted, and
-  the order they are rebooted in, are exactly as before. A machine whose reading can't be taken is still
-  rebooted; it just falls back to normal monitoring and says so in the log.
 - **A machine that reboots faster than Vivre can see no longer gets stuck on "Reboot forced — going down".**
-  Monitoring checks every 20 seconds and needs two consecutive misses before it believes a box is down, so a
-  VM back on the network in 10–20 seconds was never seen to go anywhere — and every column that updates when
-  a machine returns (Last status, Last reboot, the reboot message) stayed frozen indefinitely, with nothing
-  in the log to say the box had cycled. Force reboot now records how long the machine has been up before it
-  sends the reboot, and watches that one row every 5 seconds for 2 minutes: an uptime that has reset proves
-  the reboot happened even though nobody saw it go. (Uptime rather than the boot timestamp, so a machine
-  whose clock is corrected mid-watch is never mistaken for one that rebooted.) The row then updates as it
-  would have, and the log
-  records the return. Machines that take longer are unaffected — monitoring already handles those, and the
-  watch stands down as soon as it sees one go offline. If no reboot can be proven at all, the row ends up
-  **Unverified** rather than stuck.
+  Monitoring checks every 20 seconds and needs two consecutive misses before it believes a machine is down,
+  so a VM back on the network inside about 40 seconds was never seen to go anywhere — and every column that
+  updates when a machine returns (Last status, Last reboot, the reboot message) stayed frozen indefinitely,
+  with nothing in the log to say the machine had cycled. Force reboot now records how long the machine has
+  been up *before* it sends the reboot, then watches that one row every 5 seconds for 2 minutes: an uptime
+  that has reset proves the reboot happened even though nobody saw it go. The row then updates exactly as it
+  would have, and the log records the return. Machines that take longer are unaffected — monitoring already
+  handles those, and the watch stands down the moment it sees one go offline. If no reboot can be proven at
+  all, the row ends up **Unverified** rather than stuck. *Confirmed in the field on 2026-07-28: a VM that had
+  been left permanently stuck twice that evening came back in about a minute and resolved correctly, with no
+  "went offline" line at all — while a physical machine rebooted on the same click still resolved the old way.*
+- **A clock correction can no longer be mistaken for a reboot.** The proof above measures the machine's
+  uptime collapsing, not its reported boot time moving. A boot timestamp shifts whenever the machine's clock
+  is corrected — an NTP fix on a drifted VM will do it — so comparing boot times could have reported a reboot
+  on a machine that never restarted. Uptime is taken from the machine's own clock in the same reading, so a
+  clock correction moves nothing.
+- **A large force reboot can no longer slow the fleet grid down.** The background readings Vivre takes around
+  a force reboot now leave capacity reserved for the grid's own machine-state updates, so those updates are
+  never left queued behind them. Worst case is now a single reading (about 8 seconds) no matter how many
+  machines you selected; a 319-machine selection could previously push the grid's own refresh out past five
+  minutes, with no error and nothing in the log to explain it.
+
+### Changed
+- **Force-rebooting several machines at once no longer waits on the slow ones.** The reading taken before
+  each reboot is now taken for the whole selection at once instead of one machine at a time, so an
+  unreachable machine no longer holds up the reboot command for everything behind it in the list. For 50
+  unreachable machines the last one is now rebooted after about 56 seconds instead of about 400. The trade,
+  stated plainly: because the readings are taken together before any reboot is sent, the *first* reboot in
+  that same worst case now goes out after about 56 seconds instead of about 8. Which machines are rebooted,
+  and the order they are rebooted in, are exactly as before. A machine whose reading can't be taken is still
+  rebooted — it simply falls back to normal monitoring, and says so in the log.
 
 ## 1.17.0 — 2026-07-28
 

@@ -3,17 +3,22 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-28** (release **1.17.0** — the reboot arc: DCOM 1191 →
+> not a mandate). Last refreshed: **2026-07-28** (release **1.17.1** — a patch release on top of 1.17.0: a
+> hand Force reboot now proves itself by UPTIME COLLAPSE rather than by waiting to see the machine drop off
+> the network, so a fast-rebooting VM no longer leaves its row stuck on "Reboot forced — going down"
+> (field-confirmed 2026-07-28); the proof is clock-immune; multi-row baselines are captured concurrently; and
+> force-reboot reads reserve capacity so a big selection can't starve the monitor. Suite 1200 green.)
+> 1.17.0 was the reboot arc: DCOM 1191 →
 > forced-escalation on the same channel, which removed the SMB/SCM service creation SentinelOne scored as
 > Lateral Movement, plus the reboot-verify arc — per-tab log tagging, the bounded + DETACHED post-reboot
 > verify arc and its three-leg freshness gate. **Minor, not patch: reboot semantics changed** — a machine
 > with any session logged on is now forced immediately with no countdown, and machines that previously
-> reported success can now land Unverified. See CHANGELOG.md ▸ 1.17.0 ▸ Changed, first entry.)
+> reported success can now land Unverified. See CHANGELOG.md ▸ 1.17.0 ▸ Changed, first entry.
 > 1.16.4 (2026-07-21) was the WUG state-check arc — see docs/wug-state-check-findings.md.
 > Older release narration lives with its DONE entries in docs/archive/vivre-backlog-done-archive.md.
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 1183 green as of 2026-07-28, release 1.17.0).**
+> are point-in-time only (current suite is 1200 green as of 2026-07-28, release 1.17.1).**
 
 ---
 
