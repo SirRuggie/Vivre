@@ -92,7 +92,15 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
    picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
    batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
    that is per-run operator judgment, not a code problem.
-5. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
+5. **Warn-then-force reboot (a countdown instead of an immediate force) — CLOSED, CONSCIOUS ACCEPT
+   (operator decision, 2026-07-29). Do not re-chase; build no part of it.** Field-proven to WORK and still
+   declined: reboots run inside an agreed maintenance window, so a per-box countdown only adds latency and a
+   new Abort surface. Rationale + evidence: **windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED"**.
+6. **Force reboot sends once and never escalates or re-dispatches — DOCUMENTED FACT, not a defect.**
+   `RebootForceSelectedAsync` never calls `RebootWave`, so the graceful→8min→force escalation does not apply;
+   there is nothing to escalate to (the command already carries `/f`). A stalled box is SURFACED — the watch
+   gives up and lands it **Unverified**. A second unrequested send would breach the cardinal. **Not a bug.**
+7. **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
    use.**
    - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
      — a **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves
@@ -476,7 +484,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
   `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
   prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer optimistic concurrency and the
-  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #5). No migration/copy shipped with the
+  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT #7). No migration/copy shipped with the
   split by design.
 - **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
   DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the

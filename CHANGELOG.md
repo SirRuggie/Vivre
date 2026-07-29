@@ -6,6 +6,16 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- **The reboot confirm and its help topic no longer claim Windows refuses a graceful reboot.** Both used to
+  say that a machine with anyone logged on — Active or disconnected — is forced immediately, phrased as
+  though that were a rule of Windows. It isn't: the refusal belongs to the particular reboot call Vivre
+  sends, and a plain `shutdown /r` on the same occupied machine is accepted and completes normally. The
+  confirm and the help now say **"the reboot call Vivre sends is refused, so Vivre forces it immediately"**,
+  which is what actually happens. **Nothing about rebooting changed** — the same machines are forced at the
+  same moment for the same reason; only the explanation is now accurate. Worth knowing because the old
+  wording made a Vivre-specific behaviour look like something no tool could avoid.
+
 ## 1.17.1 — 2026-07-28
 
 ### Fixed

@@ -419,7 +419,7 @@ Flow per box:
    in Settings) and reboots the moment servicing finishes; on window expiry it stops **without rebooting**
    and the row says so.
 2. Graceful reboot issued; the since-**ordered** stopwatch starts here (it drives the HardCap/Overdue
-   bounds and the "N min since the reboot was ordered" messages). If Windows refuses the graceful form
+   bounds and the "N min since the reboot was ordered" messages). If the graceful DCOM reboot call is refused
    because a session is logged on (**1191** — Active *or* merely disconnected), the FORCED form goes out
    **immediately** on the SAME DCOM session (`5f6d437`) and that box is timed on the forced window from
    the start — it never waits out the graceful window in step 3.
@@ -496,6 +496,17 @@ service is **untested**, and any of those could hold or fail a countdown that No
 establishes a general Windows guarantee — it establishes what one stock box did, twice. And the plainest
 limit of all: **the unsaved data was still LOST.** The gain from a warned countdown is *warning time* — a
 chance for a person who is present to react — **not data safety**. Do not describe it as protecting work.
+
+**WARN-THEN-FORCE — EVALUATED 2026-07-29, DECLINED. Do not re-chase; build no part of it.** The field
+evidence above proves a warned countdown *works*; the operator decision is that it is not wanted. Reboots
+here happen inside an **agreed maintenance window**, so a per-box countdown buys a notification the window
+already provides, and costs two things: **latency** (every box waits out its countdown before it can go
+down) and a **new Abort surface** (a countdown already sent lives in the target's own Windows session —
+Vivre cannot recall it by closing a tab or pressing Stop, so shipping one would oblige us to ship an abort
+action and an honest-failure story for it). Two further findings from the same spike, recorded so the
+reasoning is not re-derived: the standalone Force reboot path has **no escalation to inherit** (see below),
+and routing a warned reboot through the trigger's graceful form would get it **silently escalated to forced
+by the 1191 path** on exactly the occupied boxes it targets — the opposite of warning anyone.
 
 ### Scale model — two throttles, one gate per wave
 
@@ -632,6 +643,16 @@ backstop rewrites the row **only** if it is still sitting on the exact status th
 dispatch, not compared against a literal), so it can never stomp a row another path already resolved. On
 cancellation the watch changes nothing at all — *"we learned nothing, so change nothing"*
 (`WorkspaceViewModel.cs:6415`).
+
+**BY DESIGN, NOT A DEFECT — the standalone Force reboot path has NO escalation and NO re-dispatch.**
+`RebootForceSelectedAsync` (`WorkspaceViewModel.cs:6190-6289`) sends the FORCED form exactly once
+(`:6224`) and then only *watches* (`:6249`, `:6271`); it never calls `RebootWave`, so the
+graceful→8 min→force escalation described earlier in this section does **not** apply to it. There is nothing
+to escalate *to* — the command already carries `/f`. A box that stalls through it is therefore **surfaced,
+not retried**: the watch gives up at the forced window and lands the row **Unverified**
+(`GiveUpUnprovenRebootAsync` → `VerifyArcTimeout.MarkUnverified`, `:6512`). With warn-then-force declined
+(see "WHAT IS ACTUALLY REFUSED" above), that is the correct behaviour — a second unrequested send would be
+Vivre deciding to reboot, which the cardinal forbids. **Do not log this as a bug.**
 
 **Known open item (deferred, operator decision 2026-07-28):** neither caller passes a token to
 `RebootForceSelectedAsync`, so the watch runs on `CancellationToken.None` — its give-up delay can't be

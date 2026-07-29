@@ -188,7 +188,7 @@ public sealed class RebootWave
         // wait-then-fail; drop straight into the commit-watch below ("slow, not hung").
         bool alreadyGoingOffline = graceful == RebootDispatch.AlreadyInProgress;
 
-        // Windows REFUSED the graceful form because a session is logged on (1191) and the trigger completed
+        // The graceful DCOM call was REFUSED because a session is logged on (1191) and the trigger completed
         // the operator's ordered reboot by sending the FORCED form — on the same healthy DCOM session, or
         // over the SMB/SCM fallback (with /f) when DCOM couldn't resolve the box after that refusal. Either
         // way the box is ALREADY going down FORCED, so it gets the FORCED go-offline window and must NEVER
@@ -202,8 +202,8 @@ public sealed class RebootWave
         }
         else if (escalatedToForced)
         {
-            // Say WHY it was forced: Vivre did not decide to force this box — Windows refused the graceful
-            // reboot the operator ordered, and the force flag is the only thing that clears that refusal.
+            // Say WHY it was forced: Vivre did not decide to force this box — the graceful DCOM reboot call
+            // the operator ordered was refused, and the force flag is the only thing that clears that refusal.
             // GRID TEXT ONLY, and deliberately terse: this status is mirrored into BOTH the Reboot message
             // and Windows update message columns (see the wave's Progress handler), so a sentence here cost
             // the whole grid width. The full explanation is NOT lost — it is the trace line the trigger

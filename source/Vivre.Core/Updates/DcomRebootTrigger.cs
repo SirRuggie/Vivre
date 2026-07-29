@@ -30,10 +30,14 @@ namespace Vivre.Core.Updates;
 /// fallback is the <em>proven</em> channel that already delivers the update agent: create a one-shot
 /// LocalSystem service whose image runs <c>shutdown.exe</c> (NTLM SSO over <c>\\host\IPC$\svcctl</c>, no
 /// Kerberos). The fallback sends the caller's form (graceful = no <c>/f</c>, force = <c>/f</c>) EXCEPT when
-/// the DCOM attempt already proved the OS itself refuses the GRACEFUL form (1191): that knowledge is
-/// threaded out as <c>ForceRequired</c> and the fallback then sends <c>/f</c>, because a graceful
-/// <c>shutdown.exe</c> against a box that has just refused a graceful shutdown would only be refused again
+/// the DCOM attempt already proved THIS box refuses the GRACEFUL DCOM call (1191): that knowledge is
+/// threaded out as <c>ForceRequired</c> and the fallback then sends <c>/f</c>, so the box goes down under the
+/// form the escalation already settled on and the wave applies the forced go-offline window
 /// (see <see cref="FallbackForced"/>). Boxes DCOM can reach never touch it.</para>
+/// <para><b>Superseded rationale (2026-07-29).</b> This used to say a graceful <c>shutdown.exe</c> "would
+/// only be refused again". Field-DISPROVEN: that command is NOT refused on an occupied box, so the 1191
+/// refusal is a property of the DCOM/WMI call, not of Windows. BEHAVIOUR IS UNCHANGED — only the reason is
+/// restated. See docs/windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED".</para>
 /// </remarks>
 public sealed class DcomRebootTrigger : IRebootTrigger
 {
@@ -117,9 +121,11 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     }
 
     /// <summary>The form the SMB/SCM fallback ACTUALLY puts on the wire: the caller's request, OR forced
-    /// because the OS ITSELF refused the GRACEFUL form over DCOM (1191 — a session is logged on, Active or
-    /// merely disconnected). Falling back to a graceful <c>shutdown.exe</c> against a box that has just
-    /// refused a graceful shutdown throws away what the DCOM attempt proved and only gets refused again.
+    /// because the GRACEFUL DCOM call was refused (1191 — a session is logged on, Active or merely
+    /// disconnected). Keeping the forced form here means the box goes down under the form the escalation
+    /// already settled on, and the wave applies the forced go-offline window to it. (The original reason —
+    /// that a graceful <c>shutdown.exe</c> "only gets refused again" — is field-DISPROVEN as of 2026-07-29;
+    /// behaviour unchanged. See docs/windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED".)
     /// <para><b>Cardinal scope:</b> this picks the FORM of a reboot the operator already selected and
     /// confirmed on this box — it is never a decision to reboot, and never widens WHICH boxes reboot.</para>
     /// <para>Internal rather than private so the reboot-wave harness can drive the REAL decision instead of
@@ -227,7 +233,7 @@ public sealed class DcomRebootTrigger : IRebootTrigger
                             _trace?.Trace(host, $"reboot channel: DCOM reports a shutdown already in progress (1115) forced={sentForced} flags={sentFlags}");
                             return (RebootDispatch.AlreadyInProgress, string.Empty, false);
 
-                        // 1191 on a GRACEFUL call = Windows refused THAT FORM because a session is logged on
+                        // 1191 on a GRACEFUL call = the DCOM call was refused because a session is logged on
                         // (Active or merely disconnected). The channel is HEALTHY — the query and the method
                         // call both worked — so switching transports fixes nothing. Complete the reboot the
                         // operator already ordered and confirmed by re-sending the FORCED form on the SAME
@@ -352,8 +358,9 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     /// reject DCOM/Kerberos. Graceful = no <c>/f</c> (the OS runs its normal service-stop sequence);
     /// forced = <c>/f</c>. A short <c>/t 5</c> delay lets the SCM start transaction complete before the box drops.
     /// <para><paramref name="forced"/> is <see cref="FallbackForced"/>'s answer, not the caller's raw request:
-    /// a graceful call whose DCOM attempt was REFUSED with 1191 arrives here forced, because sending the same
-    /// graceful form down a second channel would only be refused again.</para>
+    /// a graceful call whose DCOM attempt was REFUSED with 1191 arrives here forced, so the box goes down under
+    /// the form the escalation already settled on — NOT because a graceful <c>shutdown.exe</c> would be refused
+    /// too, which is field-DISPROVEN (see <see cref="FallbackForced"/>).</para>
     /// </summary>
     private static void RebootViaSmbScm(string host, bool forced)
     {
