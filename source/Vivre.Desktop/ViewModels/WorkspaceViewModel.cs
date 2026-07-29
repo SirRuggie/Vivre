@@ -6181,19 +6181,36 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     public async Task RebootForceSelectedAsync(IReadOnlyList<Computer>? rows = null, CancellationToken token = default)
     {
-        foreach (Computer computer in rows ?? SelectedComputers.ToList())
+        List<Computer> targets = [.. rows ?? SelectedComputers.ToList()];
+
+        foreach (Computer row in targets)
         {
-            computer.LastError = null;
-            computer.LastStatus = "Rebooting (force)…";
+            row.LastError = null;
+            row.LastStatus = "Rebooting (force)…";
             // Same text in the Reboot message column (the Patching grid has no Last-status column, so
             // without this the whole attempt is invisible there — the incident's blind spot). The
             // runner's narration hook then reports the DCOM hand-off live if the Kerberos fallback fires.
-            computer.RebootMessage = "Rebooting (force)…";
-            // Boot-time baseline BEFORE the box is told to go down — the same order the wave uses. This is
-            // the ONLY thing that lets a machine which reboots faster than the monitor's ~40s detection floor
-            // still prove it rebooted (field: a VM back in ~20s left its row stuck on "going down" forever).
-            // Read-only: this is a LastBootUpTime/uptime query and can issue nothing.
-            BootTimeReading? rebootBaseline = await CaptureRebootBaselineAsync(computer.Name, token);
+            row.RebootMessage = "Rebooting (force)…";
+        }
+
+        // PHASE 1 — uptime baselines for the WHOLE set, concurrently. The baseline must still be taken
+        // BEFORE its box is told to go down (that ordering is what makes the uptime proof mean anything, and
+        // it holds for every row here because this phase completes before any dispatch). Taking them one at a
+        // time put an unreachable box's full DCOM timeout in front of every REMAINING row's reboot, so a
+        // multi-row Force reboot could sit for minutes before the last box was told anything. Running them
+        // together bounds this phase by the slowest single read instead of their sum. Still through the shared
+        // _bootTimeThrottle — no private lane — and no Task.Run / ConfigureAwait(false): every read starts on
+        // this UI context and returns to it, which the row writes below require.
+        BootTimeReading?[] baselines =
+            await Task.WhenAll(targets.Select(c => CaptureRebootBaselineAsync(c.Name, token)));
+
+        // PHASE 2 — dispatch, deliberately UNCHANGED: same rows, same order, one at a time. Making the READ
+        // concurrent is safe; making the reboot dispatch concurrent would change a reboot path, so it stays
+        // exactly as it was.
+        for (int i = 0; i < targets.Count; i++)
+        {
+            Computer computer = targets[i];
+            BootTimeReading? rebootBaseline = baselines[i];
             try
             {
                 ForceRebootResult result = await _forceReboot.RebootAsync(
@@ -6314,6 +6331,21 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         try
         {
             var sinceDispatch = System.Diagnostics.Stopwatch.StartNew();
+
+            // No baseline (the pre-reboot read failed) → no proof is POSSIBLE, so don't burn a full window of
+            // DCOM reads pretending otherwise. The reboot itself already went out — that is what the operator
+            // ordered and it is unaffected. Fall straight through to the backstop so this row still lands
+            // honestly instead of sitting on "going down" forever, and say once why it can't be proven.
+            if (baseline is null)
+            {
+                _activity.Warn(
+                    computer.Name,
+                    "Couldn't read the uptime before the reboot, so this reboot can't be proven — falling back to normal monitoring.",
+                    InstanceTag);
+                await GiveUpUnprovenRebootAsync(computer, sinceDispatch.Elapsed, expectedStatus, token);
+                return;
+            }
+
             while (sinceDispatch.Elapsed < FastRebootWatch.Window)
             {
                 await Task.Delay(FastRebootWatch.Interval, token);

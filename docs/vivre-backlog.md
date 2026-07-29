@@ -227,6 +227,12 @@ standalone items further down, each "do only if it recurs / when a signal appear
   every open tab and waited on the RAW monitor token, so with M wedged rows fleet-wide the real bound is
   ceil(M/8) × 120s, not one probe's ceiling. Pre-existing and unchanged by the verify-arc work; worth tracking
   because the arc's detachment removed the other unbounded term and left this as the dominant one.
+- **The fast reboot watch is uncancellable and holds its per-host claim for ~16 minutes.** Neither caller
+  passes a token to `RebootForceSelectedAsync`, so the watch runs on `CancellationToken.None`: its give-up
+  delay cannot be cancelled by Stop, monitoring-off or tab close, and `_fastRebootWatches` stays claimed for
+  the whole window — so a SECOND Force reboot on that host inside it gets no watch and can end up in exactly
+  the stuck state this arc fixed. Needs a view-model lifetime token. **Deferred by operator decision**
+  (2026-07-28) — a repeat Force reboot inside 16 minutes is rare.
 - **TAB SCOPE — one decision governs two open items that pull in OPPOSITE directions.** Decide the principle
   once, then apply it to both. (i) The verify-arc guards (`_verifyArcsInFlight`, `_rebootStateGeneration`) are
   per-tab instance fields, so one host open in two tabs gets two concurrent arcs, each invisible to the other's

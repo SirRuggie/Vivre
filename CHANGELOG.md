@@ -7,6 +7,12 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **Force-rebooting several machines at once no longer waits on the slow ones.** The uptime reading Vivre
+  takes before each reboot is now taken for the whole selection at once instead of one machine at a time, so
+  an unreachable box no longer holds up the reboot command for every machine behind it in the list — the
+  wait is now the slowest single machine rather than all of them added together. The machines rebooted, and
+  the order they are rebooted in, are exactly as before. A machine whose reading can't be taken is still
+  rebooted; it just falls back to normal monitoring and says so in the log.
 - **A machine that reboots faster than Vivre can see no longer gets stuck on "Reboot forced — going down".**
   Monitoring checks every 20 seconds and needs two consecutive misses before it believes a box is down, so a
   VM back on the network in 10–20 seconds was never seen to go anywhere — and every column that updates when
