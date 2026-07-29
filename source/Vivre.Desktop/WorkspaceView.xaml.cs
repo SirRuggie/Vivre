@@ -1214,10 +1214,10 @@ public partial class WorkspaceView : UserControl
             Title = "Reboot & verify",
             Content = $"This will reboot {selected.Count} machine(s):\n\n{names}\n\n"
                       + "Machines with nobody logged on reboot gracefully — forced after 8 minutes "
-                      + "(20 for staged 2016). Machines with anyone logged on, including disconnected "
-                      + "sessions, are forced immediately. Unsaved work is lost. Vivre then tracks each box "
-                      + "until it is verified back online (2016 boxes verify by build/UBR; others "
-                      + "by re-scan).\n\n"
+                      + "(20 for staged 2016). If anyone is logged on, including a disconnected session, "
+                      + "the reboot call Vivre sends is refused, so Vivre forces it immediately. Unsaved "
+                      + "work is lost. Vivre then tracks each box until it is verified back online "
+                      + "(2016 boxes verify by build/UBR; others by re-scan).\n\n"
                       + "Run this when the boxes are safe to restart (typically overnight)."
                       + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
             PrimaryButtonText = "Reboot & verify",
