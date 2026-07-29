@@ -4349,7 +4349,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             await ReportPostRebootOutcomeAsync(
                 computer, is2016, arcCts.Token,
                 () => ArcResultFreshness.IsCurrent(
-                    generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)));
+                    generationAtStart, RebootGeneration(computer.Name), IsRowClaimed(computer.Name)),
+                fromDetachedArc: true);
         }
         catch (OperationCanceledException) when (
             arcCts is not null
@@ -4414,8 +4415,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <param name="isStillCurrent">Freshness checker, supplied ONLY by the monitor's detached call. Null (the
     /// reboot wave) keeps the previous behaviour exactly: the wave awaits this inline, so nothing can race it.</param>
+    /// <param name="fromDetachedArc">True ONLY for the monitor's detached arc. Stated explicitly rather than
+    /// inferred from <paramref name="isStillCurrent"/> being non-null: they happen to coincide today, but a
+    /// future caller wanting freshness without being the arc would silently inherit the arc's scan cap and
+    /// bump suppression. Two meanings, two parameters.</param>
     private async Task ReportPostRebootOutcomeAsync(
-        Computer computer, bool is2016, CancellationToken token, Func<bool>? isStillCurrent = null)
+        Computer computer, bool is2016, CancellationToken token, Func<bool>? isStillCurrent = null, bool fromDetachedArc = false)
     {
         string name = computer.Name;
 
@@ -4466,17 +4471,26 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         for (int attempt = 1; ; attempt++)
         {
             HostPatchStatus status;
-            // Per-attempt ceiling, mirroring the one ScanRowAsync already applies. Without it a single
-            // rescan against a box that dropped mid-scan runs unbounded — the arc's share of the freeze.
-            using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(token);
-            attemptCts.CancelAfter(TimeSpan.FromSeconds(ScanAttemptTimeoutSeconds));
+            // Per-attempt ceiling for the MONITOR's arc ONLY. The reboot wave shares this loop and must keep
+            // its prior uncapped behaviour: a staged 2016 box chewing through a CU backlog can legitimately
+            // run past the cap, and cutting it to Unverified would regress the lane built for those boxes.
+            // ScanAttemptCap owns the rule (and documents why the arc's own branch is currently inert).
+            TimeSpan? cap = ScanAttemptCap.For(fromDetachedArc, ScanAttemptTimeoutSeconds);
+            using CancellationTokenSource? attemptCts =
+                cap is null ? null : CancellationTokenSource.CreateLinkedTokenSource(token);
+            if (cap is { } window)
+            {
+                attemptCts!.CancelAfter(window);
+            }
+
             try
             {
                 PatchOptions applicableOptions = _patchOptions.Clone();
                 applicableOptions.Scope = UpdateScope.Applicable;
-                status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, attemptCts.Token);
+                status = await _patch.ScanAsync(name, applicableOptions, _credentials.Current, attemptCts?.Token ?? token);
             }
-            catch (OperationCanceledException) when (attemptCts.IsCancellationRequested && !token.IsCancellationRequested)
+            catch (OperationCanceledException) when (
+                attemptCts is not null && attemptCts.IsCancellationRequested && !token.IsCancellationRequested)
             {
                 // THIS attempt's deadline only — not a Stop, and not the arc ceiling (which cancels `token`
                 // too and so falls through to the rethrow below). Treat it as a failed attempt so the
@@ -4504,7 +4518,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     return;
                 }
 
-                ApplyStatus(computer, status, UpdateScope.Applicable, fromDetachedArc: isStillCurrent is not null);
+                ApplyStatus(computer, status, UpdateScope.Applicable, fromDetachedArc: fromDetachedArc);
                 appliedStatus = true;   // from here on, abandoning must correct our own write, not just clear it
                 // Read-only readiness: the post-reboot rescan surfaces what's STILL applicable. Auto-select
                 // those updates for THIS box so the operator can one-click Install them — the same readiness
