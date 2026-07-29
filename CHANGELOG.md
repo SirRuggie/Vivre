@@ -11,9 +11,11 @@ it ships, then gets a dated heading.
   Monitoring checks every 20 seconds and needs two consecutive misses before it believes a box is down, so a
   VM back on the network in 10–20 seconds was never seen to go anywhere — and every column that updates when
   a machine returns (Last status, Last reboot, the reboot message) stayed frozen indefinitely, with nothing
-  in the log to say the box had cycled. Force reboot now records the machine's boot time before it sends the
-  reboot and watches that one row every 5 seconds for 2 minutes: a boot time that moved forward proves the
-  reboot happened even though nobody saw it go. The row then updates exactly as it would have, and the log
+  in the log to say the box had cycled. Force reboot now records how long the machine has been up before it
+  sends the reboot, and watches that one row every 5 seconds for 2 minutes: an uptime that has reset proves
+  the reboot happened even though nobody saw it go. (Uptime rather than the boot timestamp, so a machine
+  whose clock is corrected mid-watch is never mistaken for one that rebooted.) The row then updates as it
+  would have, and the log
   records the return. Machines that take longer are unaffected — monitoring already handles those, and the
   watch stands down as soon as it sees one go offline. If no reboot can be proven at all, the row ends up
   **Unverified** rather than stuck.

@@ -6192,7 +6192,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // Boot-time baseline BEFORE the box is told to go down — the same order the wave uses. This is
             // the ONLY thing that lets a machine which reboots faster than the monitor's ~40s detection floor
             // still prove it rebooted (field: a VM back in ~20s left its row stuck on "going down" forever).
-            // Read-only: ReadyConfirmation queries LastBootUpTime and can issue nothing.
+            // Read-only: this is a LastBootUpTime/uptime query and can issue nothing.
             BootTimeReading? rebootBaseline = await CaptureRebootBaselineAsync(computer.Name, token);
             try
             {
