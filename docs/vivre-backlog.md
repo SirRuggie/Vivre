@@ -3,13 +3,16 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-21** (release **1.16.4** — the WUG state-check arc:
-> cold-start mass-unknown SSL fix + IP exact-match reclassification, see
+> not a mandate). Last refreshed: **2026-07-28**. Last CUT release is still **1.16.4** (2026-07-21 — the WUG
+> state-check arc: cold-start mass-unknown SSL fix + IP exact-match reclassification, see
 > docs/wug-state-check-findings.md; 1.16.1–1.16.3 were same-day fix releases, see CHANGELOG.md).
+> **`VersionPrefix` is deliberately still 1.16.4 — no release has been cut since**, so a substantial body of
+> work sits under **Unreleased** in CHANGELOG.md: the DCOM 1191 → forced-escalation arc, and the reboot-verify
+> arc (per-tab log tagging, the bounded + DETACHED post-reboot verify arc and its three-leg freshness gate).
 > Older release narration lives with its DONE entries in docs/archive/vivre-backlog-done-archive.md.
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 1054 green as of 2026-07-21).**
+> are point-in-time only (current suite is 1183 green as of 2026-07-28).**
 
 ---
 
@@ -101,6 +104,60 @@ The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-p
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
 *Settings simplification* below). Beyond the Still-open items above, what remains is the polish /
 standalone items further down, each "do only if it recurs / when a signal appears."
+
+---
+
+## ▶ REBOOT-PATH & GUARDRAIL FINDINGS (2026-07-28 session — none fixed, all cardinal-adjacent)
+
+> Surfaced while investigating the SentinelOne detection, the 1191 arc and the silent grid freeze. Listed
+> most severe first. **Nothing here is a live incident** — they are gaps in confirm coverage, guardrails and
+> failure visibility. The reboot cardinal (nothing auto-reboots) still holds on every path below: each one
+> is operator-initiated. What varies is how much the operator is told before it fires.
+
+1. **APPROVE-VS-EXECUTE GAP — the set approved is not the set rebooted.** The confirm dialog names the
+   selection read at `WorkspaceView.xaml.cs:1187`, then `Execute(null)` at `:1217` makes the command RE-READ
+   `SelectedComputers` (`WorkspaceViewModel.cs:3781`). Two independent reads, so a selection change between
+   them reboots a set the operator never approved. Force reboot has the same shape; **the install nudge
+   already passes its rows explicitly and is the pattern to copy.**
+2. **Schedule ▸ Reboot arms a forced SYSTEM reboot on the Enter key with NO confirm at all.** Every field is
+   pre-filled and Schedule is `IsDefault=True` (`ScheduleWindow.xaml:47`), so Enter registers a scheduled
+   task running `/r /f /t 0`. The only reboot path in the app with no confirmation step whatsoever.
+3. **The install nudge's primary button force-reboots every reboot-pending box in the tab.** Needs no
+   selection, names no machines, shows no command, and is reachable by Ctrl+Enter (`MainWindow.xaml:240`).
+   It is the highest-exposure reboot surface: broadest scope, least information, fastest to trigger.
+4. **Run script ▸ Reboot is a FIFTH reboot path with no confirm of any kind.** `ScriptRunnerWindow.xaml.cs:60-66`
+   executes with no gate, the "All machines…" menu item needs no selection (`WorkspaceView.xaml.cs:530`), and
+   `scripts\Reboot\"Restart - force now.ps1"` ships `shutdown.exe /r /t 5 /f`. Not covered by any reboot-path
+   inventory to date because it arrives through the script library rather than a reboot command.
+5. **The cardinal gate grep guards ONE of at least FOUR reboot primitives.** It keys on the WMI token
+   `Win32Shutdown` and so misses the literal `shutdown.exe` command lines in `ForceRebootRunner.cs:47`,
+   `WorkspaceViewModel.cs:1930`, and `scripts\Reboot\*.ps1`. It is the mechanical guard on the project's one
+   non-negotiable rule, and it currently proves less than it appears to.
+6. **The SMB/SCM fallback cannot report a failed start — in Release it reports to nobody.** It never reads
+   `shutdown.exe`'s exit code, and surfaces the failure via `Debug.WriteLine`, which is
+   `[Conditional("DEBUG")]` and compiles to nothing in Release; the caller returns `Issued` regardless. This
+   is why a 3-of-6 field failure rate was invisible. Silent-failure class, cardinal-adjacent.
+7. **Force reboot silently drops the operator's alternate credential on the Kerberos fallback.**
+   `ForceRebootRunner.cs:81` — a different principal reaches the box than the one the operator selected, with
+   no indication in the UI. Wrong-identity-without-telling class.
+8. **Custom columns auto-run arbitrary operator PowerShell on EVERY host on EVERY list load.** No click, no
+   confirm: `CustomColumnProbe.cs:73-75` base64-wraps into `ScriptBlock::Create` and `WorkspaceViewModel.cs:1287`
+   runs it. Invisible to every gate grep. The operator's current column ("Logged-on user") was inspected
+   2026-07-28 and is a pure read — **a capability risk, not a live one.**
+9. **`Vivre_Reboot_*` fallback services get no SDDL and their delete is raceable.** Nothing in Vivre constrains
+   who could start a leftover service; `OrphanRebootServiceReaper` exists precisely because the delete loses
+   races. Tightening the ACL at creation would make the reaper a backstop rather than the control.
+10. **`WinRmEnabler` is a second Lateral-Movement detection surface.** `WinRmEnabler.cs:55` launches
+    `powershell.exe` on remote hosts via `Win32_Process.Create` — unrelated to the 1191 arc, same EDR
+    signature, and it will score whenever Enable-WinRM is run.
+11. **`HostName.IsLocal`'s alias branch is case-sensitive.** A row named as an FQDN (`APVHOP.contoso.com`) or
+    `LOCALHOST` gets NO self-target warning while the reboot still lands on the Vivre host. **Latent** — the
+    operator's lists are short-name today.
+12. **A "/t 300" warned-reboot path was referenced in an earlier PM report but never appeared in that report's
+    own reboot-primitive inventory.** Either it exists and the inventory is incomplete, or the reference was
+    wrong. Confirm which; do not carry an unverified fifth primitive in the record.
+13. **HelpContent's Install topic never got the self-target line.** The other three how-to topics received it
+    in `01ef85d`; the "reboot these first" nudge — the broadest-scope reboot surface (see #3) — did not.
 
 ---
 
