@@ -206,6 +206,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // transition (normally zero rows a pass), but a whole cohort returning from one reboot wave in the
     // same 20s pass would otherwise open one CIM session per row at once. Shared across tabs.
     private static readonly SemaphoreSlim _bootTimeThrottle = new(8);
+    // Sub-pool for the FORCE-REBOOT boot-time reads (baseline capture + the fast watch's polls). Taken
+    // BEFORE _bootTimeThrottle, never instead of it — the same background/total shape HostWinRmGate uses.
+    // It exists so a big force-reboot selection cannot fill all 8 shared slots: capturing baselines
+    // concurrently and then having every watch poll every 5s put dozens of waiters in a FIFO queue, and the
+    // monitor's own transition-time read landed behind them — a silent, log-free slowdown of the monitor
+    // tick for every open tab. Capping bulk at 6 leaves 2 slots the monitor can always reach, so its worst
+    // case is one read, whatever the selection size.
+    private static readonly SemaphoreSlim _bootTimeBulkSlots = new(FastRebootWatch.MaxConcurrentBulkReads);
     // Hosts whose WinRM/PSRP shell init is failing (RemoteShellInitException — pending reboot or
     // MaxShellsPerUser). Value = the next time we'll RE-TEST it: we back off from probing every 20s
     // (hammering a degraded box makes it worse) but still retry every few minutes so we notice when
@@ -6282,12 +6290,38 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Reads the pre-reboot boot time through the SAME 8-slot throttle every other boot-time read
     /// uses — the fast watch must not get its own private lane.</summary>
-    private async Task<BootTimeReading?> CaptureRebootBaselineAsync(string host, CancellationToken token)
+    /// <summary>
+    /// One force-reboot boot-time read: the bulk sub-pool FIRST, then the shared throttle — never the shared
+    /// one alone. That ordering is what reserves slots for the monitor; taking only the shared throttle here
+    /// is the bug this exists to prevent. Both are released in <c>finally</c>, and each wait sits outside its
+    /// own try so a cancelled wait cannot release a slot it never took.
+    /// </summary>
+    private async Task<BootTimeReading?> ReadBootTimeForRebootAsync(string host, CancellationToken token)
     {
-        await _bootTimeThrottle.WaitAsync(token);
+        await _bootTimeBulkSlots.WaitAsync(token);
         try
         {
-            return await _bootTime.ReadAsync(host, token);
+            await _bootTimeThrottle.WaitAsync(token);
+            try
+            {
+                return await _bootTime.ReadAsync(host, token);
+            }
+            finally
+            {
+                _bootTimeThrottle.Release();
+            }
+        }
+        finally
+        {
+            _bootTimeBulkSlots.Release();
+        }
+    }
+
+    private async Task<BootTimeReading?> CaptureRebootBaselineAsync(string host, CancellationToken token)
+    {
+        try
+        {
+            return await ReadBootTimeForRebootAsync(host, token);
         }
         catch (OperationCanceledException)
         {
@@ -6296,10 +6330,6 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         catch
         {
             return null;   // unreadable baseline = no proof is possible; the watch says so rather than guessing
-        }
-        finally
-        {
-            _bootTimeThrottle.Release();
         }
     }
 
@@ -6367,16 +6397,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     break;   // a sweep owns this row now — fall through to the backstop, don't vanish
                 }
 
-                BootTimeReading? current;
-                await _bootTimeThrottle.WaitAsync(token);
-                try
-                {
-                    current = await _bootTime.ReadAsync(computer.Name, token);
-                }
-                finally
-                {
-                    _bootTimeThrottle.Release();
-                }
+                // Bulk sub-pool + shared throttle, same as the baseline read: a tab-full of watches polling
+                // every 5s must never crowd the monitor out of the shared pool.
+                BootTimeReading? current = await ReadBootTimeForRebootAsync(computer.Name, token);
 
                 if (UptimeRebootProof.IsProven(baseline, current, sinceDispatch.Elapsed))
                 {

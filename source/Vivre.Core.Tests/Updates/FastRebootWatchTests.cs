@@ -45,6 +45,27 @@ public class FastRebootWatchTests
         Assert.Equal(24, FastRebootWatch.MaxReads);
     }
 
+    // The shared boot-time throttle's size, restated here because it lives in the Desktop project.
+    private const int SharedBootTimeSlots = 8;
+
+    [Fact]
+    public void Bulk_reads_leave_a_RESERVATION_the_monitor_can_always_reach()
+    {
+        // The whole point: force-reboot work (baseline burst + every watch polling every 5s) must never be
+        // able to hold all 8 shared slots, or the monitor's own transition-time read queues behind a wall of
+        // waiters and its 20s tick slips — silently, with no error and no log line.
+        Assert.True(FastRebootWatch.MaxConcurrentBulkReads < SharedBootTimeSlots);
+        Assert.Equal(2, SharedBootTimeSlots - FastRebootWatch.MaxConcurrentBulkReads);
+    }
+
+    [Fact]
+    public void The_cap_does_not_re_serialize_the_baseline_capture()
+    {
+        // Capturing baselines concurrently was a deliberate fix; a cap of 1 would undo it. Comfortably
+        // parallel while still leaving the reservation above.
+        Assert.True(FastRebootWatch.MaxConcurrentBulkReads > 1);
+    }
+
     [Theory]
     [InlineData(false, true)]   // monitor confirmed the box offline -> the normal transition owns the row
     [InlineData(true, false)]   // still online as far as the monitor knows -> keep watching

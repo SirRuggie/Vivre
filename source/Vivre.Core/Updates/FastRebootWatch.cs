@@ -13,9 +13,10 @@ namespace Vivre.Core.Updates;
 /// </para>
 /// <para>
 /// <b>The fix is observational only.</b> The reboot the operator already ordered is unchanged; this only
-/// changes how it is WATCHED. Proof comes from the same boot-time evidence the wave already uses
-/// (<see cref="ReadyConfirmation"/> + <see cref="RebootWave.UptimeProofMargin"/>) rather than from observing
-/// a drop — a boot time that advanced past the margin means the box rebooted whether or not anyone saw it go.
+/// changes how it is WATCHED. Proof is <see cref="UptimeRebootProof"/> — the same clock-immune uptime test
+/// the wave uses to rescue a box it never saw drop — rather than an observed drop. An uptime that RESET means
+/// the box rebooted whether or not anyone saw it go, and unlike a raw boot-time comparison it cannot be faked
+/// by the target's clock being corrected mid-watch.
 /// </para>
 /// <para>
 /// <b>Scope: only the blind window.</b> The monitor handles slow reboots correctly today (a ~90 s physical
@@ -44,6 +45,20 @@ public static class FastRebootWatch
     /// cadence because the monitor is what it is waiting to hear from.
     /// </summary>
     public static readonly TimeSpan GiveUpPollInterval = TimeSpan.FromSeconds(20);
+
+    /// <summary>
+    /// How many boot-time reads the force-reboot paths (baseline capture + the watch polls) may have in
+    /// flight at once, out of the 8-slot shared boot-time throttle. The remainder is a RESERVATION for the
+    /// monitor's own transition-time read, which must never queue behind a bulk burst.
+    /// <para>
+    /// Why a reservation and not jitter: jitter only spreads a burst statistically — with 50+ rows the
+    /// aggregate demand still exceeds the pool and the monitor can still land behind a wall of waiters.
+    /// A cap is a HARD bound: bulk work can never hold more than this many slots, so the monitor's worst
+    /// case is one read's duration no matter how many rows were force-rebooted. Same background/total shape
+    /// <c>HostWinRmGate</c> already uses, for the same reason.
+    /// </para>
+    /// </summary>
+    public static int MaxConcurrentBulkReads => 6;
 
     /// <summary>Reads this row can take before the window is spent — the added load for ONE rebooted row.</summary>
     public static int MaxReads => (int)(Window.Ticks / Interval.Ticks);
