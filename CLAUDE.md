@@ -126,12 +126,27 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - No empty `catch {}` — surface failures (to the activity log / `LastError`), don't swallow them.
 - Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
+  **This is the INTENDED rule, not a description of what ships today — there are known open exceptions.**
+  Three reboot paths currently fire with no confirm: **Schedule ▸ Reboot** (the modal's default button arms
+  a `/r /f /t 0` SYSTEM task on Enter), the **install nudge's "Reboot the N first"** primary button (no
+  selection, no machines named), and **Run script ▸ Reboot** (the runner is ungated). They are one cohort —
+  decide the confirm story once, not three times. See docs/reboot-path-and-guardrail-findings.md ▸ findings
+  2, 3, 4. Don't cite this rule as evidence that a given path already confirms; check the path.
 - **Reboot cardinal — NOTHING auto-reboots.** Every reboot path (the Reboot & Verify wave, Force reboot
   including its narrow Kerberos-auth DCOM fallback in `ForceRebootRunner`, Schedule reboot, the script
   library) fires only from an operator's explicit per-box click + confirm — never an independent decision.
   The shutdown primitive `Win32Shutdown` lives in EXACTLY ONE file (`DcomRebootTrigger.cs`). Gate grep
   after ANY commit touching reboot code: `grep -rl --include=*.cs "Win32Shutdown" source/` → exactly that
   one file. Don't write the primitive's name in other source prose/comments — it breaks the gate.
+  **CAVEAT — the gate grep is KNOWN-INCOMPLETE. Keep running it exactly as written above; just don't read a
+  pass as proof the cardinal is mechanically enforced.** That token covers ONE of five reboot-issuing sites.
+  Confirmed missing from it: the WinRM `shutdown.exe` command line in `ForceRebootRunner.cs`, the scheduled
+  task's `shutdown.exe` in `WorkspaceViewModel.cs` (a different project), the SMB/SCM service image
+  (`cmd /c shutdown …`, same file as the token but not matched by it), and the whole shipped script library
+  `scripts/Reboot/*.ps1` — which `--include=*.cs` structurally excludes, and which is where the product's
+  only warned non-forced reboot (`/r /t 300`) lives. A change to any of those passes the grep untouched, so
+  reboot work needs a human read of the paths, not just a green grep. Full site inventory and the
+  re-scoping prerequisite: docs/reboot-path-and-guardrail-findings.md ▸ findings 5 and 12.
 - All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see docs/windows-patching-lane.md).
 - **Shelling out to Windows PowerShell 5.1** (the WUG lane in `Wug/WugMaintenance.cs`, and any

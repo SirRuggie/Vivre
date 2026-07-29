@@ -49,6 +49,11 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
   graceful reboot when any session is logged on (1191), and why misreading that as a dead channel produced
   the SMB/SCM service SentinelOne scored as Lateral Movement. *Read when: touching the reboot trigger, the
   DCOM/SMB channel choice, or the forced-window selection.*
+- **[reboot-path-and-guardrail-findings.md](reboot-path-and-guardrail-findings.md)** — the thirteen 2026-07-28
+  reboot-path / guardrail findings in full, citations re-verified against `99995b6`: the approve-vs-execute gap,
+  three reboot paths shipping with no confirm, and the known-incomplete `Win32Shutdown` gate grep (one of five
+  reboot-issuing sites). *Read when: touching a reboot path, a confirm dialog, or the cardinal gate grep — and
+  BEFORE claiming a reboot path already confirms.*
 - **[reboot-monitor-arc-findings.md](reboot-monitor-arc-findings.md)** — the monitor/verify-arc arc: the
   unbounded inline verify arc that froze a whole tab, the ~40 s detection floor that made fast-rebooting VMs
   stick forever, THREE formally refuted hypotheses (tab count, throttle starvation, HostWinRmGate), and the

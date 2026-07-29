@@ -3,7 +3,7 @@
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-28** (release **1.17.1** — a patch release on top of 1.17.0: a
+> not a mandate). Last refreshed: **2026-07-29** (release **1.17.1** — a patch release on top of 1.17.0: a
 > hand Force reboot now proves itself by UPTIME COLLAPSE rather than by waiting to see the machine drop off
 > the network, so a fast-rebooting VM no longer leaves its row stuck on "Reboot forced — going down"
 > (field-confirmed 2026-07-28); the proof is clock-immune; multi-row baselines are captured concurrently; and
@@ -119,51 +119,59 @@ standalone items further down, each "do only if it recurs / when a signal appear
 > most severe first. **Nothing here is a live incident** — they are gaps in confirm coverage, guardrails and
 > failure visibility. The reboot cardinal (nothing auto-reboots) still holds on every path below: each one
 > is operator-initiated. What varies is how much the operator is told before it fires.
+>
+> **Full text, verified citations and the framing note live in the case file:
+> [docs/reboot-path-and-guardrail-findings.md](reboot-path-and-guardrail-findings.md)** (frozen 2026-07-29
+> against `99995b6`; every file:line re-checked, drifted line numbers corrected in place with the original
+> kept beside them). The entries below are pointers only — **none is fixed**.
+>
+> **Two relationships to honour when scoping:** #12 is a **PREREQUISITE for #5**, and **#2 · #3 · #4 are one
+> cohort** (three reboot paths shipping with zero confirm — decide the confirm story once).
 
-1. **APPROVE-VS-EXECUTE GAP — the set approved is not the set rebooted.** The confirm dialog names the
-   selection read at `WorkspaceView.xaml.cs:1187`, then `Execute(null)` at `:1217` makes the command RE-READ
-   `SelectedComputers` (`WorkspaceViewModel.cs:3781`). Two independent reads, so a selection change between
-   them reboots a set the operator never approved. Force reboot has the same shape; **the install nudge
-   already passes its rows explicitly and is the pattern to copy.**
-2. **Schedule ▸ Reboot arms a forced SYSTEM reboot on the Enter key with NO confirm at all.** Every field is
-   pre-filled and Schedule is `IsDefault=True` (`ScheduleWindow.xaml:47`), so Enter registers a scheduled
-   task running `/r /f /t 0`. The only reboot path in the app with no confirmation step whatsoever.
-3. **The install nudge's primary button force-reboots every reboot-pending box in the tab.** Needs no
-   selection, names no machines, shows no command, and is reachable by Ctrl+Enter (`MainWindow.xaml:240`).
-   It is the highest-exposure reboot surface: broadest scope, least information, fastest to trigger.
-4. **Run script ▸ Reboot is a FIFTH reboot path with no confirm of any kind.** `ScriptRunnerWindow.xaml.cs:60-66`
-   executes with no gate, the "All machines…" menu item needs no selection (`WorkspaceView.xaml.cs:530`), and
-   `scripts\Reboot\"Restart - force now.ps1"` ships `shutdown.exe /r /t 5 /f`. Not covered by any reboot-path
-   inventory to date because it arrives through the script library rather than a reboot command.
-5. **The cardinal gate grep guards ONE of at least FOUR reboot primitives.** It keys on the WMI token
-   `Win32Shutdown` and so misses the literal `shutdown.exe` command lines in `ForceRebootRunner.cs:47`,
-   `WorkspaceViewModel.cs:1930`, and `scripts\Reboot\*.ps1`. It is the mechanical guard on the project's one
-   non-negotiable rule, and it currently proves less than it appears to.
-6. **The SMB/SCM fallback cannot report a failed start — in Release it reports to nobody.** It never reads
-   `shutdown.exe`'s exit code, and surfaces the failure via `Debug.WriteLine`, which is
-   `[Conditional("DEBUG")]` and compiles to nothing in Release; the caller returns `Issued` regardless. This
-   is why a 3-of-6 field failure rate was invisible. Silent-failure class, cardinal-adjacent.
-7. **Force reboot silently drops the operator's alternate credential on the Kerberos fallback.**
-   `ForceRebootRunner.cs:81` — a different principal reaches the box than the one the operator selected, with
-   no indication in the UI. Wrong-identity-without-telling class.
-8. **Custom columns auto-run arbitrary operator PowerShell on EVERY host on EVERY list load.** No click, no
-   confirm: `CustomColumnProbe.cs:73-75` base64-wraps into `ScriptBlock::Create` and `WorkspaceViewModel.cs:1287`
-   runs it. Invisible to every gate grep. The operator's current column ("Logged-on user") was inspected
-   2026-07-28 and is a pure read — **a capability risk, not a live one.**
-9. **`Vivre_Reboot_*` fallback services get no SDDL and their delete is raceable.** Nothing in Vivre constrains
-   who could start a leftover service; `OrphanRebootServiceReaper` exists precisely because the delete loses
-   races. Tightening the ACL at creation would make the reaper a backstop rather than the control.
-10. **`WinRmEnabler` is a second Lateral-Movement detection surface.** `WinRmEnabler.cs:55` launches
-    `powershell.exe` on remote hosts via `Win32_Process.Create` — unrelated to the 1191 arc, same EDR
-    signature, and it will score whenever Enable-WinRM is run.
-11. **`HostName.IsLocal`'s alias branch is case-sensitive.** A row named as an FQDN (`APVHOP.contoso.com`) or
-    `LOCALHOST` gets NO self-target warning while the reboot still lands on the Vivre host. **Latent** — the
-    operator's lists are short-name today.
-12. **A "/t 300" warned-reboot path was referenced in an earlier PM report but never appeared in that report's
-    own reboot-primitive inventory.** Either it exists and the inventory is incomplete, or the reference was
-    wrong. Confirm which; do not carry an unverified fifth primitive in the record.
-13. **HelpContent's Install topic never got the self-target line.** The other three how-to topics received it
-    in `01ef85d`; the "reboot these first" nudge — the broadest-scope reboot surface (see #3) — did not.
+1. **Approve-vs-execute gap — the set approved is not the set rebooted.** OPEN, none fixed.
+   The confirm dialog reads the selection, then the command re-reads it, so a change between the two reboots
+   an unapproved set; Force reboot has the same shape and the install nudge is the pattern to copy.
+   → case file ▸ finding 1.
+2. **Schedule ▸ Reboot arms a forced SYSTEM reboot on Enter with no confirm.** OPEN, none fixed.
+   Fields are pre-filled and Schedule is the default button, so Enter registers a `/r /f /t 0` SYSTEM task
+   with no yes/no restatement of count or targets. **Cohort with #3 and #4.** → case file ▸ finding 2.
+3. **The install nudge's primary button force-reboots every reboot-pending box in the tab.** OPEN, none fixed.
+   Highest-exposure reboot surface: no selection needed, no machines named, no command shown, reachable by
+   Ctrl+Enter. **Cohort with #2 and #4.** → case file ▸ finding 3.
+4. **Run script ▸ Reboot is a reboot path with no confirm of any kind.** OPEN, none fixed.
+   The runner executes ungated, "All machines…" needs no selection, and the shipped reboot scripts include a
+   forced restart — missed by every reboot-command inventory because it arrives as a script.
+   **Same class as #2 and #3 — scope the three together.** → case file ▸ finding 4.
+5. **The cardinal gate grep guards ONE of at least FOUR reboot primitives.** OPEN, none fixed.
+   Keying on the WMI token alone misses the `shutdown.exe` lines in the WinRM runner, the scheduled task, the
+   SMB/SCM service image and the script library, so the guard on the one non-negotiable rule proves less than
+   it appears to. **BLOCKED ON #12** — can't re-scope against an open inventory. → case file ▸ finding 5.
+6. **The SMB/SCM fallback cannot report a failed start — in Release it reports to nobody.** OPEN, none fixed.
+   It never reads an exit code and its only failure surface is `Debug.WriteLine`, which compiles to nothing in
+   Release, while the caller returns a success value regardless. → case file ▸ finding 6.
+7. **Force reboot silently drops the operator's alternate credential on the Kerberos fallback.** OPEN, none fixed.
+   A different principal reaches the box than the one the operator selected, and the UI reports the channel
+   switch but never the identity change. → case file ▸ finding 7.
+8. **Custom columns auto-run arbitrary operator PowerShell on every host on list load.** OPEN, none fixed.
+   No click and no confirm on a path that base64-wraps into `ScriptBlock::Create` (gated only on Auto-check
+   on load); invisible to every gate grep. **A capability risk, not a live one.** → case file ▸ finding 8.
+9. **`Vivre_Reboot_*` fallback services get no SDDL and their delete is raceable.** OPEN, none fixed.
+   Nothing constrains who could start a leftover service, and the reaper exists precisely because the delete
+   loses races — an ACL at creation would make the reaper a backstop, not the control. → case file ▸ finding 9.
+10. **`WinRmEnabler` is a second Lateral-Movement detection surface.** OPEN, none fixed.
+    It launches `powershell.exe` on remote hosts via `Win32_Process.Create` — unrelated to the 1191 arc, same
+    EDR signature, and it scores whenever Enable-WinRM is run. → case file ▸ finding 10.
+11. **`HostName.IsLocal`'s alias branch is case-sensitive.** OPEN, none fixed.
+    An FQDN or an upper-case `LOCALHOST` row gets no self-target warning while the reboot still lands on the
+    Vivre host. **Latent** — the operator's lists are short-name today. → case file ▸ finding 11.
+12. **The "/t 300" warned-reboot path — RESOLVED, IT EXISTS.** Still OPEN as inventory work, nothing fixed.
+    It is real and lives in the script library (a warned, non-forced 5-minute countdown), so the earlier
+    inventory was incomplete rather than the reference being wrong. **PREREQUISITE FOR #5** — the gate grep
+    can't be completed against an unclosed primitive inventory. → case file ▸ finding 12.
+13. **HelpContent's Install topic never got the self-target line.** OPEN, none fixed.
+    Three how-to topics received it; the "reboot these first" nudge — the broadest-scope reboot surface
+    (see #3) — did not, so the help describes three of the four surfaces that warn. **This one is code, not
+    housekeeping** (`HelpContent.cs` is source). → case file ▸ finding 13.
 
 ---
 
