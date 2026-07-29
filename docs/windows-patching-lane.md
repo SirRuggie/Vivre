@@ -509,6 +509,44 @@ structurally unable to reach the heal. Separately, the monitor now skips only **
 and **suppressed** rows (a passive op writing `LastStatus`/`LastError`) rather than pausing wholesale — so a
 row mid-wave or mid-install keeps its online dot and reboot state live.
 
+### The hand-reboot verify arc runs DETACHED from the monitor pass (load-bearing)
+
+`ReportPostRebootOutcomeAsync` has a second caller: a **hand Force reboot** arms
+`Computer.ForceRebootAwaitingVerify`, and when the monitor's reboot-pending probe later answers definitively
+clean, `ProbeRebootPendingAsync` runs the same rescan + probe arc so a hand reboot gets the same
+verified / *"N remaining"* / Unverified outcome as the wave. **That arc is STARTED, not awaited**
+(`_ = RunDetachedVerifyArcAsync`).
+
+**Why detached — don't put it back inline.** It used to be awaited inside the monitor's per-row work, which
+runs under `Task.WhenAll` for the whole tab, so one slow verify froze **every row on that tab**. Field-
+reproduced 2026-07-28: two force-rebooted rows, ~2m52s of total activity-log silence across ~8 monitor
+passes, seven rows holding green Online pills while two boxes were provably down. The arc had also been
+handed the raw monitor token, so the caller's 120s deadline covered nothing — cancelling a linked source
+never cancels its parent. Fire-and-forget preserves UI-thread affinity **without** `Task.Run` or
+`ConfigureAwait(false)`: an un-awaited async method started on the UI thread still captures
+`SynchronizationContext.Current` at each of *its own* awaits. Do not add either to this path.
+
+**Ceiling.** `VerifyArcTimeout.Ceiling` = **5 minutes** for the whole arc, sized explicitly rather than
+inherited from the probe's 120s (which was sized for one WinRM call). The per-attempt rescan cap
+(`ScanAttemptCap`) applies to this arc only — the wave shares the loop and stays uncapped, because a staged
+2016 box working through a CU backlog can legitimately exceed it. That per-attempt cap is currently
+**inert** on the arc path: it equals the arc ceiling and is armed later, so the ceiling always trips first.
+
+**Three-leg freshness gate.** Detaching means the monitor and operator sweeps keep writing the row while the
+arc runs, so before *any* row write the arc re-checks (`ArcResultFreshness`): (1) **generation** — a
+per-host counter bumped at all nine non-arc `RebootRequired` writers, so a newer answer supersedes the arc's;
+(2) **row-claim** — `_heldRows`/`_monitorSkipRows`, so a Check All / Check Vitals started mid-arc owns the
+row; (3) **one-arc-per-host** — `_verifyArcsInFlight`, claimed *before* the awaiting marker is consumed so a
+second Force reboot mid-arc is still verified afterwards rather than dropped. The claim gates only the arc —
+**never** the operator's reboot.
+
+**What the operator sees.** Timed out → row lands **Unverified** with *"Couldn't rescan after reboot —
+re-check"* plus one log line naming the host and tab. Discarded as stale → the arc's own in-progress stamp is
+removed and the log says the result was discarded rather than allowed to overwrite fresher state; if the arc
+had already written scan results, the row is forced to **Unverified** rather than left on a green
+*"Up to date"* it never confirmed. No path here leaves a row green on an unconfirmed reboot, and none leaves
+it stuck mid-progress.
+
 ### Readiness vs offline-detection distinction
 
 - **Readiness probe** (`IRebootReadinessProbe`) — PRE-reboot question: "may we reboot this box
