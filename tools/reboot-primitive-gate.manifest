@@ -1,0 +1,28 @@
+# Vivre — REBOOT PRIMITIVE GATE: the single source of truth for the inventory.
+# Read by BOTH tools/reboot-primitive-gate.sh (manual runs) and
+# Vivre.Core.Tests/Guards/RebootPrimitiveGateTests.cs (runs under dotnet test).
+# TAB-delimited. Fields may contain spaces, never tabs. Blank lines and # are ignored.
+#   TOKENS <regex>                              every token that could ISSUE a reboot
+#   SITE   <expected> <root> <label> <pattern>   one confirmed primitive, exact count
+#   FILE   <count> <path>                        containment manifest (primitive + prose)
+# If the gate fails, do NOT edit the numbers here until a human agrees the code is right.
+# docs/reboot-path-and-guardrail-findings.md > finding 5.
+
+TOKENS	shutdown\.exe|Win32Shutdown|InitiateSystemShutdown|ExitWindowsEx|NtShutdownSystem|SetSystemPowerState|Restart-Computer|Stop-Computer|shutdown /|call reboot|MethodName Reboot|FilePath shutdown|Process\.Start\("shutdown|Start-Process shutdown
+
+SITE	1	source	SITE 1/5  WMI shutdown method (DcomRebootTrigger)	Win32Shutdown
+SITE	1	source	SITE 2/5  SMB/SCM service image (DcomRebootTrigger)	"cmd /c shutdown 
+SITE	1	source	SITE 3/5  WinRM command line (ForceRebootRunner)	const string Script = "shutdown\.exe
+SITE	1	source	SITE 4/5  scheduled-task action (WorkspaceViewModel)	New-ScheduledTaskAction -Execute 'shutdown\.exe'
+SITE	4	scripts	SITE 5/5  shipped reboot scripts (scripts/Reboot)	shutdown\.exe
+
+FILE	1	scripts/Reboot/Restart - cancel pending.ps1
+FILE	1	scripts/Reboot/Restart - force now.ps1
+FILE	1	scripts/Reboot/Restart - if reboot pending.ps1
+FILE	1	scripts/Reboot/Restart - warn users (5 min).ps1
+FILE	1	source/Vivre.Core.Tests/Scripts/ScriptLibraryTests.cs
+FILE	8	source/Vivre.Core/Updates/DcomRebootTrigger.cs
+FILE	6	source/Vivre.Core/Updates/ForceRebootRunner.cs
+FILE	1	source/Vivre.Desktop/HelpContent.cs
+FILE	5	source/Vivre.Desktop/ViewModels/WorkspaceViewModel.cs
+FILE	2	source/Vivre.Desktop/WorkspaceView.xaml.cs

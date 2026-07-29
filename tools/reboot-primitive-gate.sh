@@ -53,9 +53,19 @@ set -uo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "GATE ERROR: cannot reach the repo root"; exit 2; }
 
-# Self-exclusion by BASENAME — this file names every token it hunts for, so without this the gate
-# reports itself as an unknown primitive site. This is the mechanism prose cannot have.
-EXCLUDE_SELF="--exclude=reboot-primitive-gate.sh"
+# THE INVENTORY IS DATA, NOT CODE. Tokens, the five sites and the containment manifest all live in
+# reboot-primitive-gate.manifest so that this script and the xUnit guard
+# (Vivre.Core.Tests/Guards/RebootPrimitiveGateTests.cs, which runs under `dotnet test`) consume ONE source
+# of truth. The two scanners are necessarily separate implementations — bash grep vs .NET Regex — but they
+# can never disagree about WHAT to look for or HOW MANY to expect. Editing the numbers in one place cannot
+# leave the other stale.
+MANIFEST="reboot-primitive-gate.manifest"
+[ -r "tools/$MANIFEST" ] || { echo "GATE ERROR: cannot read tools/$MANIFEST — the inventory is missing; refusing to report PASS"; exit 2; }
+MANIFEST="tools/$MANIFEST"
+
+# Self-exclusion by BASENAME — this file and the manifest both name every token they hunt for, so without
+# this the gate reports ITSELF as an unknown primitive site. This is the mechanism prose cannot have.
+EXCLUDE_SELF="--exclude=reboot-primitive-gate.sh --exclude=reboot-primitive-gate.manifest"
 SCAN_ROOTS="source scripts tools"
 
 # NO EXTENSION ALLOWLIST, DELIBERATELY. An earlier draft scanned only *.cs/*.ps1/*.xaml, and a red-team
@@ -63,13 +73,12 @@ SCAN_ROOTS="source scripts tools"
 # instead, so every text file under the scan roots is covered whatever its extension.
 SCAN_TYPES="-I"
 
-# Every token that could ISSUE a machine reboot, across every transport and language in the repo.
-# The last five were added by the same red-team pass: the WMI `Reboot()` method is a DIFFERENT method
-# from the one SITE 1 pins, and `wmic … call reboot` / `Start-Process shutdown` / `Process.Start("shutdown"`
-# spell the command without ever writing `shutdown.exe` or `shutdown /`.
-# `"Reboot"` alone was TRIED AND REJECTED — it matches the script library's own category name and the
-# reboot-pending UI strings, which would have made the gate noisy enough to be ignored.
-ALL_TOKENS='shutdown\.exe|Win32Shutdown|InitiateSystemShutdown|ExitWindowsEx|NtShutdownSystem|SetSystemPowerState|Restart-Computer|Stop-Computer|shutdown /|call reboot|MethodName Reboot|FilePath shutdown|Process\.Start\("shutdown|Start-Process shutdown'
+# Every token that could ISSUE a machine reboot, across every transport and language in the repo — read
+# from the manifest. `InitiateSystemShutdown` covers the `…Ex` variant too, since these are substring
+# matches. `"Reboot"` alone was TRIED AND REJECTED: it matches the script library's own category name and
+# the reboot-pending UI strings, which would have made the gate noisy enough to be ignored.
+ALL_TOKENS=$(awk -F'\t' '$1=="TOKENS"{print $2; exit}' "$MANIFEST")
+[ -n "$ALL_TOKENS" ] || { echo "GATE ERROR: no TOKENS line in $MANIFEST — refusing to report PASS"; exit 2; }
 
 fail_count=0
 pass() { printf '  PASS  %s\n' "$1"; }
@@ -98,49 +107,38 @@ echo
 echo "LAYER 1 — the five confirmed reboot primitives (exact counts)"
 echo
 
-# ── SITE 1: the DCOM/WMI shutdown method. This is the ONLY site the pre-existing one-line gate saw.
-#    The old check (`grep -rl --include=*.cs "Win32Shutdown" source/` → exactly one file) is SUBSUMED
-#    here, not replaced: same token, same expectation, now one component of five.
-check_count "SITE 1/5  WMI shutdown method (DcomRebootTrigger)" 1 'Win32Shutdown' source
+# Driven entirely from the manifest's SITE lines, so this script and the xUnit guard check the same five.
+# For the record, what each one pins: 1 = the DCOM/WMI method (the ONLY site the old one-line gate saw;
+# that check is SUBSUMED here, same token, same expectation); 2 = the SMB/SCM service image, same FILE as
+# site 1 but a different primitive the old gate never matched; 3 = the WinRM command line; 4 = the
+# scheduled-task action, in a DIFFERENT project; 5 = the shipped script library, not .cs at all, and the
+# home of the product's only warned non-forced reboot (/r /t 300).
+site_lines=0
+while IFS=$'\t' read -r kind expected root label pattern; do
+  [ "$kind" = "SITE" ] || continue
+  site_lines=$((site_lines + 1))
+  check_count "$label" "$expected" "$pattern" "$root"
+done < "$MANIFEST"
 
-# ── SITE 2: the SMB/SCM one-shot service image. Lives in the same file as SITE 1 but is a DIFFERENT
-#    primitive — the old token-based gate never matched this line.
-check_count "SITE 2/5  SMB/SCM service image (DcomRebootTrigger)" 1 '"cmd /c shutdown ' source
-
-# ── SITE 3: the WinRM command line Force reboot sends.
-check_count "SITE 3/5  WinRM command line (ForceRebootRunner)" 1 'const string Script = "shutdown\.exe' source
-
-# ── SITE 4: the scheduled-task action. A DIFFERENT PROJECT (Vivre.Desktop) — invisible to any check
-#    scoped to Vivre.Core.
-check_count "SITE 4/5  scheduled-task action (WorkspaceViewModel)" 1 "New-ScheduledTaskAction -Execute 'shutdown\.exe'" source
-
-# ── SITE 5: the shipped script library. NOT .cs at all, so `--include=*.cs` structurally excluded it.
-#    This is where the product's only warned, non-forced reboot (/r /t 300) lives.
-check_count "SITE 5/5  shipped reboot scripts (scripts/Reboot)" 4 'shutdown\.exe' scripts
+if [ "$site_lines" -eq 0 ]; then
+  fail "no SITE lines found in $MANIFEST — the primitive inventory is EMPTY, which is never correct"
+fi
 
 echo
 echo "LAYER 2 — containment: no reboot token may appear in any unlisted file"
 echo
 
-# The known manifest: every tracked source/script/tool file that may contain a reboot token, and how
-# many. PRIMITIVE-BEARING files are marked (P); the rest legitimately DISCUSS a primitive without
-# issuing one — operator help text, dialog copy, doc comments, and one test fixture.
+# The known manifest, from the manifest file's FILE lines: every file under the scan roots that may
+# contain a reboot token, and how many. Some are primitive-bearing; the rest legitimately DISCUSS a
+# primitive without issuing one — operator help text, dialog copy, doc comments, and one test fixture.
 #
-# Keeping prose and test files in a SEPARATE list from the five primitives is deliberate: the primitive
-# inventory stays exactly five, and a reviewer can tell at a glance whether a new entry is a new reboot
-# path (serious) or a new sentence about one (not).
-read -r -d '' EXPECTED_MANIFEST <<'EOF'
-scripts/Reboot/Restart - cancel pending.ps1:1
-scripts/Reboot/Restart - force now.ps1:1
-scripts/Reboot/Restart - if reboot pending.ps1:1
-scripts/Reboot/Restart - warn users (5 min).ps1:1
-source/Vivre.Core.Tests/Scripts/ScriptLibraryTests.cs:1
-source/Vivre.Core/Updates/DcomRebootTrigger.cs:8
-source/Vivre.Core/Updates/ForceRebootRunner.cs:6
-source/Vivre.Desktop/HelpContent.cs:1
-source/Vivre.Desktop/ViewModels/WorkspaceViewModel.cs:5
-source/Vivre.Desktop/WorkspaceView.xaml.cs:2
-EOF
+# Keeping prose and test files in this list while the five primitives stay in the SITE lines is
+# deliberate: the primitive inventory stays exactly five, and a reviewer can tell at a glance whether a
+# new entry is a new reboot path (serious) or a new sentence about one (not).
+EXPECTED_MANIFEST=$(awk -F'\t' '$1=="FILE"{printf "%s:%s\n", $3, $2}' "$MANIFEST")
+if [ -z "$EXPECTED_MANIFEST" ]; then
+  fail "no FILE lines found in $MANIFEST — the containment manifest is EMPTY, which is never correct"
+fi
 
 ACTUAL_MANIFEST=$(grep -rEc "$ALL_TOKENS" $SCAN_ROOTS $SCAN_TYPES $EXCLUDE_SELF 2>/dev/null \
   | grep -v ':0$' | grep -vE '/(bin|obj)/' | sort)

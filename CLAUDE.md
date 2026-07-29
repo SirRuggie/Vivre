@@ -135,11 +135,19 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - **Reboot cardinal — NOTHING auto-reboots.** Every reboot path (the Reboot & Verify wave, Force reboot
   including its narrow Kerberos-auth DCOM fallback in `ForceRebootRunner`, Schedule reboot, the script
   library) fires only from an operator's explicit per-box click + confirm — never an independent decision.
-  **GATE — run after ANY commit touching reboot code.** One command, and it must print PASS / exit 0:
+  **GATE — enforced automatically by `dotnet test`.** `RebootPrimitiveGateTests` fails the suite if the reboot
+  primitive inventory changes, so you cannot forget to run it. For a manual check with per-site output:
 
   ```bash
   bash tools/reboot-primitive-gate.sh
   ```
+
+  Both callers read ONE inventory — `tools/reboot-primitive-gate.manifest` (tokens, the five sites, the
+  containment manifest) — so the script and the test can never disagree about what to look for or how many to
+  expect. The scanners differ (bash grep vs .NET `Regex`); the DATA does not. **The test refuses to pass having
+  scanned nothing:** it asserts the repo marker was found and that ≥100 files were visited BEFORE any count
+  assertion, because a repo-scanning test that silently scanned nothing is the "green tests lie" failure this
+  project has already been bitten by.
 
   It pins **all five** reboot-issuing sites at exact counts — the WMI method (`DcomRebootTrigger.cs`), the
   SMB/SCM service image (same file, different primitive), the WinRM command line (`ForceRebootRunner.cs`),

@@ -116,6 +116,12 @@ The list is still in recommended do-next order.
    defect.** `FullPackageLcuLane.cs:160-161` (`InstallFullPackageAsync`) and `:68` (`RunComponentCleanupAsync`)
    go straight to the SMB agent lane with no try/catch and no Kerberos condition. Unrelated to reboots.
    **EDR-conversation scope** — if SentinelOne policy is being discussed, Stage belongs in it. Build nothing.
+- **[trace-empty-default-interface-method]** — **`IActivityLog.Trace` is an empty default interface method
+   (`IActivityLog.cs:44`) — any future implementation that forgets to override it silently no-ops, with NO
+   compiler warning.** Same silent-no-op class as reboot finding #6 (`Debug.WriteLine` compiled out of Release).
+   Production is SAFE today: one implementation, `ActivityLog.cs:81`, overrides correctly and writes at
+   Information. **Fix = make the member abstract** so the compiler forces it; expect that to force changes in
+   test doubles (e.g. `SharedSettingsStoreTests`' `CapturingLog`, which relies on the default today). Not built.
 - **[shared-settings-stomp-guard]** — **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
    use.**
    - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
