@@ -126,15 +126,20 @@ standalone items further down, each "do only if it recurs / when a signal appear
 > kept beside them). The entries below are pointers only — **none is fixed**.
 >
 > **Two relationships to honour when scoping:** #12 is a **PREREQUISITE for #5**, and **#2 · #3 · #4 are one
-> cohort** (three reboot paths shipping with zero confirm — decide the confirm story once).
+> cohort** (three reboot paths shipping with no yes/no confirm — decide the confirm story once).
+>
+> **The numbers are STABLE IDs into the case file, not the current ranking.** They preserve the original
+> 2026-07-28 severity order so the pointers stay valid. One re-rank since: **#2 now sits below #3** (the
+> Schedule modal carries disclosure text, so it is a gate without a confirm; the install nudge has neither).
 
 1. **Approve-vs-execute gap — the set approved is not the set rebooted.** OPEN, none fixed.
    The confirm dialog reads the selection, then the command re-reads it, so a change between the two reboots
    an unapproved set; Force reboot has the same shape and the install nudge is the pattern to copy.
    → case file ▸ finding 1.
-2. **Schedule ▸ Reboot arms a forced SYSTEM reboot on Enter with no confirm.** OPEN, none fixed.
-   Fields are pre-filled and Schedule is the default button, so Enter registers a `/r /f /t 0` SYSTEM task
-   with no yes/no restatement of count or targets. **Cohort with #3 and #4.** → case file ▸ finding 2.
+2. **Schedule ▸ Reboot has no yes/no confirm; Enter is the default button.** OPEN, none fixed.
+   The modal carries disclosure text, so it IS a gate — just not a confirm: fields are pre-filled and Enter
+   arms a `/r /f /t 0` SYSTEM task with no restatement of count or targets. **Re-ranked 2026-07-29 to BELOW
+   #3** (a disclosing modal beats none); the finding stands. **Cohort with #3 and #4.** → case file ▸ finding 2.
 3. **The install nudge's primary button force-reboots every reboot-pending box in the tab.** OPEN, none fixed.
    Highest-exposure reboot surface: no selection needed, no machines named, no command shown, reachable by
    Ctrl+Enter. **Cohort with #2 and #4.** → case file ▸ finding 3.

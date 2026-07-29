@@ -547,6 +547,56 @@ had already written scan results, the row is forced to **Unverified** rather tha
 *"Up to date"* it never confirmed. No path here leaves a row green on an unconfirmed reboot, and none leaves
 it stuck mid-progress.
 
+### The post-Force-reboot FAST WATCH (1.17.1) — proving a reboot nobody saw
+
+A hand **Force reboot** on a fast-rebooting VM used to leave its row stuck forever. The monitor probes every
+20 s and needs `OfflineConfirmThreshold` = 2 CONSECUTIVE misses before it believes a box is down, so its
+detection floor is **~40 s** — a VM that reboots in 10–20 s is down and back between two probes and never
+flips `IsOnline`. Every downstream write (Last status, Last reboot, the reboot message, the recheck budget,
+the degraded flag, the activity-log record) hangs off that offline→online transition, so none of them fired.
+Field-reproduced twice on 2026-07-28.
+
+**The fix is observational only** — the reboot the operator ordered is unchanged; only how it is WATCHED
+changed. Force reboot captures a `BootTimeReading` baseline before dispatch, then
+`StartFastRebootWatch` (`WorkspaceViewModel.cs:6338`) fires a detached per-row watch:
+
+- **`FastRebootWatch.Interval` = 5 s**, **`Window` = 2 min** (`FastRebootWatch.cs:33,38`) — sized to cover
+  the monitor's blind spot, not every reboot. Past the window the monitor's own transition is reliable and
+  owns the row.
+- **Proof is `UptimeRebootProof.IsProven`**, the same clock-immune test the wave uses: uptime
+  (`LocalDateTime − LastBootUpTime`, both from ONE query) must have collapsed by more than
+  `RebootWave.UptimeProofMargin` = **2 min** (`RebootWave.cs:47`). **Not a boot-time comparison** — a clock
+  step (NTP correction on a drifted VM, manual set, DST jump) moves both readings and cancels out, so it
+  cannot report a reboot that never happened. An unreadable read returns null and is never a false success.
+- **Stand-down beats proof.** `ShouldStandDown(isOnline)` is true the moment the monitor sees the box go
+  offline (`FastRebootWatch.cs:71`) — the normal transition then owns the row and a second writer would only
+  race it.
+- **Give-up is the wave's forced window, not the fast window** (`ShouldGiveUp`, `:79`). Standing down at
+  2 min is not the same as giving up: a genuinely slow box must not be called failed while it is still
+  legitimately committing. The backstop (`GiveUpUnprovenRebootAsync`, `WorkspaceViewModel.cs:6468`) waits out
+  `RebootWaveOptions.Default.ForcedGoOfflineWindow` in **20 s slices**, not one long sleep — a single Delay
+  held the per-host watch claim for the whole window even when the monitor resolved the row seconds in, which
+  blocked any later Force reboot's watch.
+- **Capacity is RESERVED, not jittered.** `FastRebootWatch.MaxConcurrentBulkReads` = **6** of the 8-slot
+  shared `_bootTimeThrottle` (`WorkspaceViewModel.cs:208,216`); the remaining 2 are a hard reservation for
+  the monitor's own transition read. Jitter only spreads a burst statistically — with 50+ rows the monitor
+  can still land behind a wall of waiters. The cap bounds the monitor's worst case to **one read** no matter
+  how many rows were force-rebooted.
+
+**What the operator sees.** Proven → the row is written with the transition's OWN strings, so a proven return
+is indistinguishable from an observed one. Never proven within the forced window → the row lands
+**Unverified** (`VerifyArcTimeout.MarkUnverified`) with a warn line: *"Force reboot: no reboot could be proven
+within N min — the box was never seen to go offline and its uptime never reset. Left Unverified."* The
+backstop rewrites the row **only** if it is still sitting on the exact status this dispatch wrote (captured at
+dispatch, not compared against a literal), so it can never stomp a row another path already resolved. On
+cancellation the watch changes nothing at all — *"we learned nothing, so change nothing"*
+(`WorkspaceViewModel.cs:6415`).
+
+**Known open item (deferred, operator decision 2026-07-28):** neither caller passes a token to
+`RebootForceSelectedAsync`, so the watch runs on `CancellationToken.None` — its give-up delay can't be
+cancelled by Stop, monitoring-off or tab close, and the per-host claim is held for the whole window. A SECOND
+Force reboot on that host inside it gets no watch. See docs/vivre-backlog.md.
+
 ### Readiness vs offline-detection distinction
 
 - **Readiness probe** (`IRebootReadinessProbe`) — PRE-reboot question: "may we reboot this box

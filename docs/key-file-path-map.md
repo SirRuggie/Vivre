@@ -339,7 +339,7 @@ Extracted UI/IO-free predicates, each unit-tested:
 - `ScheduleRegistrationOutcome` — the register-side ASYMMETRY: an unconfirmed reboot-schedule registration (timed out, dropped mid-request, cancelled mid-request, or any unprovable escape — `IsUnconfirmedFailure` buckets the thrown types) is treated as SCHEDULED ("couldn't confirm — verify on the box"), never silently unscheduled; a row goes dark ONLY on proof the command never ran (connect-phase loss / Kerberos / shell-init) or the box's own failure report.
 
 ## Tests
-- `source/Vivre.Core.Tests/...` — **984 green** (v1.16.0, verified via `dotnet test` on 2026-07-18) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
+- `source/Vivre.Core.Tests/...` — **1200 green** (v1.17.1, verified via `dotnet test` on 2026-07-29) — run `dotnet test` for the exact count; the increments below are point-in-time history (344 at the WUG resolution; 360 after the pluggable-wave
   refactor; +7 across the reboot-and-verify build; +11 across the smart-scan build; +49 across the
   staged-patching toggle; +61 across the transient WUA retry / no-false-green build — `TransientWuaError`,
   `TransientRetryRunner`, the WinRM + SMB non-clean-search "never up-to-date" tests, and the
