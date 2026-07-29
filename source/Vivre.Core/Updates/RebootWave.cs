@@ -204,8 +204,12 @@ public sealed class RebootWave
         {
             // Say WHY it was forced: Vivre did not decide to force this box — Windows refused the graceful
             // reboot the operator ordered, and the force flag is the only thing that clears that refusal.
-            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
-                "A user is logged on, so Windows refused the graceful reboot — the reboot you ordered was completed as a FORCED reboot. Watching for it to go down…"));
+            // GRID TEXT ONLY, and deliberately terse: this status is mirrored into BOTH the Reboot message
+            // and Windows update message columns (see the wave's Progress handler), so a sentence here cost
+            // the whole grid width. The full explanation is NOT lost — it is the trace line the trigger
+            // writes to the rolling log when it escalates ("DCOM refused the GRACEFUL reboot — a user
+            // session is logged on (1191)… escalating to the FORCED form…"), which stays byte-unchanged.
+            progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Forced — user logged on"));
         }
 
         // 3) Wait for it to drop off the network; if the graceful reboot the operator ordered won't take
@@ -233,8 +237,9 @@ public sealed class RebootWave
             {
                 // Observed the drop — fall into the commit-watch below exactly as any other rebooting box does.
                 sawOffline = true;
-                progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
-                    "Forced reboot taken (a user was logged on, so the graceful form was refused) — watching it commit…"));
+                // Follow-up state: the SAME short form the window-expiry escalation already uses below, so
+                // both routes to a forced reboot read identically in the grid.
+                progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Escalated to a forced reboot."));
             }
             else if (await ProvenRebootedAsync(host, uptimeBaseline, sinceOrdered.Elapsed, cancellationToken).ConfigureAwait(false))
             {

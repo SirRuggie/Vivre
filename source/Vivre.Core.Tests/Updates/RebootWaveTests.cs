@@ -114,7 +114,10 @@ public class RebootWaveTests
 
         Assert.Equal(PatchPhase.Done, result.Phase);
         Assert.Equal(1, reboot.Dispatches);
-        Assert.Contains(progress.Reports, r => r.Message.Contains("refused the graceful reboot"));
+        // The escalation still narrates WHY it was forced, now in the terse GRID form: this status is
+        // mirrored into two columns, so the old sentence consumed the whole grid width. The full 1191
+        // explanation lives in the trigger's trace line, which is unchanged.
+        Assert.Contains(progress.Reports, r => r.Message == "Forced — user logged on");
         Assert.Contains(progress.Reports, r => r.Message.Contains("Committing (offline)"));
     }
 
