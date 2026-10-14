@@ -193,6 +193,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // 8 mirrors the reboot-probe cap: Enable WinRM targets sick boxes, and hammering a degraded target
     // with a wide burst makes it worse; worst case for an all-hung selection is ceil(N/8) x ~25s.
     private static readonly SemaphoreSlim _enableWinRmThrottle = new(8);
+    private static readonly SemaphoreSlim _retryWinRmThrottle = new(8);
+    private bool _winRmRetryRunning;
+    public bool CanRetryWinRm => !_winRmRetryRunning && _powerShell is IWinRmRecovery;
+
     // Caps the monitor's per-pass reachability fan-out. The monitor pings (and DCOM-probes) every row
     // every MonitorIntervalSeconds; a 300-box list would otherwise launch 300 concurrent probes at once,
     // and N open tabs would multiply that. Shared across tabs (like _rebootProbeThrottle) so the whole app
@@ -6124,6 +6128,77 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
+            IncrementSweepCompleted(record);
+        }
+    }
+
+    /// <summary>Explicit, read-only recovery check for the selected machines using this credential
+    /// snapshot. The Core recovery service bounds the connection check and fences stale cache writes.</summary>
+    public async Task RetryWinRmSelectedAsync()
+    {
+        if (!CanRetryWinRm || _powerShell is not IWinRmRecovery recovery) { return; }
+        var rows = SelectedComputers.ToList();
+        if (rows.Count == 0) { return; }
+        ConnectionCredential? credential = _credentials.Current;
+        var (cts, record) = BeginOperation("Retrying WinRM", rows, registerRows: false);
+        _winRmRetryRunning = true;
+        try
+        {
+            foreach (Computer row in rows) { row.CommandResult = "WinRM: waiting to retry…"; }
+            await Task.WhenAll(rows.Select(row => RetryWinRmRowAsync(row, recovery, credential, record, cts.Token)));
+        }
+        finally
+        {
+            _winRmRetryRunning = false;
+            EndOperation(cts, record);
+        }
+    }
+
+    private async Task RetryWinRmRowAsync(Computer computer, IWinRmRecovery recovery,
+        ConnectionCredential? credential, OperationRecord record, CancellationToken token)
+    {
+        bool acquired = false;
+        try
+        {
+            await _retryWinRmThrottle.WaitAsync(token);
+            acquired = true;
+            token.ThrowIfCancellationRequested();
+            computer.CommandResult = "WinRM: checking fresh connection…";
+            WinRmRetryResult result = await recovery.RetryWinRmAsync(
+                computer.Name, credential?.ToPowerShellCredential(), 5985, false, token);
+            token.ThrowIfCancellationRequested();
+            // Settings may change while the old credential is being checked. Its isolated cache verdict
+            // remains valid for that connection, but cannot be advertised as verifying the new settings.
+            if (!ReferenceEquals(credential, _credentials.Current))
+            {
+                computer.CommandResult = "WinRM: credentials changed — retry with current settings";
+                _activity.Warn(computer.Name, computer.CommandResult);
+                return;
+            }
+            computer.CommandResult = result.Outcome switch
+            {
+                WinRmRetryOutcome.Succeeded => "WinRM: connection verified",
+                WinRmRetryOutcome.TimedOut => "WinRM: retry timed out",
+                WinRmRetryOutcome.Cancelled => "WinRM: retry cancelled",
+                _ => $"WinRM: retry failed — {result.Message}",
+            };
+            if (result.Outcome is WinRmRetryOutcome.Succeeded or WinRmRetryOutcome.Cancelled)
+                _activity.Info(computer.Name, $"Retry WinRM: {result.Message}");
+            else
+                _activity.Warn(computer.Name, $"Retry WinRM: {result.Message}");
+        }
+        catch (OperationCanceledException)
+        {
+            computer.CommandResult = "WinRM: retry cancelled";
+        }
+        catch (Exception ex)
+        {
+            computer.CommandResult = $"WinRM: retry failed — {ex.Message}";
+            _activity.Error(computer.Name, computer.CommandResult);
+        }
+        finally
+        {
+            if (acquired) { _retryWinRmThrottle.Release(); }
             IncrementSweepCompleted(record);
         }
     }

@@ -341,6 +341,18 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = Machines, Icon = SymbolRegular.PlugConnected24, Title = "How do I retry WinRM after a connection repair?",
+            Keywords = "winrm kerberos retry recover cache credentials connection repair",
+            Lines =
+            [
+                "Select the machine(s), then right-click ▸ Retry WinRM. It makes a fresh connection check with your current remote credentials, even when Vivre cached an earlier Kerberos rejection. Each dispatched check is limited to 25 seconds.",
+                "A verified connection clears that connection's cached rejection so later operations can use WinRM again. The row and Activity report success, failure, timeout, or cancellation; Stop cancels outstanding checks.",
+                "This is a connection check only: it does not enable remoting, change server configuration, or replay a script, installation, or reboot. Check Vitals again to refresh the existing health snapshot.",
+                "Saving changed credentials permits a fresh attempt for that identity. Routine monitoring still avoids repeatedly retrying a cached Kerberos rejection.",
+            ],
+        },
+        new HelpTopic
+        {
             Category = Machines, Icon = SymbolRegular.PlugConnected24, Title = "How do I enable WinRM on a machine?",
             Keywords = "winrm psremoting enable dcom remoting unreachable",
             Lines =
@@ -670,6 +682,7 @@ public static class HelpContent
             [
                 "• Try right-click ▸ Enable WinRM (PSRemoting)… — it works over DCOM, a different channel — to turn on remoting.",
                 "• Set an admin account in Settings (left navigation) ▸ Remote credentials if your login can't reach the target.",
+                "• After repairing a Kerberos or connection problem, select the machine and use Retry WinRM to check it again without restarting Vivre.",
                 "• Confirm the box is online (Ping All) and not blocked by firewall.",
             ],
         },

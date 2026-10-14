@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **WinRM can recover from cached Kerberos rejection without restarting Vivre.** Retry WinRM checks selected machines using current credentials and restores the connection only after verification. Cached decisions are isolated by connection and credentials; failed or cancelled retries cannot produce a false success.
 - **WhatsUp Gold refuses ambiguous device identities.** State reads and maintenance changes share a resolver that requires one valid device ID, so duplicate names cannot select the first result. Ambiguous machines are skipped with full-name retry guidance; mixed batches report actual changes separately from ambiguity, absence, and lookup failure.
 - **Stage software preserves the previous package while verifying its replacement.** Local, SMB, and WinRM staging verify package contents before publishing; folder replacement removes obsolete files without touching neighboring packages. Replacement failures report recovery guidance, and uncertain SMB outcomes do not trigger a second replacement over WinRM. Staging remains copy-only.
 - **Saved RDP connections and logins now have safer persistence.** Saves prepare a separate file before replacement and retain a recoverable backup. Failed loads cannot silently overwrite the saved data with an empty tree; backup recovery and missing saved logins are reported. Passwords remain protected with Windows DPAPI, including in backups.

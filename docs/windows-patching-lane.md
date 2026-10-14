@@ -36,6 +36,13 @@ filenames (`Vivre_WUA_<runId>.*`) isolate concurrent runs.
 
 ## Kerberos-broken hosts: the SMB + SCM fallback lane
 
+Cached Kerberos rejections are scoped to the host, WinRM port/TLS settings, and session credential
+identity. **Retry WinRM** in the machine context menu performs a bounded, harmless connection check;
+only verified success restores that connection to WinRM. Replacing credentials permits a fresh
+attempt, while ordinary polling still fast-fails known rejected connections. Old in-flight attempts
+cannot overwrite a newer retry verdict. This action never replays a scan, install, or reboot; fallback
+selection and the existing per-host shell gate remain in place.
+
 A growing set of domain servers reject WinRM with Kerberos `0x80090322` (SEC_E_WRONG_PRINCIPAL). For
 those, both transports above are dead, so Vivre falls back to the **BatchPatch/PsExec model**, driven
 entirely from the operator's machine on the **current Windows login** (NTLM SSO — no Kerberos, no

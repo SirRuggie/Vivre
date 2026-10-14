@@ -29,6 +29,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   approved target snapshot even if the selection changes while the prompt is open.
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
+  **Retry WinRM** performs a fresh connection check after a repair, clearing a cached Kerberos
+  rejection only when verified. Changed credentials get a fresh attempt without restarting Vivre.
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.
 - **Stage software** — copy a package (a single MSI/EXE, or a folder of files) to the selected
   machines (default `C:\Windows\Temp\VivrePackages`), with a per-machine result. Uses the fast SMB

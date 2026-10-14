@@ -544,6 +544,14 @@ public partial class WorkspaceView : UserControl
         }
         _gridMenu.Items.Add(clientActions);
 
+        var retryWinRm = WithIcon(new MenuItem
+        {
+            Header = "Retry WinRM",
+            IsEnabled = vm.SelectedComputers.Count > 0 && vm.CanRetryWinRm,
+        }, SymbolRegular.PlugConnected24);
+        retryWinRm.Click += async (_, _) => await vm.RetryWinRmSelectedAsync();
+        _gridMenu.Items.Add(retryWinRm);
+
         var enableWinRm = WithIcon(new MenuItem { Header = "Enable WinRM (PSRemoting)…" }, SymbolRegular.PlugConnected24);
         enableWinRm.Click += OnEnableWinRm;
         _gridMenu.Items.Add(enableWinRm);

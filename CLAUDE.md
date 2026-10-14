@@ -176,6 +176,10 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   ending Unverified without proof. Preserve dispatch count, force flags, and existing escalation timing.
   Start and cleanup diagnostics must remain separate and visible in Release logs. F03 evidence and
   runtime limits live in `docs/vivre-review-decisions.md`.
+- WinRM rejection caching is connection/credential-specific. Retry WinRM must be a bounded, harmless
+  verification that bypasses the cached rejection; only a clean verified result may clear it. Fence old
+  attempts so they cannot overwrite newer retries; never hash/store passwords in cache keys or replay
+  a prior operation. Routine polling must retain rejection suppression.
 - WhatsUp Gold state reads and maintenance changes share one identity resolver. Require exactly one
   distinct valid device ID; never select the first name match or use DNS/IP to bypass name ambiguity.
   Preserve explicit ambiguity/lookup-error/no-device outcomes and actual per-name mutation success.

@@ -20,7 +20,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F04 | RDP persistence and recovery | Implemented; independent review accepted | Authorized October 14, 2026 |
 | F05 | Consistent and recoverable package staging | Implemented; independent review accepted | Authorized October 14, 2026 |
 | F06 | Ambiguous WUG device names | Implemented; independent red-team accepted; 1,340 tests passed | Authorized October 14, 2026 |
-| F07 | Recovery from cached Kerberos failure | Direction agreed; per-host retry and fresh attempt after credential change | Not authorized |
+| F07 | Recovery from cached Kerberos failure | Implemented and locally verified; 1,353 tests passed | Authorized October 14, 2026 |
 | F08 | Software absence versus query failure | Direction agreed; installed, absent, and could-not-check results | Not authorized |
 | F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Committed and pushed |
 | F10 | Preference write ordering and exit | Direction agreed; ordered saves and bounded normal-exit flush | Not authorized |
@@ -239,7 +239,7 @@ Shaun approved recovering from stale Kerberos failure decisions without restarti
 3. Changing credentials must allow a fresh WinRM attempt rather than inheriting the previous identity's permanent rejection.
 4. Preserve the avoidance of repeated slow attempts during routine monitoring; this agreement does not add continuous automatic retries on every poll.
 
-**Implementation status: not started. Authorization: not granted.** No implementation priority has been selected. The action's precise UI placement and safe handling of concurrent cache updates remain engineering details for authorized implementation.
+**Implementation status: implemented and locally verified. Authorization: Shaun said “Next” after F06 delivery on October 14, 2026.** Includes the per-machine Retry WinRM action, connection-aware rejection caching, credential-change recovery, and stale-result protection. Validation used controlled test doubles; no live server operation or deployment was performed.
 
 ### Proposed acceptance checks for later implementation
 
@@ -250,7 +250,7 @@ Shaun approved recovering from stale Kerberos failure decisions without restarti
 - Routine monitoring retains its existing protection against repeated slow connection failures.
 - The retry is a connection check, not a replay of a prior script, install, or reboot operation.
 
-These checks have not been run. No additional independent red-team requirement was explicitly requested for F07; the requirements already recorded for F03 and F06 remain in force.
+Local acceptance checks passed in focused routing/recovery tests and the full regression suite. Main reviewed the implementation and corrected concurrency/cancellation handling. No separate independent red-team acceptance or live Kerberos validation is claimed for F07.
 
 ## F08 Software absence versus query failure
 
@@ -699,3 +699,62 @@ unique matches and require independent red-team review. F12 remains skipped.
 **Recommended next: F07 — recovery from cached Kerberos failure.** Provide a deliberate per-host
 WinRM retry and a fresh attempt after credential changes, so a temporary failure does not keep a
 recovered server on fallback for the rest of the session. F07 remains unstarted; F12 remains skipped.
+
+
+## F07 capability and acceptance ledger
+
+| Capability | Status | Required evidence |
+|---|---|---|
+| Explicit Retry WinRM bypasses cached rejection | Implemented and tested locally | Harmless fresh connection check; verified success restores relevant connection |
+| Failure, timeout and cancellation remain truthful | Implemented and tested locally | Bounded return, no false healthy verdict, late-result fencing |
+| Credential and endpoint isolation | Implemented and tested locally | Same-name credential replacement, host/port/TLS isolation; no secrets in keys/logs |
+| Routine monitoring avoids repeated failed attempts | Implemented and tested locally | Cached rejection regression for normal and streaming operations |
+| Operator can recover selected machines | Implemented; source-reviewed and compiled | Context-menu wiring, current credentials, row/Activity outcome and Stop support |
+| Regression and delivery | Verified locally; authorized commit/push | 22 focused tests, main source review, full solution build and 1,353 passing regression tests |
+| Live WinRM/Kerberos validation | Outside local validation | No real server or production authentication used |
+
+
+### F07 review checkpoint
+
+- Operator action is **Retry WinRM** in the selected-machine context menu. It uses the current
+  credential snapshot, checks at most eight machines concurrently, and bounds each dispatched check
+  to 25 seconds. Stop cancels queued/in-flight checks. It only updates Command result and Activity;
+  Check Vitals refreshes the prior health snapshot.
+- Connection decisions use host, port, TLS, normalized username and a weak in-memory credential
+  identity token. Password contents and password hashes are absent from keys and logs. New wrappers
+  around the same saved credential retain suppression; replacing its password identity permits a
+  fresh attempt even for the same username.
+- Review requires atomic route/generation snapshots for normal calls, sticky ordinary Kerberos
+  rejections, and recovery generation fencing at both start and completion. A late ordinary request,
+  including one dispatched during recovery, must not overwrite the newer verified result.
+- Verification runs only a harmless sentinel script through the existing WinRM host/gate. Script
+  errors, missing verification output, timeout, cancellation and supersession cannot report success.
+  No scan, install, reboot, server configuration change or previous script is replayed.
+
+
+### F07 final local verification and delivery
+
+- Main final full regression: **1,353 passed, zero failed, zero skipped** (2m57s). The implementation
+  worker also passed 22 focused routing/recovery cases and the full suite before the final queued-task
+  cancellation guard. Main verified the final guard with the full regression run.
+- Main full solution build, including Desktop: **zero errors, one known missing agent-signing
+  certificate warning**. The local UpdateAgent remains unsigned; no release or deployment was made.
+- Main personally inspected the cache, routing/recovery service, deterministic tests, Desktop menu,
+  row/Activity handling, and documentation. Review corrections preserve sticky ordinary rejection,
+  atomically capture route/generation, and fence requests both before and during explicit recovery.
+  Cancellation is checked before queued dispatch and before reporting verification success.
+- Tests exercise successful recovery, missing/error verification output, timeout and cancellation
+  with an uncooperative inner task, late normal/retry results, endpoint and credential isolation,
+  same-username credential replacement, and streaming suppression. All use dummy hosts and credentials;
+  no live WinRM, AD/Kerberos repair, server mutation, or production authentication was exercised.
+- The Desktop action was source-reviewed and compiled, not interactively exercised against a real
+  server. Existing health readings remain snapshots until Check Vitals refreshes them. Timeout/Stop
+  bounds waiting and requests cancellation; it is not evidence that every underlying OS activity
+  has already terminated. Late completion cannot change the recovery verdict.
+- Help, README, repository guidance, patching-lane documentation, and Unreleased notes are updated.
+  Delivery uses the standing authorization for a conventional commit/push, with no attribution trailers
+  or version bump. `git diff --check` passed.
+
+**Recommended next: F08 — distinguish software absence from a failed check.** Show “Could not check”
+when a registry/provider query fails, so an access failure cannot be mistaken for “Not installed.”
+F08 remains unstarted; F12 remains skipped.
