@@ -403,7 +403,7 @@ One earlier deployment-test pass created `C:\ProgramData\Vivre\protected-staging
 its registry dependency was redirected to disposable test storage. Main-agent inspection found only
 synthetic fixture paths (NYC-FP1 and VivreStageTest/VivreStageDest paths). Automatic approval review
 rejected guarded deletion because the machine-wide location can contain operational protection
-state. The file remains untouched pending user approval. All current deployment fixtures use
+state. Shaun subsequently approved removal conditional on the file containing only dummy data. Every host/path entry was rechecked against the exact observed test entries, and only the JSON registry file was deleted. No listed package or directory was deleted. All current deployment fixtures use
 isolated, self-cleaning temporary registries.
 
 Operational limits: guards are local to this Vivre process, normalize case/trailing dots/local aliases,
@@ -431,8 +431,7 @@ No live server testing, release, or deployment has occurred. Commit and push wer
 - Interactive WPF operation on a live server remains untested. Local compilation and mocked service
   fixtures do not establish a production canary result.
 
-The F01/F09 implementation batch is locally complete. The synthetic ProgramData registry cleanup
-remains pending approval because automatic review rejected its deletion. Shaun subsequently authorized committing and pushing this batch, with short conventional commit subjects and no attribution trailers. See Git history for delivery.
+The F01/F09 implementation batch is locally complete. The synthetic ProgramData registry was removed after Shaun approved cleanup and every entry was verified as dummy test data. Shaun authorized committing and pushing this batch, with short conventional commit subjects and no attribution trailers. See Git history for delivery.
 
 **Recommended next batch: F02.** Show concise target count/scope and force consequences while retaining
 exactly the approved target snapshot. Avoid listing 30 machine names; preserve existing timing and
