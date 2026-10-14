@@ -6,7 +6,7 @@ Last updated: October 14, 2026.
 
 ## Authorization and status
 
-**Implementation authorized October 14, 2026.** Shaun asked to start tackling the agreed findings. F01 + F09 (Details > Free up disk space) are implemented, tested, committed, and pushed; the Server 2016 component-cleanup workflow is preserved. F02 is also implemented, locally validated, committed, and pushed. F03 is implemented and locally validated, including independent red-team review; delivery is recorded in Git history. Other agreed findings remain queued; F12 remains explicitly skipped. Shaun authorized commits and pushes with short conventional messages. Deployment and live destructive validation remain outside scope.
+**Implementation authorized October 14, 2026.** Shaun asked to start tackling the agreed findings. F01 + F09 (Details > Free up disk space) are implemented, tested, committed, and pushed; the Server 2016 component-cleanup workflow is preserved. F02 is also implemented, locally validated, committed, and pushed. F03 is implemented and locally validated, including independent red-team review; delivery is recorded in Git history. F04 through F11 are now implemented and locally validated with delivery recorded in Git history; F12 remains explicitly skipped. Shaun authorized commits and pushes with short conventional messages. Deployment and live destructive validation remain outside scope.
 
 The original report's severity ratings remain review assessments, not an agreed implementation order. Record a priority change only when Shaun makes that decision. Keep unreviewed findings pending rather than treating silence as acceptance.
 
@@ -24,7 +24,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F08 | Software absence versus query failure | Implemented; independent red-team accepted; 1,392 tests passed | Authorized October 14, 2026 |
 | F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Committed and pushed |
 | F10 | Preference write ordering and exit | Implemented; independent review accepted; 1,406 tests passed | Authorized October 14, 2026 |
-| F11 | WinRM staging memory and temporary files | Direction agreed; bounded chunks, integrity checks, owned-file cleanup | Not authorized |
+| F11 | WinRM staging memory and temporary files | Implemented; red-team fixes integrated; 1,441 tests passed (validation limits below) | Authorized commit and push |
 | F12 | Concurrent Server 2016 staging files | Skipped by Shaun; excluded from implementation queue | Not authorized |
 
 ## F01 Details window disk cleanup
@@ -339,7 +339,7 @@ Shaun approved limiting memory use and cleaning up temporary transfer files in *
 4. If the destination is unreachable, retain enough transfer ownership/path information for safe later cleanup, and report that cleanup remains pending rather than claiming completion.
 5. Cleanup must target only verified files owned by that transfer, never another active transfer, the usable staged package, or unrelated files.
 
-**Implementation status: not started. Authorization: not granted.** No implementation priority has been selected. Coordination with F05's verified package replacement is required if both are implemented; this decision does not authorize changes to the Server 2016 CU lane or automatic package execution.
+**Implementation status: implemented and locally validated October 14, 2026. Authorization: granted by Shaun’s “continue”.** This implementation integrates with F05's verified package replacement; this decision does not authorize changes to the Server 2016 CU lane or automatic package execution.
 
 ### Proposed acceptance checks for later implementation
 
@@ -350,7 +350,7 @@ Shaun approved limiting memory use and cleaning up temporary transfer files in *
 - Concurrent transfers use distinct ownership identifiers and do not overwrite or clean up each other's files.
 - Existing SMB-first behavior and copy-only staging remain intact.
 
-These checks have not been run. Retry scheduling, persistence of pending cleanup, and concurrency limits remain engineering details for authorized implementation; no background automation or live cleanup has been started by this decision.
+Implementation evidence and remaining limitations are recorded in the F11 ledger below. Pending remote cleanup retries on a later explicit staging request; no background automation or live cleanup has been started.
 
 ## F12 Concurrent Server 2016 staging files
 
@@ -822,3 +822,63 @@ Implementation uses a Sol worker for queue concurrency and root for Desktop inte
 - `dotnet test source/Vivre.slnx --no-build -v minimal`: **1,406 passed**, zero failed/skipped, 2m35s.
 - Independent review and root final inspection found no outstanding correctness blocker. `git diff --cached --check` passed.
 - Delivery uses a short `fix:` commit on master; exact commit/push are in Git history. No release or deployment.
+
+## F11 implementation ledger — October 14, 2026
+
+| Capability | Status |
+| --- | --- |
+| Disk-backed ZIP and bounded byte/base64 buffers | Implemented; 5 focused tests and 8/32/96 MiB live-memory sampling passed |
+| ZIP SHA-256 and existing manifest/publication checks | Implemented; real PowerShell 5.1 publication and truncated-archive preservation tests passed; final multi-chunk regression passed |
+| Transfer-owned cleanup after success/failure/cancellation | Implemented; lifecycle tests passed; tombstone interruption checks passed |
+| Durable pending cleanup and safe later retry | Implemented; unreachable cleanup retry passed; isolated journal and full-suite checks passed |
+| Active/concurrent transfer and unrelated-file protection | Implemented; lease, busy-lock, unknown-file, collision and recovery tests passed; symlink execution remains unverified |
+| SMB-first, copy-only behavior and Server 2016 CU separation | Preserved; existing regression suite passed |
+
+Sol workers own separate archive and remote-script helpers; root owns orchestration/journal integration. Independent red-team findings and their resolution are recorded below. No live transfers or cleanup are authorized by this implementation batch.
+
+### F11 validation checkpoint
+
+- Archive helper: 5 focused tests passed, including round-trip bytes/hash/empty folders and cancelled
+  archive cleanup. Dummy 8/32/96 MiB payloads sampled at 3.7/3.9/3.7 MiB peak additional managed live
+  memory. Forced collections perturb the runtime; these values exclude native/OS buffers and are not
+  a total-process working-set ceiling. Manifest/ZIP metadata still scales with entry count.
+- Independent red-team review identified late initialization losing its journal and interrupted cleanup
+  losing its ownership marker. The integration retains uncertain initialization records; the cleanup
+  helper now uses an ownership-coded tombstone. Child reparse checks are implemented; execution limits are below.
+- Existing cross-process publication coordination, manifest entry-count scaling, pre-transfer manifest
+  cancellation, and old-backup partial deletion were noted as limitations of the pre-existing F05 path;
+  this batch does not claim to resolve them. Server 2016 F12 remains explicitly skipped.
+- Final integration, executable corruption/retry tests, and full solution checks passed. Commit and push are authorized; delivery is recorded in Git history.
+
+Additional review resolution: remote initialization now has a 30-second cancellable local wait;
+abandonment retains the journal without racing immediate cleanup. Its temporary initialization path
+is deterministic and recorded through the ownership token. Local ZIP deletion failures report the
+exact path for manual cleanup; automatic local ZIP recovery is not included. Incomplete initializer
+metadata is conservatively retained for manual verification rather than deleting unproven files.
+
+Validation limitation: the Windows account cannot create symbolic links (confirmed by a separate
+file-link privilege probe). The four conditional script reparse cases return early on this host;
+their passing test entries do not establish executed reparse protection. Static checks are present,
+but those cases require an appropriately privileged test environment. No live WinRM/SMB transfers,
+server cleanup, deployment, or signing-certificate changes were performed.
+
+### F11 final verification
+
+- `dotnet build source/Vivre.slnx --no-restore -v minimal`: succeeded, zero errors, one existing
+  missing agent-signing-certificate warning.
+- `dotnet test source/Vivre.slnx --no-build -v minimal`: **1,441 passed**, zero failures, 4m46s.
+  The runner reports zero skips, but four conditional reparse cases returned early because symbolic
+  link creation lacks privileges; do not treat those cases as executed protection evidence.
+- Real Windows PowerShell 5.1 fixtures verified multi-chunk publication, ZIP SHA-256 rejection of a
+  truncated transfer with the previous package unchanged, owned cleanup, busy locks, mismatched
+  ownership/offsets, unknown-file preservation, partial tombstone recovery and initializer collisions.
+- Fake transport tests verified successful staging, missing acknowledgements, chunk cancellation,
+  unknown publication response, unresponsive initializer cancellation without racing cleanup,
+  bounded unresponsive cleanup, durable pending retry before SMB, and active-transfer exclusion.
+- Journal tests verified independent-instance leases, distinct transfer identities, durable initialization
+  acknowledgement, host filtering and refusal of tampered path records.
+- `git diff --check`: passed. No live servers contacted; no deployment or version change.
+
+**Recommended next:** review the recorded validation gaps before authorizing another implementation
+batch. F11 closes the agreed queue; F12 remains skipped. Live transport behavior, privileged reparse
+fixtures and the documented pre-existing F05 limitations are not claimed as verified or resolved.

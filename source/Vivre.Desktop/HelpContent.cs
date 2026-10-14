@@ -297,7 +297,7 @@ public static class HelpContent
                 "Stop cancels work that has not been dispatched. A copy or replacement already sent may finish; wait for its row result and check any recovery guidance before retrying.",
                 "5. Install it your way — e.g. right-click ▸ Run script ▸ pointing at the staged path (C:\\Windows\\Temp\\VivrePackages\\<package>\\install.ps1), or your normal batch / Company Portal flow.",
             ],
-            Tip = "Vivre only delivers the files — it doesn't run them — so security agents (SentinelOne/CrowdStrike) that disrupt WinRM during an install can't break the copy, and you keep full control of the install. It copies over the fast SMB admin share (\\\\machine\\C$), falling back to WinRM (chunked + SHA-256 verified) where SMB is blocked. Either way it needs admin rights on the target.",
+            Tip = "Vivre only delivers the files — it doesn't run them — so security agents (SentinelOne/CrowdStrike) that disrupt WinRM during an install can't break the copy, and you keep full control of the install. It copies over the fast SMB admin share (\\\\machine\\C$), falling back to WinRM (chunked + SHA-256 verified) where SMB is blocked. WinRM uses a temporary ZIP on local disk and bounded transfer chunks. If temporary-file cleanup cannot finish, the result shows the pending path and the next staging request to that host retries cleanup. Either way it needs admin rights on the target.",
         },
         new HelpTopic
         {

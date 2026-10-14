@@ -1,8 +1,6 @@
 using System.Collections.Concurrent;
 using System.IO;
-using System.IO.Compression;
 using System.Management.Automation;
-using System.Security.Cryptography;
 using Vivre.Core.Operations;
 using Vivre.Core.PowerShell;
 
@@ -25,25 +23,24 @@ namespace Vivre.Core.Deploy;
 /// </remarks>
 public sealed class DeploymentService : IDeploymentService
 {
-    /// <summary>Base64 characters per chunk command (~2 MiB of script text) on the WinRM fallback path.
-    /// Comfortably under WinRM's per-command limits with ~10× margin below the size that fails, while
-    /// keeping the round-trip count low. Multiple of 4 so each chunk decodes to a whole number of bytes.</summary>
-    private const int Base64ChunkLength = 2_097_152;
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> PublicationLocks = new(StringComparer.OrdinalIgnoreCase);
 
     private readonly IPowerShellHost _powerShell;
     private readonly HostOperationCoordinator _operations;
     private readonly ProtectedStagingPathRegistry _protectedPaths;
+    private readonly StagingTransferJournal _transfers;
 
     /// <param name="powerShell">The remoting host all transport goes through.</param>
     public DeploymentService(
         IPowerShellHost powerShell,
         HostOperationCoordinator? operations = null,
-        ProtectedStagingPathRegistry? protectedPaths = null)
+        ProtectedStagingPathRegistry? protectedPaths = null,
+        StagingTransferJournal? transfers = null)
     {
         _powerShell = powerShell;
         _operations = operations ?? new HostOperationCoordinator();
         _protectedPaths = protectedPaths ?? new ProtectedStagingPathRegistry();
+        _transfers = transfers ?? new StagingTransferJournal();
     }
 
     public async Task<StageResult> StageAsync(
@@ -82,7 +79,15 @@ public sealed class DeploymentService : IDeploymentService
         await gate.WaitAsync(token).ConfigureAwait(false);
         try
         {
-            return await StagePreparedAsync(host, plan, credential, token, claim).ConfigureAwait(false);
+            string? pending = null;
+            if (!HostName.IsLocal(host))
+            {
+                try { pending = await RetryPendingCleanupAsync(host, credential, token).ConfigureAwait(false); }
+                catch (OperationCanceledException) { throw; }
+                catch (Exception ex) { return new StageResult(false, null, $"Staging blocked — pending transfer cleanup records could not be read: {ex.Message}"); }
+            }
+            StageResult result = await StagePreparedAsync(host, plan, credential, token, claim).ConfigureAwait(false);
+            return pending is null ? result : result with { Message = result.Message + " " + pending };
         }
         finally { gate.Release(); }
     }
@@ -232,80 +237,156 @@ public sealed class DeploymentService : IDeploymentService
     private async Task<StageResult> WinRmStageAsync(
         string host, PackagePublicationPlan plan, PSCredential? credential, string? smbError, CancellationToken token)
     {
-        string sourcePath = plan.Source;
-        bool sourceIsFolder = plan.IsFolder;
-        string targetPath = plan.Target;
-        byte[] payloadZip;
+        StagingArchive? archive = null;
+        StagingTransferJournal.Lease? lease = null;
+        bool remoteAttempted = false;
+        bool publicationStarted = false;
+        bool initializationOutstanding = false;
+        StageResult result = Fail(host, smbError, "transfer did not complete");
+        OperationCanceledException? cancellation = null;
+        var cleanupNotes = new List<string>();
         try
         {
-            payloadZip = ZipSource(sourcePath, sourceIsFolder);
-        }
-        catch (Exception ex)
-        {
-            return Fail(host, smbError, $"couldn't package the source: {ex.Message}");
-        }
+            archive = await StagingArchive.CreateAsync(plan.Source, plan.IsFolder, token).ConfigureAwait(false);
+            _protectedPaths.Register("localhost", archive.Path);
+            lease = _transfers.Create(host, plan.Target);
+            StagingTransferRecord transfer = lease.Record;
+            _protectedPaths.Register(host, transfer.Directory);
+            _protectedPaths.Register(host, transfer.Directory + ".cleanup-" + transfer.OwnerToken);
+            _protectedPaths.Register(host, transfer.Directory + ".init-" + transfer.OwnerToken);
+            token.ThrowIfCancellationRequested();
+            remoteAttempted = true;
+            // Let the short remote initialization finish atomically, but bound our wait. An abandoned
+            // initializer keeps its journal and must not race immediate cleanup.
+            initializationOutstanding = true;
+            Task<PSExecutionResult> initialization = _powerShell.RunRemoteAsync(host,
+                StagingTransferScripts.BuildInitialize(transfer.Directory, transfer.Id, transfer.OwnerToken),
+                credential, cancellationToken: CancellationToken.None);
+            _ = initialization.ContinueWith(t => _ = t.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            PSExecutionResult initialized = await initialization.WaitAsync(TimeSpan.FromSeconds(30), token).ConfigureAwait(false);
+            initializationOutstanding = false;
+            RequireTransferSuccess(initialized, "initialize transfer");
+            lease.MarkInitialized();
+            token.ThrowIfCancellationRequested();
 
-        string base64Zip = Convert.ToBase64String(payloadZip);
-        string expectedSha256 = Convert.ToHexString(SHA256.HashData(payloadZip));
-        string zipName = $"VivreStage_{Guid.NewGuid():N}.zip";
-
-        try
-        {
-            for (int offset = 0; offset < base64Zip.Length; offset += Base64ChunkLength)
+            await foreach (StagingArchiveChunk chunk in archive.ReadChunksAsync(token).ConfigureAwait(false))
             {
-                token.ThrowIfCancellationRequested();
-                int length = Math.Min(Base64ChunkLength, base64Zip.Length - offset);
-                string piece = base64Zip.Substring(offset, length);
-                PSExecutionResult chunk = await _powerShell
-                    .RunRemoteAsync(host, BuildChunkScript(zipName, piece, first: offset == 0), credential, cancellationToken: token)
-                    .ConfigureAwait(false);
-                if (TryReadFailure(chunk, out string? failure))
-                {
-                    return Fail(host, smbError, failure!);
-                }
+                RequireTransferSuccess(await _powerShell.RunRemoteAsync(host,
+                    StagingTransferScripts.BuildChunk(transfer.Directory, transfer.Id, transfer.OwnerToken, chunk.Base64, chunk.Offset),
+                    credential, cancellationToken: token).ConfigureAwait(false), "write transfer chunk");
+            }
+
+            token.ThrowIfCancellationRequested();
+            // Once publication begins, preserve F05's non-cancellable replacement/recovery transaction.
+            // Its exclusive transfer lock also prevents a late-running command racing a cleanup retry.
+            string publish = PackagePublication.BuildPublishScript("$payload", true, plan.Target, plan.Stage, plan.Backup,
+                plan.IsFolder, PackagePublication.ManifestBase64(plan.Manifest), archive.Sha256, cleanupSourceZip: false);
+            publicationStarted = true;
+            PSExecutionResult response = await _powerShell.RunRemoteAsync(host,
+                StagingTransferScripts.WrapPublication(transfer.Directory, transfer.Id, transfer.OwnerToken, publish),
+                credential, cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            PSObject? row = response.Output.Count == 1 ? response.Output[0] : null;
+            if (row is null || Value(row, "ok") is not bool || response.HadErrors || response.Errors.Count > 0)
+                result = Fail(host, smbError, $"Publication outcome is unknown. {RecoveryContext(plan)}");
+            else
+            {
+                string message = GetString(row, "message") ?? (GetBool(row, "ok") ? $"Staged and verified at {plan.Target}" : "publication failed");
+                string? recovery = GetString(row, "recoveryPath");
+                if (recovery is not null && !message.Contains(recovery, StringComparison.OrdinalIgnoreCase)) message += $" Recovery path: {recovery}.";
+                result = GetBool(row, "ok") ? new StageResult(true, plan.Target, message) : Fail(host, smbError, message);
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex) { cancellation = ex; }
+        catch (Exception ex) { result = Fail(host, smbError, $"{(publicationStarted ? "Publication outcome is unknown. " : "")}{ex.Message}. {RecoveryContext(plan)}"); }
+        finally
         {
-            throw;
+            if (lease is not null)
+            {
+                try
+                {
+                    string? note = initializationOutstanding
+                        ? $"Transfer initialization may still be running at {lease.Record.Directory}; cleanup remains pending in the saved journal for a later staging request."
+                        : remoteAttempted
+                        ? await CleanupTransferAsync(lease, credential, CancellationToken.None).ConfigureAwait(false)
+                        : CompleteUnstartedTransfer(lease);
+                    if (note is not null) cleanupNotes.Add(note);
+                }
+                finally { lease.Dispose(); }
+            }
+            if (archive is not null)
+            {
+                try { archive.Dispose(); }
+                catch (Exception ex) { cleanupNotes.Add($"Local archive cleanup remains pending at {archive.Path}: {ex.Message}"); }
+            }
         }
-        catch (Exception ex)
-        {
-            return Fail(host, smbError, ex.Message);
-        }
+        string cleanup = string.Join(" ", cleanupNotes);
+        if (cancellation is not null)
+            throw new OperationCanceledException("Staging cancelled. " + cancellation.Message + " " + cleanup, cancellation, token);
+        return cleanup.Length == 0 ? result : result with { Message = result.Message + " " + cleanup };
+    }
 
-        token.ThrowIfCancellationRequested();
-        PSExecutionResult result;
+    private static void RequireTransferSuccess(PSExecutionResult result, string operation)
+    {
+        if (!result.HadErrors && result.Errors.Count == 0 && result.Output.Count == 1 && GetBool(result.Output[0], "ok")) return;
+        string reason = result.Output.Count > 0 ? GetString(result.Output[0], "message") ?? "no valid acknowledgement" : "no acknowledgement";
+        if (result.Errors.Count > 0) reason += ": " + result.Errors[0];
+        throw new IOException($"Could not {operation}: {reason}");
+    }
+
+    private async Task<string?> RetryPendingCleanupAsync(string host, PSCredential? credential, CancellationToken token)
+    {
+        var notes = new List<string>();
+        foreach (StagingTransferJournal.Lease lease in _transfers.AcquirePending(host))
+        {
+            using (lease)
+            {
+                token.ThrowIfCancellationRequested();
+                _protectedPaths.Register(host, lease.Record.Directory);
+                _protectedPaths.Register(host, lease.Record.Directory + ".cleanup-" + lease.Record.OwnerToken);
+                _protectedPaths.Register(host, lease.Record.Directory + ".init-" + lease.Record.OwnerToken);
+                string? note = await CleanupTransferAsync(lease, credential, token).ConfigureAwait(false);
+                if (note is not null) notes.Add(note);
+            }
+        }
+        return notes.Count == 0 ? null : string.Join(" ", notes);
+    }
+
+    private async Task<string?> CleanupTransferAsync(StagingTransferJournal.Lease lease, PSCredential? credential, CancellationToken token)
+    {
+        StagingTransferRecord transfer = lease.Record;
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
         try
         {
-            result = await _powerShell
-                .RunRemoteAsync(host, PackagePublication.BuildPublishScript(
-                    $"\"$env:WINDIR\\Temp\\{zipName}\"", true, targetPath, plan.Stage, plan.Backup,
-                    sourceIsFolder, PackagePublication.ManifestBase64(plan.Manifest), expectedSha256), credential, cancellationToken: CancellationToken.None)
-                .ConfigureAwait(false);
+            Task<PSExecutionResult> cleanup = _powerShell.RunRemoteAsync(transfer.Host,
+                StagingTransferScripts.BuildCleanup(transfer.Directory, transfer.Id, transfer.OwnerToken),
+                credential, cancellationToken: deadline.Token);
+            // A transport ignoring cancellation must not hang the caller. Its remote file lock keeps
+            // a late cleanup mutually exclusive with any other command for this transfer.
+            _ = cleanup.ContinueWith(t => _ = t.Exception, CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            PSExecutionResult response = await cleanup.WaitAsync(deadline.Token).ConfigureAwait(false);
+            RequireTransferSuccess(response, "clean transfer files");
+            if (!transfer.InitializationConfirmed && GetBool(response.Output[0], "absent"))
+                return $"Transfer initialization outcome is unknown at {transfer.Directory}; cleanup record retained because a late initializer may still appear. Retry staging later; if it remains absent, verify remote execution has stopped before manually clearing the record.";
+            lease.Complete();
+            return null;
+        }
+        catch (OperationCanceledException ex) when (token.IsCancellationRequested)
+        {
+            throw new OperationCanceledException($"Transfer cleanup remains pending at {transfer.Directory}; saved for a later staging retry.", ex, token);
         }
         catch (Exception ex)
         {
-            return Fail(host, smbError, $"Publication outcome is unknown: {ex.Message}. {RecoveryContext(plan)}");
+            return $"Transfer cleanup remains pending at {transfer.Directory} (transfer {transfer.Id}): {ex.Message}. Saved for retry on the next Stage software request to this host.";
         }
+    }
 
-        PSObject? row = result.Output.Count > 0 ? result.Output[0] : null;
-        if (row is null)
-        {
-            return Fail(host, smbError, $"Publication outcome is unknown: {(result.Errors.Count > 0 ? result.Errors[0] : "no result returned from the target")}. {RecoveryContext(plan)}");
-        }
-
-        if (GetBool(row, "ok"))
-        {
-            string success = GetString(row, "message") ?? $"Staged and verified at {targetPath}";
-            string? retained = GetString(row, "recoveryPath");
-            if (!string.IsNullOrWhiteSpace(retained) && !success.Contains(retained, StringComparison.OrdinalIgnoreCase)) success += $" Recovery path: {retained}.";
-            return new StageResult(true, targetPath, success);
-        }
-        string detail = GetString(row, "message") ?? "stage failed on the target";
-        string? recovery = GetString(row, "recoveryPath");
-        if (!string.IsNullOrWhiteSpace(recovery)) detail += $" Previous package retained at {recovery}.";
-        return Fail(host, smbError, detail);
+    private static string? CompleteUnstartedTransfer(StagingTransferJournal.Lease lease)
+    {
+        try { lease.Complete(); return null; }
+        catch (Exception ex) { return $"Unstarted transfer record remains pending for {lease.Record.Directory}: {ex.Message}"; }
     }
 
     private static string RecoveryContext(PackagePublicationPlan plan) =>
@@ -318,78 +399,6 @@ public sealed class DeploymentService : IDeploymentService
             ? $"Couldn't stage to {host}: {winrmError}"
             : $"Couldn't stage to {host}: {winrmError} (SMB was tried first: {smbError})";
         return new StageResult(false, null, message);
-    }
-
-    /// <summary>Zips the source for the WinRM fallback: a folder's CONTENTS at the zip root, or a single
-    /// file at the zip root. Returns the bytes (the temp zip is deleted before returning).</summary>
-    private static byte[] ZipSource(string sourcePath, bool sourceIsFolder)
-    {
-        string tempZip = Path.Combine(Path.GetTempPath(), $"Vivre_Stage_{Guid.NewGuid():N}.zip");
-        try
-        {
-            if (sourceIsFolder)
-            {
-                ZipFile.CreateFromDirectory(sourcePath, tempZip, CompressionLevel.Optimal, includeBaseDirectory: false);
-            }
-            else
-            {
-                using var archive = ZipFile.Open(tempZip, ZipArchiveMode.Create);
-                archive.CreateEntryFromFile(sourcePath, Path.GetFileName(sourcePath), CompressionLevel.Optimal);
-            }
-
-            return File.ReadAllBytes(tempZip);
-        }
-        finally
-        {
-            try
-            {
-                if (File.Exists(tempZip))
-                {
-                    File.Delete(tempZip);
-                }
-            }
-            catch (IOException)
-            {
-                // Best-effort temp cleanup; a stray temp zip is harmless and the OS reaps %TEMP%.
-            }
-        }
-    }
-
-    /// <summary>A chunk reported <c>ok = $false</c> (a write failure on the target): pull its message.
-    /// No output / no explicit failure ⇒ keep going (the finalize hash check is the real backstop).</summary>
-    private static bool TryReadFailure(PSExecutionResult result, out string? message)
-    {
-        PSObject? row = result.Output.Count > 0 ? result.Output[0] : null;
-        if (row is not null && row.Properties["ok"] is not null && !GetBool(row, "ok"))
-        {
-            message = GetString(row, "message") ?? "the target reported a write failure.";
-            return true;
-        }
-
-        message = null;
-        return false;
-    }
-
-    /// <summary>
-    /// One chunk command: decode this slice of base64 and append the bytes to the temp zip (the first
-    /// chunk removes any stale file first). Returns <c>{ ok = $true }</c> or <c>{ ok = $false; message }</c>.
-    /// Internal so tests can assert on it.
-    /// </summary>
-    internal static string BuildChunkScript(string zipName, string base64Chunk, bool first)
-    {
-        string resetLine = first ? "Remove-Item $p -Force -ErrorAction SilentlyContinue" : "# append to the file the first chunk created";
-        return $$"""
-        $p = "$env:WINDIR\Temp\{{zipName}}"
-        try {
-            {{resetLine}}
-            $bytes = [Convert]::FromBase64String('{{base64Chunk}}')
-            $fs = [System.IO.File]::Open($p, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write)
-            try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Dispose() }
-            [PSCustomObject]@{ ok = $true }
-        } catch {
-            [PSCustomObject]@{ ok = $false; message = $_.Exception.Message }
-        }
-        """;
     }
 
     // --- PSObject scalar readers (same shape as VitalsProbe / RemediationService) ---

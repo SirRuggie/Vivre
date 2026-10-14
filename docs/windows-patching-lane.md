@@ -806,3 +806,29 @@ Force prompts disclose forced application closure and unsaved-work loss. The wav
 its conditional escalation and existing 8-minute / staged-2016 20-minute wording. Dispatch primitives,
 servicing checks, wave timing, scheduled reboot, and arbitrary scripts are unchanged. Local-host
 warnings still refer to the captured targets. No new confirmation step is added.
+
+## Software staging transfer lifecycle (F11)
+
+The separate Stage software WinRM fallback creates a temporary local ZIP on disk and streams it in
+1 MiB raw chunks. ZIP SHA-256 and the existing package manifest must both pass before replacement.
+Payload memory is bounded; manifest metadata and ZIP entry bookkeeping still depend on file count.
+Local temporary disk space must accommodate the compressed package.
+
+Each remote transfer has an exact random id/token-owned directory beside the destination. Chunk,
+publication, and cleanup scripts check ownership and use an exclusive transfer lock. Cleanup deletes
+only known regular files, via a deterministic ownership-coded tombstone that remains retryable after
+interruption. Unknown files, reparse points, conflicting paths, and busy locks cause refusal.
+
+The local per-user transfer journal is saved before remote initialization; an exclusive file lease
+excludes active transfers and concurrent cleanup retries. Cleanup after failure/cancellation has a
+10-second wait budget. Failures retain the exact directory/id and report pending cleanup; a later
+explicit staging request to that host retries it. An absent path after unacknowledged initialization
+retains the record because a late initializer may still appear; manual record clearance requires
+verification that remote execution stopped. Remote initialization runs independently of caller cancellation, but its local wait is capped at
+30 seconds and can be cancelled; an abandoned initializer retains its journal without immediate
+cleanup. Publication preserves the existing non-cancellable replacement/recovery transaction. Local fixture tests do not establish live server
+behavior. Server 2016 CU staging and SMB-first routing are unchanged.
+
+If local archive deletion fails, the result reports its exact path for manual cleanup after local
+file handles are released. Its protected-path entry is durable; automatic local-archive retry is not
+implemented.

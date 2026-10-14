@@ -117,7 +117,7 @@ internal static class PackagePublication
 
     internal static string BuildPublishScript(
         string sourceExpression, bool sourceIsZip, string target, string stage, string backup, bool isFolder,
-        string manifestBase64, string? expectedZipHash = null)
+        string manifestBase64, string? expectedZipHash = null, bool cleanupSourceZip = true)
     {
         string zipCheck = expectedZipHash is null ? string.Empty :
             $"if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne '{expectedZipHash}') {{ throw 'transferred ZIP SHA-256 mismatch' }}";
@@ -137,7 +137,7 @@ internal static class PackagePublication
         } catch {
             $result = [PSCustomObject]@{ ok=$false; safeToFallback=$false; message="Stage failed: $($_.Exception.Message)"; recoveryPath=$null }
         }
-        if ($sourceIsZip) {
+        if ($sourceIsZip -and ${{cleanupSourceZip.ToString().ToLowerInvariant()}}) {
             try { Remove-Item -LiteralPath $source -Force -ErrorAction Stop }
             catch { $result.message += " Transfer ZIP cleanup failed at $source`: $($_.Exception.Message)" }
         }

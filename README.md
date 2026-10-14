@@ -35,7 +35,9 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Stage software** — copy a package (a single MSI/EXE, or a folder of files) to the selected
   machines (default `C:\Windows\Temp\VivrePackages`), with a per-machine result. Uses the fast SMB
   admin share (like SCCM/PsExec), falling back to WinRM (chunked + SHA-256 verified) where SMB is
-  blocked. Each replacement is verified separately before publication; failed transfers preserve the
+  blocked. WinRM streams a disk-backed ZIP in bounded chunks and cleans transfer-owned temporary files;
+  unreachable cleanup is recorded for retry on the next staging request to that host.
+  Each replacement is verified separately before publication; failed transfers preserve the
   previous package, and replacement failures report recovery guidance. Vivre delivers the files;
   you run the install your way (e.g. Run script…). No install
   runs, so EDR agents that disrupt WinRM mid-install can't break it.

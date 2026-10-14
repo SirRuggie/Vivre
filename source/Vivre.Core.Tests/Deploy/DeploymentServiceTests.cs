@@ -136,14 +136,13 @@ public class DeploymentServiceTests : IDisposable
 
             string all = string.Join("\n----\n", host.RemoteScripts);
             Assert.Contains("FromBase64String", all);     // a chunk command
-            Assert.Contains("FileMode]::Append", all);     // appends bytes
+            Assert.Contains("$expectedOffset", all); // refuses missing or duplicated chunks
             Assert.Contains("Get-FileHash", all);          // finalize verifies
             Assert.Contains("Expand-Archive", all);        // finalize expands
             // A single file expands into the destination's PARENT (the file lands at the exact target).
             Assert.Contains(TargetFileParent, all);
-            // Results are raw objects read via PSObject properties — never ConvertTo-Json (a JSON
-            // string has no 'ok'/'path' properties, so it would make every result misread as failure).
-            Assert.DoesNotContain("ConvertTo-Json", all);
+            // Command results remain raw objects; JSON is used only for the ownership file.
+            Assert.Contains("[PSCustomObject]@{ ok=", all);
             // Staging NEVER runs the payload — none of the install machinery appears.
             Assert.DoesNotContain("New-ScheduledTask", all);
             Assert.DoesNotContain("S-1-5-18", all);
@@ -348,7 +347,8 @@ public class DeploymentServiceTests : IDisposable
     private DeploymentService Service(IPowerShellHost host) => new(
         host,
         protectedPaths: new Vivre.Core.Operations.ProtectedStagingPathRegistry(
-            Path.Combine(_registryRoot, $"{Guid.NewGuid():N}.json")));
+            Path.Combine(_registryRoot, $"{Guid.NewGuid():N}.json")),
+        transfers: new StagingTransferJournal(Path.Combine(_registryRoot, "transfers")));
 
     public void Dispose()
     {

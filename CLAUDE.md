@@ -292,3 +292,15 @@ Good — subject only: `fix: rebuild RDP control on Reconnect and keep involunta
 ### Software-check result integrity
 
 A negative software result requires a completed supported registry search. Provider/read failures without a match must throw, never become absence. Preserve proven matches with QueryWarning; ServiceError is distinct from a verified missing service. WinRM and ambient DCOM fallback share this contract. The grid and SoftwareReportCsv must keep unknowns and reasons visible.
+
+## WinRM software staging (F11)
+
+`StagingArchive` uses a local disk ZIP, incremental SHA-256, and 1 MiB raw chunks. Never replace it
+with whole-package byte/base64 arrays. Manifest metadata still scales with entry count. Transfer scripts
+use an exact id/token-owned directory and exclusive command lock; cleanup uses a deterministic
+ownership-coded tombstone so interrupted deletion can retry without its original marker. Keep the
+journal until cleanup is acknowledged; uncertain initialization plus an absent directory is not proof
+of cleanup. Local journals live under `%LOCALAPPDATA%/Vivre/staging-transfers` and file leases exclude
+active transfers across processes sharing that journal. Later explicit staging requests retry pending
+cleanup for the same host before SMB. No background cleanup, installer execution, or Server 2016 CU
+lane changes. Target publication concurrency across independent processes remains unverified.
