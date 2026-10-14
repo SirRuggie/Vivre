@@ -32,6 +32,8 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
 
 ## Case files / findings (point-in-time, never edited)
 
+- **[vivre-performance-review-2026-10-14.md](vivre-performance-review-2026-10-14.md)** — F13–F20 performance findings, repeated local measurements and outstanding operational validation gaps. *Read when: prioritizing responsiveness or memory work; fixes remain recommendations.*
+
 - **[cold-start-freeze-and-threadpool-findings.md](cold-start-freeze-and-threadpool-findings.md)** —
   the cold-start UI freeze hunt: six disproven theories, the thread-pool worker-injection cause, the
   load-bearing `ThreadPool.SetMinThreads` fix. *Read when: touching App.OnStartup, the sweep, or

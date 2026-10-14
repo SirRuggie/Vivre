@@ -1,0 +1,424 @@
+{
+  "measuredAtUtc": "2026-10-14T21:18:10.0173752Z",
+  "runtime": ".NET 10.0.12",
+  "logicalProcessors": 16,
+  "configuration": "Release; isolated synthetic data; no production App startup",
+  "workspace": {
+    "measurements": [
+      {
+        "requestedRows": 319,
+        "actualRows": 319,
+        "fillMilliseconds": 216.6739,
+        "fillAllocatedBytes": 8783888,
+        "filterSequenceMilliseconds": 673.4315,
+        "filterSteps": [
+          {
+            "filter": "M",
+            "visibleRows": 319,
+            "elapsedTicks": 661088,
+            "elapsedMilliseconds": 66.1088
+          },
+          {
+            "filter": "MA",
+            "visibleRows": 319,
+            "elapsedTicks": 503541,
+            "elapsedMilliseconds": 50.3541
+          },
+          {
+            "filter": "MAC",
+            "visibleRows": 319,
+            "elapsedTicks": 538913,
+            "elapsedMilliseconds": 53.8913
+          },
+          {
+            "filter": "MACH",
+            "visibleRows": 319,
+            "elapsedTicks": 669098,
+            "elapsedMilliseconds": 66.9098
+          },
+          {
+            "filter": "MACHI",
+            "visibleRows": 319,
+            "elapsedTicks": 832582,
+            "elapsedMilliseconds": 83.2582
+          },
+          {
+            "filter": "MACHIN",
+            "visibleRows": 319,
+            "elapsedTicks": 1029671,
+            "elapsedMilliseconds": 102.9671
+          },
+          {
+            "filter": "MACHINE",
+            "visibleRows": 319,
+            "elapsedTicks": 574079,
+            "elapsedMilliseconds": 57.4079
+          },
+          {
+            "filter": "MACHINE-",
+            "visibleRows": 319,
+            "elapsedTicks": 897598,
+            "elapsedMilliseconds": 89.7598
+          },
+          {
+            "filter": "MACHINE-0",
+            "visibleRows": 319,
+            "elapsedTicks": 510325,
+            "elapsedMilliseconds": 51.0325
+          },
+          {
+            "filter": "MACHINE-00",
+            "visibleRows": 319,
+            "elapsedTicks": 515499,
+            "elapsedMilliseconds": 51.5499
+          }
+        ]
+      },
+      {
+        "requestedRows": 3190,
+        "actualRows": 3190,
+        "fillMilliseconds": 1185.3409,
+        "fillAllocatedBytes": 81923944,
+        "filterSequenceMilliseconds": 5776.7922,
+        "filterSteps": [
+          {
+            "filter": "M",
+            "visibleRows": 3190,
+            "elapsedTicks": 7475608,
+            "elapsedMilliseconds": 747.5608
+          },
+          {
+            "filter": "MA",
+            "visibleRows": 3190,
+            "elapsedTicks": 5797126,
+            "elapsedMilliseconds": 579.7126
+          },
+          {
+            "filter": "MAC",
+            "visibleRows": 3190,
+            "elapsedTicks": 7133524,
+            "elapsedMilliseconds": 713.3524
+          },
+          {
+            "filter": "MACH",
+            "visibleRows": 3190,
+            "elapsedTicks": 5813623,
+            "elapsedMilliseconds": 581.3623
+          },
+          {
+            "filter": "MACHI",
+            "visibleRows": 3190,
+            "elapsedTicks": 6526553,
+            "elapsedMilliseconds": 652.6553
+          },
+          {
+            "filter": "MACHIN",
+            "visibleRows": 3190,
+            "elapsedTicks": 5057777,
+            "elapsedMilliseconds": 505.7777
+          },
+          {
+            "filter": "MACHINE",
+            "visibleRows": 3190,
+            "elapsedTicks": 6308616,
+            "elapsedMilliseconds": 630.8616
+          },
+          {
+            "filter": "MACHINE-",
+            "visibleRows": 3190,
+            "elapsedTicks": 3885719,
+            "elapsedMilliseconds": 388.5719
+          },
+          {
+            "filter": "MACHINE-0",
+            "visibleRows": 3190,
+            "elapsedTicks": 3957134,
+            "elapsedMilliseconds": 395.7134
+          },
+          {
+            "filter": "MACHINE-00",
+            "visibleRows": 1000,
+            "elapsedTicks": 5811644,
+            "elapsedMilliseconds": 581.1644
+          }
+        ]
+      },
+      {
+        "requestedRows": 10000,
+        "actualRows": 10000,
+        "fillMilliseconds": 3947.6339,
+        "fillAllocatedBytes": 247334928,
+        "filterSequenceMilliseconds": 17232.3815,
+        "filterSteps": [
+          {
+            "filter": "M",
+            "visibleRows": 10000,
+            "elapsedTicks": 18310485,
+            "elapsedMilliseconds": 1831.0485
+          },
+          {
+            "filter": "MA",
+            "visibleRows": 10000,
+            "elapsedTicks": 17540836,
+            "elapsedMilliseconds": 1754.0836
+          },
+          {
+            "filter": "MAC",
+            "visibleRows": 10000,
+            "elapsedTicks": 14083449,
+            "elapsedMilliseconds": 1408.3449
+          },
+          {
+            "filter": "MACH",
+            "visibleRows": 10000,
+            "elapsedTicks": 13676619,
+            "elapsedMilliseconds": 1367.6619
+          },
+          {
+            "filter": "MACHI",
+            "visibleRows": 10000,
+            "elapsedTicks": 21343870,
+            "elapsedMilliseconds": 2134.387
+          },
+          {
+            "filter": "MACHIN",
+            "visibleRows": 10000,
+            "elapsedTicks": 16879680,
+            "elapsedMilliseconds": 1687.968
+          },
+          {
+            "filter": "MACHINE",
+            "visibleRows": 10000,
+            "elapsedTicks": 18610250,
+            "elapsedMilliseconds": 1861.025
+          },
+          {
+            "filter": "MACHINE-",
+            "visibleRows": 10000,
+            "elapsedTicks": 16229501,
+            "elapsedMilliseconds": 1622.9501
+          },
+          {
+            "filter": "MACHINE-0",
+            "visibleRows": 10000,
+            "elapsedTicks": 16604211,
+            "elapsedMilliseconds": 1660.4211
+          },
+          {
+            "filter": "MACHINE-00",
+            "visibleRows": 1000,
+            "elapsedTicks": 19044869,
+            "elapsedMilliseconds": 1904.4869
+          }
+        ]
+      }
+    ],
+    "retention": {
+      "removal": {
+        "workspaceAliveAfterDisposeAndGc": false,
+        "retainedRow": "REMOVE-ROW"
+      },
+      "reset": {
+        "workspaceAliveAfterDisposeAndGc": true,
+        "retainedRow": "RESET-ROW"
+      },
+      "interpretation": "The retained Computer is held strongly by this probe. Alive after Remove indicates an unexpected root; alive after Clear/Reset but not Remove is consistent with Reset omitting OldItems and leaving the row\u0027s PropertyChanged subscription attached. GC results are diagnostic evidence, not a deterministic unit test."
+    },
+    "limitations": [
+      "No WorkspaceView/DataGrid is created, so binding, cell realization, column measurement, layout, render, and input costs are excluded.",
+      "The STA dispatcher is not pumped during a measurement, so the 200 ms fleet recompute DispatcherTimer does not tick.",
+      "WorkspaceViewModel construction reads the existing per-user settings cache/file through AppSettingsStore; this probe performs no saves.",
+      "All remote-capable dependencies are null inert sentinels. IsMonitoring is disabled before rows are added, and AddComputers is never called.",
+      "Timings are single-process Stopwatch samples, not a benchmark; use repeated external runs and medians before drawing release conclusions."
+    ]
+  },
+  "logging": {
+    "EntryCap": 2000,
+    "MessageCharacters": 1024,
+    "ImmediateControl": [
+      {
+        "Mode": "UI-immediate control",
+        "SubmittedMessages": 2000,
+        "QueuedCallbacksBeforeDrain": 0,
+        "EntriesBeforeDrain": 2000,
+        "EntriesAfterDrain": 2000,
+        "ProduceMilliseconds": 25.7829,
+        "DrainMilliseconds": 0,
+        "RetainedBytesBeforeDrain": 4260792,
+        "RetainedBytesAfterDrain": 4260792
+      },
+      {
+        "Mode": "UI-immediate control",
+        "SubmittedMessages": 10000,
+        "QueuedCallbacksBeforeDrain": 0,
+        "EntriesBeforeDrain": 2000,
+        "EntriesAfterDrain": 2000,
+        "ProduceMilliseconds": 39.3475,
+        "DrainMilliseconds": 0,
+        "RetainedBytesBeforeDrain": 4259688,
+        "RetainedBytesAfterDrain": 4259688
+      }
+    ],
+    "PausedDispatcher": [
+      {
+        "Mode": "UI intentionally paused",
+        "SubmittedMessages": 2000,
+        "QueuedCallbacksBeforeDrain": 2000,
+        "EntriesBeforeDrain": 0,
+        "EntriesAfterDrain": 2000,
+        "ProduceMilliseconds": 5.1158,
+        "DrainMilliseconds": 54.5365,
+        "RetainedBytesBeforeDrain": 5153408,
+        "RetainedBytesAfterDrain": -30541712
+      },
+      {
+        "Mode": "UI intentionally paused",
+        "SubmittedMessages": 10000,
+        "QueuedCallbacksBeforeDrain": 10000,
+        "EntriesBeforeDrain": 0,
+        "EntriesAfterDrain": 2000,
+        "ProduceMilliseconds": 52.2057,
+        "DrainMilliseconds": 247.7663,
+        "RetainedBytesBeforeDrain": 25760848,
+        "RetainedBytesAfterDrain": 4257200
+      }
+    ],
+    "ExpectedFinding": "With the dispatcher paused, every submitted message has queued one real ActivityLog UI callback even though Entries is still empty; therefore the 10,000-message case has 10,000 callbacks pending before the 2,000-entry cap can run.",
+    "Limits": [
+      "The production Serilog file sink is bypassed with a sink-free Logger, so these measurements isolate dispatcher admission, retained managed data, collection work, and dispatcher drain time; they do not measure production disk logging.",
+      "GC retained-byte deltas are comparative managed-heap samples, not total process working set or proof of a natural UI freeze.",
+      "The paused case is an intentional synthetic stall. Pump duration reports the cost of draining this workload on this machine and must not be presented as evidence that an equivalent stall occurs naturally."
+    ]
+  },
+  "throttle": {
+    "Probe": "ThrottleProbe",
+    "Runtime": "10.0.12",
+    "ProcessorCount": 16,
+    "Configuration": {
+      "Total": 32,
+      "Reserved": 4,
+      "Active": 28
+    },
+    "Control": [
+      {
+        "Acquisitions": 319,
+        "ElapsedMilliseconds": 1.362,
+        "ActiveQueuedWaiters": 0,
+        "ReservedQueuedWaiters": 0,
+        "AllocatedBytes": 32104,
+        "ManagedBytesDelta": 24672
+      },
+      {
+        "Acquisitions": 3190,
+        "ElapsedMilliseconds": 0.7945,
+        "ActiveQueuedWaiters": 0,
+        "ReservedQueuedWaiters": 0,
+        "AllocatedBytes": 306280,
+        "ManagedBytesDelta": 312512
+      }
+    ],
+    "Contended": [
+      {
+        "Acquisitions": 319,
+        "AcquireMilliseconds": 6.6104,
+        "ActiveQueuedWaitersBeforeRelease": 315,
+        "ReservedQueuedWaitersBeforeRelease": 0,
+        "ExpectedActiveLosers": 315,
+        "ActiveQueuedWaitersAfterDrain": 0,
+        "ReservedQueuedWaitersAfterDrain": 0,
+        "DrainMilliseconds": 0.8457,
+        "AllocatedBytesForAcquires": 327200,
+        "ManagedBytesDeltaAfterAcquires": 351344,
+        "ManagedBytesDeltaAfterDrain": 367792
+      },
+      {
+        "Acquisitions": 3190,
+        "AcquireMilliseconds": 5.3973,
+        "ActiveQueuedWaitersBeforeRelease": 3186,
+        "ReservedQueuedWaitersBeforeRelease": 0,
+        "ExpectedActiveLosers": 3186,
+        "ActiveQueuedWaitersAfterDrain": 0,
+        "ReservedQueuedWaitersAfterDrain": 0,
+        "DrainMilliseconds": 12.8496,
+        "AllocatedBytesForAcquires": 3248960,
+        "ManagedBytesDeltaAfterAcquires": 3275152,
+        "ManagedBytesDeltaAfterDrain": 3445408
+      }
+    ],
+    "MetricMeaning": {
+      "QueuedWaiters": "Literal linked-list nodes reachable from SemaphoreSlim.m_asyncHead.",
+      "AllocatedBytes": "Process-wide managed allocation delta for the measured interval.",
+      "ManagedBytes": "GC.GetTotalMemory(false) delta; this alone does not prove retention.",
+      "DrainMilliseconds": "Time from releasing held active permits until its async queue reached zero."
+    }
+  },
+  "registry": [
+    {
+      "paths": 100,
+      "readMs": [
+        1.1252,
+        1.0394,
+        0.9959
+      ],
+      "allocatedBytesAcrossThreeReads": 286664,
+      "duplicateRegisterMs": 24.3434,
+      "fileBytes": 12612
+    },
+    {
+      "paths": 1000,
+      "readMs": [
+        46.7327,
+        40.381,
+        42.9632
+      ],
+      "allocatedBytesAcrossThreeReads": 2392736,
+      "duplicateRegisterMs": 49.7912,
+      "fileBytes": 126912
+    },
+    {
+      "paths": 5000,
+      "readMs": [
+        173.5546,
+        169.1464,
+        106.1342
+      ],
+      "allocatedBytesAcrossThreeReads": 12022696,
+      "duplicateRegisterMs": 119.6736,
+      "fileBytes": 638912
+    },
+    {
+      "paths": 10000,
+      "readMs": [
+        487.7009,
+        489.2039,
+        503.1135
+      ],
+      "allocatedBytesAcrossThreeReads": 23973688,
+      "duplicateRegisterMs": 509.4535,
+      "fileBytes": 1278912
+    }
+  ],
+  "manifest": [
+    {
+      "files": 100,
+      "totalPayloadBytes": 0,
+      "prepareMs": 161.1672,
+      "encodedManifestCharacters": 15372,
+      "managedAllocatedBytes": 270264
+    },
+    {
+      "files": 1000,
+      "totalPayloadBytes": 0,
+      "prepareMs": 1317.6476,
+      "encodedManifestCharacters": 153372,
+      "managedAllocatedBytes": 1928584
+    },
+    {
+      "files": 10000,
+      "totalPayloadBytes": 0,
+      "prepareMs": 15800.2641,
+      "encodedManifestCharacters": 1533372,
+      "managedAllocatedBytes": 19247984
+    }
+  ]
+}
