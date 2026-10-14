@@ -566,6 +566,25 @@ public partial class MainWindow : FluentWindow
         _relativeTimeTimer.Start();
     }
 
+    protected override void OnClosing(CancelEventArgs e)
+    {
+        base.OnClosing(e);
+        if (e.Cancel || Settings is null) return;
+
+        // Includes normal window close and the tray's Application.Shutdown path. Drain personal
+        // preferences before Closed disposes the UI. Remote-operation shutdown is unchanged.
+        Core.IO.SaveFlushResult result = Settings.Flush(TimeSpan.FromSeconds(3));
+        if (result.Status == Core.IO.SaveFlushStatus.Success) return;
+
+        string detail = result.Status == Core.IO.SaveFlushStatus.TimedOut
+            ? "Saving preferences did not finish within 3 seconds."
+            : $"Saving preferences failed: {result.Failure?.Message ?? "unknown storage error"}";
+        string message = detail + "\n\nYour latest preferences may not survive restart. After reopening Vivre, resolve the storage problem and reapply any missing preferences.";
+        Log?.Error(null, message);
+        System.Windows.MessageBox.Show(this, message, "Preferences may not be saved",
+            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+    }
+
     private void OnWindowClosed(object? sender, EventArgs e)
     {
         if (_relativeTimeTimer is { } rt)

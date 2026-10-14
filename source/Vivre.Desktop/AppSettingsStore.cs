@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -84,33 +85,47 @@ public sealed class AppSettingsStore
 {
     private readonly string _path;
 
-    // Process-wide in-memory snapshot of settings.json. Every AppSettingsStore instance points at the same
-    // file (per-tab view-models + the main window), and every read/write runs on the UI thread, so a single
-    // static cache is safe without locking. Load() touches disk only to populate the cache the first time;
-    // Save() rewrites the file AND re-seats the cache, so a runtime change (e.g. the Auto-check-on-load
-    // toggle) is visible to the next Load() without another disk read.
-    private static AppSettings? _cache;
+    // Every caller for the same personal file shares its cache and one FIFO writer. Callers perform
+    // Load/mutate/Save on the UI thread; only detached snapshots cross to the worker.
+    private static readonly ConcurrentDictionary<string, StoreState> Stores = new(StringComparer.OrdinalIgnoreCase);
+    private readonly StoreState _state;
 
-    // Serializes the background disk writes so two near-simultaneous Save() calls can't interleave and
-    // corrupt settings.json. The last writer wins (its serialized snapshot is what lands on disk). The
-    // write itself is atomic (temp file + File.Replace swap), so a crash mid-write leaves the prior good
-    // file intact rather than a torn settings.json.
-    private static readonly object _writeLock = new();
-
-    // Set once at App startup (static like _cache, so every construction site shares it — the store is
-    // new()-constructed in several places). Surfaces a failed background save to the operator: a
-    // silently-lost StagedHosts write would mis-route a 2016 box down the wrong WUA lane on the next
-    // restart, so this must not stay Debug-only (which compiles out of Release).
     internal static IActivityLog? ActivityLog { get; set; }
 
-    public AppSettingsStore()
+    public AppSettingsStore() : this(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vivre", "settings.json"))
     {
-        string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "Vivre");
-        Directory.CreateDirectory(dir);
-        _path = Path.Combine(dir, "settings.json");
     }
 
-    public AppSettings Load() => _cache ??= ReadFromDisk();
+    // Tests use isolated dummy files and an optional controlled writer; production uses AtomicFileWriter.
+    internal AppSettingsStore(string path, Action<string, string>? write = null)
+    {
+        _path = Path.GetFullPath(path);
+        Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+        _state = Stores.GetOrAdd(_path, p => new StoreState(p, write ?? AtomicFileWriter.Write));
+    }
+
+    public AppSettings Load() => _state.Cache ??= ReadFromDisk();
+
+    /// <summary>Waits for the saves accepted before this call, up to the supplied deadline.</summary>
+    public SaveFlushResult Flush(TimeSpan timeout) => _state.Queue.Flush(timeout);
+
+    private sealed class StoreState
+    {
+        public AppSettings? Cache;
+        public Action<string, string> Write { get; }
+        public OrderedSaveQueue Queue { get; }
+
+        public StoreState(string path, Action<string, string> write)
+        {
+            Write = write;
+            Queue = new OrderedSaveQueue(ex =>
+            {
+                ActivityLog?.Error(null, $"Couldn't persist a preference change to {path}: {ex.GetType().Name}: {ex.Message}. A later successful save may recover this; otherwise the change may be lost on restart. Resolve continuing storage errors and change a preference to retry.");
+                System.Diagnostics.Debug.WriteLine($"AppSettingsStore.Save: failed to write {path}: {ex.Message}");
+            });
+        }
+    }
 
     private AppSettings ReadFromDisk()
     {
@@ -129,42 +144,21 @@ public sealed class AppSettingsStore
             // first Load logs it (the class contract). Transient IO failures (an AV lock) are
             // deliberately NOT seated: the next Load retries the intact file, and seating
             // defaults here would let a later Save overwrite the real settings.json.
-            _cache = new AppSettings();
+            _state.Cache = new AppSettings();
             throw;
         }
     }
 
     public void Save(AppSettings settings)
     {
-        // Re-seat the cache synchronously (on the calling/UI thread) so the next Load() sees the new value
-        // immediately, and snapshot the POCO as a DETACHED JsonObject here so a later mutation of `settings`
-        // can't race the background merge. Only the disk write is pushed off the UI thread, so saving a
-        // setting never blocks the UI on file I/O.
-        _cache = settings;
-        JsonObject poco = JsonSerializer.SerializeToNode(settings, WriteIndented) as JsonObject ?? new JsonObject();
-        string path = _path;
-        _ = Task.Run(() =>
+        // Snapshot before returning to the UI: later edits to the same cached object cannot change
+        // an already accepted write. FIFO admission happens here, never inside a racing Task.Run.
+        JsonObject snapshot = JsonSerializer.SerializeToNode(settings, WriteIndented) as JsonObject ?? new JsonObject();
+        _state.Cache = settings;
+        _state.Queue.Enqueue(() =>
         {
-            try
-            {
-                lock (_writeLock)
-                {
-                    // Merge onto the on-disk JSON so a key this build doesn't declare (e.g. a newer build's
-                    // setting) survives a save by this one — mirrors the shared store's sibling-safe write.
-                    JsonObject merged = MergeOntoDisk(path, poco);
-                    AtomicFileWriter.Write(path, merged.ToJsonString(WriteIndented));
-                }
-            }
-            catch (Exception ex)
-            {
-                // The in-memory cache still holds the change, so a failed write means the change is lost
-                // ONLY across restart — exactly how a StagedHosts flag silently reverts. Error (not Warn):
-                // it is not self-healing and the operator must re-do the action to persist it. This ALSO fires
-                // when the on-disk file exists but can't be read/parsed: the write is refused (below) rather
-                // than overwriting keys we couldn't read back with the POCO alone.
-                ActivityLog?.Error(null, $"Couldn't save settings to {path} — the change will be lost on restart: {ex.GetType().Name}: {ex.Message}");
-                System.Diagnostics.Debug.WriteLine($"AppSettingsStore.Save: failed to write {path}: {ex.Message}");
-            }
+            JsonObject merged = MergeOntoDisk(_path, snapshot);
+            _state.Write(_path, merged.ToJsonString(WriteIndented));
         });
     }
 

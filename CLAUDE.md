@@ -97,6 +97,10 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
     columns, hidden columns, auto-check-on-load, max simultaneous installs, WUG state-check
     concurrency, nav-pane state, dock height, software→service map. Computer **lists** and
     **scripts** also live under `%APPDATA%\Vivre\`.
+    - Every personal-store instance for the same path shares a FIFO save queue and cache. Save captures
+      a detached snapshot on the UI thread; background writes merge future keys and use atomic replacement.
+      MainWindow.OnClosing flushes accepted saves for at most three seconds, then explicitly warns on
+      failure/timeout before the window closes. Failure logging must never block the writer or flush.
   - **Shared, machine-wide (operational)** — `SharedSettingsStore` (`Vivre.Core.Configuration`) writes
     `C:\ProgramData\Vivre\settings.json` (created on first save, Authenticated-Users Modify ACL):
     this month's CU (`MonthlyCu`), the LCU + package folders, the WUG server, the staged-machine list.

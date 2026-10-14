@@ -124,6 +124,7 @@ public static class HelpContent
             Lines =
             [
                 "Settings (left navigation) ▸ Appearance ▸ App theme ▸ Light / Dark / System. Your choice is remembered across launches.",
+                "Personal preferences save in the background in the order you change them. When closing, Vivre waits up to three seconds for pending saves. If a save fails or takes longer, a warning explains that the latest preferences may not survive restart. Fix the storage problem and reapply any missing preferences after reopening.",
             ],
         },
         new HelpTopic

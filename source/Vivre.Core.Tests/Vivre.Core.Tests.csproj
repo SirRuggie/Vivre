@@ -30,6 +30,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Personal preference store is UI-free; link the production source for isolated persistence tests. -->
+    <Compile Include="..\Vivre.Desktop\AppSettingsStore.cs" Link="Configuration\AppSettingsStore.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
     <!-- The agent is net48 and can't be ProjectReferenced from net10, so link its PURE,
          dependency-free pieces to unit-test them here:
            - BootServicingState: the boot-busy decision (no registry/IO/COM deps).

@@ -23,7 +23,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F07 | Recovery from cached Kerberos failure | Implemented and locally verified; 1,353 tests passed | Authorized October 14, 2026 |
 | F08 | Software absence versus query failure | Implemented; independent red-team accepted; 1,392 tests passed | Authorized October 14, 2026 |
 | F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Committed and pushed |
-| F10 | Preference write ordering and exit | Direction agreed; ordered saves and bounded normal-exit flush | Not authorized |
+| F10 | Preference write ordering and exit | Implemented; independent review accepted; 1,406 tests passed | Authorized October 14, 2026 |
 | F11 | WinRM staging memory and temporary files | Direction agreed; bounded chunks, integrity checks, owned-file cleanup | Not authorized |
 | F12 | Concurrent Server 2016 staging files | Skipped by Shaun; excluded from implementation queue | Not authorized |
 
@@ -315,9 +315,9 @@ Shaun approved reliable persistence of the latest personal preferences:
 
 Scope is personal app preferences. The separate shared operational settings concurrency issue is not included. A normal-exit flush cannot guarantee persistence after forced process termination or power loss; retain the existing protection against corrupting the previous valid file.
 
-**Implementation status: not started. Authorization: not granted.** No implementation priority has been selected. Exact flush timeout and failure interaction remain engineering details for authorized implementation.
+**Implementation status: implemented and locally validated; not deployed. Authorization: granted October 14, 2026 by Shaun’s “Next”.** Normal close waits up to three seconds; failure or timeout is logged and displayed before the window closes.
 
-### Proposed acceptance checks for later implementation
+### Acceptance checks
 
 - Deliberately delay an earlier save while later changes arrive; after completion, disk contains the latest accepted settings snapshot.
 - Rapid changes from different preference callers preserve their latest intended values and do not create competing write queues.
@@ -325,7 +325,7 @@ Scope is personal app preferences. The separate shared operational settings conc
 - Simulate write failure or a stalled writer; shutdown remains bounded and failure is reported through a usable path before logging/UI teardown.
 - Atomic file integrity and preservation of unknown settings keys remain intact; UI work does not block on routine disk writes.
 
-These checks have not been run. This decision does not authorize changes to remote operations or their shutdown/cancellation behavior.
+Local acceptance evidence and the interactive UI validation limit appear in the F10 ledger below. This decision does not authorize changes to remote operations or their shutdown/cancellation behavior.
 
 ## F11 Bounded WinRM staging and temporary file cleanup
 
@@ -791,3 +791,34 @@ F08 review checkpoint: independent review identified stale queued cancellations 
 - `dotnet test source/Vivre.slnx --no-build -v minimal`: **1,392 passed, zero failed, zero skipped**, 2m39s. This includes the 58 Software tests and 13 CSV/lifecycle tests.
 - Independent red-team findings addressed and re-reviewed; root inspected the final diff. `git diff --cached --check` passed.
 - F08 delivery uses a `fix:` commit on master; exact commit and push are recorded in Git history. No version bump, release, or live operational changes.
+
+## F10 implementation ledger — October 14, 2026
+
+| Capability | Status |
+| --- | --- |
+| One ordered save stream across personal-settings callers | Implemented; FIFO ordering and shared-caller tests passed |
+| Detached snapshots; preserve future keys and atomic replacement | Implemented; isolated real-file tests passed |
+| Bounded normal-exit flush with visible failure/timeout reporting | Three-second close flush implemented; flush tested, WPF warning reviewed/compiled |
+| Failure recovery and responsive ordinary preference updates | Implemented; blocked writes, failure/recovery and callback isolation tests passed |
+| Shared operational settings and remote-operation shutdown | Outside F10 scope; unchanged |
+
+Implementation uses a Sol worker for queue concurrency and root for Desktop integration. Independent review will refute ordering, failure and shutdown assumptions before delivery.
+
+### F10 implementation and review evidence
+
+- Personal `AppSettingsStore` instances for the same normalized file share a cache and one `OrderedSaveQueue`. Save captures a detached JSON snapshot synchronously, then the single background writer merges future keys and calls the existing atomic writer. No shared operational settings were changed.
+- Flush captures the accepted queue tail and reports that result even when newer work arrives. A successful newer full snapshot recovers an older failure. Failure callbacks run separately, cannot block the writer/flush, and their exceptions are contained.
+- `MainWindow.OnClosing` honors an already-cancelled close, otherwise waits up to three seconds before existing Closed disposal. Success closes normally. Failure or timeout is logged and shown in a warning for the operator to acknowledge; the disk wait is bounded, while the warning remains until acknowledged. Remote operation teardown is unchanged.
+- Independent Sol review found no correctness blocker. Root corrected a test-scheduling race and clarified delayed-error log wording so it acknowledges possible recovery by a newer save.
+- Root solution build passed with zero errors and one existing missing agent-signing-certificate warning. Root targeted test run: **14 passed**, zero failed/skipped (7 queue and 7 production-store tests).
+- Tests use isolated temporary files and controlled writer stalls/errors. They cover FIFO order, detached mutable fields, shared callers, future keys, immediate save/flush/reload, locked and corrupt file refusal, recovery, timeout, serialization, and captured-tail reporting. User settings were not touched.
+- Interactive WPF close/tray warning behavior was inspected and compiled, not exercised in a UI session. Forced termination/power loss still cannot guarantee the latest preferences. No deployment or version bump.
+
+**Recommended next: F11 — bounded WinRM staging and owned temporary-file cleanup.** This reduces memory pressure from large packages and avoids abandoned transfer files while preserving F05’s integrity and replacement guarantees. F12 remains explicitly skipped.
+
+### F10 final verification
+
+- `dotnet build source/Vivre.slnx --no-restore -v minimal`: zero errors; one existing missing agent-signing-certificate warning.
+- `dotnet test source/Vivre.slnx --no-build -v minimal`: **1,406 passed**, zero failed/skipped, 2m35s.
+- Independent review and root final inspection found no outstanding correctness blocker. `git diff --cached --check` passed.
+- Delivery uses a short `fix:` commit on master; exact commit/push are in Git history. No release or deployment.
