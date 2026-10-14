@@ -176,6 +176,10 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   ending Unverified without proof. Preserve dispatch count, force flags, and existing escalation timing.
   Start and cleanup diagnostics must remain separate and visible in Release logs. F03 evidence and
   runtime limits live in `docs/vivre-review-decisions.md`.
+- RDP host/credential persistence must retain safe replacement writes, validated last-good backups,
+  and failed-load write protection. Never treat corrupt data as an empty first-use store. Keep passwords
+  DPAPI-protected in all persisted copies; a missing recovered credential reference must be explicit,
+  never silently replaced with a blank password or inherited login. Use isolated temporary stores in tests.
 - General disk cleanup ownership lives in one app-wide `HostOperationCoordinator` shared by patching,
   software staging, and `CoordinatedRemediationService`. Keep execution-time checks, not just UI
   disabled states. Cleanup must finish service recovery before releasing ownership; uncertain

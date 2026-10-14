@@ -17,7 +17,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F01 | Details window disk cleanup conflicts and package preservation | Implemented and locally validated | Committed and pushed |
 | F02 | Reboot disclosure and approved targets | Implemented and locally validated | Committed and pushed |
 | F03 | SMB reboot dispatch reporting | Implemented and locally validated; independent red-team accepted | Authorized commit and push |
-| F04 | RDP persistence and recovery | Direction agreed; safe writes, backups, load-failure protection | Not authorized |
+| F04 | RDP persistence and recovery | Implemented; independent review accepted | Authorized October 14, 2026 |
 | F05 | Consistent and recoverable package staging | Direction agreed; verify before replacement, preserve prior package | Not authorized |
 | F06 | Ambiguous WUG device names | Direction agreed; independent red-team required | Not authorized |
 | F07 | Recovery from cached Kerberos failure | Direction agreed; per-host retry and fresh attempt after credential change | Not authorized |
@@ -150,7 +150,7 @@ Shaun approved the following protections for saved Cross-Domain RDP connections 
 
 This is protection against data loss and failed recovery, not a finding that passwords are stored in plaintext. No production data-loss incident was reproduced during the review.
 
-**Implementation status: not started. Authorization: not granted.** Shaun's agreement accepts this design direction only. No implementation priority has been selected.
+**Implementation status: implemented and reviewed locally. Authorization: Shaun said “next” after F03 delivery on October 14, 2026.** Validation uses isolated dummy stores; existing user connection and credential files are not test fixtures.
 
 ### Proposed acceptance checks for later implementation
 
@@ -163,7 +163,7 @@ Use isolated disposable stores rather than Shaun's real connection or credential
 - Missing files on genuine first use are distinguished from failed reads of existing stores, allowing normal initial setup.
 - Routine save/load and RDP connection behavior remain unchanged, and failures provide a clear recovery explanation.
 
-These checks are proposed validation requirements and have not been run. Recovery interaction and consistency between the two stores must be resolved during authorized implementation. Removal of orphaned credentials is a separate watch item and is not added to F04's agreed scope by this decision.
+Local acceptance evidence is recorded in the F04 ledger below. The stores recover separately and may represent different saves; missing credential references are reported explicitly. Removal of orphaned credentials remains outside F04. Live RDP and physical power-loss behavior were not exercised.
 
 ## F05 Consistent and recoverable software package staging
 
@@ -519,3 +519,55 @@ prove whether the process ran. Real SCM/RPC behavior remains untested locally.
 **Recommended next: F04 — RDP persistence and recovery.** Use safe replacement writes, recoverable
 backups, and load-failure protection so a failed save or corrupt load cannot erase saved connections.
 Preserve existing RDP behavior and DPAPI encryption. F12 remains skipped.
+
+
+## F04 capability and acceptance ledger
+
+| Capability | Status | Required evidence |
+|---|---|---|
+| Safe replacement saves and recoverable backups | Implemented and verified locally | Interrupted write and replacement-failure tests in temporary stores |
+| Failed reads cannot overwrite existing stores with empty defaults | Implemented and verified locally | Corrupt/unreadable primary and backup cases; UI edit guard |
+| Credential backups remain encrypted and references recoverable | Implemented and verified locally | DPAPI round trip, backup contents, tree/reference consistency |
+| Clear failure/recovery reporting and unchanged normal RDP operation | Implemented and verified locally | Caller review, help update, Desktop build |
+| Local verification | Completed; independent review accepted | 51 focused RDP tests; 1,292 full-suite tests; full Desktop build |
+| Live RDP session / power-loss validation | Outside local validation | No real credentials, sessions, or user stores used |
+
+
+### F04 review checkpoint
+
+Recovery keeps host and credential IDs intact, but the two backups can represent different saves.
+A missing recovered login must be reported; a blank edit must not silently discard its reference or
+substitute a parent login. Recovery may require re-entering that login. This is not a paired database
+transaction across both files.
+
+Review corrections implemented and independently accepted: unique temporary files; preserve a valid backup when
+the primary is missing and publishing its replacement fails; validate save inputs; return detached
+credential records; block edits before credential changes when the host tree failed to load; retain
+recovery notices through a first-operation credential save; and reject corrupt DPAPI blobs before
+allowing them to rotate over a usable backup. Tests remain isolated from real user stores.
+
+
+### F04 final local verification and delivery
+
+- Main agent independently reviewed the changed source and tests, built the full solution including
+  Desktop, and ran the final regression suite: **1,292 passed, zero failed, zero skipped**. Build:
+  **zero errors, one existing missing agent-signing certificate warning**; local agent remains unsigned.
+- Independent refutation review accepted the final scope after corrections, independently built the
+  solution, and passed **51/51 focused RDP tests**. No remaining confirmed defect was reported.
+- Tests use disposable dummy stores and credentials, including real Windows DPAPI round trips and a
+  real locked-primary replacement failure. They verify backup preservation, failed-load save blocking,
+  input validation, cache isolation, ciphertext validation, and explicit missing credential references.
+- Host-tree and credential saves remain separate. If the login saves first and the tree save fails,
+  Activity identifies the durable login change and unsaved tree edit. Recovery can require re-entering
+  a login absent from an older credential backup; no silent blank or inherited substitution occurs.
+- Help, README, repository guidance, and Unreleased notes are updated. `git diff --check` passed.
+  RDP session controls, scaling, DPAPI entropy, reboot dispatch, and the reboot inventory are unchanged.
+- No real AppData stores, live RDP sessions, physical power-loss, ACL-denial, or multi-process stress
+  tests were used. This is local persistence validation, not a production canary or deployment.
+- Delivery follows Shaun's standing authorization to commit and push validated changes with a short
+  conventional subject and no attribution trailers.
+
+**Recommended next: F05 — consistent and recoverable software package staging.** Verify a replacement
+before publishing it and preserve the previous usable package if copying or replacement fails. Scope
+is Stage software only, including local, SMB, and WinRM paths; Server 2016 CU staging and automatic
+installation remain separate. F12 remains skipped.

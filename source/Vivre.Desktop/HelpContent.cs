@@ -732,6 +732,21 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = CrossDomainRdp, Icon = SymbolRegular.Folder24, Title = "Recovering saved RDP connections and logins",
+            Keywords = "rdp backup recovery save failed corrupt unreadable missing login credentials",
+            Lines =
+            [
+                "Vivre prepares each save in a separate file before replacing the saved tree or credential store. Replacing a valid saved file keeps its previous version as a .bak backup.",
+                "If a saved file cannot be read, Vivre tries its backup and reports recovery in Activity. A backup may be older than your latest edit; review recovered connections before using them.",
+                "If neither copy can be loaded, Vivre blocks saves instead of overwriting the files with an empty tree. Keep the existing files, restore known-good copies, and reopen Vivre.",
+                "A login save and a connection-tree save are separate. If the login saves but the tree save fails, Activity tells you which part succeeded. The tree edit remains unsaved; resolve the storage error and retry, or reopen the tab to reload the saved tree.",
+                "A recovered tree may refer to a login missing from an older credential backup. Vivre reports that explicitly; re-enter the full login or restore the matching credential file. It does not silently substitute a blank password or another login.",
+                "Credential files and their backups remain encrypted with Windows DPAPI. Restore them under the same Windows account on the same PC; copying them to another account does not make the passwords usable.",
+            ],
+            Tip = "The files are rdphosts.json and rdpcreds.json under %APPDATA%\\Vivre; backups append .bak. Check Activity for save failures or recovery notices.",
+        },
+        new HelpTopic
+        {
             Category = CrossDomainRdp, Icon = SymbolRegular.Desktop24, Title = "How do I connect, go full-screen, and disconnect?",
             Keywords = "connect double click full screen disconnect reconnect dropped session tab",
             Lines =

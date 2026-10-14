@@ -21,6 +21,9 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
     private readonly IActivityLog _activity;
     private readonly RdpHostTree _tree;
     private readonly RdpFolderNodeViewModel _root;
+    private string? _reportedCredentialRecovery;
+    private readonly bool _treeEditsAllowed;
+    private bool _credentialSavedBeforeTreeSave;
 
     public CrossDomainRdpViewModel(RdpHostStore hostStore, RdpCredentialStore creds, IActivityLog activity)
     {
@@ -32,11 +35,17 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         try
         {
             tree = _hostStore.Load();
+            _treeEditsAllowed = true;
+            if (_hostStore.RecoveryMessage is { } recovery)
+            {
+                _activity.Warn(null, recovery);
+            }
         }
         catch (Exception ex)
         {
-            _activity.Error(null, $"Couldn't load the Cross-Domain RDP host tree — starting empty. {ex.Message}");
+            _activity.Error(null, $"Couldn't load the Cross-Domain RDP host tree. The view is empty and editing is disabled to protect the saved files; restore a valid primary or backup and reopen Vivre. {ex.Message}");
             tree = new RdpHostTree();
+            _treeEditsAllowed = false;
         }
 
         _tree = tree;
@@ -124,6 +133,7 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         try
         {
             settings = _creds.Resolve(host, RdpTree.AncestorsOf(_tree, host));
+            ReportCredentialRecovery();
         }
         catch (Exception ex)
         {
@@ -133,6 +143,12 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
 
         if (settings is null)
         {
+            string? credentialId = RdpCredentialStore.ResolveCredentialId(host, RdpTree.AncestorsOf(_tree, host));
+            if (!string.IsNullOrEmpty(credentialId))
+            {
+                _activity.Error(host.Server, $"The saved login referenced by '{hostNode.Name}' is unavailable. The host tree and encrypted credential backup may be from different saves; edit this host or its credential folder and re-enter the login.");
+                return true;
+            }
             _activity.Warn(host.Server, $"No saved credentials for '{hostNode.Name}' — right-click the host and choose Edit… to add a login.");
             return false;
         }
@@ -189,8 +205,9 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
 
     public void AddFolder(string name, string? domain, string? userName, string? password)
     {
+        if (!CanEditTree()) return;
         var folder = new RdpFolder { Name = name };
-        ApplyCredential(id => folder.CredentialId = id, existingId: null, domain, userName, password);
+        if (!TryApplyCredential(id => folder.CredentialId = id, existingId: null, domain, userName, password)) return;
 
         RdpFolderNodeViewModel target = TargetFolder;
         target.AddFolderNode(new RdpFolderNodeViewModel(folder, target));
@@ -200,8 +217,9 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
 
     public void AddHost(string name, string server, int port, bool nlaEnabled, string? domain, string? userName, string? password)
     {
+        if (!CanEditTree()) return;
         var host = new RdpHost { Name = name, Server = server, Port = port, NlaEnabled = nlaEnabled };
-        ApplyCredential(id => host.CredentialId = id, existingId: null, domain, userName, password);
+        if (!TryApplyCredential(id => host.CredentialId = id, existingId: null, domain, userName, password)) return;
 
         RdpFolderNodeViewModel target = TargetFolder;
         target.AddHostNode(new RdpHostNodeViewModel(host, target));
@@ -211,47 +229,99 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
 
     public void UpdateHost(RdpHostNodeViewModel node, string name, string server, int port, bool nlaEnabled, string? domain, string? userName, string? password)
     {
+        if (!CanEditTree()) return;
         RdpHost host = node.Host;
+        if (!TryApplyCredential(id => host.CredentialId = id, host.CredentialId, domain, userName, password)) return;
         host.Name = name;
         host.Server = server;
         host.Port = port;
         host.NlaEnabled = nlaEnabled;
-        ApplyCredential(id => host.CredentialId = id, host.CredentialId, domain, userName, password);
         node.RefreshName();
         Save();
     }
 
     public void UpdateFolder(RdpFolderNodeViewModel node, string name, string? domain, string? userName, string? password)
     {
+        if (!CanEditTree()) return;
+        if (!TryApplyCredential(id => node.Folder.CredentialId = id, node.Folder.CredentialId, domain, userName, password)) return;
         node.Folder.Name = name;
-        ApplyCredential(id => node.Folder.CredentialId = id, node.Folder.CredentialId, domain, userName, password);
         node.RefreshName();
         Save();
     }
 
     /// <summary>The stored credential's non-secret identity (domain/username) for pre-filling the edit dialog;
     /// the password is never returned here. Null if the node has no own credential.</summary>
-    public RdpCredential? GetCredential(string? credentialId) => _creds.Get(credentialId);
+    public RdpCredential? GetCredential(string? credentialId)
+    {
+        RdpCredential? credential;
+        try
+        {
+            credential = _creds.Get(credentialId);
+            ReportCredentialRecovery();
+        }
+        catch (Exception ex)
+        {
+            _activity.Error(null, $"Couldn't load the saved RDP login for editing. The encrypted credential files were left unchanged: {ex.Message}");
+            return null;
+        }
+        if (!string.IsNullOrEmpty(credentialId) && credential is null)
+        {
+            _activity.Error(null, "A saved login referenced by the RDP host tree is unavailable. The host tree and encrypted credential backup may be from different saves; re-enter that login before saving the edited item.");
+        }
+        return credential;
+    }
 
     /// <summary>Resolves the credential ref after an add/edit: a blank username clears it (inherit from an
     /// ancestor folder); otherwise upsert, keeping the existing password when the box was left blank on edit.</summary>
-    private void ApplyCredential(Action<string?> setRef, string? existingId, string? domain, string? userName, string? password)
+    private bool TryApplyCredential(Action<string?> setRef, string? existingId, string? domain, string? userName, string? password)
     {
-        if (string.IsNullOrWhiteSpace(userName))
+        _credentialSavedBeforeTreeSave = false;
+        try
         {
-            setRef(null);
-            return;
+            if (string.IsNullOrWhiteSpace(userName))
+            {
+                if (existingId is not null && _creds.Get(existingId) is null)
+                {
+                    setRef(existingId);
+                    ReportCredentialRecovery();
+                    _activity.Error(null, "The referenced saved login is unavailable, so Vivre preserved its reference instead of clearing it. Re-enter both the username and password to replace the missing login.");
+                    return true;
+                }
+                setRef(null);
+                return true;
+            }
+
+            string resolvedPassword;
+            if (!string.IsNullOrEmpty(password)) resolvedPassword = password;
+            else if (existingId is not null)
+                resolvedPassword = _creds.GetPassword(existingId)
+                    ?? throw new InvalidOperationException("The referenced saved login is unavailable. Re-enter its password before saving; Vivre will not replace it with a blank password.");
+            else resolvedPassword = string.Empty;
+
+            setRef(_creds.Upsert(existingId, domain, userName.Trim(), resolvedPassword));
+            _credentialSavedBeforeTreeSave = true;
+            ReportCredentialRecovery();
+            return true;
         }
+        catch (Exception ex)
+        {
+            _activity.Error(null, $"Couldn't save the RDP login, so the connection-tree edit was not applied. Resolve the credential storage error and retry; existing saved login data remains available from the primary or recovery backup when possible. {ex.Message}");
+            return false;
+        }
+    }
 
-        string resolvedPassword = !string.IsNullOrEmpty(password)
-            ? password!
-            : existingId is not null ? _creds.GetPassword(existingId) ?? string.Empty : string.Empty;
-
-        setRef(_creds.Upsert(existingId, domain, userName.Trim(), resolvedPassword));
+    private void ReportCredentialRecovery()
+    {
+        if (_creds.RecoveryMessage is { } recovery && !string.Equals(recovery, _reportedCredentialRecovery, StringComparison.Ordinal))
+        {
+            _activity.Warn(null, recovery);
+            _reportedCredentialRecovery = recovery;
+        }
     }
 
     public void RemoveNode(RdpNodeViewModel node)
     {
+        if (!CanEditTree()) return;
         if (ReferenceEquals(node, _root))
         {
             return;
@@ -292,6 +362,7 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
     /// model + tree and persisting. The view confirms with the user first.</summary>
     public void MoveNode(RdpNodeViewModel node, RdpFolderNodeViewModel? targetFolder)
     {
+        if (!CanEditTree()) return;
         if (!CanMove(node, targetFolder))
         {
             return;
@@ -340,11 +411,23 @@ public partial class CrossDomainRdpViewModel : ObservableObject, ITabViewModel, 
         try
         {
             _hostStore.Save(_tree);
+            _credentialSavedBeforeTreeSave = false;
         }
         catch (Exception ex)
         {
-            _activity.Error(null, $"Couldn't save the Cross-Domain RDP host tree: {ex.Message}");
+            string credentialState = _credentialSavedBeforeTreeSave
+                ? " The encrypted login change was saved first, but the host-tree reference/change was not; retry the edit after resolving the storage error. A newly entered login may remain unused until that retry."
+                : string.Empty;
+            _activity.Error(null, $"Couldn't save the Cross-Domain RDP host tree. The host-tree change remains visible only in the current tab and was not saved; reopen the tab to return to the saved tree.{credentialState} {ex.Message}");
+            _credentialSavedBeforeTreeSave = false;
         }
+    }
+
+    private bool CanEditTree()
+    {
+        if (_treeEditsAllowed) return true;
+        _activity.Error(null, "RDP host-tree editing is disabled because the saved tree could not be loaded. Restore a valid primary or backup and reopen Vivre.");
+        return false;
     }
 
     public void Dispose()

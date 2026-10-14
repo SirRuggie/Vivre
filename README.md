@@ -56,7 +56,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   credential inheritance. Sessions re-fit to the pane as you resize, zoom to match a high-DPI display
   (the session itself stays at 100% scale so Failover Cluster Manager's menus keep working), and can
   go full screen. Signing out inside the remote closes its tab; any other disconnect keeps the tab
-  with a Reconnect button.
+  with a Reconnect button. Saved connections and encrypted credentials use replacement saves and
+  recoverable backups; failed reads block destructive empty saves and report the recovery needed.
 - **Filter & report** — filter the grid by name or state (Updates / Reboot pending / Errors /
   Offline / Done), **Select shown** to act on just that subset, and **Export to CSV** for a
   maintenance-window write-up.
