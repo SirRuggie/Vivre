@@ -36,6 +36,8 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
 
 ## Case files / findings (point-in-time, never edited)
 
+- **[vivre-comprehensive-audit-2026-10-14.md](vivre-comprehensive-audit-2026-10-14.md)** — F26–F45 ranked operations, resource, UX, reuse and release findings; source evidence, refutations and validation limits. Review only; fixes remain open.
+
 - **[vivre-performance-implementation-2026-10-14.md](vivre-performance-implementation-2026-10-14.md)** — F13–F20 implementation, adversarial validation, measured changes and remaining operational limits. *Read when: checking the performance fixes and their actual test coverage.*
 
 - **[vivre-performance-review-2026-10-14.md](vivre-performance-review-2026-10-14.md)** — F13–F20 performance findings, repeated local measurements and outstanding operational validation gaps. *Read when: prioritizing responsiveness or memory work; fixes remain recommendations.*

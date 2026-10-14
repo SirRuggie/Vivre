@@ -24,6 +24,8 @@
 
 ## ▶ DO NEXT — recommended order
 
+**Comprehensive audit — 2026-10-14:** [F26–F45 ranked findings](vivre-comprehensive-audit-2026-10-14.md): five High, twelve Medium, three Low. All remain open; this pass changed documentation only. Includes explicitly identified known open gaps and source-only risks. F12 and fast-watch deferrals remain in force. Start with publish-path safety, script correctness/update delivery, operation ownership and bounded output; implementation is a separate step.
+
 **Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking is implemented in 1.17.3 (see its release ledger). Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
 
 **Performance batch — 2026-10-14:** F13–F20 implemented; [implementation evidence and limits](vivre-performance-implementation-2026-10-14.md), [frozen baseline assessment](vivre-performance-review-2026-10-14.md). F13–F19 have local runtime validation; F20 compiled/source-reviewed, visible banner/tray behavior unverified. Live integration/native soak gaps remain. F12 stays skipped. Earlier dated release/test summaries below are historical.
