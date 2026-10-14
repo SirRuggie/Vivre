@@ -18,7 +18,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F02 | Reboot disclosure and approved targets | Implemented and locally validated | Committed and pushed |
 | F03 | SMB reboot dispatch reporting | Implemented and locally validated; independent red-team accepted | Authorized commit and push |
 | F04 | RDP persistence and recovery | Implemented; independent review accepted | Authorized October 14, 2026 |
-| F05 | Consistent and recoverable package staging | Direction agreed; verify before replacement, preserve prior package | Not authorized |
+| F05 | Consistent and recoverable package staging | Implemented; independent review accepted | Authorized October 14, 2026 |
 | F06 | Ambiguous WUG device names | Direction agreed; independent red-team required | Not authorized |
 | F07 | Recovery from cached Kerberos failure | Direction agreed; per-host retry and fresh attempt after credential change | Not authorized |
 | F08 | Software absence versus query failure | Direction agreed; installed, absent, and could-not-check results | Not authorized |
@@ -178,7 +178,7 @@ Shaun approved copying and verifying a replacement package separately before rep
 5. Confine replacement and cleanup to the selected package's destination. Do not replace or delete the surrounding shared staging directory or unrelated packages. A single-file package must not cause replacement of its parent directory.
 6. Preserve staging as a copy-only operation; do not automatically install or execute the package.
 
-**Implementation status: not started. Authorization: not granted.** Shaun's agreement accepts this design direction only. No implementation priority has been selected.
+**Implementation status: implemented and independently reviewed locally. Authorization: Shaun said “ok continue to next” after F04 delivery on October 14, 2026.** Validation uses disposable dummy packages and destinations; no live server staging or package execution is authorized.
 
 ### Proposed acceptance checks for later implementation
 
@@ -188,7 +188,7 @@ Shaun approved copying and verifying a replacement package separately before rep
 - Unrelated files/packages outside the exact package destination remain unchanged; single-file staging preserves siblings.
 - First-time staging still succeeds without an existing package, and staging never executes an installer.
 
-These checks have not been run. Replacement/rollback mechanics, temporary-file cleanup, and handling of locked destination files remain engineering details to resolve when implementation is authorized. F11's memory/resource behavior is not automatically added to this implementation scope.
+Local acceptance evidence appears in the F05 ledger below. Live transport, power-loss, and multi-process behavior remain unverified. F11's bounded-memory transfer and interrupted-chunk cleanup remain separate; F05 restores normal finalized-ZIP cleanup and owns its new candidate/extraction paths.
 
 ## F06 Unambiguous WhatsUp Gold device matching
 
@@ -571,3 +571,66 @@ allowing them to rotate over a usable backup. Tests remain isolated from real us
 before publishing it and preserve the previous usable package if copying or replacement fails. Scope
 is Stage software only, including local, SMB, and WinRM paths; Server 2016 CU staging and automatic
 installation remain separate. F12 remains skipped.
+
+
+## F05 capability and acceptance ledger
+
+| Capability | Status | Required evidence |
+|---|---|---|
+| Verified replacement across local, SMB, and WinRM staging | Implemented and tested locally | Exact content/hash verification before publication; generated-script execution with dummy files |
+| Prior package preserved through transfer/verification failure | Implemented and tested locally | Failure and cancellation fixtures with old-package byte checks |
+| Replacement failure has truthful recovery | Implemented and tested locally | Rename/publish failure, rollback and recovery-path checks |
+| Package boundary and sibling isolation | Implemented and tested locally | Single-file rename, folder stale-file removal, sibling preservation and path-boundary tests |
+| Existing operational constraints preserved | Implemented and tested locally | Copy-only, credentials, cleanup coordination, protected recovery paths; no Server 2016 CU changes |
+| Independent refutation and full regression | Completed; independent review accepted | Separate review, main source review, solution build and 1,311 passing tests |
+| Live SMB/WinRM server validation | Outside local validation | No production target or actual package deployment used |
+
+
+### F05 review checkpoint
+
+Review requires exact single-file destination semantics, hidden files and empty folders in verification,
+no deletion of another actor's destination during rollback, local-alias staging serialization, and
+reparse-path rejection before recursive operations. Protected recovery siblings must be registered
+before mutation. The UI now retains detailed success and cancellation messages rather than hiding
+cleanup/recovery guidance. Executable failure tests and independent review now cover these corrections; full-suite evidence follows.
+
+
+### F05 verification limits and operational behavior
+
+- Main and independent reviewer each passed **26/26 focused deployment tests** and built the full
+  solution including Desktop with **zero errors** and the existing missing signing-certificate warning.
+- Real disposable filesystem cases cover changed source bytes, locked destination, candidate/backup
+  collisions, cancellation before publication, exact renamed-file and folder replacement, unrelated
+  siblings, and empty directories. Actual Windows PowerShell 5.1 runs exercise the generated scripts,
+  including ZIP file/folder verification and cleanup, hash mismatch, locked target, candidate collision,
+  injected publication failure with successful rollback, and injected rollback failure with a named backup.
+- The old package moves to a unique sibling only after candidate verification. Publication uses an
+  exact rename, never folder merge. Failed rollback does not delete a newly appeared destination;
+  it retains the old package at the reported backup path. New working/recovery paths are registered
+  before mutation. Post-publication cleanup warnings remain visible in the row and Activity.
+- Once dispatched, SMB publication and WinRM finalization are non-cancellable: Stop can end the visible
+  sweep while in-flight work finishes and later reports its outcome. These commands have no separate
+  execution timeout; a hung filesystem/remote command may retain ownership indefinitely. Keep this
+  runtime limit visible; do not claim Stop proves that remote work stopped. Unknown results contain
+  recovery locations and never trigger another publication through WinRM.
+- No live SMB/WinRM server, EDR behavior, ACL-denial, process crash, physical power loss, or separate
+  concurrent Vivre processes were exercised. The process-local lock normalizes known host aliases
+  and serializes an exact target, not arbitrary DNS aliases or cross-process/overlapping destinations.
+- No Server 2016 CU lane, installer execution, reboot primitive, or reboot inventory change is included.
+  Help, README, repository guidance, patching coordination documentation, and Unreleased notes reflect F05.
+
+**Recommended next: F06 — ambiguous WhatsUp Gold device names.** Refuse ambiguous matches instead of
+choosing the first result, so a maintenance change cannot target the wrong matching device. Preserve
+unique matches and require independent red-team review. F12 remains skipped.
+
+
+### F05 final local verification and delivery
+
+- Main final full regression: **1,311 passed, zero failed, zero skipped** (2m10s).
+- Main full solution build: **zero errors, one known missing agent-signing certificate warning**;
+  the locally built UpdateAgent remains unsigned. No deployment or release was performed.
+- Independent review reran all **26 focused tests**, built the solution, reviewed the final source,
+  and reported no confirmed remaining defect. Main independently read all changed source/tests and
+  verified the existing transport/copy-only assertions were retained or adapted to the new contract.
+- `git diff --check` passed. Changes are ready for the standing authorized conventional commit/push;
+  no attribution trailers, version bump, live server staging, or package execution is included.

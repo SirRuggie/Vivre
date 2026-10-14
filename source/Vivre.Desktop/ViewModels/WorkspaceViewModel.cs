@@ -1960,8 +1960,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             if (result.Ok)
             {
-                computer.CommandResult = $"{packageName}: staged to {targetPath}";
-                _activity.Info(computer.Name, $"Staged '{packageName}' to {targetPath}");
+                // Preserve recovery/cleanup guidance returned after a successful publication.
+                computer.CommandResult = $"{packageName}: {result.Message}";
+                _activity.Info(computer.Name, $"Stage '{packageName}': {result.Message}");
             }
             else
             {
@@ -1970,9 +1971,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 _activity.Error(computer.Name, $"Stage '{packageName}' failed — {result.Message}");
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException ex)
         {
-            computer.CommandResult = $"{packageName}: cancelled";
+            computer.CommandResult = $"{packageName}: cancelled — {ex.Message}";
+            _activity.Warn(computer.Name, $"Stage '{packageName}' cancelled — {ex.Message}");
             throw;
         }
         catch (Exception ex)

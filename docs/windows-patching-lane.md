@@ -780,7 +780,9 @@ this is an additional check, not a cross-process distributed lock. F12 remains s
 host names; case, trailing-dot spellings, and known local aliases are normalized.
 
 The protected-path registry at `C:\ProgramData\Vivre\protected-staging-paths.json` records staging
-source/destination paths before copy. Cleanup refuses unreadable/corrupt protection data. Built-in
+source/destination paths before copy. Stage software also records its temporary candidate and recovery
+backup paths before mutation so a retained backup remains protected after a failure. Cleanup refuses
+unreadable/corrupt protection data. Built-in
 package/work paths are protected independently. Arbitrary custom destinations staged by older builds
 or other operator machines cannot be reconstructed automatically; this registry records paths seen
 by this installation. No automatic removal of protection entries is included.

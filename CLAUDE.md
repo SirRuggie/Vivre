@@ -176,6 +176,11 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   ending Unverified without proof. Preserve dispatch count, force flags, and existing escalation timing.
   Start and cleanup diagnostics must remain separate and visible in Release logs. F03 evidence and
   runtime limits live in `docs/vivre-review-decisions.md`.
+- Stage software must verify a separate candidate before replacing the exact selected package. Keep
+  local, SMB, and WinRM replacement semantics consistent; preserve the prior package on transfer or
+  verification failure and report any retained recovery backup. Do not retry an uncertain publication
+  through another transport. Register temporary/recovery paths before mutation; preserve copy-only
+  behavior and keep this lane separate from Server 2016 CU staging.
 - RDP host/credential persistence must retain safe replacement writes, validated last-good backups,
   and failed-load write protection. Never treat corrupt data as an empty first-use store. Keep passwords
   DPAPI-protected in all persisted copies; a missing recovered credential reference must be explicit,
