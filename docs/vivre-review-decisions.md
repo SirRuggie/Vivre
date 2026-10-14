@@ -6,7 +6,7 @@ Last updated: October 14, 2026.
 
 ## Authorization and status
 
-**Implementation authorized October 14, 2026.** Shaun asked to start tackling the agreed findings. F01 + F09 (Details > Free up disk space) are implemented, tested, committed, and pushed; the Server 2016 component-cleanup workflow is preserved. F02 is also implemented and locally validated; its delivery is recorded in Git history. Other agreed findings remain queued; F12 remains explicitly skipped. Shaun authorized commits and pushes with short conventional messages. Deployment and live destructive validation remain outside scope.
+**Implementation authorized October 14, 2026.** Shaun asked to start tackling the agreed findings. F01 + F09 (Details > Free up disk space) are implemented, tested, committed, and pushed; the Server 2016 component-cleanup workflow is preserved. F02 is also implemented, locally validated, committed, and pushed. F03 is implemented and locally validated, including independent red-team review; delivery is recorded in Git history. Other agreed findings remain queued; F12 remains explicitly skipped. Shaun authorized commits and pushes with short conventional messages. Deployment and live destructive validation remain outside scope.
 
 The original report's severity ratings remain review assessments, not an agreed implementation order. Record a priority change only when Shaun makes that decision. Keep unreviewed findings pending rather than treating silence as acceptance.
 
@@ -15,8 +15,8 @@ The original report's severity ratings remain review assessments, not an agreed 
 | Finding | Subject | Discussion status | Implementation authorization |
 |---|---|---|---|
 | F01 | Details window disk cleanup conflicts and package preservation | Implemented and locally validated | Committed and pushed |
-| F02 | Reboot disclosure and approved targets | Implemented and locally validated | Authorized commit and push |
-| F03 | SMB reboot dispatch reporting | Direction agreed; independent red-team required | Not authorized |
+| F02 | Reboot disclosure and approved targets | Implemented and locally validated | Committed and pushed |
+| F03 | SMB reboot dispatch reporting | Implemented and locally validated; independent red-team accepted | Authorized commit and push |
 | F04 | RDP persistence and recovery | Direction agreed; safe writes, backups, load-failure protection | Not authorized |
 | F05 | Consistent and recoverable package staging | Direction agreed; verify before replacement, preserve prior package | Not authorized |
 | F06 | Ambiguous WUG device names | Direction agreed; independent red-team required | Not authorized |
@@ -112,7 +112,7 @@ Shaun approved improving classification, operator wording, and production loggin
 4. Log fallback start errors and error codes through the normal Release logging path, not only Debug.WriteLine. Distinguish dispatch diagnostics from cleanup diagnostics.
 5. Do not introduce extra reboot attempts because a result is uncertain. Preserve existing authorized reboot and escalation rules, target scope, force flags, and timing.
 
-**Implementation status: not started. Authorization: not granted.** Agreement covers intended behavior and the future review requirement only. No red-team review has been launched or completed for this change.
+**Implementation status: implemented and locally validated; not deployed. Authorization: Shaun said “Start” on October 14, 2026.** Independent red-team review completed with scoped acceptance after corrections; no live reboot or deployment was performed.
 
 ### Required independent red-team review
 
@@ -466,3 +466,56 @@ reboot behavior. F03 follows with its required independent red-team review. F12 
 **Next: F03 — truthful SMB reboot dispatch reporting.** Distinguish accepted, failed, and uncertain
 requests so a service-creation success is not mistaken for a confirmed reboot. Preserve dispatch,
 escalation, and timing. Independent red-team review remains mandatory for F03.
+
+
+## F03 capability and acceptance ledger
+
+Authorized October 14, 2026. This batch changes dispatch reporting and verification integration, not reboot targets, primitives, force flags, or the existing escalation schedule.
+
+| Capability | Status | Required evidence |
+|---|---|---|
+| Accepted, definite failure, uncertain start outcomes | Implemented and tested locally | Fake SCM start/error cases; creation alone cannot prove a restart |
+| Release diagnostics distinguish start from cleanup | Implemented and tested locally | Numeric error assertions and trace review |
+| Wave and Force use existing restart evidence | Implemented and tested locally | Offline/return, uptime collapse, and no-restart tests |
+| Existing sends, force flags, timings, approvals preserved | Verified locally | Dispatch count/parameter tests and unchanged inventory gate |
+| Independent refutation | Completed; scoped acceptance | Separate reviewer rebuilt and passed 75 focused tests; confirmed defects corrected |
+| Real Windows SCM/RPC lifecycle and live reboot | Not performed; outside authorized local validation | Requires separate authorization for a live canary |
+
+### F03 review checkpoint
+
+Main-agent source review required persistent restart-evidence gating for uncertain Force requests:
+a clean pending-state probe must not claim reboot completion, including after watch expiry. The
+independent reviewer additionally found that an older fast watcher could verify a newer uncertain
+request using the older baseline. Per-attempt watcher ownership and an overlap regression are
+implemented and tested before acceptance. Review also caught reversed dispatch-completion ordering: older progress, results, and catches now defer to the current attempt. These checks do not authorize another reboot or alter dispatch timing.
+
+The classification uses a narrow list of definite pre-start rejections; unknown service/RPC errors
+remain uncertain. Microsoft StartServiceW documentation confirms that timeout 1053 alone cannot
+prove whether the process ran. Real SCM/RPC behavior remains untested locally.
+
+
+### F03 final local verification and delivery
+
+- Main agent independently built the full solution including Desktop: **zero errors, one existing
+  missing agent-signing certificate warning**. The local agent is unsigned; no release was created.
+- Main agent ran the full regression suite after behavioral corrections: **1,273 passed, zero failed,
+  zero skipped**. After a final wording-only correction for unreadable uptime, the full solution was
+  rebuilt and all **75 focused F03/wave/Force/inventory tests passed** again.
+- Independent gpt-5.6-sol red-team review attempted to refute definite versus uncertain starts,
+  1053/RPC errors, non-Win32 HRESULT collisions, 1115/1191 behavior, created-but-never-executed services,
+  uptime rescue, no restart, target/force/count preservation, cleanup diagnostics, and overlapping
+  requests. It rebuilt current sources, passed **75/75** focused tests, and reported no remaining
+  confirmed defect. Main agent independently reviewed the changed source and tests.
+- All new SCM tests use injected dummy services/hosts; no Windows service or remote reboot is invoked.
+  Existing tests were extended without removing or weakening assertions. The primitive inventory and
+  manifest are unchanged. `git diff --check` passed.
+- Help, README, architecture guidance, patching documentation, and Unreleased notes reflect the change.
+  The old Force help text claiming a machine-name list was also corrected to match F02's count/scope prompt.
+- Interactive WPF behavior and actual Windows SCM/RPC start/disconnect lifecycle remain unverified.
+  Fake-service tests do not establish a production canary. Live reboot validation and deployment require
+  separate authorization. Shaun's standing instruction authorizes this local fix to be committed and pushed
+  with a short conventional subject and no attribution trailers.
+
+**Recommended next: F04 — RDP persistence and recovery.** Use safe replacement writes, recoverable
+backups, and load-failure protection so a failed save or corrupt load cannot erase saved connections.
+Preserve existing RDP behavior and DPAPI encryption. F12 remains skipped.

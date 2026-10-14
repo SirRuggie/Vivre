@@ -20,6 +20,11 @@ public enum RebootDispatch
     /// <summary>The OS accepted the reboot (over DCOM, or via the SMB/SCM fallback).</summary>
     Issued,
 
+    /// <summary>The transport lost authoritative acknowledgement after dispatch began. The reboot may have
+    /// started, so consumers must verify via offline/return and uptime evidence rather than claiming success
+    /// or failure. This does not suppress the wave's existing timed graceful-to-forced escalation.</summary>
+    Uncertain,
+
     /// <summary>A shutdown was ALREADY in progress on the box (Win32 1115 / ERROR_SHUTDOWN_IN_PROGRESS) —
     /// the box is going offline on its own, so the wave should drop into the commit-watch loop rather than
     /// escalating to a forced reboot or declaring a false "reboot isn't taking" failure.</summary>
@@ -46,6 +51,11 @@ public enum RebootDispatch
     /// the wave applies its FORCED go-offline window (not the graceful one) and must NOT escalate again —
     /// a second dispatch would be a double reboot of one box on one operator click.</para></summary>
     EscalatedToForced,
+
+    /// <summary>The trigger sent the forced form while completing a refused graceful reboot, but the SMB/SCM
+    /// start acknowledgement was ambiguous. The box may already be going down forced: use the forced window,
+    /// verify from offline/uptime evidence, and never issue another reboot for this dispatch.</summary>
+    EscalatedToForcedUncertain,
 }
 
 /// <summary>Why a box is (or isn't) reboot-ready — the discriminator the wave uses to decide whether to

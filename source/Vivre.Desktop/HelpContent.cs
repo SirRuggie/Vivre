@@ -353,8 +353,9 @@ public static class HelpContent
             Keywords = "reboot restart force shutdown this pc own machine local host vivre host",
             Lines =
             [
-                "Select the machines, right-click ▸ Reboot (force now)…, and confirm (it lists the count + names).",
+                "Select the machines, right-click ▸ Reboot (force now)…, and confirm the machine count, scope, and force consequences. The approved targets stay fixed while the prompt is open.",
                 "Runs shutdown /r /f /t 5 (a 5-second grace so the command returns cleanly) — any unsaved work on those machines is lost.",
+                "If the backup channel cannot confirm the reboot request, the row says Reboot not confirmed while Vivre checks for a restart. A definite start failure is reported as failed; no restart evidence leaves the outcome Unverified. Creating the helper service alone never proves a reboot.",
                 "If your OWN machine is in the selection, the confirm names it and warns that rebooting it terminates Vivre and abandons any wave in flight against the other machines. It's a warning only — nothing is blocked, and the same machines still reboot.",
             ],
             Tip = "To reboot at a set time instead, use right-click ▸ Schedule ▸ Reboot…. Housekeeping is automatic: when a list loads (with auto-check on load on), Vivre quietly removes any leftover Vivre_Reboot_* helper services an earlier reboot left behind.",
@@ -540,7 +541,7 @@ public static class HelpContent
             Keywords = "reboot verify wave confirm rescan ubr build 2016 wua outcome back online remaining up to date installed unverified couldn't confirm servicing wait settle nothing to commit force reboot",
             Lines =
             [
-                "After installing updates, right-click the machine(s) and choose Reboot & verify…, then confirm the list — nothing reboots without your confirm.",
+                "After installing updates, right-click the machine(s) and choose Reboot & verify…, then confirm the machine count and consequences — nothing reboots without your confirm.",
                 "1. Select the machines you want to reboot.",
                 "2. Right-click ▸ Reboot & verify…",
                 "3. Review the selected-machine count and restart consequences, then click Reboot & verify. The approved target set stays fixed even if the selection changes while confirmation is open.",
@@ -549,7 +550,8 @@ public static class HelpContent
                 "If a box has nothing staged or pending to commit (no reboot is queued for it), Vivre stops calmly and the row shows a neutral \"Nothing to commit\" — that's informational (grey), not an error: there was simply nothing to reboot for.",
                 "Machines with nobody logged on reboot gracefully — forced after 8 minutes (20 for staged 2016). If anyone is logged on, including a disconnected session, the reboot call Vivre sends is refused, so Vivre forces it immediately — unsaved work is lost.",
                 "If your OWN machine is in the selection, the confirm names it and warns that rebooting it terminates Vivre and abandons the rest of the wave against the other machines. It's a warning only — nothing is blocked, and the same machines still reboot.",
-                "While offline, Vivre keeps watching — the row shows how long it's been down, flagging \"Overdue\" past ~90 minutes. After ~4½ hours it stops live-tracking and marks the row red (\"hasn't returned after N min — no longer tracking it live. Use Verify once it's back up.\"); a box that never goes down after the forced reboot is also marked red rather than watched forever.",
+                "While offline, Vivre keeps watching — the row shows how long it's been down, flagging \"Overdue\" past ~90 minutes. After ~4½ hours it stops live-tracking and marks the row red (\"hasn't returned after N min — no longer tracking it live. Use Verify once it's back up.\"); a box that never goes down after an accepted forced reboot is also marked red rather than watched forever. If that forced request was uncertain, it stays Unverified when restart cannot be established.",
+                "An uncertain backup-channel start is shown as Reboot not confirmed while Vivre checks for restart evidence. The normal escalation schedule stays the same; uncertainty adds no retry. If no restart can be established, the outcome is Unverified rather than a claimed success or failure.",
                 "When a box comes back online:",
                 "• Server 2016 boxes flagged for staged patching: the build number (UBR) is read over DCOM and compared to the expected value. If it matches, the update committed — the row turns green. A rolled-back UBR is caught and shown as failed (red). A non-flagged 2016 box verifies via the normal re-scan like any other box.",
                 "• All other boxes: Vivre re-scans Windows Update (read-only — no installs, no further reboots). The outcome reads \"Back online · installed N · up to date\" (green), \"N remaining\" (if more updates apply), or \"couldn't rescan\" if the scan didn't complete. \"installed N\" only appears when an install in this session actually installed (or failed) something — a standalone reboot never claims \"installed 0\".",

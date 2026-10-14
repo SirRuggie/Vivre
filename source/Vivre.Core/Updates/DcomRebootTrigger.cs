@@ -53,13 +53,22 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     private const int ErrorShutdownInProgress = (int)ShutdownReturnCode.AlreadyInProgress;
 
     private readonly Vivre.Core.Logging.IActivityLog? _trace;
+    private readonly ISmbRebootServiceFactory _smbServices;
 
     /// <param name="trace">Optional file-only diagnostic breadcrumb sink — records which channel (DCOM vs the
     /// SMB/SCM fallback) took the reboot, for post-hoc diagnosis. Never mirrored to the UI. Null = no tracing.
     /// Purely observational: it changes no logic, no flags, and no call path.</param>
     public DcomRebootTrigger(Vivre.Core.Logging.IActivityLog? trace = null)
+        : this(trace, new SmbRebootServiceFactory())
+    {
+    }
+
+    internal DcomRebootTrigger(
+        Vivre.Core.Logging.IActivityLog? trace,
+        ISmbRebootServiceFactory smbServices)
     {
         _trace = trace;
+        _smbServices = smbServices ?? throw new ArgumentNullException(nameof(smbServices));
     }
 
     public Task<RebootDispatch> RebootAsync(string host, bool forced, CancellationToken cancellationToken)
@@ -92,15 +101,13 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         _trace?.Trace(host, $"reboot channel: DCOM failed ({dcomFailure}) — falling back to SMB/SCM forced={smbForced}");
         try
         {
-            RebootViaSmbScm(host, smbForced);
+            SmbRebootStartOutcome start = RebootViaSmbScm(host, smbForced);
 
             // The box may be going down FORCED on a form the CALLER never asked for (the OS refused the
             // graceful one) — the wave has to know that, or it applies the graceful go-offline window to a
             // box under /f. FallbackDispatch is that report; the trace keeps the two channels apart.
-            RebootDispatch smbDispatch = FallbackDispatch(forced, smbForced);
-            _trace?.Trace(host, smbDispatch == RebootDispatch.EscalatedToForced
-                ? $"reboot channel: SMB/SCM issued forced={smbForced} → EscalatedToForced (the OS refused the graceful form over DCOM; the force came from that refusal, and this is the SMB/SCM channel — NOT the DCOM escalation)"
-                : $"reboot channel: SMB/SCM issued forced={smbForced} → Issued");
+            RebootDispatch smbDispatch = FallbackDispatch(forced, smbForced, start);
+            _trace?.Trace(host, $"reboot channel: SMB/SCM dispatch forced={smbForced} start={start} → {smbDispatch}");
             return smbDispatch;
         }
         catch (Exception smbEx)
@@ -145,8 +152,17 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     /// boxes reboot. The reboot was already issued by the line above it.</para>
     /// <para>Internal rather than private so the reboot-wave harness can drive the REAL decision instead of
     /// duplicating it.</para></summary>
-    internal static RebootDispatch FallbackDispatch(bool requested, bool sentForced) =>
-        sentForced && !requested ? RebootDispatch.EscalatedToForced : RebootDispatch.Issued;
+    internal static RebootDispatch FallbackDispatch(
+        bool requested,
+        bool sentForced,
+        SmbRebootStartOutcome start = SmbRebootStartOutcome.Accepted) =>
+        (sentForced && !requested, start) switch
+        {
+            (true, SmbRebootStartOutcome.Uncertain) => RebootDispatch.EscalatedToForcedUncertain,
+            (true, _) => RebootDispatch.EscalatedToForced,
+            (false, SmbRebootStartOutcome.Uncertain) => RebootDispatch.Uncertain,
+            _ => RebootDispatch.Issued,
+        };
 
     /// <summary>True when an error indicates a shutdown is ALREADY in progress on the target (Win32 1115 /
     /// ERROR_SHUTDOWN_IN_PROGRESS, HRESULT 0x8007045B) — i.e. the box is already going offline, so a reboot
@@ -362,7 +378,7 @@ public sealed class DcomRebootTrigger : IRebootTrigger
     /// the form the escalation already settled on — NOT because a graceful <c>shutdown.exe</c> would be refused
     /// too, which is field-DISPROVEN (see <see cref="FallbackForced"/>).</para>
     /// </summary>
-    private static void RebootViaSmbScm(string host, bool forced)
+    internal SmbRebootStartOutcome RebootViaSmbScm(string host, bool forced)
     {
         string runId = Guid.NewGuid().ToString("N");
         string serviceName = "Vivre_Reboot_" + runId; // unique per call → concurrent waves never collide
@@ -370,22 +386,45 @@ public sealed class DcomRebootTrigger : IRebootTrigger
         string binPath = "cmd /c shutdown " + switches + " /c \"Vivre Reboot Wave\"";
 
         // Create failure (couldn't open the SCM / create the service) means the reboot was genuinely NOT
-        // issued — let it propagate so the wave flags the box. Once the service is created, treat the reboot
-        // as issued: the wave's offline check is the authoritative success signal (and it escalates to
-        // forced, then flags, if the box does NOT drop), so a Start()/Delete() error must never turn a box
-        // that is actually rebooting into a red failure.
-        RemoteServiceController service = RemoteServiceController.Create(host, serviceName, "Vivre Reboot " + runId, binPath);
+        // issued. A successful create proves only that the service definition exists; StartService below
+        // decides accepted, definite failure, or uncertain from its own acknowledgement.
+        ISmbRebootService service;
+        try
+        {
+            service = _smbServices.Create(host, serviceName, "Vivre Reboot " + runId, binPath);
+        }
+        catch (Exception createEx)
+        {
+            _trace?.Trace(host,
+                $"reboot dispatch failure: SMB/SCM CreateService forced={forced} code={DescribeError(ErrorCode(createEx))} type={createEx.GetType().Name}: {createEx.Message}");
+            throw;
+        }
+        SmbRebootStartOutcome outcome = SmbRebootStartOutcome.Accepted;
         try
         {
             service.Start(); // launches cmd → shutdown.exe; the box begins rebooting
         }
         catch (Exception startEx)
         {
-            // A non-service-aware image (cmd→shutdown) exits before reporting RUNNING, and a box that
-            // reboots on the /t 5 timer drops the open SCM RPC connection — both surface here (1053, or
-            // RPC-unavailable 1722/1726/1727) even though the reboot WAS issued. Swallow: don't fail a
-            // box that's going down. If it genuinely didn't reboot, the wave's offline wait catches it.
-            System.Diagnostics.Debug.WriteLine($"Reboot-service start on {host} (reboot likely issued): {startEx.Message}");
+            if (IsShutdownInProgress(startEx))
+            {
+                throw;
+            }
+
+            int? code = ErrorCode(startEx);
+            if (IsDefiniteStartFailure(code))
+            {
+                _trace?.Trace(host,
+                    $"reboot dispatch failure: SMB/SCM StartService forced={forced} code={DescribeError(code)} type={startEx.GetType().Name}: {startEx.Message}");
+                throw;
+            }
+
+            // StartService can time out waiting for a dispatcher (1053), or its RPC reply can be lost while
+            // cmd/shutdown is already running. Neither proves acceptance or failure. Keep watching for the
+            // existing offline/uptime evidence; do not add a send here.
+            outcome = SmbRebootStartOutcome.Uncertain;
+            _trace?.Trace(host,
+                $"reboot dispatch uncertain: SMB/SCM StartService forced={forced} code={DescribeError(code)} type={startEx.GetType().Name}: {startEx.Message}");
         }
         finally
         {
@@ -395,8 +434,70 @@ public sealed class DcomRebootTrigger : IRebootTrigger
             // up to two harmless orphans — the list-load reaper (OrphanRebootServiceReaper) removes them
             // next time the host is loaded.)
             try { service.Delete(); }
-            catch (Exception ex) { System.Diagnostics.Debug.WriteLine($"Reboot-service cleanup on {host}: {ex.Message}"); }
+            catch (Exception ex)
+            {
+                _trace?.Trace(host,
+                    $"reboot cleanup failure: SMB/SCM DeleteService forced={forced} code={DescribeError(ErrorCode(ex))} type={ex.GetType().Name}: {ex.Message}");
+            }
             service.Dispose();
         }
+
+        return outcome;
     }
+
+    // Only errors that establish StartService rejected the request before the service process could begin.
+    // Everything else stays uncertain; expanding this allowlist requires Windows lifecycle evidence.
+    internal static bool IsDefiniteStartFailure(int? code) => code is
+        2      // ERROR_FILE_NOT_FOUND: service image cannot be launched
+        or 3   // ERROR_PATH_NOT_FOUND
+        or 5   // ERROR_ACCESS_DENIED
+        or 87  // ERROR_INVALID_PARAMETER
+        or 193 // ERROR_BAD_EXE_FORMAT
+        or 1057 // ERROR_INVALID_SERVICE_ACCOUNT
+        or 1058 // ERROR_SERVICE_DISABLED
+        or 1069; // ERROR_SERVICE_LOGON_FAILED
+
+    internal static int? ErrorCode(Exception ex)
+    {
+        if (ex is Win32Exception win32)
+        {
+            return win32.NativeErrorCode;
+        }
+
+        uint hr = unchecked((uint)ex.HResult);
+        uint facility = (hr >> 16) & 0x1FFF;
+        return facility == 7 ? (int)(hr & 0xFFFF) : null; // FACILITY_WIN32 only
+    }
+
+    private static string DescribeError(int? code) => code?.ToString() ?? "unknown";
+}
+
+internal enum SmbRebootStartOutcome
+{
+    Accepted,
+    Uncertain,
+}
+
+internal interface ISmbRebootService : IDisposable
+{
+    void Start();
+    void Delete();
+}
+
+internal interface ISmbRebootServiceFactory
+{
+    ISmbRebootService Create(string host, string serviceName, string displayName, string binPath);
+}
+
+internal sealed class SmbRebootServiceFactory : ISmbRebootServiceFactory
+{
+    public ISmbRebootService Create(string host, string serviceName, string displayName, string binPath) =>
+        new SmbRebootService(RemoteServiceController.Create(host, serviceName, displayName, binPath));
+}
+
+internal sealed class SmbRebootService(RemoteServiceController inner) : ISmbRebootService
+{
+    public void Start() => inner.Start();
+    public void Delete() => inner.Delete();
+    public void Dispose() => inner.Dispose();
 }

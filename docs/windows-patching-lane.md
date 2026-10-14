@@ -63,12 +63,26 @@ the channel is healthy, so the trigger re-sends the FORCED form on the SAME sess
 re-dispatching. The fallback is reached only when DCOM THROWS (connect/auth/timeout — the
 Kerberos-broken boxes), when the escalated send itself fails or throws, or on any other
 non-zero/missing code — and after a 1191 on a GRACEFUL call it sends `/f` and likewise reports
-`EscalatedToForced`, so a box going down forced is never timed on the graceful window (see
+`EscalatedToForced` when the service start is accepted, or `EscalatedToForcedUncertain` when its
+start cannot be confirmed, so the forced attempt is never timed on the graceful window (see
 docs/dcom-1191-reboot-fallback-findings.md). Its best-effort delete can lose the race with the reboot,
 leaving a Stopped orphan behind — the **list-load reaper** (`Remoting/OrphanRebootServiceReaper`,
 gated by *auto-check on load*) enumerates each loaded host once per session over the same SCM channel
 and deletes exact `Vivre_Reboot_*` matches that are fully stopped (never anything running, never
 `Vivre_WUA_*`; it binds no start primitive at all, so it cannot fire anything).
+
+The reboot fallback distinguishes accepted service starts, definite start failures, and uncertain
+starts (including timeout or ambiguous transport loss). Creating the service alone is not evidence
+that the command ran. An uncertain start stays visible as “Reboot not confirmed” while existing
+network-return and clock-immune uptime checks seek evidence. If that evidence cannot establish a
+restart, the uncertain attempt ends Unverified. Uncertainty adds no send; the existing graceful-to-
+forced escalation schedule, force flags, and target set remain unchanged. Start diagnostics include
+the Win32 code in the rolling Release log; service cleanup diagnostics are separate.
+
+Classification reference: [Microsoft StartServiceW documentation](https://learn.microsoft.com/en-us/windows/win32/api/winsvc/nf-winsvc-startservicew).
+A 1053 response can occur when the process started without registering a service dispatcher or when
+SCM is busy with another control handler. It therefore cannot establish whether the reboot ran.
+Local fake-service tests do not validate the real SCM/RPC lifecycle; no live F03 canary is recorded.
 
 **Selection lives in `WuaUpdateLane`** (not the routing decorator): Scan / Install / Uninstall try
 WinRM first and, on the typed `KerberosWrongPrincipalException`, transparently route here. **Scan

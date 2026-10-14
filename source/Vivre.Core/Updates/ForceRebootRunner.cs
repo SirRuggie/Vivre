@@ -85,6 +85,10 @@ public sealed class ForceRebootRunner
             // here (it fires only on a refused GRACEFUL call), so this stays a single send either way.
             status?.Report("WinRM auth rejected (Kerberos) — trying the DCOM channel…");
             RebootDispatch dispatch = await _dcomFallback.RebootAsync(host, forced: true, cancellationToken).ConfigureAwait(false);
+            if (dispatch == RebootDispatch.Uncertain)
+            {
+                status?.Report("Reboot not confirmed — checking for restart…");
+            }
             return new ForceRebootResult(ForceRebootChannel.Dcom, dispatch, Error: null);
         }
 

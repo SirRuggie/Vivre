@@ -171,6 +171,11 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   Keep confirmation and execution on the same captured rows; never restore a post-approval selection
   fallback. Show counts/scope and accurate force consequences, not machine-name lists. Scheduling and
   arbitrary scripts retain their separate behavior pending an explicit scope decision.
+- SMB reboot service creation is not proof of execution. Keep accepted, definite-failure, and uncertain
+  starts distinct; uncertain attempts use existing offline/return and clock-immune uptime evidence,
+  ending Unverified without proof. Preserve dispatch count, force flags, and existing escalation timing.
+  Start and cleanup diagnostics must remain separate and visible in Release logs. F03 evidence and
+  runtime limits live in `docs/vivre-review-decisions.md`.
 - General disk cleanup ownership lives in one app-wide `HostOperationCoordinator` shared by patching,
   software staging, and `CoordinatedRemediationService`. Keep execution-time checks, not just UI
   disabled states. Cleanup must finish service recovery before releasing ownership; uncertain

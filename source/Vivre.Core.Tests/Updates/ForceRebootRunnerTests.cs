@@ -65,6 +65,22 @@ public class ForceRebootRunnerTests
     }
 
     [Fact]
+    public async Task Kerberos_fallback_preserves_uncertainty_and_narrates_verification_without_refiring()
+    {
+        var host = new FakeHost { RemoteThrow = new KerberosWrongPrincipalException("HOST", new Exception("0x80090322")) };
+        var trigger = new FakeTrigger { Result = RebootDispatch.Uncertain };
+        var runner = new ForceRebootRunner(host, trigger);
+        var status = new CapturingStatus();
+
+        ForceRebootResult result = await runner.RebootAsync(Host, null, CancellationToken.None, status);
+
+        Assert.Equal(RebootDispatch.Uncertain, result.Dispatch);
+        Assert.Equal(1, trigger.CallCount);
+        Assert.True(trigger.LastForced);
+        Assert.Contains(status.Reports, line => line.Contains("not confirmed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
     public async Task Kerberos_fallback_passes_an_escalated_forced_dispatch_through_unchanged()
     {
         // EscalatedToForced (the trigger's 1191 graceful→forced escalation) is UNREACHABLE in production from

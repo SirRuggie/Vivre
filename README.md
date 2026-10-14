@@ -41,6 +41,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   per box, for the boxes whose Express-delta CUs break under normal Windows Update). See `docs/windows-patching-lane.md`.
 - **Reboot & verify** — after an operator-confirmed reboot, Vivre watches each box offline → back →
   ready, then auto-rescans and reports a plain outcome (Server 2016 boxes are build-verified first).
+  Uncertain backup-channel reboot requests remain unconfirmed until restart evidence is observed;
+  service creation alone is never reported as a confirmed reboot.
 - **WhatsUp Gold maintenance** — put the selected machines into / out of WUG maintenance mode, with a
   pre-flight connection + module check — and a read-only **Check WhatsUp Gold state** action that
   reports each machine's current maintenance state without changing anything.

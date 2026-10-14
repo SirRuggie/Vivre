@@ -270,6 +270,17 @@ public partial class Computer : ObservableObject
     /// </summary>
     public bool ForceRebootAwaitingVerify { get; set; }
 
+    /// <summary>
+    /// Runtime-only marker for an ambiguously acknowledged Force reboot. A clean reboot-pending probe is
+    /// not restart evidence by itself, so the normal verify marker is armed only after the monitor observes
+    /// an offline transition or the fast watch proves an uptime reset.
+    /// </summary>
+    public bool ForceRebootAwaitingRestartEvidence { get; set; }
+
+    /// <summary>Monotonic runtime identity for standalone Force-reboot dispatches. Detached fast watchers
+    /// may write only while their captured generation is still current.</summary>
+    public int ForceRebootGeneration { get; set; }
+
     /// <summary>The full vitals snapshot behind the score — the Machine Details triage panel's per-drive /
     /// per-reading breakdown binds THROUGH this (e.g. <c>Vitals.Drives</c>, <c>Vitals.SystemDriveFreePercent</c>,
     /// <c>Vitals.LastBootTime</c>). Observable so a Check Vitals run WHILE Machine Details is open re-resolves

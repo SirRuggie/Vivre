@@ -60,6 +60,93 @@ public class RebootWaveTests
         Assert.True(reboot.Forced); // escalated to complete the operator-ordered reboot
     }
 
+    [Fact]
+    public async Task Uncertain_graceful_dispatch_preserves_the_existing_timed_forced_escalation()
+    {
+        var box = new FakeBox
+        {
+            GracefulDispatchUncertain = true,
+            GracefulTakesOffline = false,
+            ForcedTakesOffline = true,
+            ComesBackAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync(
+            "BOX", Fast(goOfflineMs: 30), readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal(2, reboot.Dispatches);
+        Assert.Equal([false, true], reboot.ForcedArgs); // existing graceful→timed-force rule, no extra sends
+    }
+
+    [Fact]
+    public async Task Uncertain_forced_dispatch_without_offline_or_uptime_evidence_lands_unverified()
+    {
+        var box = new FakeBox
+        {
+            GracefulTakesOffline = false,
+            ForcedDispatchUncertain = true,
+            ForcedTakesOffline = false,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        RebootWaveOptions options = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(50) };
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync(
+            "BOX", options, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase);
+        Assert.Contains("not confirmed", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(2, reboot.Dispatches);
+        Assert.Equal([false, true], reboot.ForcedArgs);
+    }
+
+    [Fact]
+    public async Task Uncertain_forced_escalation_uses_uptime_proof_and_never_sends_again()
+    {
+        var box = new FakeBox
+        {
+            EscalatedDispatchUncertain = true,
+            EscalatedTakesOffline = false,
+            RebootsUnobservedAfterChecks = 2,
+            UbrAfterReturn = TargetUbr,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        var progress = new RecProgress();
+        RebootWaveOptions options = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(60) };
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync(
+            "BOX", options, readiness, confirmation, progress, CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, result.Phase);
+        Assert.Equal(1, reboot.Dispatches);
+        Assert.Single(reboot.ForcedArgs);
+        Assert.False(reboot.ForcedArgs[0]);
+        Assert.Contains(progress.Reports, r => r.Message.Contains("not confirmed", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task Uncertain_forced_escalation_without_restart_evidence_is_unverified_with_one_send()
+    {
+        var box = new FakeBox
+        {
+            EscalatedDispatchUncertain = true,
+            EscalatedTakesOffline = false,
+        };
+        var (wave, reboot, readiness, confirmation) = Build(box);
+        RebootWaveOptions options = Fast(goOfflineMs: 20) with { ForcedGoOfflineWindow = TimeSpan.FromMilliseconds(60) };
+
+        HostPatchStatus result = await wave.RebootAndCommitAsync(
+            "BOX", options, readiness, confirmation, new RecProgress(), CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Unverified, result.Phase);
+        Assert.Contains("not confirmed", result.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, reboot.Dispatches);
+        Assert.Single(reboot.ForcedArgs);
+        Assert.False(reboot.ForcedArgs[0]);
+    }
+
     // ── 1191: the graceful form was refused and the trigger escalated to forced ───
     // Windows refuses a GRACEFUL reboot with 1191 whenever a session exists on the box, so the trigger
     // completes the operator's ordered reboot by re-sending the FORCED form on the same healthy channel and
@@ -853,6 +940,9 @@ public class RebootWaveTests
         public bool GoesOfflineWhenAlreadyInProgress;   // ...and the box then drops off the network on its own
         public int ChecksBeforeOffline;                 // >0: answers (at the OLD build) this many reach checks, then drops off (a box slow to leave the network)
         public bool RebootRefusesGracefulAndEscalates;  // 1191: Windows refused the graceful form (a session is logged on) and the trigger escalated to forced on the same channel
+        public bool GracefulDispatchUncertain;
+        public bool ForcedDispatchUncertain;
+        public bool EscalatedDispatchUncertain;
         public bool EscalatedTakesOffline;              // ...and the box then drops off under that forced reboot
         public bool RebootEscalationFailsAndFallsBackToSmb; // 1191 refusal, then the DCOM forced escalation FAILED too, so the trigger fell back to the SMB/SCM channel
         public bool OnlyAForcedSendTakesItOffline;      // a session is logged on: the box ignores a GRACEFUL shutdown on ANY channel and drops only for a forced one
@@ -940,6 +1030,19 @@ public class RebootWaveTests
                 // A shutdown is already in progress — the box goes offline on its own (no extra reboot needed).
                 if (box.GoesOfflineWhenAlreadyInProgress) { box.Online = false; }
                 return Task.FromResult(RebootDispatch.AlreadyInProgress);
+            }
+
+            if (box.EscalatedDispatchUncertain && !forced)
+            {
+                if (box.EscalatedTakesOffline) { box.Online = false; }
+                return Task.FromResult(RebootDispatch.EscalatedToForcedUncertain);
+            }
+
+            if ((!forced && box.GracefulDispatchUncertain) || (forced && box.ForcedDispatchUncertain))
+            {
+                if (forced && box.ForcedTakesOffline) { box.Online = false; }
+                if (!forced && box.GracefulTakesOffline) { box.Online = false; }
+                return Task.FromResult(RebootDispatch.Uncertain);
             }
 
             if (box.RebootEscalationFailsAndFallsBackToSmb && !forced)

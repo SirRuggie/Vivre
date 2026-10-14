@@ -193,7 +193,8 @@ public sealed class RebootWave
         // over the SMB/SCM fallback (with /f) when DCOM couldn't resolve the box after that refusal. Either
         // way the box is ALREADY going down FORCED, so it gets the FORCED go-offline window and must NEVER
         // be dispatched again — a second send here is the double reboot.
-        bool escalatedToForced = graceful == RebootDispatch.EscalatedToForced;
+        bool escalatedToForced = graceful is RebootDispatch.EscalatedToForced or RebootDispatch.EscalatedToForcedUncertain;
+        bool uncertain = graceful is RebootDispatch.Uncertain or RebootDispatch.EscalatedToForcedUncertain;
 
         if (alreadyGoingOffline)
         {
@@ -209,7 +210,13 @@ public sealed class RebootWave
             // the whole grid width. The full explanation is NOT lost — it is the trace line the trigger
             // writes to the rolling log when it escalates ("DCOM refused the GRACEFUL reboot — a user
             // session is logged on (1191)… escalating to the FORCED form…"), which stays byte-unchanged.
-            progress.Report(new HostPatchStatus(PatchPhase.Rebooting, "Forced — user logged on"));
+            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                uncertain ? "Forced reboot not confirmed — checking for restart…" : "Forced — user logged on"));
+        }
+        else if (uncertain)
+        {
+            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                "Reboot not confirmed — checking for restart…"));
         }
 
         // 3) Wait for it to drop off the network; if the graceful reboot the operator ordered won't take
@@ -256,6 +263,13 @@ public sealed class RebootWave
             else
             {
                 _trace?.Trace(host, "terminal: hasn't gone offline after forced reboot (escalated at the trigger — NOT re-dispatched)");
+                if (uncertain)
+                {
+                    var unverified = new HostPatchStatus(PatchPhase.Unverified,
+                        $"{host}: reboot not confirmed — it was never seen offline and no uptime reset could be confirmed. Re-check before treating it as restarted.");
+                    progress.Report(unverified);
+                    return unverified;
+                }
                 return Fail(progress,
                     $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
             }
@@ -307,18 +321,40 @@ public sealed class RebootWave
                 }
                 else
                 {
+                    if (forced == RebootDispatch.Uncertain)
+                    {
+                        progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                            "Forced reboot not confirmed — checking for restart…"));
+                    }
                     _trace?.Trace(host, $"WaitForOffline(forced) window={options.ForcedGoOfflineWindow}");
                     bool droppedForced = await WaitForOfflineAsync(host, options.ForcedGoOfflineWindow, options.PollInterval, cancellationToken).ConfigureAwait(false);
                     _trace?.Trace(host, $"WaitForOffline(forced) result={(droppedForced ? "observed-offline" : "window-expired")} sinceOrdered={sinceOrdered.Elapsed}");
 
                     if (!droppedForced)
                     {
-                        // Both windows expired with no positive "going offline" signal — we genuinely can't confirm
-                        // it dropped. Be honest (it may be committing very slowly, or it may be stuck), not alarming
-                        // ("the reboot isn't taking" wrongly implies the reboot failed).
-                        _trace?.Trace(host, "terminal: hasn't gone offline after forced reboot");
-                        return Fail(progress,
-                            $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
+                        if (await ProvenRebootedAsync(host, uptimeBaseline, sinceOrdered.Elapsed, cancellationToken).ConfigureAwait(false))
+                        {
+                            sawOffline = true;
+                            _trace?.Trace(host, "uptime proof shows the forced reboot already completed (never seen going down)");
+                            progress.Report(new HostPatchStatus(PatchPhase.Rebooting,
+                                "Rebooted already — the forced reboot completed without being seen going down; verifying…"));
+                        }
+                        else
+                        {
+                            // Both windows expired with no positive "going offline" signal — we genuinely can't confirm
+                            // it dropped. Be honest (it may be committing very slowly, or it may be stuck), not alarming
+                            // ("the reboot isn't taking" wrongly implies the reboot failed).
+                            _trace?.Trace(host, "terminal: hasn't gone offline after forced reboot");
+                            if (forced == RebootDispatch.Uncertain)
+                            {
+                                var unverified = new HostPatchStatus(PatchPhase.Unverified,
+                                    $"{host}: forced reboot not confirmed — it was never seen offline and no uptime reset could be confirmed. Re-check before treating it as restarted.");
+                                progress.Report(unverified);
+                                return unverified;
+                            }
+                            return Fail(progress,
+                                $"{host} hasn't gone offline after a forced reboot — it may still be committing updates (slow), or it may be stuck. Check the console/iLO, or use Verify once it's back.");
+                        }
                     }
 
                     sawOffline = true;

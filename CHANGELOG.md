@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **SMB reboot reporting distinguishes start failure from uncertainty.** Definite service-start failures surface as failures; timeouts and ambiguous disconnects stay unconfirmed while existing restart checks run. Without restart evidence, uncertain attempts end Unverified. Start and cleanup errors now retain separate diagnostics in the normal log. Reboot targets, commands, and escalation timing are preserved.
 - **Reboot approval now stays tied to the machines you approved.** Force reboot and Reboot & verify retain the captured targets if selection changes while confirmation is open. Prompts show concise counts and scope instead of machine-name lists; the install nudge explicitly discloses its forced reboot and unsaved-work consequences. Existing dispatch and timing are unchanged.
 - **Details > Free up space now reports actual cleanup outcomes.** Failed steps and Windows Update service recovery are visible, locked files are reported as skipped, and missing disk measurements stay unknown. Shared host guards prevent conflicts with patching and software staging; known staged paths are preserved. The Server 2016 component Clean up workflow is unchanged.
 - **The re-scan after a reboot no longer copies a helper program onto machines that are simply still starting
