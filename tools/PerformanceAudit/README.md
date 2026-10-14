@@ -35,3 +35,5 @@ dotnet run --project tools/PerformanceAudit/PerformanceAudit.csproj -c Release -
 ```
 
 Uses production CU copy/hash and package publication/rollback methods on dummy files over the mapped drive. Leaves dummy files for inspection. It does not exercise remote PowerShell, agent launch, install, cleanup, reboot, or RDP.
+
+The main probe now loads production application resources (without running App.OnStartup), constructs a MainWindow with no operational services, and checks its real completion InfoBar offscreen. It verifies overflow/error severity, ordering and dismissal; no visible window or native tray interaction is asserted. The existing app icon is linked as a resource in the harness because MainWindow uses an entry-assembly pack URI. Run just this check with `--banners-only <output.json>`. Workspace probes also verify task tracking/display advancement and preservation of a cancellation warning.

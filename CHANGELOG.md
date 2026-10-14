@@ -6,6 +6,11 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.3 — 2026-10-14
+
+### Fixed
+- **Multiple scheduled tasks no longer overwrite each other in the row display.** Known tasks are tracked by identity, the earliest pending time is shown with a remaining-task count, and later tasks survive expiry of the first. Unconfirmed replacement retains possible earlier triggers. Failed cancellation does not clear tracking.
+
 ## 1.17.2 — 2026-10-14
 
 ### Fixed

@@ -24,7 +24,7 @@
 
 ## ▶ DO NEXT — recommended order
 
-**Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking remains open. Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
+**Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking is implemented in 1.17.3 (see its release ledger). Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
 
 **Performance batch — 2026-10-14:** F13–F20 implemented; [implementation evidence and limits](vivre-performance-implementation-2026-10-14.md), [frozen baseline assessment](vivre-performance-review-2026-10-14.md). F13–F19 have local runtime validation; F20 compiled/source-reviewed, visible banner/tray behavior unverified. Live integration/native soak gaps remain. F12 stays skipped. Earlier dated release/test summaries below are historical.
 
@@ -332,10 +332,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   forcing full-width measure. (Measured in the 1.14.2 cold-start hunt: the Auto-width column measure is ~120–180ms/pass — real but minor, NOT a freeze cause.)
 - **Scan-timeout edge** — 5-min cap (a997642) may be short for the very worst first-scan boxes; bump to
   10 min (600s) ONLY if real "Scan timed out" false-positives appear.
-- **Two schedules on one box overwrite the host-keyed `_scheduledTasks` entry** while the target
-  accumulates uniquely-named `Vivre_WUA_{runId}`/`Vivre_Reboot` tasks — the chip's time and a surviving
-  task's trigger can diverge (e.g. after a partial cancel). Pre-existing, narrow; found during the
-  `289878f` cancel-chip red-team. Fix would key tracking per task, not per host.
+- **Multiple scheduled tasks per host — CLOSED in 1.17.3 for this workspace session's known tasks.** Install results carry their actual task identities; the tracker retains each, shows the earliest pending time and remaining count, and advances without erasing later tasks. Confirmed same-name registrations replace only that task; uncertain replacements retain possible prior times. Failed cancellation keeps tracking; verified absence clears it. This is not remote inventory reconciliation or cross-tab/persistent tracking.
 - **No Desktop test project** — three of the four `7e2102c` fixes have no unit-test home (the 120s
   reboot-probe timeout, the settings ActivityLog hook, parallel Enable WinRM), and every per-host
   timeout in the app (incl. the existing vitals/health ones) is trust-the-pattern. A

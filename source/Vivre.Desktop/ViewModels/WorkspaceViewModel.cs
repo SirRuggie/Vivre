@@ -293,7 +293,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private const int PostRebootRescanAttempts = 3;
     // Machines with a pending scheduled task — install or reboot (name → trigger time). Drives the
     // "Scheduled task" columns and lets the monitor clear them once the time has passed (client-side).
-    private readonly ConcurrentDictionary<string, DateTime> _scheduledTasks = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ScheduledTaskTracker _scheduledTasks = new();
     // All operations currently running in this tab (Ping/Check/Scan/Install/Uninstall sweeps).
     // Tracked as a set rather than a single field so independent operations can overlap — Stop
     // cancels them all, and IsBusy stays true until the last one finishes. This is what lets you
@@ -2142,14 +2142,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        computer.ScheduledAction = "Reboot";
-        computer.ScheduledNextRun = at;
-        _scheduledTasks[computer.Name] = at;
+        _scheduledTasks.Record(computer.Name, "Vivre_Reboot", "Reboot", at, confirmed: outcome.Detail is null);
+        RefreshScheduledDisplay(computer);
 
         if (outcome.Detail is null)
         {
             computer.LastStatus = $"Reboot scheduled for {at:g} (your time)";
-            computer.UpdateMessage = FormatScheduledMessage("Reboot", at);
+            computer.UpdateMessage = FormatScheduledMessage(computer.ScheduledAction, computer.ScheduledNextRun ?? at);
             _activity.Info(computer.Name, $"Reboot scheduled for {at:g} (your time)");
         }
         else
@@ -2157,7 +2156,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // Unconfirmed: the call sites log the specific reason (timeout / mid-invoke drop / cancel)
             // — this method only writes the row state.
             computer.LastStatus = outcome.Status;
-            computer.UpdateMessage = $"{FormatScheduledMessage("Reboot", at)} — couldn't confirm; verify on the box";
+            computer.UpdateMessage = $"{FormatScheduledMessage(computer.ScheduledAction, computer.ScheduledNextRun ?? at)} — couldn't confirm; verify on the box";
             computer.LastError = outcome.Detail;
         }
     }
@@ -2208,7 +2207,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     // read identically. It stays until the row's next action naturally replaces it.
                     computer.ScheduledAction = null;
                     computer.ScheduledNextRun = null;
-                    _scheduledTasks.TryRemove(computer.Name, out _);
+                    _scheduledTasks.Remove(computer.Name);
                     string cancelStatus = ScheduledTaskMessage.CancelStatus(hadErrors: false);
                     computer.LastStatus = cancelStatus;
                     computer.UpdateMessage = cancelStatus;
@@ -3614,12 +3613,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             // Scheduled (not run now): record the schedule and surface it as the row message. An exhausted
             // reach failure (Unreachable) is NOT a successful schedule — exclude it alongside Error.
-            if (scheduleAt is { } when && final.Phase is not (PatchPhase.Error or PatchPhase.Unreachable))
+            if (scheduleAt is { } when && final.Phase == PatchPhase.Done && final.ScheduledTaskName is { } taskName)
             {
-                computer.ScheduledAction = "Install updates";
-                computer.ScheduledNextRun = when;
-                computer.UpdateMessage = FormatScheduledMessage(computer.ScheduledAction, when);
-                _scheduledTasks[computer.Name] = when;
+                _scheduledTasks.Record(computer.Name, taskName, "Install updates", when);
+                RefreshScheduledDisplay(computer);
             }
 
             // Reflect the install result in the per-machine Updates panel (display-only; no
@@ -4836,14 +4833,25 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
+    private void RefreshScheduledDisplay(Computer computer)
+    {
+        string? previousAction = computer.ScheduledAction;
+        DateTime? previousTime = computer.ScheduledNextRun;
+        var next = _scheduledTasks.Next(computer.Name, DateTime.Now);
+        computer.ScheduledAction = next is null ? null : next.Action
+            + (next.TaskCount > 1 ? $" (+{next.TaskCount - 1} more)" : "")
+            + (next.Unconfirmed ? " (unconfirmed)" : "");
+        computer.ScheduledNextRun = next?.At;
+        if (next is not null && (previousAction != computer.ScheduledAction || previousTime != next.At))
+            computer.UpdateMessage = FormatScheduledMessage(computer.ScheduledAction, next.At);
+        else if (next is null && previousTime is { } oldTime
+            && computer.UpdateMessage == FormatScheduledMessage(previousAction, oldTime))
+            computer.UpdateMessage = "Scheduled time passed — verify the result on the host.";
+    }
+
     private static string FormatScheduledMessage(string? action, DateTime when)
     {
-        string verb = action switch
-        {
-            "Reboot" => "Reboot",
-            "Install updates" => "Install",
-            _ => "Task",
-        };
+        string verb = action?.Replace("Install updates", "Install", StringComparison.Ordinal) ?? "Task";
         // {when} is the operator's host-local pick; the "(your time)" tag makes that explicit so a
         // remote box in another zone can't be misread (the task fires at the same absolute instant).
         return $"{verb} scheduled for {when:g} (your time)";
@@ -5208,14 +5216,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// </summary>
     private async Task MonitorRowAsync(Computer computer, CancellationToken token)
     {
-        // Clear a scheduled-install row once its trigger time has passed (client-side — the task has
-        // fired by now; a later scan shows the result). No remote call.
-        if (_scheduledTasks.TryGetValue(computer.Name, out DateTime scheduledFor) && DateTime.Now >= scheduledFor)
-        {
-            _scheduledTasks.TryRemove(computer.Name, out _);
-            computer.ScheduledAction = null;
-            computer.ScheduledNextRun = null;
-        }
+        // Advance to the next known task when a trigger time passes; no execution claim or remote call.
+        RefreshScheduledDisplay(computer);
 
         bool? previous = computer.IsOnline;
         // Throttle the reachability fan-out so a full list doesn't launch one ping/DCOM probe per row at
@@ -6021,7 +6023,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         _degradedHosts.TryRemove(name, out _);
         _rebootRecheckBudget.TryRemove(name, out _);
-        _scheduledTasks.TryRemove(name, out _);
+        _scheduledTasks.Remove(name);
         _winRmRebootProbeUnsupported.TryRemove(name, out _);
         _lastRebootProbeAt.TryRemove(name, out _);
         _consecutiveProbeFailures.TryRemove(name, out _);

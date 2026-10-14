@@ -1,0 +1,9 @@
+{
+  "completions": 30,
+  "omitted": 25,
+  "recentRetained": 4,
+  "summaryPreservesErrorSeverity": true,
+  "realControlRenderedOffscreen": true,
+  "drainsAndDismisses": true,
+  "limitation": "No visible window, native tray interaction, production completion event or server operations exercised."
+}

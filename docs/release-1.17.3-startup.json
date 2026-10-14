@@ -1,0 +1,8 @@
+{
+  "Version": "1.17.3",
+  "ObservedSeconds": 15,
+  "ProcessSurvived": true,
+  "Responding": true,
+  "MainWindowCreated": true,
+  "Scope": "Packaged startup only; no UI input, computer lists, remote operations or RDP."
+}

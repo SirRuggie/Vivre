@@ -914,3 +914,7 @@ File ownership: workspace/probe; log/throttle/probes; registry/banner/tests are 
 ## Release follow-through — 2026-10-14
 
 Shaun authorized release preparation and remaining-work follow-through, then restricted live checks to dummy files under Z:\Vivre\testing. Release 1.17.2 includes CU SHA-256 copy verification, monitor-only Stop, .NET security servicing and final publisher signature enforcement. See [acceptance ledger](release-1.17.2-validation.md) for exact evidence and limits. No server scan/install/cleanup/reboot or native RDP canary was authorized or run. Multiple-task schedule tracking remains open; fast-watch lifecycle retains the earlier explicit deferral, and F12 stays skipped.
+
+## Remaining-work completion — 2026-10-14
+
+Shaun asked to finish the outstanding work. F25 multiple-task schedule display is implemented in 1.17.3; it changes local tracking and result identity only, not scheduled-task creation, cancellation or reboot commands. Actual MainWindow banner overflow/order/dismissal now has an offscreen runtime probe. The native UI helper still fails to initialize; visible tray interaction and live server/RDP checks remain unverified. The testing-folder-only authorization and earlier explicit F12/fast-watch deferrals remain in force. See [1.17.3 ledger](release-1.17.3-validation.md).

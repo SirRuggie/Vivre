@@ -139,6 +139,23 @@ public class WuaUpdateLaneStreamingTests
         Assert.True(host.CleanupCalls >= 1);
     }
 
+    [Fact]
+    public async Task Scheduled_installs_return_distinct_actual_task_names_but_run_now_does_not()
+    {
+        var reports = new List<HostPatchStatus>();
+        var host = new ScriptedStreamingHost([Done]);
+        var lane = new WuaUpdateLane(host, agentBytesProvider: () => StubAgent);
+        var options = new PatchOptions { RunBehavior = RunBehavior.ScheduleAt, ScheduleAt = DateTime.Now.AddHours(1) };
+        var first = await lane.InstallAsync("DUMMY-HOST", options, null, Sink(reports), CancellationToken.None);
+        Assert.Contains(first.ScheduledTaskName!, host.LastScript);
+        var second = await lane.InstallAsync("DUMMY-HOST", options, null, Sink(reports), CancellationToken.None);
+        Assert.StartsWith("Vivre_WUA_", first.ScheduledTaskName);
+        Assert.NotEqual(first.ScheduledTaskName, second.ScheduledTaskName);
+        Assert.Contains(second.ScheduledTaskName!, host.LastScript);
+        var immediate = await lane.InstallAsync("DUMMY-HOST", new PatchOptions(), null, Sink(reports), CancellationToken.None);
+        Assert.Null(immediate.ScheduledTaskName);
+    }
+
     private static SyncProgress Sink(List<HostPatchStatus> into) => new(into);
 
     /// <summary>An <see cref="IProgress{T}"/> that records synchronously, so tests can assert on the
@@ -168,6 +185,7 @@ public class WuaUpdateLaneStreamingTests
         private int _cleanupCalls;
 
         public int CleanupCalls => _cleanupCalls;
+        public string LastScript { get; private set; } = "";
 
         public Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default) =>
             Task.FromResult(_result);
@@ -185,6 +203,7 @@ public class WuaUpdateLaneStreamingTests
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
             bool useSsl = false, CancellationToken cancellationToken = default, bool background = false)
         {
+            LastScript = script;
             cancellationToken.ThrowIfCancellationRequested(); // user Stop before any line
 
             foreach (string line in lines)

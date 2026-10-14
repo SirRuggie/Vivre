@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[release-1.17.3-validation.md](release-1.17.3-validation.md)** — latest candidate, multiple-schedule fix and expanded banner checks; supersedes 1.17.2.
+
 - **[release-1.17.2-validation.md](release-1.17.2-validation.md)** — release acceptance ledger, package evidence, shared-drive checks and remaining pilot gaps.
 
 - **[vivre-backlog.md](vivre-backlog.md)** — the running tracker: open/parked/done work in recommended

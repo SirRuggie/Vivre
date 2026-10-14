@@ -146,6 +146,27 @@ internal static class WorkspaceProbe
             if (monitor.IsMonitoring) throw new InvalidOperationException("Stop did not halt monitoring");
         }
 
+        using (var scheduled = CreateWorkspace())
+        {
+            var tracker = (ScheduledTaskTracker)typeof(WorkspaceViewModel)
+                .GetField("_scheduledTasks", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(scheduled)!;
+            var refresh = typeof(WorkspaceViewModel).GetMethod("RefreshScheduledDisplay", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var row = new Computer("DUMMY-SCHEDULE");
+            DateTime future = DateTime.Now.AddHours(2);
+            tracker.Record(row.Name, "old-install", "Install updates", DateTime.Now.AddMinutes(-1));
+            tracker.Record(row.Name, "next-install", "Install updates", future);
+            tracker.Record(row.Name, "later-install", "Install updates", future.AddHours(1));
+            refresh.Invoke(scheduled, [row]);
+            if (row.ScheduledNextRun != future || !row.ScheduledAction!.Contains("+1 more"))
+                throw new InvalidOperationException("Later schedules lost or next time incorrect");
+            row.UpdateMessage = "Cancel failed — task may still fire";
+            refresh.Invoke(scheduled, [row]);
+            if (row.UpdateMessage != "Cancel failed — task may still fire") throw new InvalidOperationException("Cancel warning overwritten");
+            tracker.Remove(row.Name);
+            refresh.Invoke(scheduled, [row]);
+            if (row.ScheduledNextRun is not null || row.ScheduledAction is not null) throw new InvalidOperationException("Removed schedule remains");
+        }
+
         return new
         {
             measurements,

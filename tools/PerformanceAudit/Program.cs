@@ -17,15 +17,22 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
-        // No Vivre.App startup, windows, credentials, server operations or production writes.
-        var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        // No production App startup, visible windows, credentials, server operations or production writes.
+        var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        app.InitializeComponent(); // resources only; Application.Run/OnStartup is never called
         string root = Path.Combine(Path.GetTempPath(), "VivrePerformanceAudit_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
+            if (bannersOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(CompletionBannerProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (filterExperiment)
             {
                 File.WriteAllText(Path.GetFullPath(outputPath), JsonSerializer.Serialize(FilterExperiment(), new JsonSerializerOptions { WriteIndented = true }));
@@ -42,6 +49,7 @@ internal static class Program
                 throttle = Measure("Throttle", () => Task.Run(ThrottleProbe.RunAsync).GetAwaiter().GetResult()),
                 registry = Measure("Registry", () => RegistryProbe(root)),
                 manifest = Measure("Manifest", () => ManifestProbe(root)),
+                completionBanners = Measure("Completion banners", CompletionBannerProbe.Run),
                 renderedWorkspace = Measure("Rendered workspace", RenderedWorkspaceProbe.Run)
             };
             File.WriteAllText(Path.GetFullPath(outputPath), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));

@@ -312,7 +312,8 @@ public sealed class WuaUpdateLane
                 return unknown;
             }
 
-            return last;
+            return options.RunBehavior == RunBehavior.ScheduleAt && last.Phase == PatchPhase.Done
+                ? last with { ScheduledTaskName = taskName } : last;
         }
         catch (KerberosWrongPrincipalException)
         {
@@ -343,7 +344,7 @@ public sealed class WuaUpdateLane
             if (options.RunBehavior == RunBehavior.ScheduleAt && progressSeen)
             {
                 var preserved = new HostPatchStatus(PatchPhase.Done,
-                    $"Scheduled task registered on {host} — cancelled after confirmation; the scheduled task was left in place.");
+                    $"Scheduled task registered on {host} — cancelled after confirmation; the scheduled task was left in place.") { ScheduledTaskName = taskName };
                 progress.Report(preserved);
                 return preserved;
             }

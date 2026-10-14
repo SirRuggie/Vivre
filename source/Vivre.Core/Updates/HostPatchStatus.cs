@@ -162,6 +162,9 @@ public sealed record HostPatchStatus(
     int FailedCount = 0,
     bool RebootPending = false)
 {
+    /// <summary>Actual registered task identity for a confirmed scheduled install; null for run-now operations.</summary>
+    public string? ScheduledTaskName { get; init; }
+
     /// <summary>The applicable updates (populated after a scan; empty otherwise).</summary>
     public IReadOnlyList<SoftwareUpdate> Updates { get; init; } = [];
 
