@@ -21,7 +21,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F05 | Consistent and recoverable package staging | Implemented; independent review accepted | Authorized October 14, 2026 |
 | F06 | Ambiguous WUG device names | Implemented; independent red-team accepted; 1,340 tests passed | Authorized October 14, 2026 |
 | F07 | Recovery from cached Kerberos failure | Implemented and locally verified; 1,353 tests passed | Authorized October 14, 2026 |
-| F08 | Software absence versus query failure | Direction agreed; installed, absent, and could-not-check results | Not authorized |
+| F08 | Software absence versus query failure | Implemented; independent red-team accepted; 1,392 tests passed | Authorized October 14, 2026 |
 | F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Committed and pushed |
 | F10 | Preference write ordering and exit | Direction agreed; ordered saves and bounded normal-exit flush | Not authorized |
 | F11 | WinRM staging memory and temporary files | Direction agreed; bounded chunks, integrity checks, owned-file cleanup | Not authorized |
@@ -264,9 +264,9 @@ Shaun approved three distinct software-check results:
 
 Do not suppress registry/provider/access failures and convert them into a negative installation result. Distinguish a legitimately absent registry path from a failed read. Preserve evidence of a product that was actually found; an unrelated incomplete read must not turn a verified match into “not installed.” These labels apply within the existing registry-based check's supported scope, not a claim to detect every possible installation method.
 
-**Implementation status: not started. Authorization: not granted.** No implementation priority has been selected. This decision does not authorize automatic installation or remediation based on any result.
+**Implementation status: implemented and locally validated; not deployed. Authorization: granted October 14, 2026 by Shaun’s “next”.** This decision does not authorize automatic installation or remediation based on any result.
 
-### Proposed acceptance checks for later implementation
+### Acceptance checks
 
 - A matching product produces Installed with its available details.
 - A successful empty search produces Not installed.
@@ -275,7 +275,7 @@ Do not suppress registry/provider/access failures and convert them into a negati
 - WinRM and existing DCOM fallback preserve the same distinction between absence and failure.
 - UI results and logging retain the distinction rather than collapsing unknown into false. Any reported service-state lookup failure must also remain distinguishable from a verified missing service.
 
-These checks have not been run. Existing matching scope and transport fallback should be preserved while correcting result honesty.
+Local validation and independent review results are recorded in the ledger below. Existing matching scope and transport fallback should be preserved while correcting result honesty.
 
 ## F09 Truthful disk cleanup outcomes
 
@@ -758,3 +758,36 @@ recovered server on fallback for the rest of the session. F07 remains unstarted;
 **Recommended next: F08 — distinguish software absence from a failed check.** Show “Could not check”
 when a registry/provider query fails, so an access failure cannot be mistaken for “Not installed.”
 F08 remains unstarted; F12 remains skipped.
+
+## F08 implementation ledger — October 14, 2026
+
+| Capability | Status |
+| --- | --- |
+| Complete absence versus failed/incomplete search, WinRM and DCOM | Implemented; 58 focused Software tests passed |
+| Preserve proven matches with partial-read warnings | Implemented and tested with generated scripts and injected DCOM provider responses |
+| Service absence versus lookup failure | Implemented and tested for verified missing and failed lookups |
+| Grid, logging and CSV preserve unknown results and reasons | Implemented and tested; 13 CSV/lifecycle cases included in the passing full suite |
+| Real server/registry validation | Not performed; local controlled tests only |
+
+Scope: existing registry matching and read-only software checks. No installation, remediation, release or version bump.
+
+F08 review checkpoint: independent review identified stale queued cancellations and retained software errors. The row lifecycle now resets before queueing, clears only its own prior error, and guards all completion writes by check generation so an old cancelled run cannot overwrite a replacement. Product and service queries remain separate; help and tests explicitly cover a registered-product absence alongside a running matching service. Root found and corrected a value-read error still treated as missing. Additional injected DCOM tests now exercise the actual reader orchestration; final validation passed.
+
+### F08 implementation and independent review
+
+- WinRM requires a valid result and trustworthy completed search before reporting absence. DCOM rejects unknown/error return codes instead of silently treating them as absent. Missing optional roots are allowed; if neither uninstall root can be enumerated, both transports report unknown.
+- A proven product match survives unrelated read failures, including unavailable version details, with visible warnings. Optional service-query failure is separate from verified service absence. Matching remains literal name/publisher substring within the existing machine uninstall registry scope; no Win32_Product or remediation was added.
+- Grid and Activity show the result and reason. Software CSV preserves its original nine columns and appends result/error/warning fields; failed checks export Installed=Unknown, not No.
+- Cancelled queued checks reset old results; cancelled active callbacks cannot overwrite a newer check. Only the previous software-owned LastError clears on recheck. Independent Sol review accepted these fixes and the final DCOM failure-handling design.
+- Production Desktop compiled with zero errors. The existing missing signing-certificate warning remains; no release or deployment was performed.
+- Root independently executed five generated-script scenarios under Windows PowerShell 5.1 using dummy registry/service functions: installed, complete absence, both roots missing, access denied, and service error. All passed; no actual registry/service operations occurred.
+- Tests use synthetic provider results and dummy data. Real WinRM/DCOM authentication, MI marshalling, live-server cancellation and interactive WPF behavior were not integration-tested.
+
+**Recommended next: F10 — ordered preference saves and bounded normal-exit flush.** This prevents an older background save from replacing newer preferences and reduces settings lost on normal exit. F09 was delivered with F01; F12 remains skipped.
+
+### F08 final verification
+
+- `dotnet build source/Vivre.slnx --no-restore -v minimal`: succeeded, zero errors, one existing missing agent-signing-certificate warning.
+- `dotnet test source/Vivre.slnx --no-build -v minimal`: **1,392 passed, zero failed, zero skipped**, 2m39s. This includes the 58 Software tests and 13 CSV/lifecycle tests.
+- Independent red-team findings addressed and re-reviewed; root inspected the final diff. `git diff --cached --check` passed.
+- F08 delivery uses a `fix:` commit on master; exact commit and push are recorded in Git history. No version bump, release, or live operational changes.

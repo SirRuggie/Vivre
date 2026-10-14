@@ -653,7 +653,7 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
                 <!-- Software check (right-click ▸ Check software…): shows the matched product + version,
-                     or "<query> — not found" in red. Blank until a check is run for the row. -->
+                     or "Not installed — <query>" in red; incomplete checks show a reason in amber. Blank until a check is run for the row. -->
                 <DataGridTextColumn Header="Software" Binding="{Binding SoftwareCheck}" Width="Auto" MinWidth="120" MaxWidth="320" SortMemberPath="SoftwareCheck">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
@@ -668,6 +668,9 @@
                                     <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}" />
                                 </DataTrigger>
                                 <DataTrigger Binding="{Binding SoftwareServiceDown}" Value="True">
+                                    <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding SoftwareWarning}" Value="True">
                                     <Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}" />
                                 </DataTrigger>
                             </Style.Triggers>

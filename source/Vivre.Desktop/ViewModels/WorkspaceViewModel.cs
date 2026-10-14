@@ -583,38 +583,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Builds an on-demand CSV of the software-check results for the rows currently shown
     /// (respects the filter) — a per-machine report for handing off: machine, online, what was searched,
     /// installed?, product + version, the service checked, and whether it's running.</summary>
-    public string BuildSoftwareReportCsv()
-    {
-        var sb = new StringBuilder();
-        sb.AppendLine("Machine,Online,Searched for,Installed,Product,Version,Service,Service running,Checked");
-        foreach (Computer c in _computersView.Cast<Computer>())
-        {
-            sb.AppendLine(string.Join(",", new[]
-            {
-                Csv(c.Name),
-                Csv(c.IsOnline switch { true => "Online", false => "Offline", _ => "Unknown" }),
-                Csv(c.SoftwareQuery ?? string.Empty),
-                Csv(c.SoftwareFound switch { true => "Yes", false => "No", _ => string.Empty }),
-                Csv(c.SoftwareName ?? string.Empty),
-                Csv(c.SoftwareVersion ?? string.Empty),
-                Csv(c.SoftwareServiceName ?? string.Empty),
-                Csv(c.SoftwareServiceState switch
-                {
-                    null => string.Empty,
-                    "not found" => "Not found",
-                    "Running" => "Yes",
-                    _ => "No",
-                }),
-                Csv(c.SoftwareCheckedAt?.ToString("yyyy-MM-dd HH:mm") ?? string.Empty),
-            }));
-        }
-
-        return sb.ToString();
-    }
-
-    // CSV escaping (incl. the formula-injection guard) lives in GridReportCsv.Escape — shared with
-    // the shown-rows export so both CSVs neutralise hostile cell values identically.
-    private static string Csv(string value) => GridReportCsv.Escape(value);
+    public string BuildSoftwareReportCsv() => SoftwareReportCsv.Build(_computersView.Cast<Computer>());
 
     /// <summary>True while a sweep (Ping All / Check All) is running — drives the busy indicator and button enable-state.</summary>
     [ObservableProperty]
@@ -1551,102 +1520,46 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // scan throttle with a per-host timeout so a hung box can't stall the sweep.
     private async Task CheckSoftwareRowAsync(Computer computer, string query, string? serviceName, CancellationToken token)
     {
-        await _remoteSweepThrottle.Active.WaitAsync(token);
-        try
+        await SoftwareCheckState.RunAsync(computer, query, serviceName, _remoteSweepThrottle.Active, async generation =>
         {
-            // Skip the doomed software check on a genuinely-offline box (unreachable by ping AND ambient
-            // DCOM — the check's only two transports are WinRM and DCOM, so both channels dead means the
-            // check cannot succeed). Write a clean "Offline" instead of burning a timeout into a
-            // misleading "WinRM unavailable". Per-sweep: a box that answers on a later check re-runs
-            // and refills normally.
-            if (await IsGenuinelyOfflineAsync(computer.Name, token))
-            {
-                computer.SoftwareFound = null;
-                computer.SoftwareServiceDown = null;
-                computer.SoftwareCheck = "Offline";
-                computer.SoftwareQuery = query;
-                computer.SoftwareServiceName = string.IsNullOrWhiteSpace(serviceName) ? null : serviceName;
-                computer.SoftwareName = null;
-                computer.SoftwareVersion = null;
-                computer.SoftwareServiceState = null;
-                return;
-            }
-
-            computer.SoftwareFound = null;
-            computer.SoftwareServiceDown = null;
-            computer.SoftwareCheck = $"Checking {query}…";
-            // Capture the raw fields for the on-demand CSV report (cleared per run, set on completion).
-            computer.SoftwareQuery = query;
-            computer.SoftwareServiceName = string.IsNullOrWhiteSpace(serviceName) ? null : serviceName;
-            computer.SoftwareName = null;
-            computer.SoftwareVersion = null;
-            computer.SoftwareServiceState = null;
-
             using var perHost = CancellationTokenSource.CreateLinkedTokenSource(token);
             perHost.CancelAfter(TimeSpan.FromSeconds(SoftwarePerHostTimeoutSeconds));
             try
             {
+                // Keep the existing reachability gate, but never describe an unreachable host as absent.
+                if (await IsGenuinelyOfflineAsync(computer.Name, perHost.Token))
+                {
+                    RecordFailure("host is unreachable");
+                    return;
+                }
+
                 SoftwareCheckResult r = await _software.CheckAsync(computer.Name, query, serviceName, CurrentPsCredential(), perHost.Token);
-                computer.SoftwareName = r.Name;
-                computer.SoftwareVersion = r.Version;
-                computer.SoftwareServiceState = r.ServiceState;
-                computer.SoftwareCheckedAt = DateTime.Now;
-                if (r.Found)
-                {
-                    string label = string.IsNullOrWhiteSpace(r.Version) ? r.Name ?? query : $"{r.Name} {r.Version}";
-                    // Append the service verdict when one was checked; flag "installed but not running" amber.
-                    bool serviceDown = r.ServiceState is not null && !string.Equals(r.ServiceState, "Running", StringComparison.OrdinalIgnoreCase);
-                    string servicePart = r.ServiceState switch
-                    {
-                        null => string.Empty,
-                        "Running" => " · running",
-                        "not found" => " · no service",
-                        _ => $" · {r.ServiceState.ToLowerInvariant()}",
-                    };
-                    computer.SoftwareFound = true;
-                    computer.SoftwareServiceDown = serviceDown;
-                    computer.SoftwareCheck = label + servicePart;
-                    _activity.Info(computer.Name, $"Software check '{query}' — found: {label}{servicePart}");
-                }
+                if (!SoftwareCheckState.Complete(computer, query, r, generation)) return;
+                if (computer.SoftwareWarning)
+                    _activity.Warn(computer.Name, $"Software check '{query}' — {computer.SoftwareCheck}");
                 else
-                {
-                    computer.SoftwareFound = false;
-                    computer.SoftwareServiceDown = false;
-                    computer.SoftwareCheck = $"{query} — not found";
-                    _activity.Info(computer.Name, $"Software check '{query}' — not found");
-                }
+                    _activity.Info(computer.Name, $"Software check '{query}' — {computer.SoftwareCheck}");
             }
             catch (OperationCanceledException) when (perHost.IsCancellationRequested && !token.IsCancellationRequested)
             {
-                computer.SoftwareFound = null;
-                computer.SoftwareCheck = "check timed out";
-                computer.LastError = $"Software check timed out after {SoftwarePerHostTimeoutSeconds}s";
-                _activity.Warn(computer.Name, computer.LastError);
+                RecordFailure($"timed out after {SoftwarePerHostTimeoutSeconds}s");
             }
             catch (OperationCanceledException)
             {
-                computer.SoftwareCheck = "cancelled";
+                RecordFailure("cancelled");
                 throw;
-            }
-            catch (Exception ex) when (ex.IsWinRmUnavailable())
-            {
-                computer.SoftwareFound = null;
-                computer.SoftwareCheck = "WinRM unavailable";
-                computer.LastError = "WinRM is broken on this box, so the software check can't run remotely here.";
-                _activity.Warn(computer.Name, $"Software check '{query}' skipped — WinRM unavailable on this box.");
             }
             catch (Exception ex)
             {
-                computer.SoftwareFound = null;
-                computer.SoftwareCheck = "check failed";
-                computer.LastError = ex.Message;
-                _activity.Warn(computer.Name, $"Software check '{query}' failed — {ex.Message}");
+                RecordFailure(ex.Message);
             }
-        }
-        finally
-        {
-            _remoteSweepThrottle.Active.Release();
-        }
+
+            void RecordFailure(string reason)
+            {
+                if (!SoftwareCheckState.Fail(computer, query, reason, generation)) return;
+                _activity.Warn(computer.Name, $"Software check '{query}' — {reason}");
+            }
+        }, token, reason => _activity.Warn(computer.Name, $"Software check '{query}' — {reason}"));
     }
 
     // --- Custom grid columns (user-defined script-backed columns + hide/show built-ins) ---

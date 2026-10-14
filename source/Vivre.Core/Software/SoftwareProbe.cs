@@ -88,8 +88,41 @@ public sealed class SoftwareProbe : ISoftwareProbe
         }
 
         PSObject row = result.Output[0];
+        if (Value(row, "Found") is not bool found)
+        {
+            throw new SoftwareProbeException("Could not query software on target: the response did not contain a valid Found verdict");
+        }
+
+        bool searchComplete = Value(row, "SearchComplete") is bool complete && complete;
+        string? queryWarning = GetString(row, "QueryWarning");
+        string? streamWarning = result.Errors.Count > 0 ? string.Join("; ", result.Errors) : null;
+        if (result.HadErrors && streamWarning is null)
+        {
+            streamWarning = "PowerShell reported an error without details";
+        }
+        queryWarning = JoinWarnings(queryWarning, streamWarning);
+
+        // Older/malformed output must never default to a clean negative. A positive is still useful
+        // evidence, but absence requires the explicit completion marker emitted by the current script.
+        if (!found && (!searchComplete || queryWarning is not null))
+        {
+            string detail = queryWarning
+                ?? (result.Errors.Count > 0 ? result.Errors[0] : "the registry search did not report completion");
+            throw new SoftwareProbeException($"Could not query software on target: {detail}");
+        }
+
+        if (found && GetString(row, "Name") is null)
+        {
+            throw new SoftwareProbeException("Could not query software on target: a match was reported without a product name");
+        }
+
         return new SoftwareCheckResult(
-            GetBool(row, "Found"), GetString(row, "Name"), GetString(row, "Version"), GetString(row, "ServiceState"));
+            found,
+            GetString(row, "Name"),
+            GetString(row, "Version"),
+            GetString(row, "ServiceState"),
+            queryWarning,
+            GetString(row, "ServiceError"));
     }
 
     /// <summary>
@@ -101,31 +134,60 @@ public sealed class SoftwareProbe : ISoftwareProbe
     /// </summary>
     internal static string BuildScript(string queryLiteral, string serviceLiteral) =>
         $$"""
-        $ErrorActionPreference = 'SilentlyContinue'
+        $ErrorActionPreference = 'Stop'
         $q = [System.Management.Automation.WildcardPattern]::Escape({{queryLiteral}})
         $svc = [System.Management.Automation.WildcardPattern]::Escape({{serviceLiteral}})
         $paths = @(
-            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\*',
-            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*'
+            'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall',
+            'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
         )
         $match = $null
+        $searchErrors = [System.Collections.Generic.List[string]]::new()
+        $enumeratedRoots = 0
         foreach ($p in $paths) {
-            $match = Get-ItemProperty -Path $p -ErrorAction SilentlyContinue |
+            $rows = [System.Collections.Generic.List[object]]::new()
+            try {
+                $keys = @(Get-ChildItem -Path $p -ErrorAction Stop)
+                $enumeratedRoots++
+                foreach ($key in $keys) {
+                    try {
+                        $item = Get-ItemProperty -LiteralPath $key.PSPath -ErrorAction Stop
+                        if ($item.DisplayName) { $rows.Add($item) }
+                    } catch {
+                        $searchErrors.Add("Registry entry '$($key.PSChildName)' could not be read: $($_.Exception.Message)")
+                    }
+                }
+            } catch [System.Management.Automation.ItemNotFoundException] {
+                # A missing optional uninstall path is benign only when another supported root enumerates.
+            } catch {
+                $searchErrors.Add("Uninstall path '$p' could not be read: $($_.Exception.Message)")
+            }
+            $match = $rows |
                 Where-Object { $_.DisplayName -and ($_.DisplayName -like "*$q*" -or $_.Publisher -like "*$q*") } |
                 Sort-Object DisplayName | Select-Object -First 1
             if ($match) { break }
         }
         $svcState = $null
+        $svcError = $null
         if ($svc) {
-            $s = Get-Service -ErrorAction SilentlyContinue |
-                Where-Object { $_.Name -like "*$svc*" -or $_.DisplayName -like "*$svc*" } |
-                Select-Object -First 1
-            if ($s) { $svcState = "$($s.Status)" } else { $svcState = 'not found' }
+            try {
+                $s = Get-Service -ErrorAction Stop |
+                    Where-Object { $_.Name -like "*$svc*" -or $_.DisplayName -like "*$svc*" } |
+                    Select-Object -First 1
+                if ($s) {
+                    $svcState = "$($s.Status)"
+                    if (-not $svcState) { $svcError = 'Service query returned a matching service without a status'; $svcState = $null }
+                } else { $svcState = 'not found' }
+            } catch {
+                $svcError = "Service query failed: $($_.Exception.Message)"
+            }
         }
+        $complete = ($searchErrors.Count -eq 0 -and $enumeratedRoots -gt 0)
+        $warning = if ($searchErrors.Count) { $searchErrors -join '; ' } else { $null }
         if ($match) {
-            [PSCustomObject]@{ Found = $true; Name = "$($match.DisplayName)"; Version = "$($match.DisplayVersion)"; ServiceState = $svcState }
+            [PSCustomObject]@{ Found = $true; Name = "$($match.DisplayName)"; Version = "$($match.DisplayVersion)"; ServiceState = $svcState; SearchComplete = $complete; QueryWarning = $warning; ServiceError = $svcError }
         } else {
-            [PSCustomObject]@{ Found = $false; Name = $null; Version = $null; ServiceState = $svcState }
+            [PSCustomObject]@{ Found = $false; Name = $null; Version = $null; ServiceState = $svcState; SearchComplete = $complete; QueryWarning = $warning; ServiceError = $svcError }
         }
         """;
 
@@ -134,7 +196,11 @@ public sealed class SoftwareProbe : ISoftwareProbe
 
     private static object? Value(PSObject row, string name) => row.Properties[name]?.Value;
 
-    private static bool GetBool(PSObject row, string name) => Value(row, name) is bool b && b;
+    private static string? JoinWarnings(string? first, string? second)
+    {
+        if (string.IsNullOrWhiteSpace(first)) return string.IsNullOrWhiteSpace(second) ? null : second;
+        return string.IsNullOrWhiteSpace(second) ? first : first + "; " + second;
+    }
 
     private static string? GetString(PSObject row, string name)
     {

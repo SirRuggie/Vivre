@@ -62,7 +62,7 @@ public class SoftwareProbeRoutingTests
     [Fact]
     public async Task Healthy_winrm_never_calls_the_reader()
     {
-        var host = new ThrowingHost(null) { Result = Row(("Found", true), ("Name", "Google Chrome"), ("Version", "120.0")) };
+        var host = new ThrowingHost(null) { Result = Row(("Found", true), ("Name", "Google Chrome"), ("Version", "120.0"), ("SearchComplete", true)) };
         var reader = new FakeReader { Result = new SoftwareCheckResult(false, null, null, null) };
 
         SoftwareCheckResult r = await new SoftwareProbe(host, reader)

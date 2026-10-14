@@ -9,7 +9,17 @@ namespace Vivre.Core.Software;
 /// <param name="ServiceState">The matched service's state when a service was requested:
 /// <c>"Running"</c>, <c>"Stopped"</c> (or another status), or <c>"not found"</c>. Null when no service
 /// check was asked for.</param>
-public sealed record SoftwareCheckResult(bool Found, string? Name, string? Version, string? ServiceState);
+/// <param name="QueryWarning">A registry-search warning retained with a proven installed match. Null
+/// for a complete search. A search that has warnings and no match throws instead of reporting absence.</param>
+/// <param name="ServiceError">Why a requested service query could not complete. Null when no service
+/// was requested or the query completed; distinct from <c>ServiceState = "not found"</c>.</param>
+public sealed record SoftwareCheckResult(
+    bool Found,
+    string? Name,
+    string? Version,
+    string? ServiceState,
+    string? QueryWarning = null,
+    string? ServiceError = null);
 
 /// <summary>Thrown when a software check couldn't read the target at all (unreachable / nothing returned)
 /// — distinct from a clean "not installed" answer.</summary>

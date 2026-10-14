@@ -54,6 +54,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Check software** — see whether a named product is installed on each machine (a read-only registry
   check) in its own Software column; when WinRM is down on a box it falls back to a read-only DCOM
   channel, so Kerberos-broken machines still answer.
+  Results distinguish **Installed**, **Not installed**, and **Could not check**. Partial reads retain
+  proven matches with warnings; service-query failures remain unknown. CSV exports include reasons.
 - **Custom columns** — run a PowerShell one-liner per machine into its own grid column; a column
   manager hides/shows built-in columns, adds predefined ones, and remembers your layout.
 - **Cross-Domain RDP** — an embedded remote-desktop manager in its own left-nav section (machine-gated

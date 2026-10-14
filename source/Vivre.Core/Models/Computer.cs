@@ -65,7 +65,7 @@ public partial class Computer : ObservableObject
     // --- Software check (ad-hoc "is product X installed?" → a grid column; see SoftwareProbe) ---
 
     /// <summary>Result of the most recent software check (e.g. "CrowdStrike Windows Sensor 7.18" or
-    /// "CrowdStrike — not found"); null until a check runs. Shown in the grid's Software column.</summary>
+    /// "Not installed — CrowdStrike"); null until a check runs. Shown in the grid's Software column.</summary>
     [ObservableProperty]
     public partial string? SoftwareCheck { get; set; }
 
@@ -78,6 +78,17 @@ public partial class Computer : ObservableObject
     /// — the "present but not protecting" case. Overrides the green to amber in the Software column.</summary>
     [ObservableProperty]
     public partial bool? SoftwareServiceDown { get; set; }
+
+    /// <summary>Partial registry or service-query failure; overrides the result colour to amber.</summary>
+    [ObservableProperty]
+    public partial bool SoftwareWarning { get; set; }
+
+    public string? SoftwareQueryWarning { get; set; }
+    public string? SoftwareServiceError { get; set; }
+    public string? SoftwareError { get; set; }
+
+    // A cancelled sweep can unwind after its replacement has started.
+    internal int SoftwareCheckGeneration;
 
     // Raw software-check fields behind the display string, kept off the observable surface (like Vitals)
     // — they back the on-demand "Export software report (CSV)" so the report has real per-column values.

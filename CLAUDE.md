@@ -284,3 +284,7 @@ and in the common case **stop there: one short subject line IS the whole commit.
 - Still applies: **no `Co-Authored-By` / AI attribution trailer**, **unsigned**. Commit and push completed changes under Shaun's standing delivery instruction above.
 
 Good — subject only: `fix: rebuild RDP control on Reconnect and keep involuntary drops open`
+
+### Software-check result integrity
+
+A negative software result requires a completed supported registry search. Provider/read failures without a match must throw, never become absence. Preserve proven matches with QueryWarning; ServiceError is distinct from a verified missing service. WinRM and ambient DCOM fallback share this contract. The grid and SoftwareReportCsv must keep unknowns and reasons visible.
