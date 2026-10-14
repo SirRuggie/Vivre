@@ -125,15 +125,29 @@ public partial class ComputerDetailViewModel : ObservableObject
         RunActionAsync("Freeing disk space…", async () =>
         {
             DiskCleanupResult r = await _remediation.FreeDiskSpaceAsync(Computer.Name, _credential());
-            if (!r.Ok)
+            string outcome = r.Outcome switch
             {
-                return r.Message;
+                DiskCleanupOutcome.Completed => "Completed",
+                DiskCleanupOutcome.PartiallyCompleted => "Partially completed",
+                _ => "Failed",
+            };
+            string measured = r.ReclaimedBytes is { } bytes
+                ? $" — measured free-space increase {bytes / 1024d / 1024d:N0} MB"
+                : " — reclaimed space unavailable";
+            string result = $"{outcome}: {r.Message}{measured}";
+            if (r.NewFreePercent is { } percent)
+            {
+                result += $" (now {percent:0.#}% free)";
             }
 
-            double mb = r.ReclaimedBytes / 1024d / 1024d;
-            string freed = $"{r.Message} — reclaimed {mb:N0} MB";
-            return r.NewFreePercent is { } p ? $"{freed} (now {p:0.#}% free)" : freed;
-        });
+            if (r.Outcome == DiskCleanupOutcome.Failed)
+                _log.Error(Computer.Name, $"Triage: {result}");
+            else if (r.Outcome == DiskCleanupOutcome.PartiallyCompleted)
+                _log.Warn(Computer.Name, $"Triage: {result}");
+            else
+                _log.Info(Computer.Name, $"Triage: {result}");
+            return result;
+        }, logResult: false);
 
     /// <summary>Loads the top processes by memory into <see cref="TopProcesses"/> for the End-process list.</summary>
     [RelayCommand]
@@ -167,7 +181,7 @@ public partial class ComputerDetailViewModel : ObservableObject
 
     /// <summary>Shared runner: busy-gate, run, log + status, then re-check this machine's vitals
     /// (unless <paramref name="refresh"/> is false — e.g. just listing processes).</summary>
-    private async Task RunActionAsync(string startStatus, Func<Task<string>> action, bool refresh = true)
+    private async Task RunActionAsync(string startStatus, Func<Task<string>> action, bool refresh = true, bool logResult = true)
     {
         if (IsBusy)
         {
@@ -180,7 +194,10 @@ public partial class ComputerDetailViewModel : ObservableObject
         {
             string result = await action();
             TriageStatus = result;
-            _log.Info(Computer.Name, $"Triage: {result}");
+            if (logResult)
+            {
+                _log.Info(Computer.Name, $"Triage: {result}");
+            }
 
             if (refresh)
             {

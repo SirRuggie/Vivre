@@ -6,6 +6,7 @@ using Vivre.Core.Configuration;
 using Vivre.Core.Credentials;
 using Vivre.Core.Deploy;
 using Vivre.Core.Net;
+using Vivre.Core.Operations;
 using Vivre.Core.PowerShell;
 using Vivre.Core.Rdp;
 using Vivre.Core.Remediation;
@@ -70,10 +71,13 @@ public partial class App : Application
         AppSettingsStore.ActivityLog = activity;
         SharedSettingsStore.ActivityLog = activity;
         var scripts = new ScriptLibrary();
-        var patch = new PatchService(powerShell, activity);
+        var operations = new HostOperationCoordinator();
+        var protectedStagingPaths = new ProtectedStagingPathRegistry();
+        var patch = new PatchService(powerShell, activity, operations);
         var vitals = new VitalsProbe(powerShell, new DcomVitalsProbe());
-        var remediation = new RemediationService(powerShell);
-        var deployment = new DeploymentService(powerShell);
+        var remediation = new CoordinatedRemediationService(
+            new RemediationService(powerShell), operations, protectedStagingPaths);
+        var deployment = new DeploymentService(powerShell, operations, protectedStagingPaths);
         var software = new SoftwareProbe(powerShell, new DcomSoftwareReader());
         var customColumns = new CustomColumnProbe(powerShell);
         // One shared catalog-size lookup: its per-KB cache is process-wide, so many machines showing the same

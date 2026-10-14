@@ -249,9 +249,9 @@ public static class HelpContent
             [
                 "Open right-click ▸ Details… ▸ Vitals. If vitals haven't been read yet, click Check Vitals in the Vitals tab — it runs health and vitals for just this machine in one pass (the toolbar's Check Vitals sweeps the whole tab). Once vitals are populated, the breakdown lets you act in place:",
                 "• Stopped auto-start service — click Start next to it to start it now.",
-                "• Low drive — click Free up space… to clear TEMP, the Windows Update cache, and the recycle bin (asks first; reports how much it reclaimed).",
+                "• Low drive — click Free up space… to clear eligible TEMP files, the Windows Update cache, and the recycle bin (asks first). Reports Completed, Partially completed, or Failed with reasons; measured free-space change is shown only when available.",
                 "• A hog — click Load under Top processes, then End next to a runaway one (asks first).",
-                "After Start service and Free up space (and after Check Vitals) Vivre re-checks that machine's vitals, so the score and readings update on the spot.",
+                "Free up space refuses conflicts with patching or software staging on the same host across tabs and Details windows. Known Vivre package/work paths are preserved. Once started, cleanup finishes its Windows Update service-recovery checks even if the caller stops waiting. This is separate from the Server 2016 panel's component Clean up. After remediation, Vivre re-checks vitals.",
             ],
             Tip = "Free up space and End process change the machine, so they confirm first; starting a service is one-click. All actions use your session/admin credential and land in the activity log.",
         },

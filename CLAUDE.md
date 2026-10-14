@@ -122,7 +122,7 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   full technical precision — this rule is about chat replies only.)
 - **Do NOT add a `Co-Authored-By: Claude ...` trailer (or any AI/Claude attribution) to commit
   messages.** This overrides the default Claude Code behavior.
-- Commit only when the user asks; never push to a remote without explicit instruction.
+- Standing delivery instruction from Shaun (October 14, 2026): commit and push completed, validated changes to GitHub. Use a short conventional subject such as `fix:` or `chore:`; no AI attribution or coauthor trailers. This does not authorize deployment or live operations.
 - No empty `catch {}` — surface failures (to the activity log / `LastError`), don't swallow them.
 - Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
@@ -166,6 +166,12 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   gate adapts to the code, never the reverse. Residual limits (obfuscated/encoded commands, and paths outside
   `source/ scripts/ tools/`) are stated in the script's header. Full site inventory:
   docs/reboot-path-and-guardrail-findings.md ▸ findings 5 and 12.
+- General disk cleanup ownership lives in one app-wide `HostOperationCoordinator` shared by patching,
+  software staging, and `CoordinatedRemediationService`. Keep execution-time checks, not just UI
+  disabled states. Cleanup must finish service recovery before releasing ownership; uncertain
+  termination blocks conflicting work. `ProtectedStagingPathRegistry` records source/destination
+  paths before staging and refuses unreadable protection data. See the F01/F09 implementation
+  checkpoint in `docs/vivre-review-decisions.md` for validation and limits.
 - All remoting goes through `PSRunspaceHost`; never let a raw SDK exception reach the UI (translate
   it). Don't reintroduce per-poll WinRM shells or the Add-Type WUA COM shims (see docs/windows-patching-lane.md).
 - **Shelling out to Windows PowerShell 5.1** (the WUG lane in `Wug/WugMaintenance.cs`, and any
@@ -247,6 +253,6 @@ and in the common case **stop there: one short subject line IS the whole commit.
 - **Body — OPTIONAL and rare:** at most **one or two short lines**, only for genuinely non-obvious
   context or a cardinal-safety note. Most commits need NO body. Never multi-paragraph bodies or
   restated diffs — that detail goes in the operator REPORT and `docs/` / `CHANGELOG.md`, not git history.
-- Still applies: **no `Co-Authored-By` / AI attribution trailer**, commit **only when asked**, **unsigned**.
+- Still applies: **no `Co-Authored-By` / AI attribution trailer**, **unsigned**. Commit and push completed changes under Shaun's standing delivery instruction above.
 
 Good — subject only: `fix: rebuild RDP control on Reconnect and keep involuntary drops open`

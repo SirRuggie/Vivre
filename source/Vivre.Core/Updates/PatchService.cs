@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using Vivre.Core.Credentials;
 using Vivre.Core.Logging;
+using Vivre.Core.Operations;
 using Vivre.Core.PowerShell;
 
 namespace Vivre.Core.Updates;
@@ -20,7 +21,7 @@ namespace Vivre.Core.Updates;
 /// This is the authoritative guard: <c>PatchService</c> is a single app-wide instance, so it also
 /// catches the cross-tab "same host in two tabs" case the per-row UI guard (each tab has its own
 /// <c>Computer</c>) cannot see. An Applicable-scope scan is a read-only WUA search (no CBS/DISM)
-/// and is never serialized.</para>
+/// and only excludes general disk cleanup.</para>
 /// </remarks>
 public sealed class PatchService : IPatchService
 {
@@ -31,6 +32,7 @@ public sealed class PatchService : IPatchService
     // 2016 operation shares the _inFlight per-host guard below with Install/Uninstall.
     private readonly FullPackageLcuLane _lcu;
     private readonly RebootWave _wave;
+    private readonly HostOperationCoordinator _operations;
 
     // Hosts with a CBS/DISM operation in flight (install / uninstall / Installed-scope scan / 2016
     // stage / cleanup / reboot-wave). Verify is read-only and deliberately not claimed.
@@ -40,8 +42,12 @@ public sealed class PatchService : IPatchService
     // trigger already use (Trace is file-only — it never reaches the UI activity panel).
     private readonly IActivityLog? _activity;
 
-    public PatchService(IPowerShellHost powerShell, IActivityLog? activity = null)
+    public PatchService(
+        IPowerShellHost powerShell,
+        IActivityLog? activity = null,
+        HostOperationCoordinator? operations = null)
     {
+        _operations = operations ?? new HostOperationCoordinator();
         _activity = activity;
         _wua = new WuaUpdateLane(powerShell, activityLog: activity);
         _lcu = new FullPackageLcuLane(_wua.Smb);
@@ -60,7 +66,16 @@ public sealed class PatchService : IPatchService
         // Applicable-scope scan is read-only (no CBS/DISM) — let it run anytime.
         if (options.Scope != UpdateScope.Installed)
         {
-            return await _wua.ScanAsync(host, options, credential, cancellationToken).ConfigureAwait(false);
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Update scan");
+            if (!claim.Acquired)
+            {
+                return HostPatchStatus.Failed(claim.RefusalMessage!);
+            }
+
+            return await RunCoordinatedAsync(
+                claim,
+                () => _wua.ScanAsync(host, options, credential, cancellationToken)).ConfigureAwait(false);
         }
 
         if (!TryClaim(host))
@@ -70,7 +85,16 @@ public sealed class PatchService : IPatchService
 
         try
         {
-            return await _wua.ScanAsync(host, options, credential, cancellationToken).ConfigureAwait(false);
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Installed-update scan");
+            if (!claim.Acquired)
+            {
+                return HostPatchStatus.Failed(claim.RefusalMessage!);
+            }
+
+            return await RunCoordinatedAsync(
+                claim,
+                () => _wua.ScanAsync(host, options, credential, cancellationToken)).ConfigureAwait(false);
         }
         finally
         {
@@ -97,7 +121,18 @@ public sealed class PatchService : IPatchService
 
         try
         {
-            return await _wua.InstallAsync(host, options, credential, progress, cancellationToken).ConfigureAwait(false);
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Update install");
+            if (!claim.Acquired)
+            {
+                HostPatchStatus blocked = HostPatchStatus.Failed(claim.RefusalMessage!);
+                progress.Report(blocked);
+                return blocked;
+            }
+
+            return await RunCoordinatedAsync(
+                claim,
+                () => _wua.InstallAsync(host, options, credential, progress, cancellationToken)).ConfigureAwait(false);
         }
         finally
         {
@@ -124,7 +159,18 @@ public sealed class PatchService : IPatchService
 
         try
         {
-            return await _wua.UninstallAsync(host, options, credential, progress, cancellationToken).ConfigureAwait(false);
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Update uninstall");
+            if (!claim.Acquired)
+            {
+                HostPatchStatus blocked = HostPatchStatus.Failed(claim.RefusalMessage!);
+                progress.Report(blocked);
+                return blocked;
+            }
+
+            return await RunCoordinatedAsync(
+                claim,
+                () => _wua.UninstallAsync(host, options, credential, progress, cancellationToken)).ConfigureAwait(false);
         }
         finally
         {
@@ -156,7 +202,18 @@ public sealed class PatchService : IPatchService
 
         try
         {
-            return await _lcu.StageAsync(host, packageDirectory, target, options, progress, cancellationToken).ConfigureAwait(false);
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Cumulative-update staging");
+            if (!claim.Acquired)
+            {
+                HostPatchStatus blocked = HostPatchStatus.Failed(claim.RefusalMessage!);
+                progress.Report(blocked);
+                return blocked;
+            }
+
+            return await RunCoordinatedAsync(
+                claim,
+                () => _lcu.StageAsync(host, packageDirectory, target, options, progress, cancellationToken)).ConfigureAwait(false);
         }
         finally
         {
@@ -182,7 +239,18 @@ public sealed class PatchService : IPatchService
 
         try
         {
-            return await _lcu.ComponentCleanupAsync(host, options, progress, cancellationToken).ConfigureAwait(false);
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Component cleanup");
+            if (!claim.Acquired)
+            {
+                HostPatchStatus blocked = HostPatchStatus.Failed(claim.RefusalMessage!);
+                progress.Report(blocked);
+                return blocked;
+            }
+
+            return await RunCoordinatedAsync(
+                claim,
+                () => _lcu.ComponentCleanupAsync(host, options, progress, cancellationToken)).ConfigureAwait(false);
         }
         finally
         {
@@ -210,9 +278,20 @@ public sealed class PatchService : IPatchService
 
         try
         {
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Reboot wave");
+            if (!claim.Acquired)
+            {
+                HostPatchStatus blocked = HostPatchStatus.Failed(claim.RefusalMessage!);
+                progress.Report(blocked);
+                return blocked;
+            }
+
             var readiness = new DcomRebootReadinessProbe();
             var confirmation = new UbrConfirmation(new DcomLcuBuildReader(), targetUbr);
-            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate).ConfigureAwait(false);
+            return await RunCoordinatedAsync(
+                claim,
+                () => _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate)).ConfigureAwait(false);
         }
         finally
         {
@@ -239,9 +318,20 @@ public sealed class PatchService : IPatchService
 
         try
         {
+            using HostOperationCoordinator.HostOperationClaim claim =
+                _operations.TryBeginOperation(host, "Reboot wave");
+            if (!claim.Acquired)
+            {
+                HostPatchStatus blocked = HostPatchStatus.Failed(claim.RefusalMessage!);
+                progress.Report(blocked);
+                return blocked;
+            }
+
             var readiness = new BasicReachabilityReadinessProbe();
             var confirmation = new ReadyConfirmation(_activity);
-            return await _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate).ConfigureAwait(false);
+            return await RunCoordinatedAsync(
+                claim,
+                () => _wave.RebootAndCommitAsync(host, waveOptions, readiness, confirmation, progress, cancellationToken, rebootGate)).ConfigureAwait(false);
         }
         finally
         {
@@ -274,6 +364,26 @@ public sealed class PatchService : IPatchService
     private bool TryClaim(string host) => _inFlight.TryAdd(host, 0);
 
     private void Release(string host) => _inFlight.TryRemove(host, out _);
+
+    private static async Task<HostPatchStatus> RunCoordinatedAsync(
+        HostOperationCoordinator.HostOperationClaim claim,
+        Func<Task<HostPatchStatus>> operation)
+    {
+        try
+        {
+            HostPatchStatus result = await operation().ConfigureAwait(false);
+            if (result.Phase is PatchPhase.Error or PatchPhase.Unreachable or PatchPhase.Unverified)
+            {
+                claim.MarkRemoteStateUncertain();
+            }
+            return result;
+        }
+        catch
+        {
+            claim.MarkRemoteStateUncertain();
+            throw;
+        }
+    }
 
     private static HostPatchStatus AlreadyInProgress =>
         new(PatchPhase.Idle, "Skipped — an update operation is already in progress on this host.");

@@ -13,8 +13,9 @@ namespace Vivre.Core.Tests.Deploy;
 /// the WinRM chunk/finalize calls separately, so a test can model "SMB blocked → WinRM succeeds",
 /// "both fail", etc. A local target is a pure file-system copy and is exercised with real temp files.
 /// </summary>
-public class DeploymentServiceTests
+public class DeploymentServiceTests : IDisposable
 {
+    private readonly string _registryRoot = Path.Combine(Path.GetTempPath(), $"VivreProtectedPathsTests_{Guid.NewGuid():N}");
     private const string SourceMsi = @"C:\pkgs\App.msi";
     private const string TargetFile = @"C:\Windows\Temp\VivrePackages\App.msi";
     private const string TargetFileParent = @"C:\Windows\Temp\VivrePackages";
@@ -24,7 +25,7 @@ public class DeploymentServiceTests
     {
         var host = new FakeHost { SmbResult = Row(("ok", true)) };
 
-        StageResult r = await new DeploymentService(host)
+        StageResult r = await Service(host)
             .StageAsync("NYC-FP1", SourceMsi, false, TargetFile, null, CancellationToken.None);
 
         Assert.True(r.Ok);
@@ -43,7 +44,7 @@ public class DeploymentServiceTests
         var cred = new PSCredential(@"DOM\admin", ss);
 
         var host = new FakeHost { SmbResult = Row(("ok", true)) };
-        await new DeploymentService(host).StageAsync("NYC-FP1", SourceMsi, false, TargetFile, cred, CancellationToken.None);
+        await Service(host).StageAsync("NYC-FP1", SourceMsi, false, TargetFile, cred, CancellationToken.None);
 
         // The copy runs on THIS machine (reaching the target over SMB), maps the admin share, copies.
         Assert.Contains("New-PSDrive", host.SmbScript);
@@ -70,7 +71,7 @@ public class DeploymentServiceTests
                 RemoteResult = Row(("ok", true), ("path", TargetFileParent)),
             };
 
-            StageResult r = await new DeploymentService(host)
+            StageResult r = await Service(host)
                 .StageAsync("NYC-FP1", source, false, TargetFile, null, CancellationToken.None);
 
             Assert.True(r.Ok);
@@ -96,7 +97,7 @@ public class DeploymentServiceTests
                 RemoteResult = Row(("ok", false), ("message", "WinRM unhealthy")),
             };
 
-            StageResult r = await new DeploymentService(host)
+            StageResult r = await Service(host)
                 .StageAsync("NYC-FP1", source, false, TargetFile, null, CancellationToken.None);
 
             Assert.False(r.Ok);
@@ -122,7 +123,7 @@ public class DeploymentServiceTests
                 RemoteResult = Row(("ok", true), ("path", TargetFileParent)),
             };
 
-            await new DeploymentService(host).StageAsync("NYC-FP1", source, false, TargetFile, null, CancellationToken.None);
+            await Service(host).StageAsync("NYC-FP1", source, false, TargetFile, null, CancellationToken.None);
 
             string all = string.Join("\n----\n", host.RemoteScripts);
             Assert.Contains("FromBase64String", all);     // a chunk command
@@ -156,7 +157,7 @@ public class DeploymentServiceTests
             // A throwing host proves the local path never reaches out over the network.
             var host = new FakeHost { ThrowIfCalled = true };
 
-            StageResult r = await new DeploymentService(host)
+            StageResult r = await Service(host)
                 .StageAsync("localhost", source, false, target, null, CancellationToken.None);
 
             Assert.True(r.Ok);
@@ -182,10 +183,20 @@ public class DeploymentServiceTests
         var host = new FakeHost { SmbResult = Row(("ok", true)) };
 
         await Assert.ThrowsAsync<OperationCanceledException>(() =>
-            new DeploymentService(host).StageAsync("NYC-FP1", SourceMsi, false, TargetFile, null, cts.Token));
+            Service(host).StageAsync("NYC-FP1", SourceMsi, false, TargetFile, null, cts.Token));
     }
 
     // --- helpers -----------------------------------------------------------
+
+    private DeploymentService Service(IPowerShellHost host) => new(
+        host,
+        protectedPaths: new Vivre.Core.Operations.ProtectedStagingPathRegistry(
+            Path.Combine(_registryRoot, $"{Guid.NewGuid():N}.json")));
+
+    public void Dispose()
+    {
+        if (Directory.Exists(_registryRoot)) Directory.Delete(_registryRoot, recursive: true);
+    }
 
     private static string NewTempFile(string content = "PK fake zip source bytes")
     {

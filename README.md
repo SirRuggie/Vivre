@@ -22,6 +22,9 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   From a machine's **Details ▸ Vitals** you can **act in place** — start a stopped service, free up
   disk space, or end a runaway process — and the score re-checks on the spot (a per-machine **Check
   Vitals** there reads just that one box). The vitality chip shows on both the Health and Patching grids.
+  General disk cleanup reports full/partial/failed outcomes, verifies Windows Update service recovery,
+  and protects known staged packages. It is coordinated with patching and staging across tabs; the
+  Server 2016 component-store Clean up remains a separate operation.
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.

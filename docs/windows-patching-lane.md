@@ -745,3 +745,28 @@ reboot-and-verify loop.
   install everywhere") for planning a maintenance window by update instead of by machine. Standard in
   fleet patch tools (WSUS/Action1/PDQ); worth building only if by-KB planning becomes a real need.
   The per-machine detail panel covers today's "install all applicable + reboot" workflow.
+
+## General disk cleanup coordination (F01/F09)
+
+Details > Free up disk space is separate from the Server 2016 component-store Clean up.
+`PatchService` acquires an app-wide `HostOperationCoordinator` claim before scans, installs,
+uninstalls, CU staging, component cleanup, or a wave. Normal patch operations keep their existing
+serialization; general disk cleanup is exclusive against these operations and software staging.
+Read-only CU verification is unchanged. The shared instance is wired in `App.xaml.cs`.
+
+A cancelled or uncertain operation can outlive the screen that launched it. The coordinator retains
+an uncertainty blocker rather than treating cancellation as proof that remote work stopped. Its
+message requires checking the host is idle before restarting Vivre. Failed cleanup service recovery
+also retains a blocker. This is conservative: some returned patch/staging failures cannot distinguish
+confirmed failure from lost observation, so they can require the same check.
+
+Claims coordinate this Vivre process, not other administrators, external scheduled work, or alternate
+DNS aliases for the same remote host. Cleanup also checks the target for active servicing processes;
+this is an additional check, not a cross-process distributed lock. F12 remains skipped. Use consistent
+host names; case, trailing-dot spellings, and known local aliases are normalized.
+
+The protected-path registry at `C:\ProgramData\Vivre\protected-staging-paths.json` records staging
+source/destination paths before copy. Cleanup refuses unreadable/corrupt protection data. Built-in
+package/work paths are protected independently. Arbitrary custom destinations staged by older builds
+or other operator machines cannot be reconstructed automatically; this registry records paths seen
+by this installation. No automatic removal of protection entries is included.

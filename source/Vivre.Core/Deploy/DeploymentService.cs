@@ -2,6 +2,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Management.Automation;
 using System.Security.Cryptography;
+using Vivre.Core.Operations;
 using Vivre.Core.PowerShell;
 
 namespace Vivre.Core.Deploy;
@@ -29,9 +30,19 @@ public sealed class DeploymentService : IDeploymentService
     private const int Base64ChunkLength = 2_097_152;
 
     private readonly IPowerShellHost _powerShell;
+    private readonly HostOperationCoordinator _operations;
+    private readonly ProtectedStagingPathRegistry _protectedPaths;
 
     /// <param name="powerShell">The remoting host all transport goes through.</param>
-    public DeploymentService(IPowerShellHost powerShell) => _powerShell = powerShell;
+    public DeploymentService(
+        IPowerShellHost powerShell,
+        HostOperationCoordinator? operations = null,
+        ProtectedStagingPathRegistry? protectedPaths = null)
+    {
+        _powerShell = powerShell;
+        _operations = operations ?? new HostOperationCoordinator();
+        _protectedPaths = protectedPaths ?? new ProtectedStagingPathRegistry();
+    }
 
     public async Task<StageResult> StageAsync(
         string host,
@@ -46,10 +57,41 @@ public sealed class DeploymentService : IDeploymentService
         ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
         token.ThrowIfCancellationRequested();
 
+        using HostOperationCoordinator.HostOperationClaim claim =
+            _operations.TryBeginOperation(host, "Software staging");
+        if (!claim.Acquired)
+        {
+            return new StageResult(false, null, claim.RefusalMessage!);
+        }
+
+        using HostOperationCoordinator.HostOperationClaim localClaim =
+            _operations.TryBeginOperation("localhost", "Software staging source read");
+        if (!localClaim.Acquired)
+        {
+            return new StageResult(false, null, localClaim.RefusalMessage!);
+        }
+
+        try
+        {
+            // Persist before the first copy. A registry that cannot be read or saved blocks staging,
+            // so cleanup can never fall back to an unsafe empty protection set.
+            _protectedPaths.Register(host, targetPath);
+            _protectedPaths.Register("localhost", sourcePath);
+        }
+        catch (Exception ex)
+        {
+            return new StageResult(false, null, $"Staging blocked — protected-path registry could not be saved: {ex.Message}");
+        }
+
         // Local target: just copy on disk — no remoting at all.
         if (HostName.IsLocal(host))
         {
-            return CopyLocal(sourcePath, sourceIsFolder, targetPath);
+            StageResult local = CopyLocal(sourcePath, sourceIsFolder, targetPath);
+            if (!local.Ok)
+            {
+                claim.MarkRemoteStateUncertain();
+            }
+            return local;
         }
 
         // 1) SMB admin share — the fast path. A throw here (e.g. a host that doesn't support the
@@ -67,6 +109,7 @@ public sealed class DeploymentService : IDeploymentService
         }
         catch (OperationCanceledException)
         {
+            claim.MarkRemoteStateUncertain();
             throw;
         }
         catch (Exception ex)
@@ -75,7 +118,20 @@ public sealed class DeploymentService : IDeploymentService
         }
 
         // 2) WinRM fallback — works wherever WinRM works, for boxes where SMB/admin$ is blocked.
-        return await WinRmStageAsync(host, sourcePath, sourceIsFolder, targetPath, credential, smbError, token).ConfigureAwait(false);
+        try
+        {
+            StageResult result = await WinRmStageAsync(host, sourcePath, sourceIsFolder, targetPath, credential, smbError, token).ConfigureAwait(false);
+            if (!result.Ok)
+            {
+                claim.MarkRemoteStateUncertain();
+            }
+            return result;
+        }
+        catch
+        {
+            claim.MarkRemoteStateUncertain();
+            throw;
+        }
     }
 
     // --- local -------------------------------------------------------------

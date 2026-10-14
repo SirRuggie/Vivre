@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **Details > Free up space now reports actual cleanup outcomes.** Failed steps and Windows Update service recovery are visible, locked files are reported as skipped, and missing disk measurements stay unknown. Shared host guards prevent conflicts with patching and software staging; known staged paths are preserved. The Server 2016 component Clean up workflow is unchanged.
 - **The re-scan after a reboot no longer copies a helper program onto machines that are simply still starting
   up.** Vivre re-scans a machine the moment it answers on the network, which is normally before the remote-
   management service inside it has finished starting — so the first attempt would fail, quietly switch to the

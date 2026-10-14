@@ -31,22 +31,55 @@ public sealed class RemediationService : IRemediationService
     }
 
     public async Task<DiskCleanupResult> FreeDiskSpaceAsync(
-        string host, PSCredential? credential = null, CancellationToken cancellationToken = default)
+        string host,
+        PSCredential? credential = null,
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? protectedPaths = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        cancellationToken.ThrowIfCancellationRequested();
 
-        PSExecutionResult result = await RunAsync(host, FreeDiskScript, credential, cancellationToken).ConfigureAwait(false);
+        // Once remote mutation begins, let the target-side finally block complete even if the caller
+        // cancels. PSRunspaceHost abandons a cancelled InvokeAsync and cannot guarantee service recovery.
+        PSExecutionResult result = await RunAsync(
+            host,
+            DiskCleanupScript.Build(protectedPaths),
+            credential,
+            CancellationToken.None).ConfigureAwait(false);
+
         PSObject? row = result.Output.Count > 0 ? result.Output[0] : null;
         if (row is null)
         {
             string detail = result.Errors.Count > 0 ? result.Errors[0] : "no result returned";
-            return new DiskCleanupResult(false, 0, null, $"Disk cleanup failed: {detail}");
+            return new DiskCleanupResult(DiskCleanupOutcome.Failed, null, null, $"Disk cleanup failed: {detail}")
+            {
+                ExecutionConfirmed = false,
+                SafeToReleaseHost = false,
+            };
         }
 
-        long reclaimed = GetLong(row, "reclaimed") ?? 0;
+        long? reclaimed = GetLong(row, "reclaimed");
         double? newPct = GetDouble(row, "newFreePercent");
-        string message = GetString(row, "message") ?? "Disk cleanup complete";
-        return new DiskCleanupResult(GetBool(row, "ok"), reclaimed, newPct, message);
+        string message = GetString(row, "message") ?? "Disk cleanup failed: invalid result";
+        bool validOutcome = Enum.TryParse(GetString(row, "outcome"), ignoreCase: false, out DiskCleanupOutcome parsed);
+        DiskCleanupOutcome outcome = validOutcome ? parsed : DiskCleanupOutcome.Failed;
+        bool executionConfirmed = validOutcome && !result.HadErrors && result.Errors.Count == 0;
+        bool safeToReleaseHost = executionConfirmed && GetBool(row, "safeToReleaseHost");
+        if (result.HadErrors || result.Errors.Count > 0)
+        {
+            string detail = result.Errors.Count > 0 ? result.Errors[0] : "PowerShell reported an execution error";
+            if (outcome == DiskCleanupOutcome.Completed)
+            {
+                outcome = DiskCleanupOutcome.PartiallyCompleted;
+            }
+
+            message = $"{message}; PowerShell error: {detail}";
+        }
+        return new DiskCleanupResult(outcome, reclaimed, newPct, message)
+        {
+            ExecutionConfirmed = executionConfirmed,
+            SafeToReleaseHost = safeToReleaseHost,
+        };
     }
 
     public async Task<IReadOnlyList<ProcessInfo>> GetTopProcessesAsync(
@@ -162,29 +195,6 @@ public sealed class RemediationService : IRemediationService
         } catch {
             [PSCustomObject]@{ ok = $false; message = $_.Exception.Message }
         }
-        """;
-
-    private const string FreeDiskScript = """
-        $ErrorActionPreference = 'SilentlyContinue'
-        $sys = $env:SystemDrive
-        function DriveProp($p) { (Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='$sys'")."$p" }
-        $before = [int64](DriveProp 'FreeSpace')
-
-        Get-ChildItem -Path $env:TEMP, "$env:SystemRoot\Temp" -Force -ErrorAction SilentlyContinue |
-            Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
-        try { Clear-RecycleBin -Force -ErrorAction SilentlyContinue } catch { }
-        try {
-            Stop-Service wuauserv -Force -ErrorAction SilentlyContinue
-            Remove-Item "$env:SystemRoot\SoftwareDistribution\Download\*" -Recurse -Force -ErrorAction SilentlyContinue
-            Start-Service wuauserv -ErrorAction SilentlyContinue
-        } catch { }
-
-        $after = [int64](DriveProp 'FreeSpace')
-        $size  = [int64](DriveProp 'Size')
-        $reclaimed = $after - $before
-        if ($reclaimed -lt 0) { $reclaimed = 0 }
-        $newPct = if ($size -gt 0) { [math]::Round(($after / $size) * 100, 1) } else { $null }
-        [PSCustomObject]@{ ok = $true; reclaimed = [int64]$reclaimed; newFreePercent = $newPct; message = "Cleared TEMP, Windows Update cache, and recycle bin" }
         """;
 
     private const string TopProcessesScript = """

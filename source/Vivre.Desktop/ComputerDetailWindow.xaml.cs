@@ -35,7 +35,7 @@ public partial class ComputerDetailWindow : FluentWindow
         {
             Title = "Free up disk space",
             Content = $"Clear TEMP, the Windows Update download cache, and the recycle bin on {vm.Computer.Name}?\n\n"
-                      + "This deletes files and can't be undone (it won't touch your documents).",
+                      + "This permanently deletes eligible temporary files and recycle-bin contents. Known Vivre staged packages are preserved. Cleanup waits for its service-recovery checks to finish once started.",
             PrimaryButtonText = "Free up space",
             CloseButtonText = "Cancel",
         };

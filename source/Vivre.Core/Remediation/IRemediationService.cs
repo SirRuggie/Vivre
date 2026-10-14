@@ -7,12 +7,35 @@ namespace Vivre.Core.Remediation;
 /// <param name="Message">A human-readable result/failure line for the activity log + status.</param>
 public sealed record RemediationResult(bool Ok, string Message);
 
+/// <summary>Overall outcome of a disk-cleanup run.</summary>
+public enum DiskCleanupOutcome
+{
+    Completed,
+    PartiallyCompleted,
+    Failed,
+}
+
 /// <summary>The outcome of a disk-cleanup run.</summary>
-/// <param name="Ok">True when cleanup ran (even if little was reclaimed).</param>
-/// <param name="ReclaimedBytes">Bytes freed on the system drive (never negative).</param>
+/// <param name="Outcome">Truthful aggregate outcome across cleanup components and service recovery.</param>
+/// <param name="ReclaimedBytes">Reliably measured bytes freed, or null when either measurement was unavailable.</param>
 /// <param name="NewFreePercent">System-drive free percentage after cleanup, or null if unknown.</param>
 /// <param name="Message">A human-readable summary.</param>
-public sealed record DiskCleanupResult(bool Ok, long ReclaimedBytes, double? NewFreePercent, string Message);
+public sealed record DiskCleanupResult(
+    DiskCleanupOutcome Outcome,
+    long? ReclaimedBytes,
+    double? NewFreePercent,
+    string Message)
+{
+    public bool Ok => Outcome == DiskCleanupOutcome.Completed;
+
+    /// <summary>True when the target script returned a trustworthy terminal row. False for transport,
+    /// engine, or malformed-result uncertainty; independent of whether cleanup itself succeeded.</summary>
+    public bool ExecutionConfirmed { get; init; } = true;
+
+    /// <summary>True when the host can safely leave cleanup exclusion. False when execution is
+    /// uncertain or cleanup may have left Windows Update service recovery unresolved.</summary>
+    public bool SafeToReleaseHost { get; init; } = true;
+}
 
 /// <summary>One process in the "top processes" triage list.</summary>
 /// <param name="Name">Process image name (no extension).</param>
@@ -34,9 +57,13 @@ public interface IRemediationService
         string host, string serviceDisplayName, PSCredential? credential = null, CancellationToken cancellationToken = default);
 
     /// <summary>Frees space on the system drive: clears TEMP, the Windows Update download cache, and
-    /// the recycle bin. Reports bytes reclaimed + the new free percentage.</summary>
+    /// the recycle bin. Reports bytes reclaimed + the new free percentage when they can be measured.
+    /// <paramref name="protectedPaths"/> are preserved in addition to Vivre's built-in package/work paths.</summary>
     Task<DiskCleanupResult> FreeDiskSpaceAsync(
-        string host, PSCredential? credential = null, CancellationToken cancellationToken = default);
+        string host,
+        PSCredential? credential = null,
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<string>? protectedPaths = null);
 
     /// <summary>Lists the top processes by memory (working set), newest snapshot — for spotting a hog.</summary>
     Task<IReadOnlyList<ProcessInfo>> GetTopProcessesAsync(
