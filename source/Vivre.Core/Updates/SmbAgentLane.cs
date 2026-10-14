@@ -246,7 +246,7 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 if (payload is { } pkg && uncPackage is not null)
                 {
                     progress?.Report(new HostPatchStatus(PatchPhase.Scanning, "Copying package to host…"));
-                    CopyPackage(pkg.SourcePath, uncPackage);
+                    CopyPackage(pkg.SourcePath, uncPackage, cancellationToken);
                 }
             }, cancellationToken).ConfigureAwait(false);
 
@@ -483,24 +483,29 @@ public sealed class SmbAgentLane : ISmbAgentLane
         }
     }
 
-    /// <summary>Copies the CU package (controller-local) to the target's drop dir over SMB and confirms the
-    /// full byte count landed — a short copy means a security agent or a network blip cut it off, and a
-    /// truncated 1.7 GB .msu must never be handed to DISM.</summary>
-    private static void CopyPackage(string sourcePath, string uncDest)
+    /// <summary>Copies the CU package and verifies its full contents before agent launch.</summary>
+    internal static void CopyPackage(string sourcePath, string uncDest, CancellationToken token = default)
     {
-        if (!File.Exists(sourcePath))
-        {
-            throw new FileNotFoundException($"Update package not found: {sourcePath}", sourcePath);
-        }
-
+        token.ThrowIfCancellationRequested();
+        // Keep the source read-locked through copy and verification so the expected digest
+        // describes the same source bytes that File.Copy reads. Preserve File.Copy metadata semantics.
+        using var source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        string expectedHash = Vivre.Core.Deploy.PackagePublication.HashStream(source, token);
+        long expectedLength = source.Length;
+        token.ThrowIfCancellationRequested();
         File.Copy(sourcePath, uncDest, overwrite: true);
+        VerifyPackageCopy(uncDest, expectedLength, expectedHash, token);
+    }
 
-        long src = new FileInfo(sourcePath).Length;
-        long dst = new FileInfo(uncDest).Length;
-        if (dst != src)
-        {
-            throw new IOException($"Package copy was incomplete — {dst:N0} of {src:N0} bytes reached the target.");
-        }
+    internal static void VerifyPackageCopy(string destination, long expectedLength, string expectedHash,
+        CancellationToken token = default)
+    {
+        using var copied = new FileStream(destination, FileMode.Open, FileAccess.Read, FileShare.Read);
+        if (copied.Length != expectedLength)
+            throw new IOException($"Package copy was incomplete — {copied.Length:N0} of {expectedLength:N0} bytes reached the target.");
+        string actualHash = Vivre.Core.Deploy.PackagePublication.HashStream(copied, token);
+        if (!string.Equals(actualHash, expectedHash, StringComparison.OrdinalIgnoreCase))
+            throw new IOException("Package copy failed SHA-256 verification — the target contents differ from the source; installation was not started.");
     }
 
     private static void CleanStaleRunFiles(string uncProgress, string? uncResult)

@@ -107,6 +107,8 @@ Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 .\publish.ps1 -Runtime win-arm64
 ```
 
+Publish requires the configured agent code-signing certificate and private key in `CurrentUser\My`; it fails if the final agent signature is not valid. ZIP builds also write a `.zip.sha256` checksum file. The self-contained release bundles .NET 10.0.13.
+
 Copy the output folder (or the zip) to the target and run `Vivre.exe`. The curated `Scripts\`
 library ships in the output and seeds `%APPDATA%\Vivre\Scripts` on first run. (`publish\` is
 git-ignored.)

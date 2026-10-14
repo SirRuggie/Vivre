@@ -6,7 +6,12 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.2 — 2026-10-14
+
 ### Fixed
+- **Release dependencies and bundled runtime use .NET 10.0.13 security servicing**, including the XML and PKCS cryptography packages.
+- **Server 2016 CU copies verify SHA-256 before agent launch**, detecting corruption even when file sizes match. Verification uses bounded buffers and observes cancellation between reads.
+- **Stop works when only monitoring is active**, using the existing command eligibility and stop behavior.
 - **Large-workspace filtering and list replacement use less UI work.** Text searches settle briefly before refreshing, visible counts are cached, and replaced rows release their subscriptions.
 - **Bursts of background activity no longer build an unbounded UI log queue.** The panel retains a bounded recent buffer and reports omitted panel entries; file logging still receives every message. Completion banners also have a bounded backlog.
 - **Staging preparation responds to cancellation between reads.** Large WinRM manifests use owned, verified chunks, while SMB binds manifest data separately from script text. Protected-path writes are batched and unchanged writes are skipped; confirmed-cleaned temporary paths retire without unprotecting recovery files. Idle publication locks and losing throttle waits release promptly.

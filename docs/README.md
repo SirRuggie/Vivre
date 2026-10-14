@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[release-1.17.2-validation.md](release-1.17.2-validation.md)** — release acceptance ledger, package evidence, shared-drive checks and remaining pilot gaps.
+
 - **[vivre-backlog.md](vivre-backlog.md)** — the running tracker: open/parked/done work in recommended
   do-next order, with commit hashes. *Read when: deciding what to build next, or checking whether a
   finding was already fixed.*

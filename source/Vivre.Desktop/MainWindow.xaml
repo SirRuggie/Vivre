@@ -433,7 +433,6 @@
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.StopCommand}"
-                                       IsEnabled="{Binding SelectedTab.IsBusy}"
                                        ToolTip="{Binding SelectedTab.StopTooltip}">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Stop24" Margin="0,0,6,0" />

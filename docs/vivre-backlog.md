@@ -24,6 +24,8 @@
 
 ## ▶ DO NEXT — recommended order
 
+**Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking remains open. Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
+
 **Performance batch — 2026-10-14:** F13–F20 implemented; [implementation evidence and limits](vivre-performance-implementation-2026-10-14.md), [frozen baseline assessment](vivre-performance-review-2026-10-14.md). F13–F19 have local runtime validation; F20 compiled/source-reviewed, visible banner/tray behavior unverified. Live integration/native soak gaps remain. F12 stays skipped. Earlier dated release/test summaries below are historical.
 
 **DCOM 1191 → SMB/SCM fallback (the SentinelOne "Lateral Movement" source) — BUILT 2026-07-27.** Shipped: `5f6d437` (a 1191 on a GRACEFUL call now
@@ -57,35 +59,9 @@ reported-only truth, plus a fourth of the same class found in the sweep (the `Su
 cite those, never a position.** They were ordinals until 2026-07-29 and three cross-references broke in one
 arc because inserting an item renumbered everything below it; anchors are stable across inserts and reorders.
 The list is still in recommended do-next order.
-- **[transport-cache-staleness]** — **Transport-cache staleness — RE-RATED 2026-07-29 from parked convenience to a REACHABILITY item.**
-   `RoutingPowerShellHost.cs:59` fast-fails before the credential is consulted, and `HostTransportCache`
-   has **no eviction of any kind** — so a stale Kerberos mark routes a now-HEALTHY box down DCOM/SMB until
-   Vivre restarts. Still research-first; no longer "wait until it bites".
+- **[transport-cache-staleness] — CLOSED in F10.** Rejections are scoped to connection and credentials; explicit Retry WinRM verifies recovery and fences stale attempts. See the review decisions and tests.
 - **[details-window-leak]** — **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
-- **[stop-monitor-only-tab]** — **Stop button can't stop a monitor-only tab** (found by the 2026-07-11 help audit) — PARKED; the
-   app-side fix (rebind Stop's `IsEnabled` to the command, or reword the tooltip) is a separate decision.
-   - **The issue:** the toolbar Stop's `IsEnabled="{Binding SelectedTab.IsBusy}"` (MainWindow.xaml:436)
-     defeats `CanStop()`'s monitor-only intent, and the Monitor tooltip repeats the false claim ("Stop
-     halts it"). The help already documents the truth: the Monitor toggle is the only way to pause
-     monitoring.
-   - **STILL OPEN, precisely:** the monitor-only mismatch (`CanStop()` true on `IsMonitoring` alone
-     while :436 stays dark) and the schedule/cancel scheduled-task loops; the MainWindow.xaml:436
-     binding itself is UNCHANGED. (Same root line, opposite symptom: :436 also kept Stop honestly DARK
-     during the schedule/cancel loops — see the bounded-loops DONE entry. With those loops now
-     60s-bounded, wiring Stop for them is optional polish contingent on this item's decision — fix the
-     :436 binding once, properly, if at all.)
-   - **TRAP for whoever fixes this (load-bearing):** the schedule/cancel loops' outer-cancel catches
-     `return` silently — dead code today since nothing passes a token, but once Stop reaches these
-     loops it will quit with NO "Cancelled — N of M processed" activity line. The fix MUST ship a
-     VISIBLE abort — add the summary line when wiring the token, or the operator can't tell a completed
-     run from an aborted one.
-   - **Resolved along the way (WUG streaming pass, 2026-07-14):** a THIRD instance of this pattern is
-     CLOSED by construction, not by touching :436 — `CheckWugStateAsync` runs as a PASSIVE
-     `BeginOperation(..., registerRows: false)`, so Stop LIGHTS via `IsBusy` and genuinely cancels it
-     (killing the `powershell.exe` child), with the abort VISIBLE exactly as the trap demands: it logs
-     "Stopped — N of M checked" (`ComposeStoppedMessage`) and stamps unreached rows
-     `WugRowText.NotChecked` ("not checked (read stopped)"). That passive-op rail is the right template
-     for wiring this item's remaining sites.
+- **[stop-monitor-only-tab] — monitor-only button mismatch CLOSED in 1.17.2.** The button now uses existing StopCommand eligibility; the real view-model probe confirms Stop halts monitoring. Help matches. Schedule/cancel loops retain their existing separate cancellation behavior; this change does not wire new cancellation tokens into those loops.
 - **[scheduled-reboot-stampede]** — **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
    re-raise; build nothing.** The facts stand: scheduled reboots have no burst stagger — every
    selected box fires `shutdown.exe /r /f /t 0` locally at the SAME absolute UTC instant
@@ -336,9 +312,7 @@ standalone items further down, each "do only if it recurs / when a signal appear
   `static`) but `_patchThrottle` is per-tab, so installs are NOT cross-tab gated. Fix direction (future): a
   dedicated I/O-aware copy cap separate from the install cap; and/or stage to one share and have targets pull;
   and/or sequence the large copies.
-- **SHA-256 package-hash verification for the staged CU package.** Stage integrity is byte-count only today
-  (no content hash of the `.msu`/package — see the fan-out item above), so a silently-truncated-but-right-size
-  or corrupted copy would pass. Add a SHA-256 verify of the staged package against the source. Small, standalone.
+- **SHA-256 package-hash verification for the staged CU package — CLOSED in 1.17.2.** CopyPackage holds the source read-locked and compares destination SHA-256 before agent launch. Local and mapped-share dummy tests reject equal-size corruption. Large CU copies incur extra source/destination reads; fleet-scale I/O behavior remains unmeasured. Older byte-count-only descriptions are historical.
 - **Staged-machine list "copy all / export" UX gap.** The Settings staged-patching management card lists /
   Removes / Clears the flagged machines but has no way to copy the whole list out (clipboard or file export),
   so an operator can't easily hand the staged set to a teammate or record it. Add a copy-all / export affordance.

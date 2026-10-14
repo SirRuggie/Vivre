@@ -264,7 +264,7 @@ public static class HelpContent
             [
                 "Monitor is ON by default — Vivre starts watching online/offline the moment a list loads, re-checking every machine on a timer.",
                 "It keeps watching even while a long operation (a reboot wave, an install) runs — only the rows that operation is actually working on are left alone, so every other machine's online dot and reboot state stay live throughout.",
-                "Turn the Monitor toggle off for a frozen snapshot and back on to resume. The toggle is the ONLY way to pause monitoring — the Stop button cancels running operations, not the monitor.",
+                "Turn the Monitor toggle off for a frozen snapshot and back on to resume. Stop also pauses monitoring and cancels running operations.",
             ],
         },
         new HelpTopic

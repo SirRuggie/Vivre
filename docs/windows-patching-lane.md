@@ -839,3 +839,7 @@ implemented.
 Stage software remains copy-only and separate from patch installation. Package preparation now checks cancellation between hash reads; the verified replacement/recovery transaction retains its non-cancellable boundary. WinRM manifests above 32 KiB of UTF-8 JSON are sent in 64 KiB raw chunks through the existing owned transfer directory, verified with SHA256, then read under its exclusive lock. SMB uses a bound JSON parameter. Metadata still scales with file count; this does not establish a whole-process memory ceiling or live WinRM/EDR validation.
 
 Protected-path persistence skips duplicate writes and batches each host's temporary paths. Only an explicit confirmed-cleanup verdict retires their exact entries. Recovery paths, uncertain outcomes, final destinations and source protections remain protected. F12 Server 2016 concurrency is unchanged and remains skipped.
+
+## Release 1.17.2 CU copy verification
+
+The Server 2016 AddPackage SMB copy now hashes the source and copied destination with SHA-256 before agent launch, in addition to checking length. It holds the source read-locked during the operation and reuses the staging bounded-buffer hash helper. This adds full source and destination reads; hashing checks cancellation between reads, while a filesystem call or File.Copy can still block. Dummy mapped-share tests cover corruption rejection and copy success, not DISM or server servicing.

@@ -1,0 +1,8 @@
+{
+  "root": "Z:\\Vivre\\testing\\release-1.17.2-20261014",
+  "cuCopyVerified": true,
+  "sameLengthCorruptionRejected": true,
+  "folderReplacementVerified": true,
+  "rollbackVerified": true,
+  "scope": "Production file-copy/publication methods over mapped SMB drive. No remoting, agent launch, installation or reboot. Dummy files retained for inspection."
+}

@@ -1,0 +1,8 @@
+{
+  "Version": "1.17.2",
+  "ObservedSeconds": 15,
+  "ProcessSurvived": true,
+  "Responding": true,
+  "MainWindowCreated": true,
+  "Scope": "Packaged startup process/window creation only. No UI input, loaded computer lists, server operations or RDP sessions."
+}

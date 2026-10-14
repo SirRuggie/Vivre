@@ -1546,7 +1546,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             int n = _activeCts.Count;
             return n <= 1
-                ? "Stop — cancel all running operations in this tab."
+                ? "Stop — pause monitoring and cancel running operations in this tab."
                 : $"Stop all — {n} operations running.";
         }
     }

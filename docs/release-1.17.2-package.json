@@ -1,0 +1,11 @@
+{
+  "zip": "C:\\src\\Vivre\\publish\\Vivre-1.17.2-win-x64.zip",
+  "sha256": "5AB9E52A5EB65C5CBB18B96CE4DAB8E5EF3B9B81DD9BACB9D9B8673AD9A669FA",
+  "bytes": 97861267,
+  "filesVerifiedAgainstPublishFolder": 862,
+  "zipCrcAndAllFileHashesMatch": true,
+  "version": "1.17.2",
+  "bundledRuntime": "10.0.13",
+  "agentSignatureStatus": "Valid",
+  "agentSignerThumbprint": "1A5CE867A4660C271C9C7AA0DD2F923A1FE05953"
+}

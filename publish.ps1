@@ -56,6 +56,12 @@ $ErrorActionPreference = 'Stop'
 $project = Join-Path $PSScriptRoot 'source\Vivre.Desktop\Vivre.Desktop.csproj'
 if (-not (Test-Path $project)) { throw "Project not found: $project" }
 
+# Validate signing prerequisites before removing any previous publish output.
+[xml]$agentProject = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'source\Vivre.UpdateAgent\Vivre.UpdateAgent.csproj')
+$thumbprint = $agentProject.SelectSingleNode('//AgentSignThumbprint').InnerText.Trim()
+$certificate = Get-Item -LiteralPath "Cert:\CurrentUser\My\$thumbprint" -ErrorAction Stop
+if (-not $certificate.HasPrivateKey) { throw 'Agent signing certificate has no private key.' }
+
 $selfContained = -not $FrameworkDependent
 $selfContainedArg = if ($selfContained) { 'true' } else { 'false' }
 $suffix = if ($FrameworkDependent) { "$Runtime-fxdep" } else { $Runtime }
@@ -77,6 +83,21 @@ if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit code $LASTEXITCODE
 $exe = Join-Path $OutputDir 'Vivre.exe'
 if (-not (Test-Path $exe)) { throw "Publish finished but $exe is missing." }
 
+# A deploy package must contain the agent and carry the configured publisher signature.
+# Run in the publishing host so signing does not depend on MSBuild's child-process store view.
+$agent = Join-Path $OutputDir 'Vivre.UpdateAgent.exe'
+if (-not (Test-Path -LiteralPath $agent)) { throw "Published update agent is missing: $agent" }
+$signature = Set-AuthenticodeSignature -LiteralPath $agent -Certificate $certificate -HashAlgorithm SHA256
+if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $thumbprint) {
+    throw "Agent signing validation failed: $($signature.Status) - $($signature.StatusMessage)"
+}
+Write-Host "Verified agent signature: $thumbprint" -ForegroundColor Green
+foreach ($required in @('Modules', 'Scripts', 'coreclr.dll', 'Vivre.runtimeconfig.json')) {
+    # Framework-dependent packages intentionally omit the runtime.
+    if ($FrameworkDependent -and $required -eq 'coreclr.dll') { continue }
+    if (-not (Test-Path -LiteralPath (Join-Path $OutputDir $required))) { throw "Published component missing: $required" }
+}
+
 $files = Get-ChildItem -LiteralPath $OutputDir -Recurse -File
 $sizeMb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 1)
 Write-Host ""
@@ -89,6 +110,9 @@ if ($Zip) {
     Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zipPath
     $zipMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
     Write-Host "  zip: $zipPath ($zipMb MB)" -ForegroundColor Green
+    $digest = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
+    "$digest  $([IO.Path]::GetFileName($zipPath))" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ASCII
+    Write-Host "  SHA256: $digest"
 }
 
 if ($FrameworkDependent) {

@@ -12,6 +12,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Length == 3 && args[0] == "--share-smoke")
+        {
+            File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
         if (args.Length != 1 && !filterExperiment) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];

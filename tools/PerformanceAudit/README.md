@@ -25,3 +25,13 @@ dotnet run --project tools/PerformanceAudit/PerformanceAudit.csproj -c Release -
 This temporarily changes the diagnostic view only. Production always tracks Name plus the exact dependencies of its active state filter. The post-fix runs also assert live inclusion/removal for state changes. Historic pre-fix JSON and intermediate post-fix run 1 are retained; final results are identified in the implementation report.
 
 Settling probes wait at least 300 ms (including the production 200 ms debounce) before evaluating the result. Their settle duration is not a direct timer or input-latency measurement. Immediate state-refresh timings and the isolated property experiment measure synchronous view work separately.
+
+## Explicit shared-drive smoke check
+
+Only with authorization for the destination, use a fresh release-* child of Z:\Vivre\testing:
+
+```powershell
+dotnet run --project tools/PerformanceAudit/PerformanceAudit.csproj -c Release -- --share-smoke 'Z:\Vivre\testing\release-unique-name' 'docs/share-smoke-result.json'
+```
+
+Uses production CU copy/hash and package publication/rollback methods on dummy files over the mapped drive. Leaves dummy files for inspection. It does not exercise remote PowerShell, agent launch, install, cleanup, reboot, or RDP.

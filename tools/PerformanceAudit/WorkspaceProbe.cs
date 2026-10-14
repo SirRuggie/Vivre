@@ -138,6 +138,13 @@ internal static class WorkspaceProbe
         RetentionResult removal = MeasureRetention(useReset: false);
         RetentionResult reset = MeasureRetention(useReset: true);
         object liveFilterTransitions = MeasureLiveFilterTransitions();
+        using (var monitor = CreateWorkspace())
+        {
+            monitor.IsMonitoring = true; // empty workspace: no server probes
+            if (!monitor.StopCommand.CanExecute(null)) throw new InvalidOperationException("Monitor-only Stop disabled");
+            monitor.StopCommand.Execute(null);
+            if (monitor.IsMonitoring) throw new InvalidOperationException("Stop did not halt monitoring");
+        }
 
         return new
         {
