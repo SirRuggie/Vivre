@@ -6,7 +6,7 @@ Last updated: October 14, 2026.
 
 ## Authorization and status
 
-**Implementation authorized October 14, 2026.** Shaun asked to start tackling the agreed findings. The current implementation batch is F01 + F09 (Details > Free up disk space), with the Server 2016 component-cleanup workflow preserved. Other agreed findings remain queued; F12 remains explicitly skipped. No commit, deployment, or live destructive validation is included.
+**Implementation authorized October 14, 2026.** Shaun asked to start tackling the agreed findings. F01 + F09 (Details > Free up disk space) are implemented, tested, committed, and pushed; the Server 2016 component-cleanup workflow is preserved. F02 is also implemented and locally validated; its delivery is recorded in Git history. Other agreed findings remain queued; F12 remains explicitly skipped. Shaun authorized commits and pushes with short conventional messages. Deployment and live destructive validation remain outside scope.
 
 The original report's severity ratings remain review assessments, not an agreed implementation order. Record a priority change only when Shaun makes that decision. Keep unreviewed findings pending rather than treating silence as acceptance.
 
@@ -14,15 +14,15 @@ The original report's severity ratings remain review assessments, not an agreed 
 
 | Finding | Subject | Discussion status | Implementation authorization |
 |---|---|---|---|
-| F01 | Details window disk cleanup conflicts and package preservation | Implemented and locally validated | Current batch |
-| F02 | Reboot disclosure and approved targets | Direction agreed; scope clarified below | Not authorized |
+| F01 | Details window disk cleanup conflicts and package preservation | Implemented and locally validated | Committed and pushed |
+| F02 | Reboot disclosure and approved targets | Implemented and locally validated | Authorized commit and push |
 | F03 | SMB reboot dispatch reporting | Direction agreed; independent red-team required | Not authorized |
 | F04 | RDP persistence and recovery | Direction agreed; safe writes, backups, load-failure protection | Not authorized |
 | F05 | Consistent and recoverable package staging | Direction agreed; verify before replacement, preserve prior package | Not authorized |
 | F06 | Ambiguous WUG device names | Direction agreed; independent red-team required | Not authorized |
 | F07 | Recovery from cached Kerberos failure | Direction agreed; per-host retry and fresh attempt after credential change | Not authorized |
 | F08 | Software absence versus query failure | Direction agreed; installed, absent, and could-not-check results | Not authorized |
-| F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Current batch |
+| F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Committed and pushed |
 | F10 | Preference write ordering and exit | Direction agreed; ordered saves and bounded normal-exit flush | Not authorized |
 | F11 | WinRM staging memory and temporary files | Direction agreed; bounded chunks, integrity checks, owned-file cleanup | Not authorized |
 | F12 | Concurrent Server 2016 staging files | Skipped by Shaun; excluded from implementation queue | Not authorized |
@@ -85,7 +85,7 @@ Example wording discussed:
 
 Wording must remain accurate for the actual action; an action that conditionally escalates must not be described as always forced immediately. Preserve the accepted maintenance-window reboot behavior and existing timing. No countdown, scheduling change, or Server 2016 cleanup change is agreed here.
 
-**Implementation status: not started. Authorization: not granted.** Shaun's “Yes that's good” accepts this design direction only; the discussion-only boundary remains in effect. No implementation priority has been selected.
+**Implementation status: implemented and locally validated. Authorization: Shaun's request to tackle the agreed findings, followed by “ok next?”.** Scope: Force reboot, Reboot & verify, and the install pending-reboot nudge; scheduling and scripts remain outside this batch.
 
 ### Proposed acceptance checks for later implementation
 
@@ -436,3 +436,33 @@ The F01/F09 implementation batch is locally complete. The synthetic ProgramData 
 **Recommended next batch: F02.** Show concise target count/scope and force consequences while retaining
 exactly the approved target snapshot. Avoid listing 30 machine names; preserve existing timing and
 reboot behavior. F03 follows with its required independent red-team review. F12 remains skipped.
+
+## F02 capability and acceptance ledger
+
+| Capability | Status | Required evidence |
+|---|---|---|
+| Concise count/scope, no machine-name list | Implemented and verified locally | Small/large prompt tests; three UI call sites reviewed |
+| Explicit force consequences; conditional wave escalation accurate | Implemented and verified locally | Prompt tests and unchanged dispatch/timing diff |
+| Same captured targets after approval; cancellation dispatches nothing | Implemented and verified locally | Delayed-approval tests with selection and pending-state changes |
+| Help reflects confirmed behavior | Implemented and verified locally | Source review and Desktop build |
+| Live reboot validation | Not performed; outside authorized local validation | No real reboot needed for approval tests |
+
+### F02 verification and delivery
+
+- Main agent built the full solution: **zero errors, one existing missing agent-signing certificate
+  warning**. No deployment or live reboot occurred.
+- Main agent ran the full built solution test suite: **1,248 passed, zero failed, zero skipped**
+  (2m15s). The focused approval/inventory run also passed **12/12**.
+- Behavioral tests cover 1/30/300-target prompts without name lists, selected/tab pending scope,
+  selection changes during delayed approval, pending-state changes, cancellation, empty sets,
+  renamed-host rejection, local-host warning capture, and existing conditional-wave wording.
+- Main source review and independent read-only review confirmed that all three entry points dispatch
+  captured rows. Force and wave methods require explicit targets; neither can reread selection.
+- Dispatch/wave implementations and the pinned reboot manifest are unchanged. The primitive-inventory
+  test passes without changing expected counts. Help and repository guidance reflect the new prompts.
+- Interactive WPF dialog operation and live server rebooting were not exercised; approval tests use
+  fake dispatch callbacks. This validation does not claim a production canary.
+
+**Next: F03 — truthful SMB reboot dispatch reporting.** Distinguish accepted, failed, and uncertain
+requests so a service-creation success is not mistaken for a confirmed reboot. Preserve dispatch,
+escalation, and timing. Independent red-team review remains mandatory for F03.

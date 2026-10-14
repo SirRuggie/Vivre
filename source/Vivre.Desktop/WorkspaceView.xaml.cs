@@ -739,7 +739,7 @@ public partial class WorkspaceView : UserControl
 
     /// <summary>
     /// Force-reboot confirmation. The hot Windows-Update follow-up, but destructive (unsaved work is
-    /// lost), so it restates the count + names before firing <c>shutdown /r /f</c> on each.
+    /// lost), so it states the count and scope before firing <c>shutdown /r /f</c> on each.
     /// </summary>
     private async void OnRebootForce(object sender, RoutedEventArgs e)
     {
@@ -748,31 +748,20 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        int count = vm.SelectedComputers.Count;
-        string names = string.Join(", ", vm.SelectedComputers.Take(8).Select(c => c.Name));
-        if (count > 8)
-        {
-            names += $", +{count - 8} more";
-        }
-
-        // DISCLOSURE ONLY — appended when the selection includes the box Vivre is running on. It does not
-        // gate, filter, or reorder anything: every selected machine still reboots exactly as before.
-        string? localWarning = LocalHostRebootWarning.WarningOrNull(vm.SelectedComputers.Select(c => c.Name));
-
+        var approval = RebootApproval.Selected(vm.SelectedComputers);
+        string? localWarning = approval.LocalWarning;
+        // Existing dispatch remains 'shutdown /r /f /t 5'; this change only binds approval to its targets.
         var confirm = new MessageBox
         {
             Title = "Force reboot",
-            Content = $"Force-reboot {count} machine(s) now?\n\n{names}\n\n"
-                      + "Runs 'shutdown /r /f /t 5' — any unsaved work on those machines is lost."
+            Content = approval.ForcePrompt
                       + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
-            PrimaryButtonText = $"Reboot {count}",
+            PrimaryButtonText = $"Force-reboot {approval.Count}",
             CloseButtonText = "Cancel",
         };
 
-        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
-        {
-            await vm.RebootForceSelectedAsync();
-        }
+        bool approved = await confirm.ShowDialogAsync() == MessageBoxResult.Primary;
+        await approval.ExecuteAsync(approved, rows => vm.RebootForceSelectedAsync(rows), vm.ReportRebootApprovalChanged);
     }
 
     private void OnWugMaintenance(object sender, RoutedEventArgs e)
@@ -1181,8 +1170,7 @@ public partial class WorkspaceView : UserControl
 
     /// <summary>
     /// Fleet-wide Reboot &amp; verify entry point (2016 action bar and grid right-click).
-    /// Production reboot — names the explicitly selected machines, confirms, and only invokes
-    /// <c>RebootAndVerifyCommand</c> on confirmation. The command acts only on the selection.
+    /// Production reboot — confirms the count and scope, then executes the captured target set.
     /// </summary>
     private async void OnRebootAndVerify(object sender, RoutedEventArgs e)
     {
@@ -1191,44 +1179,20 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        var selected = vm.SelectedComputers.ToList();
-        if (selected.Count == 0)
-        {
-            return; // gate should prevent this; never reboot without an explicit selection
-        }
-
-        // Name every box the operator chose (up to 10 inline, then a count).
-        const int MaxInline = 10;
-        string names = string.Join(", ", selected.Take(MaxInline).Select(c => c.Name));
-        if (selected.Count > MaxInline)
-        {
-            names += $", +{selected.Count - MaxInline} more";
-        }
-
-        // DISCLOSURE ONLY — appended when the selection includes the box Vivre is running on. It does not
-        // gate, filter, or reorder anything: every selected machine still reboots exactly as before.
-        string? localWarning = LocalHostRebootWarning.WarningOrNull(selected.Select(c => c.Name));
-
+        var approval = RebootApproval.Selected(vm.SelectedComputers);
+        if (approval.Count == 0) return;
+        string? localWarning = approval.LocalWarning;
         var confirm = new MessageBox
         {
             Title = "Reboot & verify",
-            Content = $"This will reboot {selected.Count} machine(s):\n\n{names}\n\n"
-                      + "Machines with nobody logged on reboot gracefully — forced after 8 minutes "
-                      + "(20 for staged 2016). If anyone is logged on, including a disconnected session, "
-                      + "the reboot call Vivre sends is refused, so Vivre forces it immediately. Unsaved "
-                      + "work is lost. Vivre then tracks each box until it is verified back online "
-                      + "(2016 boxes verify by build/UBR; others by re-scan).\n\n"
-                      + "Run this when the boxes are safe to restart (typically overnight)."
+            Content = approval.VerifyPrompt
                       + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
             PrimaryButtonText = "Reboot & verify",
             CloseButtonText = "Cancel",
         };
 
-        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary
-            && vm.RebootAndVerifyCommand.CanExecute(null))
-        {
-            vm.RebootAndVerifyCommand.Execute(null);
-        }
+        bool approved = await confirm.ShowDialogAsync() == MessageBoxResult.Primary;
+        await approval.ExecuteAsync(approved, vm.RebootAndVerifyAsync, vm.ReportRebootApprovalChanged);
     }
 
     private void OnGridRightClick(object sender, MouseButtonEventArgs e)

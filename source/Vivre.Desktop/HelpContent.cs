@@ -486,7 +486,7 @@ public static class HelpContent
             Lines =
             [
                 "Select machines, then click Install all — or Install (N) with a selection (the confirm reads \"Install on N\"). Or Ctrl+Enter.",
-                "If any target already has a reboot pending, Install warns first and offers to reboot those before installing — a pending reboot can jam WinRM and fail the install.",
+                "If any target already has a reboot pending, Install shows the pending count and original target scope. Force-reboot first closes applications and loses unsaved work; it acts on exactly the pending subset shown. Wait for those machines to return before installing, or choose Install anyway.",
                 "Progress shows live download then install percent; the chip turns green (Done) or amber (reboot pending).",
                 "A required reboot is reported, not forced — reboot when you're ready.",
                 "A box whose OS build is unknown is skipped with \"Unknown OS build — run Check Vitals first so Vivre can pick the right update lane.\"",
@@ -543,7 +543,7 @@ public static class HelpContent
                 "After installing updates, right-click the machine(s) and choose Reboot & verify…, then confirm the list — nothing reboots without your confirm.",
                 "1. Select the machines you want to reboot.",
                 "2. Right-click ▸ Reboot & verify…",
-                "3. Review the list and click Reboot & verify to start.",
+                "3. Review the selected-machine count and restart consequences, then click Reboot & verify. The approved target set stays fixed even if the selection changes while confirmation is open.",
                 "Reboot & verify… appears only in Patching, on rows that are reboot-pending — and on a red failed-install row whose reboot is still pending, so a failed patch that needs its reboot can always be rebooted. If you don't see it, the box has nothing pending.",
                 "Before rebooting, Vivre makes sure each box is safe to restart. If Windows is still installing updates (servicing is active), it WAITS — re-checking on a short interval — and reboots the moment servicing finishes, so it never reboots into a long \"Stopping\" hang. If servicing hasn't finished within the max wait (default 20 minutes; change it in Settings ▸ \"Reboot wave — max wait for in-progress servicing\"), Vivre stops WITHOUT rebooting: it does NOT force a reboot through active servicing. The row then reads \"servicing still running … — not rebooted; use Force reboot to override,\" so the decision stays yours.",
                 "If a box has nothing staged or pending to commit (no reboot is queued for it), Vivre stops calmly and the row shows a neutral \"Nothing to commit\" — that's informational (grey), not an error: there was simply nothing to reboot for.",
@@ -567,7 +567,7 @@ public static class HelpContent
                 "If a box outlasts the live watch, re-check it once it's back up — that's exactly what the red no-longer-tracking row is asking for. For a Server 2016 box, click Verify in the 2016 action bar; for any other box, select it and click Scan (or use \"Scan this machine\" in its Updates tab) to confirm it landed.",
                 "A manual reboot now verifies too: right-click ▸ Reboot (force now) arms the same post-reboot check. When the box returns and its reboot-pending state reads clean, Vivre runs the read-only rescan on its own and shows the same verified / \"N remaining\" / Unverified outcome as Reboot & verify — no extra click needed.",
             ],
-            Tip = "Reboot & verify reboots ONLY the machines you select and confirm — never the rest of the fleet. Right-click ▸ Reboot (force now) skips the confirm-list step but now rejoins the same verify arc, so its row also gets the post-reboot recheck when the box returns.",
+            Tip = "Reboot & verify reboots ONLY the machines you select and confirm — never the rest of the fleet. Right-click ▸ Reboot (force now) confirms the selected count and forced-close consequences, then rejoins the same verify arc. Neither confirmation displays a machine-name list; a separate warning remains when the selection includes the machine running Vivre.",
         },
         new HelpTopic
         {

@@ -1071,7 +1071,7 @@ public partial class MainWindow : FluentWindow
         int count = targets.Count;
         if (count == 0 || !vm.InstallTargetCommand.CanExecute(null)) return;
 
-        List<Computer> pending = [.. targets.Where(c => c.RebootRequired == true)];
+        var rebootApproval = RebootApproval.Pending(targets, selectionOnly || hasSelection);
 
         // Shared tail: route through the Server 2016 staged-patching gate, then — only when no decision was
         // needed — the usual "Install on N" confirm and the normal install command. When the gate shows its
@@ -1108,23 +1108,22 @@ public partial class MainWindow : FluentWindow
             }
         }
 
-        if (pending.Count > 0)
+        if (rebootApproval.Count > 0)
         {
             // DISCLOSURE ONLY — appended when the PENDING set (what this dialog's primary button reboots)
             // includes the box Vivre is running on. Same razor and same wording as the other three reboot
-            // confirms; it does not gate, filter, or reorder anything — `pending` is passed on untouched.
+            // confirms; it does not gate, filter, or reorder anything — the captured pending subset is passed on untouched.
             // This is the highest-exposure path: it needs no selection, is reachable by Ctrl+Enter, and
             // scopes to every reboot-pending box in the tab.
-            string? localWarning = LocalHostRebootWarning.WarningOrNull(pending.Select(c => c.Name));
+            string? localWarning = rebootApproval.LocalWarning;
 
             var nudge = new MessageBox
             {
                 Title = "Reboot pending",
-                Content = $"{pending.Count} of {count} target machine(s) have a reboot pending.\n\n"
-                          + "A pending reboot can jam WinRM and make the install fail. You can reboot those first "
-                          + "(then install once they're back), or install anyway."
+                Content = rebootApproval.ForcePrompt + "\n\nA pending reboot can prevent installation. "
+                          + "After rebooting, wait for the machines to return before installing, or choose Install anyway."
                           + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
-                PrimaryButtonText = $"Reboot the {pending.Count} first",
+                PrimaryButtonText = $"Force-reboot {rebootApproval.Count} first",
                 SecondaryButtonText = "Install anyway",
                 CloseButtonText = "Cancel",
             };
@@ -1132,7 +1131,7 @@ public partial class MainWindow : FluentWindow
             MessageBoxResult choice = await nudge.ShowDialogAsync();
             if (choice == MessageBoxResult.Primary)
             {
-                await vm.RebootForceSelectedAsync(pending);
+                await rebootApproval.ExecuteAsync(true, rows => vm.RebootForceSelectedAsync(rows), vm.ReportRebootApprovalChanged);
                 return;
             }
 

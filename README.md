@@ -25,6 +25,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   General disk cleanup reports full/partial/failed outcomes, verifies Windows Update service recovery,
   and protects known staged packages. It is coordinated with patching and staging across tabs; the
   Server 2016 component-store Clean up remains a separate operation.
+- **Reboot approval** — concise counts, scope, and force consequences; reboot actions use the exact
+  approved target snapshot even if the selection changes while the prompt is open.
 - **Right-click actions** — SCCM client triggers (machine policy, hardware inventory, update scan,
   …), Run PowerShell (one machine, the selection, or all), and Enable WinRM (over DCOM).
 - **Run Script** — pick a saved script or paste one; per-machine output lands on each row.

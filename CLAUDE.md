@@ -127,11 +127,12 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
   **This is the INTENDED rule, not a description of what ships today — there are known open exceptions.**
-  Three reboot paths currently fire with no confirm: **Schedule ▸ Reboot** (the modal's default button arms
-  a `/r /f /t 0` SYSTEM task on Enter), the **install nudge's "Reboot the N first"** primary button (no
-  selection, no machines named), and **Run script ▸ Reboot** (the runner is ungated). They are one cohort —
-  decide the confirm story once, not three times. See docs/reboot-path-and-guardrail-findings.md ▸ findings
-  2, 3, 4. Don't cite this rule as evidence that a given path already confirms; check the path.
+  Remaining separate approval gaps are **Schedule ▸ Reboot** (the scheduling modal's default button
+  arms the task) and **Run script ▸ Reboot** (the runner is ungated). F02 corrected the install nudge:
+  its existing primary choice now explicitly approves the captured pending subset, force behavior,
+  and unsaved-work consequences. Scheduling/script applicability still requires a separate scope
+  decision. The historical evidence is in docs/reboot-path-and-guardrail-findings.md, findings 2–4.
+  Do not cite this rule as evidence that an unmodified path already confirms; check the path.
 - **Reboot cardinal — NOTHING auto-reboots.** Every reboot path (the Reboot & Verify wave, Force reboot
   including its narrow Kerberos-auth DCOM fallback in `ForceRebootRunner`, Schedule reboot, the script
   library) fires only from an operator's explicit per-box click + confirm — never an independent decision.
@@ -166,6 +167,10 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   gate adapts to the code, never the reverse. Residual limits (obfuscated/encoded commands, and paths outside
   `source/ scripts/ tools/`) are stated in the script's header. Full site inventory:
   docs/reboot-path-and-guardrail-findings.md ▸ findings 5 and 12.
+- Force reboot, Reboot & verify, and the install pending-reboot nudge use `RebootApproval` snapshots.
+  Keep confirmation and execution on the same captured rows; never restore a post-approval selection
+  fallback. Show counts/scope and accurate force consequences, not machine-name lists. Scheduling and
+  arbitrary scripts retain their separate behavior pending an explicit scope decision.
 - General disk cleanup ownership lives in one app-wide `HostOperationCoordinator` shared by patching,
   software staging, and `CoordinatedRemediationService`. Keep execution-time checks, not just UI
   disabled states. Cleanup must finish service recovery before releasing ownership; uncertain

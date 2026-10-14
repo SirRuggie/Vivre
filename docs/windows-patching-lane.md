@@ -770,3 +770,16 @@ source/destination paths before copy. Cleanup refuses unreadable/corrupt protect
 package/work paths are protected independently. Arbitrary custom destinations staged by older builds
 or other operator machines cannot be reconstructed automatically; this registry records paths seen
 by this installation. No automatic removal of protection entries is included.
+
+## Reboot approval snapshots (F02)
+
+Force reboot and Reboot & verify capture the selected rows before opening their existing confirmation.
+The install nudge captures the pending subset of its selected-or-tab install scope. `RebootApproval`
+provides concise count/scope wording and retains these rows through approval. Cancellation invokes no
+execution callback; a changed row hostname invalidates approval and is reported in Activity. The
+force and wave entry methods require explicit rows and cannot fall back to the current selection.
+
+Force prompts disclose forced application closure and unsaved-work loss. The wave prompt preserves
+its conditional escalation and existing 8-minute / staged-2016 20-minute wording. Dispatch primitives,
+servicing checks, wave timing, scheduled reboot, and arbitrary scripts are unchanged. Local-host
+warnings still refer to the captured targets. No new confirmation step is added.

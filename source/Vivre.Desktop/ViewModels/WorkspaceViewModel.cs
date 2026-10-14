@@ -3841,16 +3841,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // Panel button "Stage" routes through the View's RunStageWorkflowAsync (scan-gate + package-readiness loop)
     // and StageLcuForAsync — the same shared workflow the decision dialog's "Stage CU first" uses.
 
+    /// <summary>Explains why a captured reboot approval became invalid without issuing a reboot.</summary>
+    public void ReportRebootApprovalChanged(string message) => _activity.Warn(null, message);
+
     /// <summary>Fleet-wide reboot + verify: reboots ALL selected machines (graceful first, forced after the
     /// go-offline window — or forced immediately, never waiting that window, when the DCOM reboot call is
     /// refused because a session is logged on, Active or merely disconnected), then tracks each until it is
     /// confirmed back online. 2016 boxes verify by build/UBR; others verify by re-scan. Long-running — the View
-    /// must confirm first (production reboot). Acts ONLY on the explicit selection; never reboots the whole
+    /// must confirm first (production reboot). Acts ONLY on the approved snapshot; never reboots the whole
     /// fleet by default.</summary>
-    [RelayCommand(AllowConcurrentExecutions = true)]
-    private Task RebootAndVerifyAsync()
+    public Task RebootAndVerifyAsync(IReadOnlyList<Computer> approvedTargets)
     {
-        var selected = SelectedComputers.ToList();
+        var selected = approvedTargets.ToList();
         if (selected.Count == 0)
         {
             _activity.Warn(null, "Reboot & verify: select the machine(s) to reboot first.");
@@ -6219,9 +6221,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// already uses there (see <see cref="ForceRebootRunner"/>); any other failure surfaces as before,
     /// no fallback, so an ambiguous WinRM failure can never double-reboot a box.
     /// </summary>
-    public async Task RebootForceSelectedAsync(IReadOnlyList<Computer>? rows = null, CancellationToken token = default)
+    public async Task RebootForceSelectedAsync(IReadOnlyList<Computer> rows, CancellationToken token = default)
     {
-        List<Computer> targets = [.. rows ?? SelectedComputers.ToList()];
+        List<Computer> targets = [.. rows];
 
         foreach (Computer row in targets)
         {
