@@ -385,6 +385,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         public required Dictionary<string, Computer> RowsByName { get; init; }  // OrdinalIgnoreCase
         public required HashSet<string> Pending { get; init; }                  // names with no line seen yet (OrdinalIgnoreCase)
         public int InMaint; public int NotIn; public int NoMatch; public int Unknown;
+        public int Ambiguous; public int LookupErrors;
         public int Seen => Total - Pending.Count;
     }
 
@@ -6706,26 +6707,29 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return;
         }
 
-        // Per-row outcome: matched rows reflect the set; names with no WUG device are called out.
+        // The overall batch may be partial; only names confirmed changed get a success row.
         var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
+        var ambiguous = new HashSet<string>(result.AmbiguousNames ?? [], StringComparer.OrdinalIgnoreCase);
+        var lookupErrors = new HashSet<string>(result.LookupErrorNames ?? [], StringComparer.OrdinalIgnoreCase);
+        var succeeded = new HashSet<string>(result.SucceededNames ?? [], StringComparer.OrdinalIgnoreCase);
         foreach (Computer c in computers)
         {
-            c.CommandResult = unmatched.Contains(c.Name)
-                ? "WhatsUp Gold: no matching device (by IP)"
-                : result.Ok
+            c.CommandResult = ambiguous.Contains(c.Name) ? WugRowText.Ambiguous
+                : lookupErrors.Contains(c.Name) ? WugRowText.LookupError
+                : unmatched.Contains(c.Name) ? WugRowText.NoMatchingDevice
+                : succeeded.Contains(c.Name) || (result.SucceededNames is null && result.Ok)
                     ? $"WhatsUp Gold: maintenance {mode}"
-                    : "WhatsUp Gold: failed";
+                    : "WhatsUp Gold: change not confirmed";
         }
 
-        if (result.Ok)
-        {
-            _activity.Info(null, $"WhatsUp Gold maintenance {mode} for {result.DevicesSet} device(s)"
-                + (result.Unmatched.Count > 0 ? $" ({result.Unmatched.Count} unmatched)" : string.Empty));
-        }
+        string summary = $"WhatsUp Gold maintenance {mode}: {result.DevicesSet} device(s) changed, "
+            + $"{unmatched.Count} unmatched, {ambiguous.Count} ambiguous, {lookupErrors.Count} lookup failed";
+        if (result.Ok && ambiguous.Count == 0 && lookupErrors.Count == 0)
+            _activity.Info(null, summary);
+        else if (result.DevicesSet > 0)
+            _activity.Warn(null, $"{summary} — partial coverage. {result.Error}");
         else
-        {
-            _activity.Error(null, $"WhatsUp Gold maintenance failed — {result.Error}");
-        }
+            _activity.Error(null, $"{summary}. {result.Error}");
     }
 
     /// <summary>
@@ -6794,11 +6798,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // SetWugMaintenanceAsync's progress) — never write CommandResult from the stdout reader thread.
             var progress = new Progress<Vivre.Core.Wug.WugDeviceState>(d =>
             {
-                if (gen != _wugCheckGeneration) { return; }                      // superseded — drop stale lines
+                if (gen != _wugCheckGeneration || _wugCheckRun != run) { return; } // superseded or finalized
                 if (!run.RowsByName.TryGetValue(d.Name, out Computer? c)) { return; }
-                run.Pending.Remove(d.Name);
+                if (!run.Pending.Remove(d.Name)) { return; }                     // count each input once
                 IncrementSweepCompleted(record);                                 // honest N/M in the sweep narration
-                if (!d.Matched)                    { c.CommandResult = WugRowText.NoMatchingDevice;  run.NoMatch++; }
+                if (d.Outcome == WugLookupOutcome.Ambiguous) { c.CommandResult = WugRowText.Ambiguous; run.Ambiguous++; }
+                else if (d.Outcome == WugLookupOutcome.LookupError) { c.CommandResult = WugRowText.LookupError; run.LookupErrors++; }
+                else if (!d.Matched)               { c.CommandResult = WugRowText.NoMatchingDevice;  run.NoMatch++; }
                 else if (d.InMaintenance == true)  { c.CommandResult = WugRowText.ComposeInMaintenance(d.Reason, d.User, d.SinceUtc); run.InMaint++; }
                 else if (d.InMaintenance == false) { c.CommandResult = WugRowText.NotInMaintenance;  run.NotIn++; }
                 else                               { c.CommandResult = WugRowText.StateUnknown;      run.Unknown++; }
@@ -6848,14 +6854,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             if (gen != _wugCheckGeneration) { return; }  // superseded while draining — the new run owns the grid
 
-            // Reconcile: stamps ONLY rows with no streamed line. Order-tolerant — a straggler line landing
-            // after this overwrites with a real result (a correction, not a conflict).
+            // Reconcile only rows with no streamed line from the authoritative final snapshot.
+            // Retiring the run below rejects queued callbacks so they cannot double-count or overwrite final rows.
             var unmatched = new HashSet<string>(result.Unmatched, StringComparer.OrdinalIgnoreCase);
+            var ambiguousNames = new HashSet<string>(result.AmbiguousNames ?? [], StringComparer.OrdinalIgnoreCase);
+            var lookupErrorNames = new HashSet<string>(result.LookupErrorNames ?? [], StringComparer.OrdinalIgnoreCase);
             foreach (string name in run.Pending)
             {
                 if (!run.RowsByName.TryGetValue(name, out Computer? c)) { continue; }
 
-                if (unmatched.Contains(name))
+                if (ambiguousNames.Contains(name))
+                {
+                    c.CommandResult = WugRowText.Ambiguous; run.Ambiguous++;
+                }
+                else if (lookupErrorNames.Contains(name))
+                {
+                    c.CommandResult = WugRowText.LookupError; run.LookupErrors++;
+                }
+                else if (unmatched.Contains(name))
                 {
                     c.CommandResult = WugRowText.NoMatchingDevice; run.NoMatch++;
                 }
@@ -6871,7 +6887,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     }
                     else { c.CommandResult = WugRowText.NotInMaintenance; run.NotIn++; }
                 }
-                else if (result.Error is null)
+                else if (result.ByName.ContainsKey(name) || result.Error is null)
                 {
                     // WUG answered (or simply had no line) but no definite state — a genuine data gap.
                     c.CommandResult = WugRowText.StateUnknown; run.Unknown++;
@@ -6883,9 +6899,12 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 }
             }
 
+            string stateSummary = $"WhatsUp Gold state: {run.InMaint} in maintenance, {run.NotIn} not, "
+                + $"{run.NoMatch} no matching device, {run.Ambiguous} ambiguous, {run.LookupErrors} lookup failed, {run.Unknown} unknown";
+            if (run.Ambiguous > 0 || run.LookupErrors > 0) _activity.Warn(null, stateSummary);
+            else _activity.Info(null, stateSummary);
             if (result.Error is null)
             {
-                _activity.Info(null, $"WhatsUp Gold state: {run.InMaint} in maintenance, {run.NotIn} not, {run.NoMatch} no matching device, {run.Unknown} unknown");
                 // The in-maintenance digest (who/why/since per machine) from the authoritative summary —
                 // a fleet answer in the dock without touching the grid. Null when nothing is in maintenance.
                 if (WugRowText.ComposeMaintenanceDigest(result.ByName, result.DetailsByName) is { } digest)

@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **WhatsUp Gold refuses ambiguous device identities.** State reads and maintenance changes share a resolver that requires one valid device ID, so duplicate names cannot select the first result. Ambiguous machines are skipped with full-name retry guidance; mixed batches report actual changes separately from ambiguity, absence, and lookup failure.
 - **Stage software preserves the previous package while verifying its replacement.** Local, SMB, and WinRM staging verify package contents before publishing; folder replacement removes obsolete files without touching neighboring packages. Replacement failures report recovery guidance, and uncertain SMB outcomes do not trigger a second replacement over WinRM. Staging remains copy-only.
 - **Saved RDP connections and logins now have safer persistence.** Saves prepare a separate file before replacement and retain a recoverable backup. Failed loads cannot silently overwrite the saved data with an empty tree; backup recovery and missing saved logins are reported. Passwords remain protected with Windows DPAPI, including in backups.
 - **SMB reboot reporting distinguishes start failure from uncertainty.** Definite service-start failures surface as failures; timeouts and ambiguous disconnects stay unconfirmed while existing restart checks run. Without restart evidence, uncertain attempts end Unverified. Start and cleanup errors now retain separate diagnostics in the normal log. Reboot targets, commands, and escalation timing are preserved.

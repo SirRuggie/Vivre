@@ -17,6 +17,8 @@ public static class WugRowText
     public const string InMaintenance    = "WhatsUp Gold: in maintenance";
     public const string NotInMaintenance = "WhatsUp Gold: not in maintenance";
     public const string NoMatchingDevice = "WhatsUp Gold: no matching device (by IP)";
+    public const string Ambiguous        = "WhatsUp Gold: ambiguous device — use a full name";
+    public const string LookupError      = "WhatsUp Gold: lookup failed";
     public const string StateUnknown     = "WhatsUp Gold: state unknown";
     public const string NotChecked       = "WhatsUp Gold: not checked (read stopped)";
 

@@ -176,6 +176,11 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   ending Unverified without proof. Preserve dispatch count, force flags, and existing escalation timing.
   Start and cleanup diagnostics must remain separate and visible in Release logs. F03 evidence and
   runtime limits live in `docs/vivre-review-decisions.md`.
+- WhatsUp Gold state reads and maintenance changes share one identity resolver. Require exactly one
+  distinct valid device ID; never select the first name match or use DNS/IP to bypass name ambiguity.
+  Preserve explicit ambiguity/lookup-error/no-device outcomes and actual per-name mutation success.
+  Validate with dummy inventory and captured mutation IDs under real PowerShell 5.1; preserve SSL,
+  BOM, process pooling, timeout, and credential-handling invariants.
 - Stage software must verify a separate candidate before replacing the exact selected package. Keep
   local, SMB, and WinRM replacement semantics consistent; preserve the prior package on transfer or
   verification failure and report any retained recovery backup. Do not retry an uncertain publication

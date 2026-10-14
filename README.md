@@ -47,7 +47,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   service creation alone is never reported as a confirmed reboot.
 - **WhatsUp Gold maintenance** — put the selected machines into / out of WUG maintenance mode, with a
   pre-flight connection + module check — and a read-only **Check WhatsUp Gold state** action that
-  reports each machine's current maintenance state without changing anything.
+  reports each machine's current maintenance state without changing anything. Ambiguous device names
+  are skipped with full-name retry guidance; mixed batches report actual coverage.
 - **Check software** — see whether a named product is installed on each machine (a read-only registry
   check) in its own Software column; when WinRM is down on a box it falls back to a read-only DCOM
   channel, so Kerberos-broken machines still answer.

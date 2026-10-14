@@ -1,5 +1,6 @@
 using System.IO;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Vivre.Core.Wug;
@@ -36,9 +37,12 @@ public class WugResolverProcessTests
         => Assert.True(File.Exists(PsExePath),
             $"Windows PowerShell 5.1 was not found at {PsExePath}. These process tests require it (it is always present on the dev box).");
 
+    private static readonly string StubModulePath =
+        Path.Combine(AppContext.BaseDirectory, "Wug", "Fixtures", "WugStubModule.psm1");
+
     // A canned WUG device. Best null => no bestState/worstState props (state UNKNOWN); HostName null =>
     // no hostName prop. displayName is NEVER emitted — mirrors the -View overview objects on the fleet.
-    private sealed record StubDev(string Name, string? HostName, string Ip, string? Best);
+    private sealed record StubDev(string Name, string? HostName, string Ip, string? Best, string? Id = null, string? DisplayName = null);
 
     // ── PS composition ──────────────────────────────────────────────────────────────────────────────
 
@@ -48,12 +52,15 @@ public class WugResolverProcessTests
     {
         var sb = new StringBuilder();
         sb.AppendLine("$script:Inv = @(");
+        int generatedId = 0;
         foreach (StubDev d in devs)
         {
             sb.Append("  [pscustomobject][ordered]@{ name = ").Append(PsQuote(d.Name));
             if (d.HostName is not null) { sb.Append("; hostName = ").Append(PsQuote(d.HostName)); }
+            if (d.DisplayName is not null) { sb.Append("; displayName = ").Append(PsQuote(d.DisplayName)); }
             sb.Append("; networkAddress = ").Append(PsQuote(d.Ip));
             if (d.Best is not null) { sb.Append("; bestState = ").Append(PsQuote(d.Best)).Append("; worstState = ").Append(PsQuote(d.Best)); }
+            if (d.Id != "<missing>") { sb.Append("; id = ").Append(PsQuote(d.Id ?? (++generatedId).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
             sb.AppendLine(" }");
         }
         sb.AppendLine(")");
@@ -90,6 +97,7 @@ public class WugResolverProcessTests
             $script:Inv | Where-Object {
                 (($_.PSObject.Properties.Name -contains 'name') -and $_.name -like "*$sv*") -or
                 (($_.PSObject.Properties.Name -contains 'hostName') -and $_.hostName -like "*$sv*") -or
+                (($_.PSObject.Properties.Name -contains 'displayName') -and $_.displayName -like "*$sv*") -or
                 (($_.PSObject.Properties.Name -contains 'networkAddress') -and $_.networkAddress -like "*$sv*")
             }
         }
@@ -114,19 +122,19 @@ public class WugResolverProcessTests
                 $worstSet = $hasWorst -and -not [string]::IsNullOrWhiteSpace($match.worstState)
                 if ($bestSet -or $worstSet) { $state = ($match.bestState -eq 'Maintenance' -or $match.worstState -eq 'Maintenance') }
                 $devices += [ordered]@{ name = $srv; inMaintenance = $state }
-                $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state }
+                $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state; outcome = $r.outcome }
                 if ($r.outcome -eq 'MatchedByIp') { $dev.matchedByIp = $true; $matchedByIp++ }
                 EmitDevice $dev
                 $resolvedStates++
             } elseif ($r.outcome -eq 'LookupError') {
                 $lookupErrors++; if ($null -eq $firstErr) { $firstErr = $r.error }
-                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null; outcome = 'LookupError' })
             } elseif ($r.outcome -eq 'Ambiguous') {
                 $ambiguous++
-                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null; outcome = 'Ambiguous' })
             } else {
                 $unmatched += $srv
-                EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null })
+                EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null; outcome = 'NoDevice' })
             }
         }
         $result.devices = @($devices)
@@ -175,6 +183,35 @@ public class WugResolverProcessTests
 
     private static WugDeviceState DeviceFor(IReadOnlyList<WugDeviceState> devices, string name)
         => Assert.Single(devices, d => string.Equals(d.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private static async Task<(WugMaintenanceResult Result, string Stdout, string MutationIds)> RunMaintenanceAsync(
+        object[] inventory, string[] names, string[]? errorNames = null, bool partialSet = false, bool enable = true)
+    {
+        Assert.True(File.Exists(StubModulePath), $"Missing WUG stub module: {StubModulePath}");
+        string mutationFile = Path.Combine(Path.GetTempPath(), $"Vivre_WugMutation_{Guid.NewGuid():N}.txt");
+        File.WriteAllText(mutationFile, string.Empty);
+        var env = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["VIVRE_WUG_MODULE_OVERRIDE"] = StubModulePath,
+            ["VIVRE_WUG_TEST_INVENTORY_JSON"] = JsonSerializer.Serialize(inventory),
+            ["VIVRE_WUG_TEST_ERROR_NAMES"] = string.Join("\n", errorNames ?? []),
+            ["VIVRE_WUG_TEST_PARTIAL_SET"] = partialSet ? "1" : "0",
+            ["VIVRE_WUG_TEST_MUTATION_FILE"] = mutationFile,
+            ["VIVRE_WUG_NAMES"] = string.Join("\n", names),
+            ["VIVRE_WUG_SERVER"] = "fixture",
+            ["VIVRE_WUG_USER"] = "fixture-user",
+            ["VIVRE_WUG_PASS"] = "fixture-pass",
+            ["VIVRE_WUG_ENABLE"] = enable ? "1" : "0",
+            ["VIVRE_WUG_REASON"] = "fixture",
+        };
+        try
+        {
+            var (stdout, stderr) = await WugMaintenance.RunPreflightProcessAsync(
+                WugMaintenance.Script, env, TimeSpan.FromSeconds(60), CancellationToken.None);
+            return (WugMaintenance.Parse(stdout, stderr), stdout, File.ReadAllText(mutationFile).Trim());
+        }
+        finally { File.Delete(mutationFile); }
+    }
 
     // ── Operator scenario 1: the still-works case (bare input vs FQDN-registered device) ─────────────
 
@@ -526,6 +563,183 @@ public class WugResolverProcessTests
         Assert.Equal(1, summary.LookupErrors);
         Assert.DoesNotContain("AZRPWDEGWEB", summary.Unmatched);   // an errored lookup is NOT unmatched
         Assert.Contains("stub search failed", summary.Error);      // carries the real IP-search error text
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Duplicate_short_name_is_ambiguous_regardless_of_result_order(bool reverse)
+    {
+        RequirePowerShell51();
+        var rows = new[]
+        {
+            new StubDev("WEB.a.example", "WEB", "10.10.0.1", "Up", "101"),
+            new StubDev("WEB.b.example", "WEB", "10.10.0.2", "Maintenance", "202"),
+        };
+        if (reverse) { System.Array.Reverse(rows); }
+
+        var (devices, summary) = await RunResolverAsync(rows,
+            new Dictionary<string, string> { ["WEB"] = "10.10.0.1" }, null, "WEB");
+
+        Assert.Equal(WugLookupOutcome.Ambiguous, DeviceFor(devices, "WEB").Outcome);
+        Assert.Equal(1, summary.Ambiguous);
+    }
+
+    [Fact]
+    public async Task Unique_full_name_disambiguates_short_name_but_is_still_uniqueness_checked()
+    {
+        RequirePowerShell51();
+        var rows = new[]
+        {
+            new StubDev("WEB.a.example", "WEB", "10.10.0.1", "Maintenance", "101"),
+            new StubDev("WEB.b.example", "WEB", "10.10.0.2", "Up", "202"),
+        };
+
+        var (devices, _) = await RunResolverAsync(rows, new Dictionary<string, string>(), null, "WEB.a.example.");
+        Assert.Equal(WugLookupOutcome.MatchedByName, DeviceFor(devices, "WEB.a.example.").Outcome);
+        Assert.True(DeviceFor(devices, "WEB.a.example.").InMaintenance);
+
+        var (_, duplicateSummary) = await RunResolverAsync(
+            new[] { rows[0], rows[0] with { Id = "303", Ip = "10.10.0.3" } },
+            new Dictionary<string, string>(), null, "WEB.a.example");
+        Assert.Equal(1, duplicateSummary.Ambiguous);
+    }
+
+    [Fact]
+    public async Task Repeated_rows_with_same_id_are_one_identity()
+    {
+        RequirePowerShell51();
+        var row = new StubDev("ONE.example", "ONE", "10.20.0.1", "Maintenance", "501");
+        var (devices, summary) = await RunResolverAsync(new[] { row, row }, new Dictionary<string, string>(), null, "ONE");
+        Assert.Equal(WugLookupOutcome.MatchedByName, DeviceFor(devices, "ONE").Outcome);
+        Assert.Equal(0, summary.Ambiguous);
+    }
+
+    [Fact]
+    public async Task Short_exact_row_does_not_hide_second_fqdn_candidate()
+    {
+        RequirePowerShell51();
+        var (devices, summary) = await RunResolverAsync(new[]
+        {
+            new StubDev("WEB", null, "10.21.0.1", "Up", "511"),
+            new StubDev("WEB.b.example", null, "10.21.0.2", "Up", "512"),
+        }, new Dictionary<string, string>(), null, "WEB");
+        Assert.Equal(WugLookupOutcome.Ambiguous, DeviceFor(devices, "WEB").Outcome);
+        Assert.Equal(1, summary.Ambiguous);
+    }
+
+    [Fact]
+    public async Task Duplicate_display_name_across_distinct_ids_is_ambiguous()
+    {
+        RequirePowerShell51();
+        var (devices, summary) = await RunResolverAsync(new[]
+        {
+            new StubDev("one.example", "ONE", "10.22.0.1", "Up", "521", "SHARED"),
+            new StubDev("two.example", "TWO", "10.22.0.2", "Up", "522", "SHARED"),
+        }, new Dictionary<string, string>(), null, "SHARED");
+        Assert.Equal(WugLookupOutcome.Ambiguous, DeviceFor(devices, "SHARED").Outcome);
+        Assert.Equal(1, summary.Ambiguous);
+    }
+
+    [Theory]
+    [InlineData("WEB.a.example", "WEB.a.example.other")]
+    [InlineData("WEB.a.example.other", "WEB.a.example")]
+    public async Task Dotted_prefixes_are_not_compatible_names(string query, string stored)
+    {
+        RequirePowerShell51();
+        var (devices, _) = await RunResolverAsync(
+            new[] { new StubDev(stored, null, "10.23.0.1", "Up", "530") },
+            new Dictionary<string, string>(), null, query);
+        Assert.NotEqual(WugLookupOutcome.MatchedByName, DeviceFor(devices, query).Outcome);
+    }
+
+    [Theory]
+    [InlineData("WEB.a.example", "WEB.a.example.other")]
+    [InlineData("WEB.a.example.other", "WEB.a.example")]
+    public async Task Conflicting_qualified_name_and_hostName_is_ambiguous(string name, string hostName)
+    {
+        RequirePowerShell51();
+        var (devices, summary) = await RunResolverAsync(
+            new[] { new StubDev(name, hostName, "10.25.0.1", "Up", "550") },
+            new Dictionary<string, string>(), null, name);
+        Assert.Equal(WugLookupOutcome.Ambiguous, DeviceFor(devices, name).Outcome);
+        Assert.Equal(1, summary.Ambiguous);
+    }
+
+    [Theory]
+    [InlineData("<missing>")]
+    [InlineData("")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    [InlineData("2147483648")]
+    [InlineData("abc")]
+    public async Task Missing_or_invalid_scalar_id_is_ambiguous_and_never_resolved(string id)
+    {
+        RequirePowerShell51();
+        var (devices, summary) = await RunResolverAsync(
+            new[] { new StubDev("BADID.example", "BADID", "10.30.0.1", "Up", id) },
+            new Dictionary<string, string>(), null, "BADID");
+        Assert.Equal(WugLookupOutcome.Ambiguous, DeviceFor(devices, "BADID").Outcome);
+        Assert.Equal(1, summary.Ambiguous);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Shipped_maintenance_script_mutates_only_distinct_unambiguous_ids_in_mixed_batch(bool enable)
+    {
+        RequirePowerShell51();
+        object[] inventory =
+        [
+            new { name = "GOOD.example", hostName = "GOOD", networkAddress = "10.40.0.1", id = 101 },
+            new { name = "DUP.a.example", hostName = "DUP", networkAddress = "10.40.0.2", id = 201 },
+            new { name = "DUP.b.example", hostName = "DUP", networkAddress = "10.40.0.3", id = 202 },
+            new { name = "REPEAT.example", hostName = "REPEAT", networkAddress = "10.40.0.4", id = 301 },
+            new { name = "REPEAT.example", hostName = "REPEAT", networkAddress = "10.40.0.4", id = 301 },
+            new { name = "BADID.example", hostName = "BADID", networkAddress = "10.40.0.5", id = -1 },
+        ];
+
+        var (result, stdout, mutation) = await RunMaintenanceAsync(inventory,
+            ["GOOD", "DUP", "REPEAT", "BADID", "ERR"], errorNames: ["ERR"], enable: enable);
+
+        Assert.Equal($"{enable}:101,301", mutation, ignoreCase: true);
+        Assert.Equal(2, result.DevicesSet);
+        Assert.Equal(new[] { "GOOD", "REPEAT" }, result.SucceededNames);
+        Assert.Equal(new[] { "DUP", "BADID" }, result.AmbiguousNames);
+        Assert.Equal(new[] { "ERR" }, result.LookupErrorNames);
+        Assert.Equal(2, result.Ambiguous);
+        Assert.Equal(1, result.LookupErrors);
+        Assert.False(result.Ok); // partial coverage is surfaced even though the two safe IDs were changed
+    }
+
+    [Fact]
+    public async Task One_element_array_id_never_reaches_mutation_api()
+    {
+        RequirePowerShell51();
+        object[] inventory = [new { name = "ARRAYID.example", hostName = "ARRAYID", networkAddress = "10.45.0.1", id = new[] { 777 } }];
+        var (result, _, mutation) = await RunMaintenanceAsync(inventory, ["ARRAYID"]);
+        Assert.Empty(mutation);
+        Assert.Equal(new[] { "ARRAYID" }, result.AmbiguousNames);
+        Assert.Equal(0, result.DevicesSet);
+    }
+
+    [Fact]
+    public async Task Shipped_maintenance_script_partial_module_result_assumes_no_per_name_success()
+    {
+        RequirePowerShell51();
+        object[] inventory =
+        [
+            new { name = "A.example", hostName = "A", networkAddress = "10.50.0.1", id = 401 },
+            new { name = "B.example", hostName = "B", networkAddress = "10.50.0.2", id = 402 },
+        ];
+
+        var (result, _, mutation) = await RunMaintenanceAsync(inventory, ["A", "B"], partialSet: true);
+
+        Assert.Equal("True:401,402", mutation, ignoreCase: true);
+        Assert.False(result.Ok);
+        Assert.Equal(1, result.DevicesSet);
+        Assert.Empty(result.SucceededNames!);
+        Assert.Contains("no per-machine success was assumed", result.Error);
     }
 
     // ── Single-source (splice) locks: the ONE ResolveFunctionScript feeds BOTH paths, never forked ──────

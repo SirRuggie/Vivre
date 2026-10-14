@@ -29,6 +29,14 @@ public class WugRowTextTests
         => Assert.Equal("WhatsUp Gold: no matching device (by IP)", WugRowText.NoMatchingDevice);
 
     [Fact]
+    public void Ambiguous_exact()
+        => Assert.Equal("WhatsUp Gold: ambiguous device — use a full name", WugRowText.Ambiguous);
+
+    [Fact]
+    public void LookupError_exact()
+        => Assert.Equal("WhatsUp Gold: lookup failed", WugRowText.LookupError);
+
+    [Fact]
     public void StateUnknown_exact()
         => Assert.Equal("WhatsUp Gold: state unknown", WugRowText.StateUnknown);
 

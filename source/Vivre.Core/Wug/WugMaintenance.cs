@@ -14,7 +14,22 @@ public sealed record WugMaintenanceResult(
     bool Ok,
     int DevicesSet,
     IReadOnlyList<string> Unmatched,
-    string? Error);
+    string? Error,
+    IReadOnlyList<string>? SucceededNames = null,
+    IReadOnlyList<string>? AmbiguousNames = null,
+    IReadOnlyList<string>? LookupErrorNames = null,
+    int Ambiguous = 0,
+    int LookupErrors = 0);
+
+/// <summary>The identity-resolution outcome for one requested WUG machine name.</summary>
+public enum WugLookupOutcome
+{
+    MatchedByName,
+    MatchedByIp,
+    NoDevice,
+    Ambiguous,
+    LookupError,
+}
 
 /// <summary>The outcome of a pre-flight connection test to the WhatsUp Gold server.</summary>
 /// <param name="ModulePresent">True when the WhatsUpGoldPS module is available.</param>
@@ -54,7 +69,9 @@ public sealed record WugMaintenanceStateResult(
     int LookupErrors = 0,
     int Ambiguous = 0,
     int MatchedByIp = 0,
-    IReadOnlyDictionary<string, WugMaintenanceDetail>? DetailsByName = null);
+    IReadOnlyDictionary<string, WugMaintenanceDetail>? DetailsByName = null,
+    IReadOnlyList<string>? AmbiguousNames = null,
+    IReadOnlyList<string>? LookupErrorNames = null);
 
 /// <summary>
 /// One per-device result streamed from the maintenance-state read as each name resolves.
@@ -74,7 +91,8 @@ public sealed record WugDeviceState(
     bool MatchedByIp = false,
     string? Reason = null,
     string? User = null,
-    string? SinceUtc = null);
+    string? SinceUtc = null,
+    WugLookupOutcome? Outcome = null);
 
 /// <summary>
 /// Sets WhatsUp Gold maintenance mode for a set of machines via the <c>WhatsUpGoldPS</c> module — an
@@ -133,9 +151,9 @@ public static class WugMaintenance
                         $stored = ([string]$val).TrimEnd('.')
                         if ([string]::Equals($stored, $q, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
                         # stored startswith query+"." : bare input vs FQDN store  ("APVHOP" ~ "APVHOP.EMPLOYEES.ROOT.local")
-                        if ($stored.StartsWith($q + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                        if (-not $q.Contains('.') -and $stored.StartsWith($q + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
                         # query startswith stored+"." : FQDN input vs bare store
-                        if ($q.StartsWith($stored + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                        if (-not $stored.Contains('.') -and $q.StartsWith($stored + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
                     }
                 }
             }
@@ -144,6 +162,68 @@ public static class WugMaintenance
                 if ($device.networkAddress -eq $query) { return $true }
             }
             return $false
+        }
+
+        # A WUG identity is usable for mutation only when it has a positive integral scalar id. String
+        # normalization makes numeric and string ids comparable and lets duplicate API rows collapse.
+        function Get-WugValidDeviceId {
+            param($device)
+            if ($null -eq $device -or -not ($device.PSObject.Properties.Name -contains 'id')) { return $null }
+            $rawId = $device.id
+            if ($null -eq $rawId -or -not ($rawId -is [string] -or $rawId -is [byte] -or $rawId -is [sbyte] -or
+                    $rawId -is [int16] -or $rawId -is [uint16] -or $rawId -is [int32] -or $rawId -is [uint32] -or
+                    $rawId -is [int64] -or $rawId -is [uint64])) { return $null }
+            $id = ([string]$rawId).Trim()
+            [int]$numericId = 0
+            if (-not [int]::TryParse($id, [System.Globalization.NumberStyles]::None,
+                    [System.Globalization.CultureInfo]::InvariantCulture, [ref]$numericId) -or $numericId -le 0) { return $null }
+            return $numericId.ToString([System.Globalization.CultureInfo]::InvariantCulture)
+        }
+
+        function Test-WugStrongNameMatch {
+            param($query, $device)
+            $q = ([string]$query).TrimEnd('.')
+            foreach ($prop in 'name','hostName','displayName') {
+                if ($device.PSObject.Properties.Name -contains $prop) {
+                    $stored = ([string]$device.$prop).TrimEnd('.')
+                    if (-not [string]::IsNullOrWhiteSpace($stored) -and
+                        [string]::Equals($stored, $q, [System.StringComparison]::OrdinalIgnoreCase)) { return $true }
+                }
+            }
+            if ($device.PSObject.Properties.Name -contains 'networkAddress' -and $device.networkAddress -eq $query) { return $true }
+            return $false
+        }
+
+        # Contradictory fully-qualified name/hostName values are unsafe identity evidence. A bare/FQDN
+        # pair for the same host is consistent; two different FQDNs are not. displayName is deliberately
+        # excluded because WUG commonly uses it as operator-facing free text.
+        function Test-WugDeviceIdentityConflict {
+            param($device)
+            if (-not ($device.PSObject.Properties.Name -contains 'name') -or
+                -not ($device.PSObject.Properties.Name -contains 'hostName')) { return $false }
+            $n = ([string]$device.name).Trim().TrimEnd('.')
+            $h = ([string]$device.hostName).Trim().TrimEnd('.')
+            if ([string]::IsNullOrWhiteSpace($n) -or [string]::IsNullOrWhiteSpace($h)) { return $false }
+            if ([string]::Equals($n, $h, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if (-not $h.Contains('.') -and $n.StartsWith($h + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+            if (-not $n.Contains('.') -and $h.StartsWith($n + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
+            return $true
+        }
+
+        # Collapse matching rows by valid device id. Any matching row with a missing id, or a row whose
+        # name fields conflict, prevents a unique verdict: it may represent another device that cannot be
+        # safely identified. Duplicate rows carrying the same valid id are one identity, not ambiguity.
+        function Select-WugUniqueIdentity {
+            param($matches)
+            $byId = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::OrdinalIgnoreCase)
+            $unsafe = $false
+            foreach ($device in @($matches)) {
+                if (Test-WugDeviceIdentityConflict $device) { $unsafe = $true }
+                $id = Get-WugValidDeviceId $device
+                if ($null -eq $id) { $unsafe = $true; continue }
+                if (-not $byId.ContainsKey($id)) { $byId.Add($id, $device) }
+            }
+            [ordered]@{ count = $byId.Count; device = $(if ($byId.Count -eq 1) { @($byId.Values)[0] } else { $null }); unsafe = $unsafe }
         }
 
         # Resolve ONE input name to a WUG device, honestly. Returns [ordered]@{ outcome; device; viaIp; hits; error }.
@@ -161,6 +241,8 @@ public static class WugMaintenance
         function Resolve-WugName {
             param($query)
             $out = [ordered]@{ outcome = 'NoDevice'; device = $null; viaIp = $false; hits = 0; error = $null }
+            $query = ([string]$query).Trim().TrimEnd('.')
+            if ([string]::IsNullOrWhiteSpace($query)) { return $out }
             $sawHits = $false
 
             # 1. Name search. -ErrorVariable (no '+' => reset per call) captures a search error even under
@@ -173,8 +255,21 @@ public static class WugMaintenance
             $out.hits = $results.Count
             if ($results.Count -gt 0) {
                 $sawHits = $true
-                $exact = $results | Where-Object { Test-WugNameMatch $query $_ } | Select-Object -First 1
-                if ($exact) { $out.outcome = 'MatchedByName'; $out.device = $exact; return $out }
+                $nameMatches = @($results | Where-Object { Test-WugNameMatch $query $_ })
+                if ($nameMatches.Count -gt 0) {
+                    # Prefer exact full-name evidence over the legacy FQDN-vs-bare compatibility match.
+                    # This lets WEB.A select WEB.A when another device WEB.B exposes bare hostName WEB,
+                    # while still requiring uniqueness among every exact full-name row.
+                    $strongMatches = @()
+                    if ($query.Contains('.')) { $strongMatches = @($nameMatches | Where-Object { Test-WugStrongNameMatch $query $_ }) }
+                    $identity = Select-WugUniqueIdentity $(if ($strongMatches.Count -gt 0) { $strongMatches } else { $nameMatches })
+                    if ($identity.count -eq 1 -and -not $identity.unsafe) {
+                        $out.outcome = 'MatchedByName'; $out.device = $identity.device; return $out
+                    }
+                    # A name ambiguity is authoritative. DNS/IP may rescue a renamed clean miss, but must
+                    # never choose one device after the supplied name itself qualified multiple identities.
+                    $out.outcome = 'Ambiguous'; return $out
+                }
             }
 
             # 3. IP fall-through from BOTH the empty and the hits-no-exact branches (the renamed-box rescue) —
@@ -194,8 +289,13 @@ public static class WugMaintenance
                         # to an honest NoDevice (unless the NAME search already saw hits). Two or more exact
                         # = devices genuinely sharing the IP = real ambiguity (unknown), never a silent [0].
                         $exactIp = @($results2 | Where-Object { $_.networkAddress -eq $ip })
-                        if ($exactIp.Count -eq 1) { $out.outcome = 'MatchedByIp'; $out.device = $exactIp[0]; $out.viaIp = $true; return $out }
-                        if ($exactIp.Count -ge 2) { $sawHits = $true }
+                        if ($exactIp.Count -gt 0) {
+                            $ipIdentity = Select-WugUniqueIdentity $exactIp
+                            if ($ipIdentity.count -eq 1 -and -not $ipIdentity.unsafe) {
+                                $out.outcome = 'MatchedByIp'; $out.device = $ipIdentity.device; $out.viaIp = $true; return $out
+                            }
+                            $sawHits = $true
+                        }
                     }
                 }
             }
@@ -255,7 +355,7 @@ public static class WugMaintenance
     internal static readonly string Script =
         """
         $ErrorActionPreference = 'Stop'
-        $result = [ordered]@{ ok = $false; devicesSet = 0; unmatched = @(); error = $null }
+        $result = [ordered]@{ ok = $false; devicesSet = 0; unmatched = @(); succeededNames = @(); ambiguousNames = @(); lookupErrorNames = @(); error = $null }
         function Emit($r) { $r | ConvertTo-Json -Compress -Depth 4 }
         # Live step markers the host reads off stdout and pushes to the activity log, so a slow run
         # shows what it's doing (and, on timeout, the last step reached) instead of a silent wait.
@@ -276,7 +376,10 @@ public static class WugMaintenance
         # 1. Ensure the WhatsUpGoldPS module: import, else install for the current user, else explain.
         try {
             Progress 'Loading the WhatsUpGoldPS module...'
-            if (-not (Get-Module -ListAvailable -Name WhatsUpGoldPS)) {
+            if ($env:VIVRE_WUG_MODULE_OVERRIDE) {
+                Import-Module $env:VIVRE_WUG_MODULE_OVERRIDE -Force -ErrorAction Stop
+            }
+            elseif (-not (Get-Module -ListAvailable -Name WhatsUpGoldPS)) {
                 # PowerShell Gallery requires TLS 1.2; 5.1 doesn't always negotiate it by default, and
                 # without this Install-Module can hang on the handshake until the caller's timeout kills it.
                 try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12 } catch { }
@@ -293,7 +396,7 @@ public static class WugMaintenance
                     Emit $result; return
                 }
             }
-            Import-Module WhatsUpGoldPS -ErrorAction Stop
+            if (-not $env:VIVRE_WUG_MODULE_OVERRIDE) { Import-Module WhatsUpGoldPS -ErrorAction Stop }
         } catch {
             $result.error = "Couldn't load the WhatsUpGoldPS module: $($_.Exception.Message)."
             Emit $result; return
@@ -325,8 +428,11 @@ public static class WugMaintenance
         #    lookup per entry, NOT a full inventory pull. The resolver is error-aware and never guesses:
         #    LookupError / Ambiguous machines are EXCLUDED from unmatched (an errored / unpinned lookup is
         #    NOT a proven "no matching device"), and folded into a fail-safe honesty report below.
-        $deviceIds = @()
+        $deviceIdsByKey = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([System.StringComparer]::OrdinalIgnoreCase)
+        $resolvedNames = @()
         $unmatched = @()
+        $ambiguousNames = @()
+        $lookupErrorNames = @()
         $lookupErrors = 0
         $ambiguousCount = 0
         $firstErr = $null
@@ -339,14 +445,21 @@ public static class WugMaintenance
                 $r = Resolve-WugName $srv
                 if ($r.outcome -eq 'MatchedByName' -or $r.outcome -eq 'MatchedByIp') {
                     if ($r.viaIp) { Progress "  $srv matched by IP" }
-                    $deviceIds += $r.device.id
+                    $idKey = Get-WugValidDeviceId $r.device
+                    # The resolver guarantees this, but keep mutation independently fail-safe if its
+                    # contract is ever changed: no missing/blank id reaches Set-WUGDeviceMaintenance.
+                    if ($null -eq $idKey) { $ambiguousCount++; $ambiguousNames += $srv; continue }
+                    if (-not $deviceIdsByKey.ContainsKey($idKey)) { $deviceIdsByKey.Add($idKey, $r.device.id) }
+                    $resolvedNames += $srv
                 }
                 elseif ($r.outcome -eq 'LookupError') {
                     $lookupErrors++
+                    $lookupErrorNames += $srv
                     if ($null -eq $firstErr) { $firstErr = $r.error }
                 }
                 elseif ($r.outcome -eq 'Ambiguous') {
                     $ambiguousCount++
+                    $ambiguousNames += $srv
                 }
                 else {
                     # NoDevice — the only proven clean-empty miss.
@@ -359,13 +472,18 @@ public static class WugMaintenance
         }
 
         $result.unmatched = @($unmatched)
+        $result.ambiguousNames = @($ambiguousNames)
+        $result.lookupErrorNames = @($lookupErrorNames)
+        $result.ambiguous = $ambiguousCount
+        $result.lookupErrors = $lookupErrors
+        $deviceIds = @($deviceIdsByKey.Values)
 
         # All-nothing-mapped guard: keep the honest wording, but NEVER say "no matching device" for boxes
         # that actually errored / were ambiguous — that's the false-negative this fix forbids.
         if ($deviceIds.Count -eq 0) {
             if ($lookupErrors -gt 0 -or $ambiguousCount -gt 0) {
                 $failed = $lookupErrors + $ambiguousCount
-                $result.error = "$failed of $($names.Count) machine(s) couldn't be looked up ($lookupErrors errored, $ambiguousCount ambiguous) — 0 device(s) were set; re-run to cover the rest."
+                $result.error = "$failed of $($names.Count) machine(s) couldn't be looked up ($lookupErrors errored, $ambiguousCount ambiguous) — 0 device(s) were set; use a unique full name for ambiguous devices and retry lookup errors."
             } else {
                 $result.error = "None of the $($names.Count) machine(s) matched a WhatsUp Gold device. Unmatched: $($unmatched -join ', ')."
             }
@@ -375,9 +493,26 @@ public static class WugMaintenance
         # 4. Set maintenance mode.
         try {
             Progress "Setting maintenance for $($deviceIds.Count) device(s)..."
-            Set-WUGDeviceMaintenance -DeviceId $deviceIds -Enabled $enable -Reason $reason -ErrorAction Stop | Out-Null
-            $result.ok = $true
-            $result.devicesSet = $deviceIds.Count
+            $setResult = Set-WUGDeviceMaintenance -DeviceId $deviceIds -Enabled $enable -Reason $reason -ErrorAction Stop
+            $confirmed = 0
+            if ($setResult -and $setResult.successfulOperations -is [int] -and
+                $setResult.successfulOperations -ge 0 -and $setResult.successfulOperations -le $deviceIds.Count) {
+                $confirmed = $setResult.successfulOperations
+            }
+            $setErrors = -1
+            if ($setResult -and $setResult.errors -is [int] -and $setResult.errors -ge 0) { $setErrors = $setResult.errors }
+            $setSucceeded = $setResult -and $setResult.success -is [bool] -and $setResult.success -eq $true -and
+                            $setErrors -eq 0 -and $confirmed -eq $deviceIds.Count
+            $result.devicesSet = $confirmed
+            if ($setSucceeded) {
+                $result.ok = $true
+                $result.succeededNames = @($resolvedNames)
+            }
+            else {
+                # The module reports only an aggregate success count, not which IDs succeeded. A partial
+                # batch therefore cannot safely mark any input name successful.
+                $result.error = "WhatsUp Gold confirmed $confirmed of $($deviceIds.Count) distinct device operation(s), but did not confirm the complete batch; no per-machine success was assumed."
+            }
         } catch {
             $result.error = "Mapped $($deviceIds.Count) device(s), but Set-WUGDeviceMaintenance failed: $($_.Exception.Message)."
         }
@@ -389,7 +524,7 @@ public static class WugMaintenance
         if (($lookupErrors -gt 0 -or $ambiguousCount -gt 0) -and $null -eq $result.error) {
             $failed = $lookupErrors + $ambiguousCount
             $result.ok = $false
-            $result.error = "$failed of $($names.Count) machine(s) couldn't be looked up ($lookupErrors errored, $ambiguousCount ambiguous) — $($result.devicesSet) device(s) were still set; re-run to cover the rest."
+            $result.error = "$failed of $($names.Count) machine(s) couldn't be looked up ($lookupErrors errored, $ambiguousCount ambiguous) — $($result.devicesSet) device(s) were still set; use a unique full name for ambiguous devices and retry lookup errors."
         }
 
         Emit $result
@@ -698,6 +833,8 @@ public static class WugMaintenance
         $unmatched = @()
         $lookupErrors = 0
         $ambiguous = 0
+        $lookupErrorNames = @()
+        $ambiguousNames = @()
         $matchedByIp = 0
         $resolvedStates = 0
         $firstErr = $null
@@ -764,7 +901,7 @@ public static class WugMaintenance
                 }
                 # Entry carries the INPUT name, not the WUG displayName, so the host keys back by what it asked.
                 $sum = [ordered]@{ name = $srv; inMaintenance = $state }
-                $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state }
+                $dev = [ordered]@{ name = $srv; matched = $true; inMaintenance = $state; outcome = $r.outcome }
                 if ($detail) { foreach ($k in @($detail.Keys)) { $sum[$k] = $detail[$k]; $dev[$k] = $detail[$k] } }
                 $script:devices += $sum
                 if ($r.outcome -eq 'MatchedByIp') { $dev.matchedByIp = $true; $script:matchedByIp++ }
@@ -774,18 +911,20 @@ public static class WugMaintenance
             elseif ($r.outcome -eq 'LookupError') {
                 # A WUG search errored — state UNKNOWN, never a false "no matching device". Counted.
                 $script:lookupErrors++
+                $script:lookupErrorNames += $srv
                 if ($null -eq $script:firstErr) { $script:firstErr = $r.error }
-                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null; outcome = 'LookupError' })
             }
             elseif ($r.outcome -eq 'Ambiguous') {
                 # Hits but nothing exact and no IP rescue — UNKNOWN, never $results[0]. Counted.
                 $script:ambiguous++
-                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null })
+                $script:ambiguousNames += $srv
+                EmitDevice ([ordered]@{ name = $srv; matched = $true; inMaintenance = $null; outcome = 'Ambiguous' })
             }
             else {
                 # NoDevice — a clean empty answer everywhere is the ONLY honest "no matching device".
                 $script:unmatched += $srv
-                EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null })
+                EmitDevice ([ordered]@{ name = $srv; matched = $false; inMaintenance = $null; outcome = 'NoDevice' })
             }
         }
 
@@ -903,6 +1042,8 @@ public static class WugMaintenance
         $result.unmatched = @($unmatched)
         $result.lookupErrors = $lookupErrors
         $result.ambiguous = $ambiguous
+        $result.lookupErrorNames = @($lookupErrorNames)
+        $result.ambiguousNames = @($ambiguousNames)
         $result.matchedByIp = $matchedByIp
         $result.ok = $true
 
@@ -1315,6 +1456,8 @@ public static class WugMaintenance
         var partial = new Dictionary<string, bool?>(StringComparer.OrdinalIgnoreCase);
         var partialDetails = new Dictionary<string, WugMaintenanceDetail>(StringComparer.OrdinalIgnoreCase);
         var partialUnmatched = new List<string>();
+        var partialAmbiguous = new List<string>();
+        var partialLookupErrors = new List<string>();
         string? lastName = null;
         int seen = 0;
 
@@ -1331,6 +1474,14 @@ public static class WugMaintenance
 
             lock (gate)
             {
+                if (parsed.Outcome == WugLookupOutcome.Ambiguous)
+                {
+                    partialAmbiguous.Add(parsed.Name);
+                }
+                else if (parsed.Outcome == WugLookupOutcome.LookupError)
+                {
+                    partialLookupErrors.Add(parsed.Name);
+                }
                 if (parsed.Matched)
                 {
                     partial[parsed.Name] = parsed.InMaintenance;
@@ -1366,33 +1517,39 @@ public static class WugMaintenance
             // still fire OnDeviceLine and write the live collections AFTER we return — so the result must
             // wrap snapshot COPIES taken under `gate`, never the live maps (a cross-thread write-during-read
             // on a Dictionary is this codebase's cardinal crash class).
-            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; string? ln; int sn;
+            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; List<string> snapAmbiguous; List<string> snapLookupErrors; string? ln; int sn;
             lock (gate)
             {
                 snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
                 snapDetails = new Dictionary<string, WugMaintenanceDetail>(partialDetails, StringComparer.OrdinalIgnoreCase);
                 snapUnmatched = new List<string>(partialUnmatched);
+                snapAmbiguous = new List<string>(partialAmbiguous);
+                snapLookupErrors = new List<string>(partialLookupErrors);
                 ln = lastName; sn = seen;
             }
             return new WugMaintenanceStateResult(
                 snap, snapUnmatched, ComposeAbortError("Stalled", ln, sn, names.Count, ex.Stall),
-                DetailsByName: snapDetails);
+                Ambiguous: snapAmbiguous.Count, DetailsByName: snapDetails,
+                AmbiguousNames: snapAmbiguous, LookupErrorNames: snapLookupErrors, LookupErrors: snapLookupErrors.Count);
         }
         catch (TimeoutException)
         {
             // Hit the absolute ceiling: same shape, ceiling wording and window. Snapshot under `gate` for
             // the same reason as above — the killed child's draining pump can still write the live maps.
-            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; string? ln; int sn;
+            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; List<string> snapAmbiguous; List<string> snapLookupErrors; string? ln; int sn;
             lock (gate)
             {
                 snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
                 snapDetails = new Dictionary<string, WugMaintenanceDetail>(partialDetails, StringComparer.OrdinalIgnoreCase);
                 snapUnmatched = new List<string>(partialUnmatched);
+                snapAmbiguous = new List<string>(partialAmbiguous);
+                snapLookupErrors = new List<string>(partialLookupErrors);
                 ln = lastName; sn = seen;
             }
             return new WugMaintenanceStateResult(
                 snap, snapUnmatched, ComposeAbortError("Timed out", ln, sn, names.Count, timeout),
-                DetailsByName: snapDetails);
+                Ambiguous: snapAmbiguous.Count, DetailsByName: snapDetails,
+                AmbiguousNames: snapAmbiguous, LookupErrorNames: snapLookupErrors, LookupErrors: snapLookupErrors.Count);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -1405,14 +1562,18 @@ public static class WugMaintenance
             // plus the real reason. Still fails open, never a fabricated "not in maintenance". Snapshot
             // under `gate` for the same reason as above — the killed child's draining pump can still write
             // the live maps.
-            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched;
+            Dictionary<string, bool?> snap; Dictionary<string, WugMaintenanceDetail> snapDetails; List<string> snapUnmatched; List<string> snapAmbiguous; List<string> snapLookupErrors;
             lock (gate)
             {
                 snap = new Dictionary<string, bool?>(partial, StringComparer.OrdinalIgnoreCase);
                 snapDetails = new Dictionary<string, WugMaintenanceDetail>(partialDetails, StringComparer.OrdinalIgnoreCase);
                 snapUnmatched = new List<string>(partialUnmatched);
+                snapAmbiguous = new List<string>(partialAmbiguous);
+                snapLookupErrors = new List<string>(partialLookupErrors);
             }
-            return new WugMaintenanceStateResult(snap, snapUnmatched, ex.Message, DetailsByName: snapDetails);
+            return new WugMaintenanceStateResult(snap, snapUnmatched, ex.Message,
+                LookupErrors: snapLookupErrors.Count, Ambiguous: snapAmbiguous.Count, DetailsByName: snapDetails,
+                AmbiguousNames: snapAmbiguous, LookupErrorNames: snapLookupErrors);
         }
     }
 
@@ -1571,8 +1732,11 @@ public static class WugMaintenance
             int lookupErrors = ReadCount(root, "lookupErrors");
             int ambiguous    = ReadCount(root, "ambiguous");
             int matchedByIp  = ReadCount(root, "matchedByIp");
+            List<string> ambiguousNames = ReadStringList(root, "ambiguousNames");
+            List<string> lookupErrorNames = ReadStringList(root, "lookupErrorNames");
 
-            return new WugMaintenanceStateResult(byName, unmatched, error, lookupErrors, ambiguous, matchedByIp, details);
+            return new WugMaintenanceStateResult(byName, unmatched, error, lookupErrors, ambiguous, matchedByIp, details,
+                ambiguousNames, lookupErrorNames);
         }
         catch (JsonException)
         {
@@ -1586,6 +1750,22 @@ public static class WugMaintenance
         => root.TryGetProperty(name, out JsonElement el) && el.ValueKind == JsonValueKind.Number && el.TryGetInt32(out int v)
             ? v
             : 0;
+
+    private static List<string> ReadStringList(JsonElement root, string name)
+    {
+        var values = new List<string>();
+        if (!root.TryGetProperty(name, out JsonElement el)) return values;
+        if (el.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(el.GetString()))
+        {
+            values.Add(el.GetString()!);
+        }
+        else if (el.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement item in el.EnumerateArray())
+                if (item.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(item.GetString())) values.Add(item.GetString()!);
+        }
+        return values;
+    }
 
     // Adds one device entry to the tri-state map: the name must be a string (skip the entry otherwise);
     // inMaintenance True/False map to true/false, and anything else (absent, null, string, number) to
@@ -1686,6 +1866,12 @@ public static class WugMaintenance
 
             // Optional, present only when true. JSON true => true; absent / null / any other shape => false.
             bool matchedByIp = root.TryGetProperty("matchedByIp", out JsonElement ipEl) && ipEl.ValueKind == JsonValueKind.True;
+            WugLookupOutcome? outcome = null;
+            if (root.TryGetProperty("outcome", out JsonElement outcomeEl) && outcomeEl.ValueKind == JsonValueKind.String
+                && Enum.TryParse(outcomeEl.GetString(), ignoreCase: true, out WugLookupOutcome parsedOutcome))
+            {
+                outcome = parsedOutcome;
+            }
 
             // Optional maintenance detail — the SAME reader as AddDevice (lockstep); display-only, can
             // never affect matched / inMaintenance above.
@@ -1693,7 +1879,7 @@ public static class WugMaintenance
 
             return new WugDeviceState(
                 nameEl.GetString()!, matched, inMaintenance, matchedByIp,
-                detail?.Reason, detail?.User, detail?.SinceUtc);
+                detail?.Reason, detail?.User, detail?.SinceUtc, outcome);
         }
         catch (JsonException)
         {
@@ -1749,7 +1935,14 @@ public static class WugMaintenance
                 }
             }
 
-            return new WugMaintenanceResult(ok, set, unmatched, error);
+            List<string> succeededNames = ReadStringList(root, "succeededNames");
+            List<string> ambiguousNames = ReadStringList(root, "ambiguousNames");
+            List<string> lookupErrorNames = ReadStringList(root, "lookupErrorNames");
+            int ambiguous = ReadCount(root, "ambiguous");
+            int lookupErrors = ReadCount(root, "lookupErrors");
+
+            return new WugMaintenanceResult(ok, set, unmatched, error, succeededNames, ambiguousNames, lookupErrorNames,
+                ambiguous, lookupErrors);
         }
         catch (JsonException)
         {

@@ -19,7 +19,7 @@ The original report's severity ratings remain review assessments, not an agreed 
 | F03 | SMB reboot dispatch reporting | Implemented and locally validated; independent red-team accepted | Authorized commit and push |
 | F04 | RDP persistence and recovery | Implemented; independent review accepted | Authorized October 14, 2026 |
 | F05 | Consistent and recoverable package staging | Implemented; independent review accepted | Authorized October 14, 2026 |
-| F06 | Ambiguous WUG device names | Direction agreed; independent red-team required | Not authorized |
+| F06 | Ambiguous WUG device names | Implemented; independent red-team accepted; 1,340 tests passed | Authorized October 14, 2026 |
 | F07 | Recovery from cached Kerberos failure | Direction agreed; per-host retry and fresh attempt after credential change | Not authorized |
 | F08 | Software absence versus query failure | Direction agreed; installed, absent, and could-not-check results | Not authorized |
 | F09 | Truthful disk cleanup outcomes | Implemented and locally validated | Committed and pushed |
@@ -203,7 +203,7 @@ Shaun approved requiring an unambiguous device match and explicitly requires ind
 
 No evidence establishes that Shaun's current WUG inventory contains duplicate short names. The decision addresses the code's conditional targeting defect, not a confirmed wrong-device incident.
 
-**Implementation status: not started. Authorization: not granted.** No implementation priority has been selected. The required red-team review has not started.
+**Implementation status: implemented and independently reviewed locally. Authorization: Shaun explicitly said “start F06” on October 14, 2026.** Independent refutation accepted the final implementation. Validation used controlled dummy inventory and mutation stubs; no live WUG maintenance changes or deployment.
 
 ### Required independent red-team review
 
@@ -634,3 +634,68 @@ unique matches and require independent red-team review. F12 remains skipped.
   verified the existing transport/copy-only assertions were retained or adapted to the new contract.
 - `git diff --check` passed. Changes are ready for the standing authorized conventional commit/push;
   no attribution trailers, version bump, live server staging, or package execution is included.
+
+
+## F06 capability and acceptance ledger
+
+| Capability | Status | Required evidence |
+|---|---|---|
+| Unambiguous distinct valid device identity | Implemented and tested locally | Duplicate short/full names, reversed ordering, same-ID repeats, invalid IDs and conflicting fields |
+| Name ambiguity cannot be bypassed through DNS/IP | Implemented and tested locally | Ambiguous name plus unique IP; exact IP and lookup-error regression tests |
+| Shared state-read and maintenance identity rules | Implemented and tested locally | Actual generated PowerShell 5.1 scripts with controlled inventory |
+| Ambiguous inputs never mutate; valid mixed-batch targets proceed | Implemented and tested locally | Capture exact IDs passed to stub mutation API and honest per-name outcomes |
+| Operator distinguishes ambiguity, absence and lookup failure | Implemented and tested locally | Streamed rows, final reconciliation, maintenance rows and partial summary |
+| Independent review and final verification | Completed; independent review accepted | Main source review, independent 163-test WUG run, full solution builds and 1,340 passing regression tests |
+| Live WUG inventory/maintenance validation | Outside local validation | No live device inventory or maintenance changes used |
+
+
+### F06 review checkpoint
+
+- Shared resolution must count distinct valid device IDs, preserve short-name collisions even when
+  one row is an exact bare-name match, and permit a unique exact full name only after checking its
+  own matching identities. Ambiguous names cannot fall through to DNS/IP selection.
+- Read-only inspection of installed WhatsUpGoldPS 0.1.21 confirmed `DeviceId` is `int[]`; validation
+  therefore requires a positive scalar Int32. Malformed or missing identity evidence cannot enter a
+  mutation batch or poison valid targets through parameter binding.
+- The installed module returns aggregate `successfulOperations`, `errors`, and `success` metadata.
+  It can report a partial API failure without throwing. F06 must inspect that metadata; an aggregate
+  partial count cannot identify successful individual rows, so those rows remain change not confirmed.
+- These are local source and module-contract observations, not evidence of a live inventory collision
+  or live maintenance failure. Executable dummy-inventory tests and independent refutation remain pending.
+
+- Review also rejected dotted-prefix equivalence between different full names and short-name exact
+  preference that could hide another qualifying device. Both matching and field-consistency rules now
+  restrict prefix compatibility to a genuinely bare name paired with its full name.
+- State callbacks now require the run to remain current and accept each pending name only once;
+  callbacks queued after final reconciliation cannot overwrite final rows or double-count outcomes.
+- Intermediate validation: six new outcome-parser cases passed; the main WUG checkpoint passed
+  156 tests. These counts precede the final edge-case additions and do not constitute final acceptance.
+
+
+### F06 final verification and delivery
+
+- Main full regression: **1,340 passed, zero failed, zero skipped** (3m08s). Main and independent
+  reviewer each built the full solution including Desktop: **zero errors, one known missing
+  agent-signing certificate warning**. The local UpdateAgent remains unsigned; no release was made.
+- Independent final WUG run: **163/163 passed**, including real Windows PowerShell 5.1 processes.
+  Final implementation-targeted run: **37/37 passed**. Main personally reviewed changed source,
+  tests, fixture, caller reconciliation, help, and documentation; independent review reported no
+  remaining confirmed defect after corrections.
+- Executable cases cover reversed duplicate short names, duplicate full/display names, unique full
+  names with trailing dots, same-ID repeats, invalid/missing/array IDs, conflicting fields, dotted
+  full-name prefixes, exact IP fallback, and name ambiguity that cannot be rescued by DNS/IP.
+  Captured maintenance ON/OFF calls contain only distinct valid IDs; invalid-only input produces no
+  mutation. Mixed batches retain successful input names, ambiguity and lookup failures separately.
+- The installed module's aggregate response is checked. Partial API success reports its confirmed
+  count without inventing successful individual names. The actual pooled state loop preserves explicit
+  streamed and final outcomes. Existing SSL, BOM, credential, cancellation and process tests passed.
+- Tests use dummy devices and disposable capture files. No live inventory, WUG API call, maintenance
+  change, or production canary was performed. The module contract was checked against installed
+  WhatsUpGoldPS 0.1.21; future module behavior is not established by these fixtures. Desktop behavior
+  was source-reviewed and compiled, not exercised through an interactive live WUG session.
+- Help, README, repository guidance, Unreleased notes, and this ledger are updated. F06 delivery uses
+  the standing authorized conventional commit/push with no attribution trailers or version bump.
+
+**Recommended next: F07 — recovery from cached Kerberos failure.** Provide a deliberate per-host
+WinRM retry and a fresh attempt after credential changes, so a temporary failure does not keep a
+recovered server on fallback for the rest of the session. F07 remains unstarted; F12 remains skipped.

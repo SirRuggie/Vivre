@@ -84,13 +84,14 @@ public class WugPoolProcessTests
     {
         var sb = new StringBuilder();
         sb.AppendLine("$script:Inv = @(");
+        int generatedId = 0;
         foreach (StubDev d in devs)
         {
             sb.Append("  [pscustomobject][ordered]@{ name = ").Append(PsQuote(d.Name));
             if (d.HostName is not null) { sb.Append("; hostName = ").Append(PsQuote(d.HostName)); }
             sb.Append("; networkAddress = ").Append(PsQuote(d.Ip));
             if (d.Best is not null) { sb.Append("; bestState = ").Append(PsQuote(d.Best)).Append("; worstState = ").Append(PsQuote(d.Best)); }
-            if (d.Id is not null) { sb.Append("; id = ").Append(PsQuote(d.Id)); }
+            if (d.Id != "<missing>") { sb.Append("; id = ").Append(PsQuote(d.Id ?? (++generatedId).ToString(System.Globalization.CultureInfo.InvariantCulture))); }
             sb.AppendLine(" }");
         }
         sb.AppendLine(")");
@@ -515,6 +516,27 @@ public class WugPoolProcessTests
     }
 
     // ── #3 Per-worker error isolation (trap T5): one throwing lookup can't abort the other 323 ──────────
+
+    [Fact]
+    public async Task Real_state_loop_streams_and_summarizes_distinct_f06_outcomes()
+    {
+        RequirePowerShell51();
+        PoolRun run = await RunPoolAsync(
+            new[]
+            {
+                new StubDev("dup.a.example", "DUP", "10.60.0.1", "Up", "601"),
+                new StubDev("dup.b.example", "DUP", "10.60.0.2", "Up", "602"),
+                new StubDev("good.example", "GOOD", "10.60.0.3", "Maintenance", "603"),
+            }, concurrency: 2, new[] { "DUP", "GOOD", "ERR" }, errNames: new[] { "ERR" });
+
+        Assert.Equal(WugLookupOutcome.Ambiguous, DeviceFor(run.Devices, "DUP").Outcome);
+        Assert.Equal(WugLookupOutcome.MatchedByName, DeviceFor(run.Devices, "GOOD").Outcome);
+        Assert.Equal(WugLookupOutcome.LookupError, DeviceFor(run.Devices, "ERR").Outcome);
+        Assert.Equal(new[] { "DUP" }, run.Summary.AmbiguousNames);
+        Assert.Equal(new[] { "ERR" }, run.Summary.LookupErrorNames);
+        Assert.Equal(1, run.Summary.Ambiguous);
+        Assert.Equal(1, run.Summary.LookupErrors);
+    }
 
     [Fact]
     public async Task Pooled_one_worker_throw_is_isolated_as_unknown_others_still_resolve()
