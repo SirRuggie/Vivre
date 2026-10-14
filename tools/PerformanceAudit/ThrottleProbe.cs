@@ -78,6 +78,9 @@ internal static class ThrottleProbe
 
             int activeBefore = CountWaiters(throttle.Active);
             int reservedBefore = CountWaiters(GetReserved(throttle));
+            if (activeBefore != 0 || reservedBefore != 0)
+                throw new InvalidOperationException(
+                    $"Losing waiters remained queued: active={activeBefore}, reserved={reservedBefore}.");
             long allocatedForAcquires = GC.GetTotalAllocatedBytes(true) - allocated;
             long managedAfterAcquires = GC.GetTotalMemory(false);
 
@@ -93,7 +96,7 @@ internal static class ThrottleProbe
                 AcquireMilliseconds = acquireSw.Elapsed.TotalMilliseconds,
                 ActiveQueuedWaitersBeforeRelease = activeBefore,
                 ReservedQueuedWaitersBeforeRelease = reservedBefore,
-                ExpectedActiveLosers = Math.Max(0, acquisitions - Reserved),
+                ExpectedQueuedLosers = 0,
                 ActiveQueuedWaitersAfterDrain = CountWaiters(throttle.Active),
                 ReservedQueuedWaitersAfterDrain = CountWaiters(GetReserved(throttle)),
                 DrainMilliseconds = drainSw.Elapsed.TotalMilliseconds,

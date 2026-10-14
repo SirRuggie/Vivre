@@ -1,4 +1,6 @@
-using System.Collections.Concurrent;
+using System.Security.Cryptography;
+using System.Text.Json;
+using Vivre.Core.Threading;
 using System.IO;
 using System.Management.Automation;
 using Vivre.Core.Operations;
@@ -23,7 +25,7 @@ namespace Vivre.Core.Deploy;
 /// </remarks>
 public sealed class DeploymentService : IDeploymentService
 {
-    private static readonly ConcurrentDictionary<string, SemaphoreSlim> PublicationLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly KeyedOperationGate PublicationLocks = new();
 
     private readonly IPowerShellHost _powerShell;
     private readonly HostOperationCoordinator _operations;
@@ -60,13 +62,21 @@ public sealed class DeploymentService : IDeploymentService
         if (!claim.Acquired) return new StageResult(false, null, claim.RefusalMessage!);
         using HostOperationCoordinator.HostOperationClaim localClaim = _operations.TryBeginOperation("localhost", "Software staging source read");
         if (!localClaim.Acquired) return new StageResult(false, null, localClaim.RefusalMessage!);
-        try { _protectedPaths.Register(host, targetPath); _protectedPaths.Register("localhost", sourcePath); }
+        try
+        {
+            await Task.Run(() =>
+            {
+                _protectedPaths.Register(host, targetPath);
+                _protectedPaths.Register("localhost", sourcePath);
+            }, token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) { throw; }
         catch (Exception ex) { return new StageResult(false, null, $"Staging blocked — protected-path registry could not be saved: {ex.Message}"); }
 
         PackagePublicationPlan plan;
         try
         {
-            plan = await Task.Run(() => PackagePublication.Prepare(sourcePath, sourceIsFolder, targetPath, HostName.IsLocal(host)), token).ConfigureAwait(false);
+            plan = await Task.Run(() => PackagePublication.Prepare(sourcePath, sourceIsFolder, targetPath, HostName.IsLocal(host), token), token).ConfigureAwait(false);
         }
         catch (OperationCanceledException) { throw; }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or NotSupportedException)
@@ -75,8 +85,7 @@ public sealed class DeploymentService : IDeploymentService
         }
 
         string publicationKey = $"{HostOperationCoordinator.NormalizeHost(host)}|{plan.Target.ToUpperInvariant()}";
-        SemaphoreSlim gate = PublicationLocks.GetOrAdd(publicationKey, static _ => new SemaphoreSlim(1, 1));
-        await gate.WaitAsync(token).ConfigureAwait(false);
+        IDisposable gate = await PublicationLocks.AcquireAsync(publicationKey, token).ConfigureAwait(false);
         try
         {
             string? pending = null;
@@ -87,9 +96,14 @@ public sealed class DeploymentService : IDeploymentService
                 catch (Exception ex) { return new StageResult(false, null, $"Staging blocked — pending transfer cleanup records could not be read: {ex.Message}"); }
             }
             StageResult result = await StagePreparedAsync(host, plan, credential, token, claim).ConfigureAwait(false);
+            if (result.TemporaryPathsCleaned)
+            {
+                try { _protectedPaths.UnregisterOwnedConfirmed(host, [plan.Stage, plan.Backup, plan.Stage + ".extract"]); }
+                catch (Exception ex) { result = result with { Message = result.Message + $" Temporary-path protection retained: {ex.Message}" }; }
+            }
             return pending is null ? result : result with { Message = result.Message + " " + pending };
         }
-        finally { gate.Release(); }
+        finally { gate.Dispose(); }
     }
 
     private async Task<StageResult> StagePreparedAsync(
@@ -104,10 +118,7 @@ public sealed class DeploymentService : IDeploymentService
         {
             // Persist before the first copy. A registry that cannot be read or saved blocks staging,
             // so cleanup can never fall back to an unsafe empty protection set.
-            _protectedPaths.Register(host, targetPath);
-            _protectedPaths.Register(host, plan.Stage);
-            _protectedPaths.Register(host, plan.Backup);
-            _protectedPaths.Register(host, plan.Stage + ".extract");
+            _protectedPaths.RegisterMany(host, [targetPath, plan.Stage, plan.Backup, plan.Stage + ".extract"]);
             _protectedPaths.Register("localhost", sourcePath);
         }
         catch (Exception ex)
@@ -188,6 +199,7 @@ public sealed class DeploymentService : IDeploymentService
         {
             ["Source"] = plan.Source,
             ["ShareRoot"] = shareRoot,
+            ["ManifestJson"] = JsonSerializer.Serialize(plan.Manifest),
             ["Cred"] = credential,
         };
 
@@ -199,7 +211,7 @@ public sealed class DeploymentService : IDeploymentService
             string message = GetString(row, "message") ?? $"Staged and verified at {plan.Target}";
             string? retainedPath = GetString(row, "recoveryPath");
             if (!string.IsNullOrWhiteSpace(retainedPath) && !message.Contains(retainedPath, StringComparison.OrdinalIgnoreCase)) message += $" Recovery path: {retainedPath}.";
-            return new(new StageResult(true, plan.Target, message), false);
+            return new(new StageResult(true, plan.Target, message) { TemporaryPathsCleaned = GetBool(row, "temporaryPathsCleaned") }, false);
         }
 
         if (row is null)
@@ -251,9 +263,7 @@ public sealed class DeploymentService : IDeploymentService
             _protectedPaths.Register("localhost", archive.Path);
             lease = _transfers.Create(host, plan.Target);
             StagingTransferRecord transfer = lease.Record;
-            _protectedPaths.Register(host, transfer.Directory);
-            _protectedPaths.Register(host, transfer.Directory + ".cleanup-" + transfer.OwnerToken);
-            _protectedPaths.Register(host, transfer.Directory + ".init-" + transfer.OwnerToken);
+            _protectedPaths.RegisterMany(host, TransferPaths(transfer));
             token.ThrowIfCancellationRequested();
             remoteAttempted = true;
             // Let the short remote initialization finish atomically, but bound our wait. An abandoned
@@ -280,11 +290,33 @@ public sealed class DeploymentService : IDeploymentService
             token.ThrowIfCancellationRequested();
             // Once publication begins, preserve F05's non-cancellable replacement/recovery transaction.
             // Its exclusive transfer lock also prevents a late-running command racing a cleanup retry.
+            // Large manifests use the same owned, offset-checked transfer lane as archive chunks.
+            // Avoid retaining a complete base64 copy and never embed a large manifest in a command.
+            byte[] manifestBytes = JsonSerializer.SerializeToUtf8Bytes(plan.Manifest);
+            string? manifestHash = null;
+            string manifestInline = string.Empty;
+            if (manifestBytes.Length <= 32 * 1024)
+                manifestInline = Convert.ToBase64String(manifestBytes);
+            else
+            {
+                manifestHash = Convert.ToHexString(SHA256.HashData(manifestBytes));
+                const int manifestChunkBytes = 64 * 1024;
+                for (int offset = 0; offset < manifestBytes.Length; offset += manifestChunkBytes)
+                {
+                    token.ThrowIfCancellationRequested();
+                    string chunk = Convert.ToBase64String(manifestBytes, offset, Math.Min(manifestChunkBytes, manifestBytes.Length - offset));
+                    RequireTransferSuccess(await _powerShell.RunRemoteAsync(host,
+                        StagingTransferScripts.BuildChunk(transfer.Directory, transfer.Id, transfer.OwnerToken, chunk, offset, "manifest.json"),
+                        credential, cancellationToken: token).ConfigureAwait(false), "write manifest chunk");
+                }
+            }
+            token.ThrowIfCancellationRequested();
             string publish = PackagePublication.BuildPublishScript("$payload", true, plan.Target, plan.Stage, plan.Backup,
-                plan.IsFolder, PackagePublication.ManifestBase64(plan.Manifest), archive.Sha256, cleanupSourceZip: false);
+                plan.IsFolder, manifestInline, archive.Sha256, cleanupSourceZip: false,
+                manifestExpression: manifestHash is null ? null : "[IO.File]::ReadAllText($manifestPath, [Text.Encoding]::UTF8)");
             publicationStarted = true;
             PSExecutionResult response = await _powerShell.RunRemoteAsync(host,
-                StagingTransferScripts.WrapPublication(transfer.Directory, transfer.Id, transfer.OwnerToken, publish),
+                StagingTransferScripts.WrapPublication(transfer.Directory, transfer.Id, transfer.OwnerToken, publish, manifestHash),
                 credential, cancellationToken: CancellationToken.None).ConfigureAwait(false);
             PSObject? row = response.Output.Count == 1 ? response.Output[0] : null;
             if (row is null || Value(row, "ok") is not bool || response.HadErrors || response.Errors.Count > 0)
@@ -294,7 +326,7 @@ public sealed class DeploymentService : IDeploymentService
                 string message = GetString(row, "message") ?? (GetBool(row, "ok") ? $"Staged and verified at {plan.Target}" : "publication failed");
                 string? recovery = GetString(row, "recoveryPath");
                 if (recovery is not null && !message.Contains(recovery, StringComparison.OrdinalIgnoreCase)) message += $" Recovery path: {recovery}.";
-                result = GetBool(row, "ok") ? new StageResult(true, plan.Target, message) : Fail(host, smbError, message);
+                result = GetBool(row, "ok") ? new StageResult(true, plan.Target, message) { TemporaryPathsCleaned = GetBool(row, "temporaryPathsCleaned") } : Fail(host, smbError, message);
             }
         }
         catch (OperationCanceledException ex) { cancellation = ex; }
@@ -316,8 +348,8 @@ public sealed class DeploymentService : IDeploymentService
             }
             if (archive is not null)
             {
-                try { archive.Dispose(); }
-                catch (Exception ex) { cleanupNotes.Add($"Local archive cleanup remains pending at {archive.Path}: {ex.Message}"); }
+                try { archive.Dispose(); _protectedPaths.UnregisterOwnedConfirmed("localhost", [archive.Path]); }
+                catch (Exception ex) { cleanupNotes.Add($"Local archive cleanup or protection update remains pending at {archive.Path}: {ex.Message}"); }
             }
         }
         string cleanup = string.Join(" ", cleanupNotes);
@@ -342,9 +374,7 @@ public sealed class DeploymentService : IDeploymentService
             using (lease)
             {
                 token.ThrowIfCancellationRequested();
-                _protectedPaths.Register(host, lease.Record.Directory);
-                _protectedPaths.Register(host, lease.Record.Directory + ".cleanup-" + lease.Record.OwnerToken);
-                _protectedPaths.Register(host, lease.Record.Directory + ".init-" + lease.Record.OwnerToken);
+                _protectedPaths.RegisterMany(host, TransferPaths(lease.Record));
                 string? note = await CleanupTransferAsync(lease, credential, token).ConfigureAwait(false);
                 if (note is not null) notes.Add(note);
             }
@@ -370,6 +400,7 @@ public sealed class DeploymentService : IDeploymentService
             RequireTransferSuccess(response, "clean transfer files");
             if (!transfer.InitializationConfirmed && GetBool(response.Output[0], "absent"))
                 return $"Transfer initialization outcome is unknown at {transfer.Directory}; cleanup record retained because a late initializer may still appear. Retry staging later; if it remains absent, verify remote execution has stopped before manually clearing the record.";
+            _protectedPaths.UnregisterOwnedConfirmed(transfer.Host, TransferPaths(transfer));
             lease.Complete();
             return null;
         }
@@ -383,11 +414,14 @@ public sealed class DeploymentService : IDeploymentService
         }
     }
 
-    private static string? CompleteUnstartedTransfer(StagingTransferJournal.Lease lease)
+    private string? CompleteUnstartedTransfer(StagingTransferJournal.Lease lease)
     {
-        try { lease.Complete(); return null; }
+        try { _protectedPaths.UnregisterOwnedConfirmed(lease.Record.Host, TransferPaths(lease.Record)); lease.Complete(); return null; }
         catch (Exception ex) { return $"Unstarted transfer record remains pending for {lease.Record.Directory}: {ex.Message}"; }
     }
+
+    private static string[] TransferPaths(StagingTransferRecord transfer) =>
+        [transfer.Directory, transfer.Directory + ".cleanup-" + transfer.OwnerToken, transfer.Directory + ".init-" + transfer.OwnerToken];
 
     private static string RecoveryContext(PackagePublicationPlan plan) =>
         $"Check destination {plan.Target}, candidate {plan.Stage}, and recovery backup {plan.Backup} before retrying.";

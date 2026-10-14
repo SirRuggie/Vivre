@@ -12,7 +12,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Features
 
-- **Tabbed workspaces** — each tab is an independent set of machines and operations, run side by side.
+- **Tabbed workspaces** — each tab is an independent set of machines and operations, run side by side. Text searches settle briefly before refreshing large lists; background activity and completion banners keep bounded UI queues.
 - **Ping All** — reachability, shown as colour-coded status dots.
 - **Check Vitals** — one read-only pull per machine that gathers SCCM client health (site code, agent
   version, reboot-pending / missing-updates / install-running / users-online, last reboot) **and** deep

@@ -486,13 +486,17 @@ public partial class MainWindow : FluentWindow
     }
 
     private DispatcherTimer? _completionBarTimer;
+    private const int MaxQueuedCompletionBars = 4;
+    private int _coalescedCompletionCount;
+    private ViewModels.OperationSeverity _coalescedCompletionSeverity;
 
-    // FIFO queue for completion banners: when multiple ops finish near-simultaneously, show one at
-    // a time in finish order, each for its normal hold duration. Drained by OnCompletionBarTick.
+    // Keep recent completions while the UI is busy. Older queued banners are represented by a
+    // summary banner; each original completion remains discoverable in the Activity log.
     private readonly Queue<(string Summary, ViewModels.OperationSeverity Severity)> _completionBarQueue = new();
 
     private void OnOperationCompleted(string summary, ViewModels.OperationSeverity severity)
     {
+        LogCompletion(summary, severity);
         if (IsActive)
         {
             Dispatcher.BeginInvoke(() => EnqueueCompletionBar(summary, severity));
@@ -507,6 +511,12 @@ public partial class MainWindow : FluentWindow
     /// visible are queued and shown in order once the hold timer expires.</summary>
     private void EnqueueCompletionBar(string summary, ViewModels.OperationSeverity severity)
     {
+        if (_completionBarQueue.Count == MaxQueuedCompletionBars)
+        {
+            (_, ViewModels.OperationSeverity omittedSeverity) = _completionBarQueue.Dequeue();
+            _coalescedCompletionCount++;
+            _coalescedCompletionSeverity = MoreSevere(_coalescedCompletionSeverity, omittedSeverity);
+        }
         _completionBarQueue.Enqueue((summary, severity));
 
         // Only start showing if we're not already in a hold cycle.
@@ -518,11 +528,34 @@ public partial class MainWindow : FluentWindow
 
     private void ShowNextCompletionBar()
     {
+        if (_coalescedCompletionCount > 0)
+        {
+            int count = _coalescedCompletionCount;
+            ViewModels.OperationSeverity omittedSeverity = _coalescedCompletionSeverity;
+            _coalescedCompletionCount = 0;
+            _coalescedCompletionSeverity = default;
+            ShowCompletionBar($"{count} earlier completion(s) omitted — see Activity log", omittedSeverity);
+            return;
+        }
+
         if (_completionBarQueue.Count == 0) return;
 
         (string summary, ViewModels.OperationSeverity severity) = _completionBarQueue.Dequeue();
         ShowCompletionBar(summary, severity);
     }
+
+    private void LogCompletion(string summary, ViewModels.OperationSeverity severity)
+    {
+        const string origin = "Completion banner";
+        if (severity == ViewModels.OperationSeverity.Error) Log?.Error(null, summary, origin);
+        else if (severity == ViewModels.OperationSeverity.Warning) Log?.Warn(null, summary, origin);
+        else Log?.Info(null, summary, origin);
+    }
+
+    private static ViewModels.OperationSeverity MoreSevere(
+        ViewModels.OperationSeverity left,
+        ViewModels.OperationSeverity right)
+        => (ViewModels.OperationSeverity)Math.Max((int)left, (int)right);
 
     private void ShowCompletionBar(string summary, ViewModels.OperationSeverity severity)
     {
@@ -549,7 +582,7 @@ public partial class MainWindow : FluentWindow
         CompletionBar.IsOpen = false;
 
         // Drain the next queued banner, if any.
-        if (_completionBarQueue.Count > 0)
+        if (_coalescedCompletionCount > 0 || _completionBarQueue.Count > 0)
         {
             ShowNextCompletionBar();
         }

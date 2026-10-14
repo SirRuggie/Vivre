@@ -832,3 +832,10 @@ behavior. Server 2016 CU staging and SMB-first routing are unchanged.
 If local archive deletion fails, the result reports its exact path for manual cleanup after local
 file handles are released. Its protected-path entry is durable; automatic local-archive retry is not
 implemented.
+
+
+## Stage-only performance boundaries (October 2026)
+
+Stage software remains copy-only and separate from patch installation. Package preparation now checks cancellation between hash reads; the verified replacement/recovery transaction retains its non-cancellable boundary. WinRM manifests above 32 KiB of UTF-8 JSON are sent in 64 KiB raw chunks through the existing owned transfer directory, verified with SHA256, then read under its exclusive lock. SMB uses a bound JSON parameter. Metadata still scales with file count; this does not establish a whole-process memory ceiling or live WinRM/EDR validation.
+
+Protected-path persistence skips duplicate writes and batches each host's temporary paths. Only an explicit confirmed-cleanup verdict retires their exact entries. Recovery paths, uncertain outcomes, final destinations and source protections remain protected. F12 Server 2016 concurrency is unchanged and remains skipped.

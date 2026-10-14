@@ -1,0 +1,35 @@
+[
+  {
+    "mode": "all12",
+    "properties": 12,
+    "refreshMs": [
+      616.799,
+      522.6713,
+      473.128,
+      502.326
+    ],
+    "count": 3190
+  },
+  {
+    "mode": "nameOnly",
+    "properties": 1,
+    "refreshMs": [
+      26.8174,
+      34.0147,
+      18.3172,
+      14.4925
+    ],
+    "count": 3190
+  },
+  {
+    "mode": "all12-control",
+    "properties": 12,
+    "refreshMs": [
+      414.9583,
+      421.7537,
+      395.5787,
+      300.803
+    ],
+    "count": 3190
+  }
+]

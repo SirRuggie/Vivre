@@ -37,6 +37,26 @@ public sealed class WinRmStagingLifecycleTests : IDisposable
     }
 
     [Fact]
+    public async Task Large_manifest_uses_bounded_commands_and_cleanup_retires_only_transfer_paths()
+    {
+        string folder = Path.Combine(_root, "many-files"); Directory.CreateDirectory(folder);
+        for (int i = 0; i < 700; i++) File.WriteAllText(Path.Combine(folder, $"dummy-{i:D5}.txt"), "");
+        var host = new LifecycleHost(_ => Ack());
+        StageResult result = await Service(host).StageAsync(Host, folder, true, Target, null, default);
+        Assert.True(result.Ok, result.Message);
+        Assert.Contains(host.RemoteScripts, s => s.Contains("'manifest.json'") && s.Contains("# Vivre transfer chunk"));
+        string publication = Assert.Single(host.RemoteScripts, s => s.Contains("# Vivre transfer publication"));
+        Assert.True(publication.Length < 32 * 1024);
+        Assert.Contains("transferred manifest SHA-256 mismatch", publication);
+        Assert.All(host.RemoteScripts.Where(s => s.Contains("# Vivre transfer chunk") && s.Contains("'manifest.json'")), s => Assert.True(s.Length < 100 * 1024));
+        var paths = new ProtectedStagingPathRegistry(_registryPath).GetProtectedPaths(Host);
+        Assert.Contains(Target, paths, StringComparer.OrdinalIgnoreCase);
+        Assert.DoesNotContain(paths, p => p.Contains(".vivre-transfer-"));
+        // A fake success without the explicit cleanup verdict must keep candidate/backup protection.
+        Assert.Contains(paths, p => p.Contains(".vivre-backup-"));
+    }
+
+    [Fact]
     public async Task Missing_chunk_ack_prevents_publication_and_still_cleans_up()
     {
         var host = new LifecycleHost(phase => phase == "chunk" ? Empty() : Ack());
@@ -227,6 +247,7 @@ public sealed class WinRmStagingLifecycleTests : IDisposable
             ("ok", false), ("safeToFallback", true), ("message", "SMB unavailable"));
         internal Func<string, CancellationToken, Task<PSExecutionResult>>? AsyncRemote { get; init; }
         internal List<string> RemotePhases { get; } = [];
+        internal List<string> RemoteScripts { get; } = [];
         internal List<string> Events { get; } = [];
 
         public Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default) =>
@@ -244,6 +265,7 @@ public sealed class WinRmStagingLifecycleTests : IDisposable
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
             CancellationToken cancellationToken = default, bool background = false)
         {
+            RemoteScripts.Add(script);
             string phase = Phase(script);
             RemotePhases.Add(phase);
             Events.Add("remote:" + phase);

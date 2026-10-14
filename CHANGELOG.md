@@ -7,6 +7,9 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- **Large-workspace filtering and list replacement use less UI work.** Text searches settle briefly before refreshing, visible counts are cached, and replaced rows release their subscriptions.
+- **Bursts of background activity no longer build an unbounded UI log queue.** The panel retains a bounded recent buffer and reports omitted panel entries; file logging still receives every message. Completion banners also have a bounded backlog.
+- **Staging preparation responds to cancellation between reads.** Large WinRM manifests use owned, verified chunks, while SMB binds manifest data separately from script text. Protected-path writes are batched and unchanged writes are skipped; confirmed-cleaned temporary paths retire without unprotecting recovery files. Idle publication locks and losing throttle waits release promptly.
 - **WinRM can recover from cached Kerberos rejection without restarting Vivre.** Retry WinRM checks selected machines using current credentials and restores the connection only after verification. Cached decisions are isolated by connection and credentials; failed or cancelled retries cannot produce a false success.
 - **WhatsUp Gold refuses ambiguous device identities.** State reads and maintenance changes share a resolver that requires one valid device ID, so duplicate names cannot select the first result. Ambiguous machines are skipped with full-name retry guidance; mixed batches report actual changes separately from ambiguity, absence, and lookup failure.
 - **Stage software preserves the previous package while verifying its replacement.** Local, SMB, and WinRM staging verify package contents before publishing; folder replacement removes obsolete files without touching neighboring packages. Replacement failures report recovery guidance, and uncertain SMB outcomes do not trigger a second replacement over WinRM. Staging remains copy-only.

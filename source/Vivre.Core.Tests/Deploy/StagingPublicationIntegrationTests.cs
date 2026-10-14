@@ -46,7 +46,47 @@ public sealed class StagingPublicationIntegrationTests : IDisposable
         Assert.False(File.Exists(plan.Stage));
     }
 
-    private async Task<JsonDocument> TransferAndPublish(PackagePublicationPlan plan, bool corruptLastChunk)
+    [Fact]
+    public async Task Actual_ps51_smb_script_uses_bound_manifest_and_reports_confirmed_cleanup()
+    {
+        string source = Path.Combine(_root, "bound-source.txt");
+        string target = Path.Combine(_root, "bound-target.txt");
+        File.WriteAllText(source, "new package"); File.WriteAllText(target, "previous package");
+        PackagePublicationPlan plan = PackagePublication.Prepare(source, false, target, true);
+        string manifest = JsonSerializer.Serialize(plan.Manifest).Replace("'", "''");
+        string script = "& {\n" + PackagePublication.BuildSmbScript(plan) + "\n} -Source '" + source.Replace("'", "''") + "' -ShareRoot '" + _root.Replace("'", "''") + "' -ManifestJson '" + manifest + "'";
+        using JsonDocument result = await RunScript(script);
+        Assert.True(result.RootElement.GetProperty("ok").GetBoolean(), result.RootElement.ToString());
+        Assert.True(result.RootElement.GetProperty("temporaryPathsCleaned").GetBoolean());
+        Assert.Equal("new package", File.ReadAllText(target));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Actual_ps51_large_manifest_chunks_are_verified_before_publication(bool corruptManifest)
+    {
+        string source = Path.Combine(_root, "folder");
+        string target = Path.Combine(_root, "published");
+        Directory.CreateDirectory(source); Directory.CreateDirectory(target);
+        File.WriteAllText(Path.Combine(target, "previous.txt"), "previous package");
+        for (int i = 0; i < 700; i++) File.WriteAllText(Path.Combine(source, $"dummy-{i:D5}.txt"), "");
+        PackagePublicationPlan plan = PackagePublication.Prepare(source, true, target, true);
+        using JsonDocument result = await TransferAndPublish(plan, false, externalManifest: true, corruptManifest);
+        Assert.Equal(!corruptManifest, result.RootElement.GetProperty("ok").GetBoolean());
+        if (corruptManifest)
+        {
+            Assert.Contains("manifest SHA-256", result.RootElement.GetProperty("message").GetString());
+            Assert.Equal("previous package", File.ReadAllText(Path.Combine(target, "previous.txt")));
+        }
+        else
+        {
+            Assert.Equal(700, Directory.GetFiles(target).Length);
+            Assert.True(result.RootElement.GetProperty("temporaryPathsCleaned").GetBoolean());
+        }
+    }
+
+    private async Task<JsonDocument> TransferAndPublish(PackagePublicationPlan plan, bool corruptLastChunk, bool externalManifest = false, bool corruptManifest = false)
     {
         string id = Guid.NewGuid().ToString("N");
         string owner = Guid.NewGuid().ToString("N");
@@ -56,7 +96,7 @@ public sealed class StagingPublicationIntegrationTests : IDisposable
         var chunks = new List<StagingArchiveChunk>();
         await foreach (StagingArchiveChunk chunk in archive.ReadChunksAsync()) chunks.Add(chunk);
         Assert.NotEmpty(chunks);
-        if (!corruptLastChunk) Assert.True(chunks.Count > 1, "Exercise actual multi-chunk publication.");
+        if (!corruptLastChunk && !externalManifest) Assert.True(chunks.Count > 1, "Exercise actual multi-chunk publication.");
         for (int index = 0; index < chunks.Count; index++)
         {
             StagingArchiveChunk chunk = chunks[index];
@@ -69,9 +109,22 @@ public sealed class StagingPublicationIntegrationTests : IDisposable
             AssertOk(await RunScript(StagingTransferScripts.BuildChunk(directory, id, owner, base64, chunk.Offset)));
         }
 
+        string? manifestHash = null;
+        if (externalManifest)
+        {
+            byte[] bytes = JsonSerializer.SerializeToUtf8Bytes(plan.Manifest);
+            Assert.True(bytes.Length > 64 * 1024);
+            manifestHash = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes));
+            if (corruptManifest) bytes[^1] ^= 1;
+            for (int offset = 0; offset < bytes.Length; offset += 64 * 1024)
+                AssertOk(await RunScript(StagingTransferScripts.BuildChunk(directory, id, owner,
+                    Convert.ToBase64String(bytes, offset, Math.Min(64 * 1024, bytes.Length - offset)), offset, "manifest.json")));
+        }
         string publish = PackagePublication.BuildPublishScript("$payload", true, plan.Target, plan.Stage, plan.Backup,
-            plan.IsFolder, PackagePublication.ManifestBase64(plan.Manifest), archive.Sha256, cleanupSourceZip: false);
-        JsonDocument result = await RunScript(StagingTransferScripts.WrapPublication(directory, id, owner, publish));
+            plan.IsFolder, externalManifest ? "" : PackagePublication.ManifestBase64(plan.Manifest), archive.Sha256, cleanupSourceZip: false,
+            manifestExpression: externalManifest ? "[IO.File]::ReadAllText($manifestPath, [Text.Encoding]::UTF8)" : null);
+        if (externalManifest) Assert.True(publish.Length < 32 * 1024);
+        JsonDocument result = await RunScript(StagingTransferScripts.WrapPublication(directory, id, owner, publish, manifestHash));
         AssertOk(await RunScript(StagingTransferScripts.BuildCleanup(directory, id, owner)));
         return result;
     }

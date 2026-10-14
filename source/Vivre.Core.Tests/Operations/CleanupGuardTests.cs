@@ -75,6 +75,48 @@ public sealed class CleanupGuardTests : IDisposable
     }
 
     [Fact]
+    public void Batch_registration_deduplicates_and_duplicate_batch_does_not_rewrite()
+    {
+        var registry = new ProtectedStagingPathRegistry(RegistryPath);
+        registry.RegisterMany("server01", [@"C:\stage\one", @"c:\STAGE\one\", @"C:\stage\two"]);
+        DateTime sentinel = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(RegistryPath, sentinel);
+
+        registry.RegisterMany("SERVER01.", [@"C:\STAGE\ONE", @"c:\stage\two\"]);
+
+        Assert.Equal(sentinel, File.GetLastWriteTimeUtc(RegistryPath));
+        Assert.Equal(2, registry.GetProtectedPaths("server01").Count);
+    }
+
+    [Fact]
+    public void Separate_instances_synchronize_updates_to_the_same_file()
+    {
+        var first = new ProtectedStagingPathRegistry(RegistryPath);
+        var second = new ProtectedStagingPathRegistry(RegistryPath);
+
+        Parallel.Invoke(
+            () => first.RegisterMany("server01", Enumerable.Range(0, 50).Select(i => $@"C:\stage\a{i}")),
+            () => second.RegisterMany("server01", Enumerable.Range(0, 50).Select(i => $@"C:\stage\b{i}")));
+
+        Assert.Equal(100, first.GetProtectedPaths("server01").Count);
+    }
+
+    [Fact]
+    public void Confirmed_owned_unregister_removes_only_named_paths_and_skips_missing_rewrite()
+    {
+        var registry = new ProtectedStagingPathRegistry(RegistryPath);
+        registry.RegisterMany("server01", [@"C:\stage\keep", @"C:\stage\remove"]);
+
+        registry.UnregisterOwnedConfirmed("SERVER01.", [@"c:\STAGE\remove\"]);
+        Assert.Equal([@"C:\stage\keep"], registry.GetProtectedPaths("server01"));
+
+        DateTime sentinel = new(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc);
+        File.SetLastWriteTimeUtc(RegistryPath, sentinel);
+        registry.UnregisterOwnedConfirmed("server01", [@"C:\stage\missing"]);
+        Assert.Equal(sentinel, File.GetLastWriteTimeUtc(RegistryPath));
+    }
+
+    [Fact]
     public void Corrupt_registry_cannot_be_treated_as_empty_or_overwritten()
     {
         Directory.CreateDirectory(_root);

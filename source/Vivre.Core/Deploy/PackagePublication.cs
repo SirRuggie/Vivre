@@ -13,8 +13,9 @@ internal sealed record PackagePublicationPlan(
 /// <summary>Builds and publishes a verified package without mutating its destination until verification succeeds.</summary>
 internal static class PackagePublication
 {
-    internal static PackagePublicationPlan Prepare(string sourcePath, bool isFolder, string targetPath, bool localTarget)
+    internal static PackagePublicationPlan Prepare(string sourcePath, bool isFolder, string targetPath, bool localTarget, CancellationToken token = default)
     {
+        token.ThrowIfCancellationRequested();
         if (!Path.IsPathFullyQualified(sourcePath) || !Path.IsPathFullyQualified(targetPath))
             throw new ArgumentException("Source and destination must be fully qualified paths.");
         string source = Path.TrimEndingDirectorySeparator(Path.GetFullPath(sourcePath));
@@ -24,13 +25,13 @@ internal static class PackagePublication
         if (isFolder && File.Exists(source) || !isFolder && Directory.Exists(source))
             throw new IOException("The selected source type does not match the package type.");
         if (IsRoot(target)) throw new IOException("The destination cannot be a drive or share root.");
-        RejectReparseSource(source, isFolder);
+        RejectReparseSource(source, isFolder, token);
         if (localTarget && isFolder && (IsSameOrChild(target, source) || IsSameOrChild(source, target)))
             throw new IOException("Source and destination folders cannot contain or replace one another.");
         if (localTarget && !isFolder && string.Equals(source, target, StringComparison.OrdinalIgnoreCase))
             throw new IOException("Source and destination file must be different.");
         string id = Guid.NewGuid().ToString("N");
-        return new(source, target, target + $".vivre-staging-{id}", target + $".vivre-backup-{id}", isFolder, BuildManifest(source, isFolder));
+        return new(source, target, target + $".vivre-staging-{id}", target + $".vivre-backup-{id}", isFolder, BuildManifest(source, isFolder, token));
     }
 
     internal static StageResult PublishLocal(PackagePublicationPlan plan, CancellationToken token, Action<string>? fault = null)
@@ -49,7 +50,7 @@ internal static class PackagePublication
             RejectReparseDestination(plan.Target, plan.IsFolder);
             if (plan.IsFolder ? File.Exists(plan.Target) : Directory.Exists(plan.Target))
                 throw new IOException("The destination type does not match the selected package.");
-            if (File.Exists(plan.Stage) || Directory.Exists(plan.Stage)) throw new IOException("Unique candidate path unexpectedly already exists.");
+            if (new[] { plan.Stage, plan.Backup, plan.Stage + ".extract" }.Any(p => File.Exists(p) || Directory.Exists(p))) throw new IOException("Unique candidate path unexpectedly already exists.");
             candidateOwned = true;
             Copy(plan.Source, plan.Stage, plan.IsFolder, token);
             Verify(plan.Stage, plan.IsFolder, plan.Manifest, token);
@@ -92,7 +93,7 @@ internal static class PackagePublication
                     return new(true, plan.Target, $"Staged and verified at {plan.Target}. Old-package cleanup is incomplete at {plan.Backup}: {cleanupError.Message}");
                 }
             }
-            return new(true, plan.Target, $"Staged and verified at {plan.Target}");
+            return new(true, plan.Target, $"Staged and verified at {plan.Target}") { TemporaryPathsCleaned = true };
         }
         catch (OperationCanceledException)
         {
@@ -117,8 +118,9 @@ internal static class PackagePublication
 
     internal static string BuildPublishScript(
         string sourceExpression, bool sourceIsZip, string target, string stage, string backup, bool isFolder,
-        string manifestBase64, string? expectedZipHash = null, bool cleanupSourceZip = true)
+        string manifestBase64, string? expectedZipHash = null, bool cleanupSourceZip = true, string? manifestExpression = null)
     {
+        string manifestRead = manifestExpression ?? $"[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{manifestBase64}'))";
         string zipCheck = expectedZipHash is null ? string.Empty :
             $"if ((Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash -ne '{expectedZipHash}') {{ throw 'transferred ZIP SHA-256 mismatch' }}";
         return Functions + $$"""
@@ -130,7 +132,7 @@ internal static class PackagePublication
         $backup = {{Quote(backup)}}
         $isFolder = ${{isFolder.ToString().ToLowerInvariant()}}
         $sourceIsZip = ${{sourceIsZip.ToString().ToLowerInvariant()}}
-        $manifest = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('{{manifestBase64}}')) | ConvertFrom-Json
+        $manifest = {{manifestRead}} | ConvertFrom-Json
         try {
             {{zipCheck}}
             $result = Invoke-VivrePublish $source $sourceIsZip $target $stage $backup $isFolder $manifest
@@ -147,30 +149,30 @@ internal static class PackagePublication
 
     internal static string BuildSmbScript(PackagePublicationPlan plan)
     {
-        string body = BuildPublishScript("$Source", false, plan.Target, plan.Stage, plan.Backup, plan.IsFolder, ManifestBase64(plan.Manifest));
-        return "param([string]$Source,[Management.Automation.PSCredential]$Cred,[string]$ShareRoot)\n" +
+        string body = BuildPublishScript("$Source", false, plan.Target, plan.Stage, plan.Backup, plan.IsFolder, string.Empty, manifestExpression: "$ManifestJson");
+        return "param([string]$Source,[Management.Automation.PSCredential]$Cred,[string]$ShareRoot,[string]$ManifestJson)\n" +
             "$mapped=$false; try { if($Cred -and $Cred -ne [Management.Automation.PSCredential]::Empty){New-PSDrive -Name VivreStage -PSProvider FileSystem -Root $ShareRoot -Credential $Cred -ErrorAction Stop|Out-Null;$mapped=$true}\n" +
             body + "\n} catch {[PSCustomObject]@{ok=$false;safeToFallback=$true;message=\"SMB failed before publication: $($_.Exception.Message)\"}} finally {if($mapped){Remove-PSDrive VivreStage -Force -ErrorAction SilentlyContinue}}";
     }
 
-    private static PackageManifest BuildManifest(string path, bool folder)
+    private static PackageManifest BuildManifest(string path, bool folder, CancellationToken token)
     {
         if (!folder)
         {
             var info = new FileInfo(path);
-            return new([], [new(string.Empty, info.Length, Hash(path))]);
+            return new([], [new(string.Empty, info.Length, Hash(path, token))]);
         }
         string[] dirs = Directory.EnumerateDirectories(path, "*", SearchOption.AllDirectories)
-            .Select(p => Relative(path, p)).Order(StringComparer.OrdinalIgnoreCase).ToArray();
+            .Select(p => { token.ThrowIfCancellationRequested(); return Relative(path, p); }).Order(StringComparer.OrdinalIgnoreCase).ToArray();
         ManifestFile[] files = Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories)
-            .Select(p => { var i = new FileInfo(p); return new ManifestFile(Relative(path, p), i.Length, Hash(p)); })
+            .Select(p => { token.ThrowIfCancellationRequested(); var i = new FileInfo(p); return new ManifestFile(Relative(path, p), i.Length, Hash(p, token)); })
             .OrderBy(f => f.Path, StringComparer.OrdinalIgnoreCase).ToArray();
         return new(dirs, files);
     }
 
     private static void Verify(string path, bool folder, PackageManifest expected, CancellationToken token)
     {
-        PackageManifest actual = BuildManifest(path, folder);
+        PackageManifest actual = BuildManifest(path, folder, token);
         token.ThrowIfCancellationRequested();
         bool equal = expected.Directories.SequenceEqual(actual.Directories, StringComparer.OrdinalIgnoreCase) &&
             expected.Files.Length == actual.Files.Length && expected.Files.Zip(actual.Files).All(x =>
@@ -179,16 +181,34 @@ internal static class PackagePublication
         if (!equal) throw new IOException("candidate does not match the source manifest (paths, lengths, hashes, or empty folders differ)");
     }
 
-    private static string Hash(string path)
+    private static string Hash(string path, CancellationToken token)
     {
         using FileStream stream = new(path, FileMode.Open, FileAccess.Read, FileShare.Read);
-        return Convert.ToHexString(SHA256.HashData(stream));
+        return HashStream(stream, token);
+    }
+
+    internal static string HashStream(Stream stream, CancellationToken token)
+    {
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        byte[] buffer = System.Buffers.ArrayPool<byte>.Shared.Rent(128 * 1024);
+        try
+        {
+            while (true)
+            {
+                token.ThrowIfCancellationRequested();
+                int count = stream.Read(buffer, 0, buffer.Length);
+                if (count == 0) break;
+                hash.AppendData(buffer, 0, count);
+            }
+            return Convert.ToHexString(hash.GetHashAndReset());
+        }
+        finally { System.Buffers.ArrayPool<byte>.Shared.Return(buffer); }
     }
 
     private static void Copy(string source, string stage, bool folder, CancellationToken token)
     {
         Directory.CreateDirectory(Path.GetDirectoryName(stage)!);
-        if (!folder) { File.Copy(source, stage, false); return; }
+        if (!folder) { token.ThrowIfCancellationRequested(); File.Copy(source, stage, false); return; }
         Directory.CreateDirectory(stage);
         foreach (string dir in Directory.EnumerateDirectories(source, "*", SearchOption.AllDirectories))
         { token.ThrowIfCancellationRequested(); Directory.CreateDirectory(Path.Combine(stage, Path.GetRelativePath(source, dir))); }
@@ -200,10 +220,10 @@ internal static class PackagePublication
         }
     }
 
-    private static void RejectReparseSource(string source, bool folder)
+    private static void RejectReparseSource(string source, bool folder, CancellationToken token)
     {
         if ((File.GetAttributes(source) & FileAttributes.ReparsePoint) != 0) throw new IOException("Reparse-point sources are not supported.");
-        if (folder && Directory.EnumerateFileSystemEntries(source, "*", SearchOption.AllDirectories).Any(p => (File.GetAttributes(p) & FileAttributes.ReparsePoint) != 0))
+        if (folder && Directory.EnumerateFileSystemEntries(source, "*", SearchOption.AllDirectories).Any(p => { token.ThrowIfCancellationRequested(); return (File.GetAttributes(p) & FileAttributes.ReparsePoint) != 0; }))
             throw new IOException("The source contains a reparse point.");
     }
 
@@ -385,13 +405,14 @@ internal static class PackagePublication
                     }
                 }
                 if ($ownsExtract) {
-                    try { Remove-VivreOwned $extract $true }
+                    try { Remove-VivreOwned $extract $true; $ownsExtract = $false }
                     catch {
                         $result.safeToFallback = $false
                         $result.message += " Extraction cleanup failed at $extract`: $($_.Exception.Message)"
                     }
                 }
             }
+            $result | Add-Member -NotePropertyName temporaryPathsCleaned -NotePropertyValue ($result.ok -and -not $ownsStage -and -not $ownsExtract -and -not $madeBackup) -Force
             $result
         }
         """;

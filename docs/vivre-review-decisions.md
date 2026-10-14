@@ -882,3 +882,31 @@ server cleanup, deployment, or signing-certificate changes were performed.
 **Recommended next:** review the recorded validation gaps before authorizing another implementation
 batch. F11 closes the agreed queue; F12 remains skipped. Live transport behavior, privileged reparse
 fixtures and the documented pre-existing F05 limitations are not claimed as verified or resolved.
+
+
+## Performance implementation ledger — October 14, 2026
+
+Shaun authorized tackling F13–F20 after the performance assessment. Reuse existing components; commit/push validated changes. F12 remains skipped. No deployment or live server operations are included.
+
+| Finding | Capability / acceptance | Status |
+|---|---|---|
+| F13 | Debounced text filtering, cached counts, correct immediate state filters and disposal | Implemented and locally tested; operational limits below |
+| F14 | Efficient batched protected-path persistence off UI; retire only confirmed-cleaned owned paths | Implemented and locally tested; operational limits below |
+| F15 | Reset/replace/dispose detach old row subscriptions | Implemented and locally tested; operational limits below |
+| F16 | Bounded pending UI logs with explicit overflow summary and complete durable logging | Implemented and locally tested; operational limits below |
+| F17 | Cancellable preparation and bounded manifest transfer, preserving verified publication | Implemented and locally tested; operational limits below |
+| F18 | Losing throttle waits cancelled without permit loss | Implemented and locally tested; operational limits below |
+| F19 | Publication lock ownership retires idle entries safely | Implemented and locally tested; operational limits below |
+| F20 | Bounded completion banners with discoverable summaries | Implemented and source-reviewed; Desktop build passed; visible banner/tray interaction unverified |
+| Operational validation | Live SMB/WinRM/EDR and native RDP soak | Requires specifically authorized live targets/window; no such operations run |
+
+File ownership: workspace/probe; log/throttle/probes; registry/banner/tests are separate worker scopes. Coordinator owns staging integration, acceptance ledger, final builds/tests, independent review and delivery. No Claude task is editing these files.
+
+
+### F13–F20 final local validation
+
+- Full Release Core suite: 1,454 passed. Focused staging/gate: 69 passed; final registry/throttle checks: 31 passed; final local-copy/preparation/gate checks: 18 passed. Privilege-conditional reparse cases remain unproven despite the runner reporting zero skips.
+- Final Desktop/audit Release build passed with the existing missing agent-signing-certificate warning. Two final repeated probes passed, including actual offscreen WorkspaceView/DataGrid rendering, all 15 live filter inclusion/removal cases, stale-row collection, bounded log admission and reentrant Clear/Add, and zero losing throttle waiters.
+- Independent review corrected registry durability and logging reentrancy regressions before delivery. The measured live-property optimization preserved all predicate dependencies; runtime checks caught and corrected deferred-refresh misuse.
+- [Implementation report and exact evidence](vivre-performance-implementation-2026-10-14.md). F13–F19 have focused local runtime evidence; F20 is implemented and source-reviewed but actual banner/tray interaction remains unverified. No live servers or production integrations were exercised; existing operational validation gaps remain.
+- Reuse preserved: WPF views/timers, Serilog, durable registry writer, shared throttles, ownership conventions, chunk transfer, SHA256 verification and recoverable publication. Original File.Copy semantics remain; cancellation cannot interrupt an individual blocking copy. Metadata memory scales with entry count. Cross-process registry coordination remains a pre-existing limitation. F12 stays skipped.

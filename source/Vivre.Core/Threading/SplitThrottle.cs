@@ -90,17 +90,16 @@ public sealed class SplitThrottle : IDisposable
     ///   <item>
     ///     <description>
     ///       <b>Race path:</b> start async waits on both pools and await whichever completes
-    ///       first.  The LOSER task is handled via a fire-and-forget continuation: if it later
-    ///       acquires a permit, that permit is released immediately back to its pool; if it faults
-    ///       or is cancelled, nothing is released (there is nothing to release).  This prevents
-    ///       any permit from leaking on any completion order.
+    ///       first. The two waits share an internal cancellation source. Once a winner is known,
+    ///       the losing wait is cancelled and observed before returning; if both acquired in the
+    ///       race, the extra permit is released immediately to its pool.
     ///     </description>
     ///   </item>
     ///   <item>
     ///     <description>
     ///       If <paramref name="ct"/> fires before any acquisition, an
     ///       <see cref="OperationCanceledException"/> is thrown and both outstanding waits are
-    ///       handled by the same loser-continuation rule.
+    ///       cancelled and observed before the exception is returned.
     ///     </description>
     ///   </item>
     /// </list>
@@ -117,6 +116,7 @@ public sealed class SplitThrottle : IDisposable
     public async Task<IDisposable> AcquirePassiveAsync(CancellationToken ct)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        ct.ThrowIfCancellationRequested();
 
         // Fast path: reserved pool has a free slot right now — grab it without allocating tasks.
         if (_reserved.Wait(0))
@@ -125,8 +125,9 @@ public sealed class SplitThrottle : IDisposable
         }
 
         // Race path: both pools are contended (or reserved is full); race them.
-        Task reservedTask = _reserved.WaitAsync(ct);
-        Task activeTask   = Active.WaitAsync(ct);
+        using var raceCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        Task reservedTask = _reserved.WaitAsync(raceCancellation.Token);
+        Task activeTask   = Active.WaitAsync(raceCancellation.Token);
 
         Task winner = await Task.WhenAny(reservedTask, activeTask).ConfigureAwait(false);
 
@@ -135,39 +136,37 @@ public sealed class SplitThrottle : IDisposable
         SemaphoreSlim winnerPool = ReferenceEquals(winner, reservedTask) ? _reserved : Active;
         SemaphoreSlim loserPool  = ReferenceEquals(winner, reservedTask) ? Active    : _reserved;
 
-        // Attach the loser handler BEFORE awaiting the winner so we never miss a late acquisition.
-        AttachLoserContinuation(loser, loserPool);
-
-        // Now surface any cancellation / fault from the winner.
-        await winner.ConfigureAwait(false);
+        // Stop the losing wait promptly. It may already have acquired concurrently; in that case
+        // observing it below returns that extra permit exactly once. Cleanup must also run when
+        // caller cancellation made the first completed task a cancelled task.
+        raceCancellation.Cancel();
+        try
+        {
+            await winner.ConfigureAwait(false);
+        }
+        finally
+        {
+            await ReleaseIfAcquiredAsync(loser, loserPool).ConfigureAwait(false);
+        }
 
         return new Releaser(winnerPool);
     }
 
     /// <summary>
-    /// Attaches a fire-and-forget continuation to <paramref name="loserTask"/> that releases
-    /// the acquired permit back to <paramref name="pool"/> if the task completes successfully
-    /// (it managed to acquire a slot after losing the race), and observes (but swallows) any
-    /// cancellation or fault.
+    /// Observes the cancelled losing wait, or releases its permit if both waits acquired while
+    /// the winner was being selected.
     /// </summary>
-    private static void AttachLoserContinuation(Task loserTask, SemaphoreSlim pool)
+    private static async Task ReleaseIfAcquiredAsync(Task loserTask, SemaphoreSlim pool)
     {
-        // ContinueWith avoids re-scheduling on the thread pool for the cancellation/fault paths
-        // and avoids an unobserved-task-exception warning.
-        _ = loserTask.ContinueWith(
-            t =>
-            {
-                if (t.IsCompletedSuccessfully)
-                {
-                    pool.Release();
-                }
-                // Cancelled or faulted: no permit was acquired; nothing to release.
-                // Observe the exception so the runtime does not raise UnobservedTaskException.
-                _ = t.Exception;
-            },
-            CancellationToken.None,
-            TaskContinuationOptions.ExecuteSynchronously,
-            TaskScheduler.Default);
+        try
+        {
+            await loserTask.ConfigureAwait(false);
+            pool.Release();
+        }
+        catch (OperationCanceledException)
+        {
+            // Cancellation removed the losing waiter before it acquired a permit.
+        }
     }
 
     /// <inheritdoc/>

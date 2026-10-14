@@ -304,3 +304,12 @@ of cleanup. Local journals live under `%LOCALAPPDATA%/Vivre/staging-transfers` a
 active transfers across processes sharing that journal. Later explicit staging requests retry pending
 cleanup for the same host before SMB. No background cleanup, installer execution, or Server 2016 CU
 lane changes. Target publication concurrency across independent processes remains unverified.
+
+
+## Performance maintenance (F13–F20)
+
+Keep free-text filtering debounced and visible counts cached; state-chip changes remain immediate and live-property subscriptions match their predicate dependencies. Reset and Dispose must detach every subscribed row. Keep pending ActivityLog UI entries bounded and report overflow without suppressing durable file writes. Completion banners are bounded; preserve detailed completion logging.
+
+Staging preparation checks cancellation between hash reads; publication/recovery remains non-cancellable once replacement starts. Large manifests reuse the owned chunk-transfer lane and require SHA256 validation before parsing/publication. Protected staging registry updates are batched, unchanged writes skipped, and exact unique temporary entries retired only after cleanup is confirmed; never age out uncertain backups. Publication gates count both holders and waiters before retiring idle keys. Preserve SplitThrottle reserved capacity and return any second acquired permit when cancelling the losing wait.
+
+Current acceptance evidence and remaining operational gaps: docs/vivre-review-decisions.md, performance implementation ledger. The original performance report remains a frozen baseline.

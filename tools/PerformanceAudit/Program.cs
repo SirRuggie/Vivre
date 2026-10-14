@@ -12,13 +12,20 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        if (args.Length != 1) throw new ArgumentException("Provide the JSON output path.");
+        bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
+        if (args.Length != 1 && !filterExperiment) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        string outputPath = args[^1];
         // No Vivre.App startup, windows, credentials, server operations or production writes.
         var app = new Application { ShutdownMode = ShutdownMode.OnExplicitShutdown };
         string root = Path.Combine(Path.GetTempPath(), "VivrePerformanceAudit_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
         try
         {
+            if (filterExperiment)
+            {
+                File.WriteAllText(Path.GetFullPath(outputPath), JsonSerializer.Serialize(FilterExperiment(), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             var result = new
             {
                 measuredAtUtc = DateTime.UtcNow,
@@ -29,10 +36,11 @@ internal static class Program
                 logging = Measure("Log dispatcher", LogProbe.Run),
                 throttle = Measure("Throttle", () => Task.Run(ThrottleProbe.RunAsync).GetAwaiter().GetResult()),
                 registry = Measure("Registry", () => RegistryProbe(root)),
-                manifest = Measure("Manifest", () => ManifestProbe(root))
+                manifest = Measure("Manifest", () => ManifestProbe(root)),
+                renderedWorkspace = Measure("Rendered workspace", RenderedWorkspaceProbe.Run)
             };
-            File.WriteAllText(Path.GetFullPath(args[0]), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
-            Console.WriteLine("Performance evidence saved: " + Path.GetFullPath(args[0]));
+            File.WriteAllText(Path.GetFullPath(outputPath), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            Console.WriteLine("Performance evidence saved: " + Path.GetFullPath(outputPath));
         }
         finally
         {
@@ -41,6 +49,34 @@ internal static class Program
                 Directory.Delete(root, true);
             app.Shutdown();
         }
+    }
+
+    private static object FilterExperiment()
+    {
+        var factory = typeof(WorkspaceProbe).GetMethod("CreateWorkspace", BindingFlags.Static | BindingFlags.NonPublic)!;
+        using var workspace = (Vivre.Desktop.ViewModels.WorkspaceViewModel)factory.Invoke(null, null)!;
+        for (int i = 0; i < 3190; i++) workspace.Computers.Add(new Vivre.Core.Models.Computer($"MACHINE-{i:D5}"));
+        var view = System.Windows.Data.CollectionViewSource.GetDefaultView(workspace.Computers);
+        var live = (System.ComponentModel.ICollectionViewLiveShaping)view;
+        string[] original = ["Name", "IsOnline", "PatchState", "RebootRequired", "LastError", "UpdateError",
+            "UpdatesAvailable", "MissingUpdates", "VitalityBand", "OsBuild", "UpdatePhase", "ScheduledNextRun"];
+        var rows = new List<object>();
+        foreach (string mode in new[] { "all12", "nameOnly", "all12-control" })
+        {
+            using (view.DeferRefresh())
+            {
+                live.LiveFilteringProperties.Clear();
+                foreach (string prop in mode == "nameOnly" ? new[] { "Name" } : original) live.LiveFilteringProperties.Add(prop);
+            }
+            var times = new List<double>();
+            for (int i = 0; i < 4; i++)
+            {
+                var watch = Stopwatch.StartNew(); view.Refresh(); watch.Stop();
+                times.Add(watch.Elapsed.TotalMilliseconds);
+            }
+            rows.Add(new { mode, properties = live.LiveFilteringProperties.Count, refreshMs = times, count = workspace.VisibleRowCount });
+        }
+        return rows;
     }
 
     private static object Measure(string name, Func<object> measure)
@@ -89,7 +125,7 @@ internal static class Program
             foreach (int i in Enumerable.Range(0, count)) File.WriteAllBytes(Path.Combine(source, $"dummy-{i:D6}.bin"), []);
             long before = GC.GetAllocatedBytesForCurrentThread();
             var sw = Stopwatch.StartNew();
-            object plan = prepare.Invoke(null, [source, true, Path.Combine(root, "target-" + count), true])!;
+            object plan = prepare.Invoke(null, [source, true, Path.Combine(root, "target-" + count), true, CancellationToken.None])!;
             double prepareMs = sw.Elapsed.TotalMilliseconds;
             object manifest = plan.GetType().GetProperty("Manifest")!.GetValue(plan)!;
             string encoded = (string)encode.Invoke(null, [manifest])!;

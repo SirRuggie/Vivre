@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 
 namespace Vivre.Core.Operations;
@@ -5,15 +6,19 @@ namespace Vivre.Core.Operations;
 /// <summary>Persistent per-host paths that general disk cleanup must preserve.</summary>
 public sealed class ProtectedStagingPathRegistry
 {
-    private readonly object _sync = new();
+    private static readonly ConcurrentDictionary<string, object> FileLocks =
+        new(StringComparer.OrdinalIgnoreCase);
+
     private readonly string _path;
+    private readonly object _sync;
 
     public ProtectedStagingPathRegistry(string? path = null)
     {
-        _path = path ?? Path.Combine(
+        _path = Path.GetFullPath(path ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Vivre",
-            "protected-staging-paths.json");
+            "protected-staging-paths.json"));
+        _sync = FileLocks.GetOrAdd(_path, static _ => new object());
     }
 
     /// <summary>
@@ -21,26 +26,55 @@ public sealed class ProtectedStagingPathRegistry
     /// exception so staging fails closed instead of replacing protection with an empty registry.
     /// </summary>
     public void Register(string host, string targetPath)
+        => RegisterMany(host, [targetPath]);
+
+    /// <summary>Records a batch in one read/merge/write and skips unchanged saves.</summary>
+    public void RegisterMany(string host, IEnumerable<string> paths)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
-        ArgumentException.ThrowIfNullOrWhiteSpace(targetPath);
+        ArgumentNullException.ThrowIfNull(paths);
+
+        string key = HostOperationCoordinator.NormalizeHost(host);
+        HashSet<string> additions = NormalizePaths(paths);
+        if (additions.Count == 0) return;
 
         lock (_sync)
         {
-            Dictionary<string, List<string>> entries = LoadExisting();
-            string key = HostOperationCoordinator.NormalizeHost(host);
-            if (!entries.TryGetValue(key, out List<string>? paths))
+            Dictionary<string, HashSet<string>> entries = LoadExisting();
+            if (!entries.TryGetValue(key, out HashSet<string>? existing))
             {
-                paths = [];
-                entries.Add(key, paths);
+                existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                entries.Add(key, existing);
             }
 
-            string normalized = NormalizePath(targetPath);
-            if (!paths.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+            int before = existing.Count;
+            existing.UnionWith(additions);
+            if (existing.Count == before) return;
+
+            SaveAtomically(entries);
+        }
+    }
+
+    /// <summary>Removes exact paths only after the caller has confirmed cleanup of its owned artifacts.</summary>
+    public void UnregisterOwnedConfirmed(string host, IEnumerable<string> paths)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(host);
+        ArgumentNullException.ThrowIfNull(paths);
+
+        string key = HostOperationCoordinator.NormalizeHost(host);
+        HashSet<string> removals = NormalizePaths(paths);
+        if (removals.Count == 0) return;
+
+        lock (_sync)
+        {
+            Dictionary<string, HashSet<string>> entries = LoadExisting();
+            if (!entries.TryGetValue(key, out HashSet<string>? existing) ||
+                existing.RemoveWhere(removals.Contains) == 0)
             {
-                paths.Add(normalized);
+                return;
             }
 
+            if (existing.Count == 0) entries.Remove(key);
             SaveAtomically(entries);
         }
     }
@@ -51,15 +85,15 @@ public sealed class ProtectedStagingPathRegistry
         ArgumentException.ThrowIfNullOrWhiteSpace(host);
         lock (_sync)
         {
-            Dictionary<string, List<string>> entries = LoadExisting();
+            Dictionary<string, HashSet<string>> entries = LoadExisting();
             string key = HostOperationCoordinator.NormalizeHost(host);
-            return entries.TryGetValue(key, out List<string>? paths)
+            return entries.TryGetValue(key, out HashSet<string>? paths)
                 ? paths.ToArray()
                 : Array.Empty<string>();
         }
     }
 
-    private Dictionary<string, List<string>> LoadExisting()
+    private Dictionary<string, HashSet<string>> LoadExisting()
     {
         string json;
         try
@@ -68,11 +102,11 @@ public sealed class ProtectedStagingPathRegistry
         }
         catch (FileNotFoundException)
         {
-            return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            return new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         }
         catch (DirectoryNotFoundException)
         {
-            return new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+            return new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         }
         Dictionary<string, List<string>>? raw = JsonSerializer.Deserialize<Dictionary<string, List<string>>>(json);
         if (raw is null)
@@ -80,7 +114,7 @@ public sealed class ProtectedStagingPathRegistry
             throw new InvalidDataException("The protected staging-path registry has no readable content.");
         }
 
-        var result = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        var result = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach ((string host, List<string>? paths) in raw)
         {
             if (string.IsNullOrWhiteSpace(host) || paths is null || paths.Any(string.IsNullOrWhiteSpace))
@@ -89,15 +123,12 @@ public sealed class ProtectedStagingPathRegistry
             }
 
             string key = HostOperationCoordinator.NormalizeHost(host);
-            if (!result.TryGetValue(key, out List<string>? existing))
+            if (!result.TryGetValue(key, out HashSet<string>? existing))
             {
-                existing = [];
+                existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 result.Add(key, existing);
             }
-            foreach (string normalized in paths.Select(NormalizePath))
-            {
-                if (!existing.Contains(normalized, StringComparer.OrdinalIgnoreCase)) existing.Add(normalized);
-            }
+            existing.UnionWith(paths.Select(NormalizePath));
         }
 
         return result;
@@ -114,7 +145,18 @@ public sealed class ProtectedStagingPathRegistry
         return Path.TrimEndingDirectorySeparator(Path.GetFullPath(trimmed));
     }
 
-    private void SaveAtomically(Dictionary<string, List<string>> entries)
+    private static HashSet<string> NormalizePaths(IEnumerable<string> paths)
+    {
+        var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (string path in paths)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(path);
+            normalized.Add(NormalizePath(path));
+        }
+        return normalized;
+    }
+
+    private void SaveAtomically(Dictionary<string, HashSet<string>> entries)
     {
         string? directory = Path.GetDirectoryName(_path);
         if (string.IsNullOrWhiteSpace(directory))

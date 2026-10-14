@@ -47,8 +47,9 @@ internal static class StagingTransferScripts
         }
         """;
 
-    internal static string BuildChunk(string directory, string id, string ownerToken, string base64, long offset)
+    internal static string BuildChunk(string directory, string id, string ownerToken, string base64, long offset, string fileName = "payload.zip")
     {
+        if (fileName is not ("payload.zip" or "manifest.json")) throw new ArgumentException("Unsupported transfer file.", nameof(fileName));
         if (offset < 0) throw new ArgumentOutOfRangeException(nameof(offset));
         byte[] bytes;
         try { bytes = Convert.FromBase64String(base64); }
@@ -62,12 +63,12 @@ internal static class StagingTransferScripts
                 Assert-VivreTransferOwner $directory $id $ownerToken
                 $bytes = [Convert]::FromBase64String('{{base64}}')
                 if ($bytes.Length -gt {{MaxChunkBytes}}) { throw 'Transfer chunk exceeds the size limit' }
-                $payload = [IO.Path]::Combine($directory, 'payload.zip')
+                $payload = [IO.Path]::Combine($directory, '{{fileName}}')
                 $expectedOffset = [Int64]{{offset}}
                 if ($expectedOffset -eq 0) {
                     $stream = New-Object IO.FileStream($payload, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
                 } else {
-                    Assert-VivreRegularChild $directory 'payload.zip' $true
+                    Assert-VivreRegularChild $directory '{{fileName}}' $true
                     $stream = New-Object IO.FileStream($payload, [IO.FileMode]::Open, [IO.FileAccess]::Write, [IO.FileShare]::None)
                 }
                 try {
@@ -97,7 +98,7 @@ internal static class StagingTransferScripts
                 return
             }
             if ($present.Count -ne 1) { throw "Multiple transfer lifecycle paths exist; automatic cleanup refused: $($present -join ', ')" }
-            $known = @('owner.json','payload.zip','transfer.lock')
+            $known = @('owner.json','payload.zip','manifest.json','transfer.lock')
             if ($present[0] -ne $tombstone) {
                 $ownedPath = $present[0]
                 if ($ownedPath -eq $directory) { Assert-VivreTransferPath $directory $id $true }
@@ -118,7 +119,7 @@ internal static class StagingTransferScripts
                     throw "Cleanup tombstone contains an unknown or unsafe entry: $($entry.Name)"
                 }
             }
-            foreach ($name in @('payload.zip','owner.json','transfer.lock')) {
+            foreach ($name in @('payload.zip','manifest.json','owner.json','transfer.lock')) {
                 $owned = [IO.Path]::Combine($tombstone, $name)
                 if (Test-Path -LiteralPath $owned) {
                     Assert-VivreRegularChild $tombstone $name $true
@@ -134,9 +135,15 @@ internal static class StagingTransferScripts
         }
         """;
 
-    internal static string WrapPublication(string directory, string id, string ownerToken, string publicationScript)
+    internal static string WrapPublication(string directory, string id, string ownerToken, string publicationScript, string? manifestSha256 = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(publicationScript);
+        if (manifestSha256 is not null && (manifestSha256.Length != 64 || !manifestSha256.All(Uri.IsHexDigit)))
+            throw new ArgumentException("Invalid manifest SHA256.", nameof(manifestSha256));
+        string manifestCheck = manifestSha256 is null ? string.Empty :
+            "Assert-VivreRegularChild $directory 'manifest.json' $true\n" +
+            "$manifestPath = [IO.Path]::Combine($directory, 'manifest.json')\n" +
+            $"if ((Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash -ne '{manifestSha256}') {{ throw 'transferred manifest SHA-256 mismatch' }}\n";
         return Header("publication", directory, id, ownerToken) + """
         try {
             Assert-VivreTransferPath $directory $id $true
@@ -145,6 +152,7 @@ internal static class StagingTransferScripts
                 Assert-VivreTransferOwner $directory $id $ownerToken
                 $payload = [IO.Path]::Combine($directory, 'payload.zip')
                 Assert-VivreRegularChild $directory 'payload.zip' $true
+        """ + "\n" + manifestCheck + """
                 $publicationResult = & {
         """ + publicationScript + """
                 }

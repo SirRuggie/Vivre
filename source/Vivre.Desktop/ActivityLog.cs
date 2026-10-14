@@ -16,17 +16,33 @@ namespace Vivre.Desktop;
 public sealed class ActivityLog : IActivityLog
 {
     private const int MaxEntries = 2000;
+    private const int MaxPendingEntries = 512;
 
     private readonly Logger _file;
+    private readonly object _pendingGate = new();
+    private readonly Queue<LogEntry> _pending = new(MaxPendingEntries);
+    private long _omittedPending;
+    private long _clearGeneration;
+    private bool _clearPending;
+    private bool _drainScheduled;
 
-    public ActivityLog()
+    public ActivityLog() : this(CreateFileLogger())
+    {
+    }
+
+    private ActivityLog(Logger file)
+    {
+        _file = file;
+    }
+
+    private static Logger CreateFileLogger()
     {
         string dir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "Vivre", "logs");
         Directory.CreateDirectory(dir);
 
-        _file = new LoggerConfiguration()
+        return new LoggerConfiguration()
             .WriteTo.File(
                 Path.Combine(dir, "vivre-.log"),
                 rollingInterval: RollingInterval.Day,
@@ -50,7 +66,18 @@ public sealed class ActivityLog : IActivityLog
 
     public void Clear()
     {
-        OnUi(Entries.Clear);
+        bool drainNow;
+        lock (_pendingGate)
+        {
+            _pending.Clear();
+            _omittedPending = 0;
+            _clearGeneration++;
+            _clearPending = true;
+            drainNow = ScheduleDrainLocked();
+        }
+
+        if (drainNow)
+            DrainPending();
     }
 
     /// <summary>
@@ -97,16 +124,7 @@ public sealed class ActivityLog : IActivityLog
         // below carries it.
         var entry = new LogEntry(DateTime.Now, severity, machine, message);
 
-        OnUi(() =>
-        {
-            Entries.Insert(0, entry);
-            while (Entries.Count > MaxEntries)
-            {
-                Entries.RemoveAt(Entries.Count - 1);
-            }
-        });
-
-        // The in-memory entry above is the user-visible record; the file write is best-effort and
+        // The UI entry is the user-visible record; the file write is best-effort and
         // must NEVER throw here. Info/Warn/Error are called from inside callers' catch blocks, so a
         // Serilog sink failure (disk full, file locked by AV) would otherwise propagate out of that
         // catch and bury the original failure — the very "never die silently" mechanism hiding the
@@ -120,24 +138,130 @@ public sealed class ActivityLog : IActivityLog
         }
         catch
         {
-            // Logging must not become a new failure source; the in-memory entry already has it.
+            // Logging must not become a new failure source. Continue with the in-memory entry.
+        }
+
+        // Keep UI dispatch failures from preventing the durable write attempted above.
+        try
+        {
+            EnqueueForUi(entry);
+        }
+        catch (InvalidOperationException)
+        {
+            // The dispatcher can reject work during shutdown; there is no panel left to update.
+        }
+        catch (TaskCanceledException)
+        {
+            // The dispatcher is shutting down; the file write above was still attempted.
         }
     }
 
-    private static void OnUi(Action action)
+    private void EnqueueForUi(LogEntry entry)
     {
+        bool drainNow;
+        lock (_pendingGate)
+        {
+            if (_pending.Count == MaxPendingEntries)
+            {
+                _pending.Dequeue();
+                _omittedPending++;
+            }
+            _pending.Enqueue(entry);
+
+            drainNow = ScheduleDrainLocked();
+        }
+
+        if (drainNow)
+            DrainPending();
+    }
+
+    private bool ScheduleDrainLocked()
+    {
+        if (_drainScheduled)
+            return false;
+
+        _drainScheduled = true;
         Application? app = Application.Current;
         if (app is not null && !app.Dispatcher.CheckAccess())
         {
-            // BeginInvoke (not Invoke): a background sweep thread queues the panel update and keeps working
-            // instead of blocking on the UI thread for every log line. Under heavy multi-tab load this is the
-            // difference between a smooth UI and a stutter. The durable file write in Add() is unaffected.
-            app.Dispatcher.BeginInvoke(action);
+            // One callback drains the bounded buffer in a batch. Producers keep writing the complete
+            // durable record independently, even if the UI dispatcher remains stalled.
+            app.Dispatcher.BeginInvoke(DrainPending);
+            return false;
         }
-        else
+
+        return true;
+    }
+
+    private void DrainPending()
+    {
+        LogEntry[] batch;
+        long omitted;
+        long generation;
+        bool clear;
+        lock (_pendingGate)
         {
-            action();
+            batch = _pending.ToArray();
+            _pending.Clear();
+            omitted = _omittedPending;
+            _omittedPending = 0;
+            generation = _clearGeneration;
+            clear = _clearPending;
+            _clearPending = false;
         }
+
+        if (clear)
+            Entries.Clear();
+
+        foreach (LogEntry entry in batch)
+        {
+            if (WasClearedAfter(generation))
+                break;
+            Entries.Insert(0, entry);
+        }
+
+        if (omitted > 0 && !WasClearedAfter(generation))
+        {
+            Entries.Insert(0, new LogEntry(
+                DateTime.Now,
+                LogSeverity.Warning,
+                null,
+                $"{omitted:N0} earlier activity entries omitted from this panel while the UI was busy. See the log file for full activity details."));
+        }
+
+        while (Entries.Count > MaxEntries)
+            Entries.RemoveAt(Entries.Count - 1);
+
+        bool drainAgain;
+        lock (_pendingGate)
+        {
+            drainAgain = _clearPending || _pending.Count > 0 || _omittedPending > 0;
+            if (!drainAgain)
+                _drainScheduled = false;
+        }
+
+        if (drainAgain)
+        {
+            Application? app = Application.Current;
+            if (app is not null)
+            {
+                // Yield between bounded batches. _drainScheduled remains true, so producers cannot
+                // enqueue a second callback while this continuation is pending.
+                app.Dispatcher.BeginInvoke(DrainPending);
+            }
+            else
+            {
+                // Headless/test hosts have no dispatcher. Finish queued reentrant work after the
+                // captured batch rather than recursively from the collection callback.
+                DrainPending();
+            }
+        }
+    }
+
+    private bool WasClearedAfter(long generation)
+    {
+        lock (_pendingGate)
+            return _clearGeneration != generation;
     }
 
     private static LogEventLevel ToLevel(LogSeverity severity) => severity switch

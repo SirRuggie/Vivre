@@ -408,9 +408,19 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private DispatcherTimer? _fleetRecomputeTimer;
     private static readonly TimeSpan FleetRecomputeWindow = TimeSpan.FromMilliseconds(200);
 
+    // Free-text typing is the one filter input allowed to settle: Refresh walks the whole view and doing
+    // that on every key blocks the dispatcher at fleet scale. State chips remain immediate. Keep the text
+    // actually used by RowMatchesFilter separate so live shaping cannot apply a not-yet-settled edit.
+    private DispatcherTimer? _filterDebounceTimer;
+    private static readonly TimeSpan FilterDebounceWindow = TimeSpan.FromMilliseconds(200);
+    private string _appliedFilterText = string.Empty;
+    private int _visibleRowCount;
+
     // The grid's default view, with a live filter (name search + state). Both mode grids bind
     // Computers, so they share this view — filtering once affects whichever grid is showing.
     private readonly ICollectionView _computersView;
+    private readonly ICollectionViewLiveShaping? _liveComputersView;
+    private readonly HashSet<Computer> _subscribedComputers = [];
 
     /// <summary>Tab title (editable — double-click the tab header to rename).</summary>
     [ObservableProperty]
@@ -489,19 +499,114 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     [ObservableProperty]
     public partial RowFilter ActiveFilter { get; set; } = RowFilter.All;
 
-    partial void OnFilterTextChanged(string value) => RefreshFilter();
-
-    partial void OnActiveFilterChanged(RowFilter value) => RefreshFilter();
-
-    private void RefreshFilter()
+    partial void OnFilterTextChanged(string value)
     {
-        _computersView.Refresh();
+        if (_disposed)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(IsFilterActive));
+        _filterDebounceTimer ??= CreateFilterDebounceTimer();
+        _filterDebounceTimer.Stop();
+        _filterDebounceTimer.Start();
+    }
+
+    partial void OnActiveFilterChanged(RowFilter value)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        // A state-chip click must be immediate. Fold in the latest typed text so a pending debounce cannot
+        // later produce a second, surprising result for the same user action.
+        StopPendingFilterRefresh();
+        _appliedFilterText = FilterText?.Trim() ?? string.Empty;
+        RefreshFilter(reconfigureLiveProperties: true);
+    }
+
+    private DispatcherTimer CreateFilterDebounceTimer()
+    {
+        var timer = new DispatcherTimer { Interval = FilterDebounceWindow };
+        timer.Tick += OnFilterDebounceTick;
+        return timer;
+    }
+
+    private void OnFilterDebounceTick(object? sender, EventArgs e)
+    {
+        StopPendingFilterRefresh();
+        if (_disposed)
+        {
+            return;
+        }
+
+        _appliedFilterText = FilterText?.Trim() ?? string.Empty;
+        RefreshFilter();
+    }
+
+    private void StopPendingFilterRefresh() => _filterDebounceTimer?.Stop();
+
+    private void RefreshFilter(bool reconfigureLiveProperties = false)
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        if (reconfigureLiveProperties && _liveComputersView is not null)
+        {
+            // Live shaping creates a property observer for every registered property on every row. Keep
+            // Name (free text) plus only the properties used by the active state predicate. DeferRefresh
+            // folds the property-list rebuild and filter assignment into one Reset/view walk.
+            using (_computersView.DeferRefresh())
+            {
+                ConfigureLiveFilterProperties(_liveComputersView);
+                // Setting Filter requests a deferred refresh; calling Refresh() directly inside a
+                // DeferRefresh scope can fail when ListCollectionView reads its current position.
+                _computersView.Filter = RowMatchesFilter;
+            }
+        }
+        else
+        {
+            _computersView.Refresh();
+        }
         OnPropertyChanged(nameof(IsFilterActive));
         OnPropertyChanged(nameof(FilterStatus));
         OnPropertyChanged(nameof(VisibleRowCount));
         OnPropertyChanged(nameof(GridOverlayState));
         OnPropertyChanged(nameof(ShowMachineGrid));
         OnPropertyChanged(nameof(ShowUpdateGrid));
+    }
+
+    private void ConfigureLiveFilterProperties(ICollectionViewLiveShaping live)
+    {
+        string[] stateProperties = ActiveFilter switch
+        {
+            RowFilter.Offline => [nameof(Computer.IsOnline)],
+            RowFilter.UpdatesAvailable =>
+                [nameof(Computer.PatchState), nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates)],
+            RowFilter.RebootPending => [nameof(Computer.RebootRequired), nameof(Computer.PatchState)],
+            RowFilter.Errors =>
+                [nameof(Computer.PatchState), nameof(Computer.LastError), nameof(Computer.UpdateError)],
+            RowFilter.Done => [nameof(Computer.PatchState)],
+            RowFilter.Unhealthy => [nameof(Computer.VitalityBand)],
+            RowFilter.Server2016 => [nameof(Computer.OsBuild)],
+            RowFilter.NotScanned => [nameof(Computer.UpdatePhase)],
+            RowFilter.Scheduled => [nameof(Computer.ScheduledNextRun)],
+            _ => [],
+        };
+        string[] desired = [nameof(Computer.Name), .. stateProperties];
+        if (live.LiveFilteringProperties.SequenceEqual(desired, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        live.LiveFilteringProperties.Clear();
+        foreach (string property in desired)
+        {
+            live.LiveFilteringProperties.Add(property);
+        }
     }
 
     /// <summary>True when a name filter or a non-All state filter is in effect.</summary>
@@ -512,7 +617,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         IsFilterActive ? $"Showing {VisibleRowCount} of {Computers.Count}" : string.Empty;
 
     /// <summary>Number of rows currently shown (the filtered set) — also what an export/CSV includes.</summary>
-    public int VisibleRowCount => _computersView.Cast<Computer>().Count();
+    public int VisibleRowCount => _visibleRowCount;
 
     // --- M13/M29: overlay state machine ---
 
@@ -548,7 +653,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             return false;
         }
 
-        string q = FilterText?.Trim() ?? string.Empty;
+        string q = _appliedFilterText;
         if (q.Length > 0 && !(c.Name?.Contains(q, StringComparison.OrdinalIgnoreCase) ?? false))
         {
             return false;
@@ -895,15 +1000,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _computersView.Filter = RowMatchesFilter;
         if (_computersView is ICollectionViewLiveShaping live && live.CanChangeLiveFiltering)
         {
-            foreach (string prop in (string[])
-                [nameof(Computer.Name), nameof(Computer.IsOnline), nameof(Computer.PatchState),
-                 nameof(Computer.RebootRequired), nameof(Computer.LastError), nameof(Computer.UpdateError),
-                 nameof(Computer.UpdatesAvailable), nameof(Computer.MissingUpdates), nameof(Computer.VitalityBand),
-                 nameof(Computer.OsBuild), nameof(Computer.UpdatePhase), nameof(Computer.ScheduledNextRun)])
-            {
-                live.LiveFilteringProperties.Add(prop);
-            }
-
+            _liveComputersView = live;
+            ConfigureLiveFilterProperties(live);
             live.IsLiveFiltering = true;
         }
 
@@ -917,27 +1015,54 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>Re-notify overlay and filter-status properties after the CollectionView updates its count.
-    /// Coalesced: these are whole-view counts (VisibleRowCount walks the view), so a bulk add that fires this
-    /// per row would be O(N^2) — mark dirty and let the timer recompute once.</summary>
+    /// Cache view membership counts here and coalesce the dependent fleet/overlay notifications so
+    /// bulk additions do not repeatedly update every binding.</summary>
     private void OnVisibleRowsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        // Avoid repeatedly enumerating the entire view from bindings/getters. Normal add/remove/replace
+        // notifications adjust the cached count in O(1); Refresh/live-shaping Reset is counted once here.
+        _visibleRowCount = e.Action switch
+        {
+            NotifyCollectionChangedAction.Add => _visibleRowCount + (e.NewItems?.Count ?? 0),
+            NotifyCollectionChangedAction.Remove => _visibleRowCount - (e.OldItems?.Count ?? 0),
+            NotifyCollectionChangedAction.Replace => _visibleRowCount
+                - (e.OldItems?.Count ?? 0) + (e.NewItems?.Count ?? 0),
+            NotifyCollectionChangedAction.Reset => _computersView.Cast<Computer>().Count(),
+            _ => _visibleRowCount,
+        };
         MarkFleetDirty();
     }
 
     /// <summary>Subscribe/unsubscribe row state changes and refresh the online/total summary.</summary>
     private void OnComputersChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        if (e.Action == NotifyCollectionChangedAction.Reset)
+        {
+            foreach (Computer c in _subscribedComputers)
+            {
+                c.PropertyChanged -= OnComputerStateChanged;
+            }
+
+            _subscribedComputers.Clear();
+        }
+
         if (e.OldItems is not null)
         {
             foreach (Computer c in e.OldItems)
             {
-                c.PropertyChanged -= OnComputerStateChanged;
+                if (_subscribedComputers.Remove(c))
+                {
+                    c.PropertyChanged -= OnComputerStateChanged;
+                }
             }
         }
 
-        if (e.NewItems is not null)
+        IEnumerable<Computer> added = e.NewItems is not null
+            ? e.NewItems.Cast<Computer>()
+            : e.Action == NotifyCollectionChangedAction.Reset ? Computers : [];
+        foreach (Computer c in added)
         {
-            foreach (Computer c in e.NewItems)
+            if (_subscribedComputers.Add(c))
             {
                 c.PropertyChanged += OnComputerStateChanged;
             }
@@ -1014,6 +1139,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// Called only on the UI thread (collection/view changes and row PropertyChanged all fire there).</summary>
     private void MarkFleetDirty()
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _fleetDirty = true;
         _fleetRecomputeTimer ??= CreateFleetRecomputeTimer();
         if (!_fleetRecomputeTimer.IsEnabled)
@@ -2521,6 +2651,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _monitorCts = null;
         ((INotifyCollectionChanged)_computersView).CollectionChanged -= OnVisibleRowsChanged;
 
+        if (_filterDebounceTimer is { } filterTimer)
+        {
+            filterTimer.Stop();
+            filterTimer.Tick -= OnFilterDebounceTick;
+            _filterDebounceTimer = null;
+        }
+
         if (_sweepNarrationTimer is { } st)
         {
             st.Stop();
@@ -2547,10 +2684,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // the tab is unreferenced, so they aren't a live leak — but unhooking them here is the same hygiene
         // as the view/timer unsubscribes above, and mirrors RetrackChecklist's own teardown.
         Computers.CollectionChanged -= OnComputersChanged;
-        foreach (Computer c in Computers)
+        foreach (Computer c in _subscribedComputers)
         {
             c.PropertyChanged -= OnComputerStateChanged;
         }
+        _subscribedComputers.Clear();
 
         if (FocusedComputer is { } focused)
         {

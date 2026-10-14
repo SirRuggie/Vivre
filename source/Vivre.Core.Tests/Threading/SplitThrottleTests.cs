@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Reflection;
 using Vivre.Core.Threading;
 
 namespace Vivre.Core.Tests.Threading;
@@ -290,5 +291,94 @@ public class SplitThrottleTests
             () => throttle.AcquirePassiveAsync(cts.Token));
 
         foreach (var p in permits) p.Dispose();
+    }
+
+    [Fact]
+    public async Task Losing_active_waits_are_cancelled_promptly_without_releasing_extra_permits()
+    {
+        const int total = 8, reserved = 2, acquisitions = 200;
+        using var throttle = new SplitThrottle(total, reserved);
+
+        for (int i = 0; i < total - reserved; i++)
+            await throttle.Active.WaitAsync();
+
+        IDisposable[] reservedSeeds = await Task.WhenAll(Enumerable.Range(0, reserved)
+            .Select(_ => throttle.AcquirePassiveAsync(CancellationToken.None)));
+        Task[] pending = Enumerable.Range(0, acquisitions)
+            .Select(async _ =>
+            {
+                using IDisposable permit = await throttle.AcquirePassiveAsync(CancellationToken.None);
+            })
+            .ToArray();
+
+        Assert.Equal(acquisitions, CountQueuedWaiters(throttle.Active));
+        foreach (IDisposable seed in reservedSeeds)
+            seed.Dispose();
+        await Task.WhenAll(pending).WaitAsync(TimeSpan.FromSeconds(10));
+
+        Assert.Equal(0, CountQueuedWaiters(throttle.Active));
+        throttle.Active.Release(total - reserved);
+
+        Assert.Equal(total - reserved, throttle.Active.CurrentCount);
+        for (int i = 0; i < total - reserved; i++)
+            Assert.True(throttle.Active.Wait(0), "An active permit was lost.");
+        Assert.False(throttle.Active.Wait(0));
+        throttle.Active.Release(total - reserved);
+    }
+
+    [Fact]
+    public async Task Cancellation_racing_a_release_neither_leaks_nor_double_releases()
+    {
+        const int iterations = 200;
+        for (int iteration = 0; iteration < iterations; iteration++)
+        {
+            using var throttle = new SplitThrottle(2, 1);
+            await throttle.Active.WaitAsync();
+            IDisposable reserved = await throttle.AcquirePassiveAsync(CancellationToken.None);
+            using var cts = new CancellationTokenSource();
+            Task<IDisposable> racing = throttle.AcquirePassiveAsync(cts.Token);
+
+            Task cancel = Task.Run(cts.Cancel);
+            reserved.Dispose();
+            throttle.Active.Release();
+
+            try
+            {
+                (await racing.WaitAsync(TimeSpan.FromSeconds(2))).Dispose();
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            await cancel;
+
+            Assert.Equal(1, throttle.Active.CurrentCount);
+            Assert.Equal(0, CountQueuedWaiters(throttle.Active));
+            using IDisposable first = await throttle.AcquirePassiveAsync(CancellationToken.None);
+            using IDisposable second = await throttle.AcquirePassiveAsync(CancellationToken.None);
+            using var blocked = new CancellationTokenSource(TimeSpan.FromMilliseconds(10));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => throttle.AcquirePassiveAsync(blocked.Token));
+        }
+    }
+
+    private static int CountQueuedWaiters(SemaphoreSlim semaphore)
+    {
+        FieldInfo headField = typeof(SemaphoreSlim).GetField(
+            "m_asyncHead", BindingFlags.Instance | BindingFlags.NonPublic)
+            ?? throw new MissingFieldException(typeof(SemaphoreSlim).FullName, "m_asyncHead");
+        object? node = headField.GetValue(semaphore);
+        if (node is null) return 0;
+
+        FieldInfo nextField = node.GetType().GetField(
+            "Next", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? node.GetType().GetField("m_next", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+            ?? throw new MissingFieldException(node.GetType().FullName, "Next/m_next");
+        int count = 0;
+        while (node is not null)
+        {
+            count++;
+            node = nextField.GetValue(node);
+        }
+        return count;
     }
 }

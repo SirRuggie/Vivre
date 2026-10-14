@@ -24,7 +24,7 @@
 
 ## ▶ DO NEXT — recommended order
 
-**Performance assessment — 2026-10-14:** [F13–F20 report](vivre-performance-review-2026-10-14.md). Recommended order: F13 filtering, F14 registry growth, F15 stale subscriptions, then F16/F17. Assessment only; implementation decisions pending. F12 remains skipped. Earlier dated release/test summaries below are historical.
+**Performance batch — 2026-10-14:** F13–F20 implemented; [implementation evidence and limits](vivre-performance-implementation-2026-10-14.md), [frozen baseline assessment](vivre-performance-review-2026-10-14.md). F13–F19 have local runtime validation; F20 compiled/source-reviewed, visible banner/tray behavior unverified. Live integration/native soak gaps remain. F12 stays skipped. Earlier dated release/test summaries below are historical.
 
 **DCOM 1191 → SMB/SCM fallback (the SentinelOne "Lateral Movement" source) — BUILT 2026-07-27.** Shipped: `5f6d437` (a 1191 on a GRACEFUL call now
 escalates to the FORCED form on the same DCOM session instead of switching transports — new `RebootDispatch.EscalatedToForced`, forced go-offline

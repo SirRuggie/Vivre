@@ -7,7 +7,11 @@ namespace Vivre.Core.Deploy;
 /// <param name="Path">The file/folder the package was copied to on the target (for the row + log), or
 /// null on failure.</param>
 /// <param name="Message">A human-readable result/failure line for the row + activity log.</param>
-public sealed record StageResult(bool Ok, string? Path, string Message);
+public sealed record StageResult(bool Ok, string? Path, string Message)
+{
+    // Set only by a publication path that confirmed its unique temporary paths are gone.
+    internal bool TemporaryPathsCleaned { get; init; }
+}
 
 /// <summary>
 /// <b>Stages</b> an admin-supplied package (a single file, or a folder of files) onto a machine — it
