@@ -850,3 +850,7 @@ Protected-path persistence skips duplicate writes and batches each host's tempor
 ## Release 1.17.2 CU copy verification
 
 The Server 2016 AddPackage SMB copy now hashes the source and copied destination with SHA-256 before agent launch, in addition to checking length. It holds the source read-locked during the operation and reuses the staging bounded-buffer hash helper. This adds full source and destination reads; hashing checks cancellation between reads, while a filesystem call or File.Copy can still block. Dummy mapped-share tests cover corruption rejection and copy success, not DISM or server servicing.
+
+## CU staging responsiveness
+
+Package-directory reads and optional full-file SHA-256 validation run in background work, both before the Stage workflow and inside each FullPackageLcuLane stage. The preflight uses the existing workspace operation tracker so Stop can cancel waiting without dispatching staging; repeated clicks in one workspace share the guarded workflow. Per-host cancellation is checked again after validation and before the SMB lane. Row updates retain the UI synchronization context. Validation is not cached or skipped; this fixes dispatcher blocking without changing transfer concurrency, DISM, reboot behavior or hash guarantees.

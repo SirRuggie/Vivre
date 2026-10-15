@@ -17,10 +17,11 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        bool cuStageOnly = args.Length == 2 && args[0] == "--cu-stage-only";
         bool auditFixesOnly = args.Length == 2 && args[0] == "--audit-fixes-only";
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -29,6 +30,11 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (cuStageOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(new { stage = CuStageResponsivenessProbe.Run(), preflight = CuPreflightProbe.Run() }, new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (auditFixesOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(new { auditFixes = AuditFixesProbe.Run(), scriptExecution = ScriptExecutionProbe.Run(), scriptEditor = ScriptEditorProbe.Run() }, new JsonSerializerOptions { WriteIndented = true }));

@@ -3847,9 +3847,35 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private static LcuTarget BuildLcuTarget(SharedSettings s) =>
         new(s.MonthlyCu.Kb, s.MonthlyCu.Arch, TargetUbr: s.MonthlyCu.TargetUbr);
 
+    // A stopped UNC read may finish later; retries must not accumulate blocking readers.
+    private readonly SemaphoreSlim _lcuPreflightReadGate = new(1, 1);
+
     /// <summary>Read-only precheck for the panel's Stage button: is this month's CU <c>.msu</c> present +
     /// correct in the package folder? The View calls this BEFORE staging — when not Ready it shows the guided
     /// "drop the file here" prompt instead of touching any box. (No host is contacted.)</summary>
+    public async Task<LcuStageReadiness> CheckLcuStageReadinessAsync()
+    {
+        // Reuse normal busy/Stop tracking; this read-only preflight owns no remote rows.
+        var (cts, record) = BeginOperation("Checking CU package", [], registerRows: false);
+        try
+        {
+            CancellationToken token = cts.Token;
+            LcuStageReadiness readiness = await Task.Run(async () =>
+            {
+                await _lcuPreflightReadGate.WaitAsync(token).ConfigureAwait(false);
+                try
+                {
+                    token.ThrowIfCancellationRequested();
+                    return CheckLcuStageReadiness();
+                }
+                finally { _lcuPreflightReadGate.Release(); }
+            }, token).WaitAsync(token);
+            token.ThrowIfCancellationRequested();
+            return readiness;
+        }
+        finally { EndOperation(cts, record); }
+    }
+
     public LcuStageReadiness CheckLcuStageReadiness()
     {
         SharedSettings s = _shared.Load();

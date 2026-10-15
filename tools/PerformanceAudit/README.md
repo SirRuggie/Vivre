@@ -46,3 +46,7 @@ The default run also checks the F33/F38/F39/F43 fixes using isolated production 
 The script-execution probe uses the actual runner view model with temporary script libraries and a fake transport. It verifies host-conflict refusal, error/cancellation uncertainty, captured targets, local/remote bounded APIs and per-host/aggregate output bounds. It does not execute the displayed dummy mutation text.
 
 The script-editor probe uses actual runner and library-page controls with temporary scripts and injected choices/errors. It checks Save/Discard/Cancel, refresh preservation, close vetoes and built-in notices without interactive dialogs or production stores. The status probe also verifies that an unloaded live-status control can be garbage-collected.
+
+`--cu-stage-only <output.json>` measures actual FullPackageLcuLane call-entry time and queued dispatcher callback latency for 1 and 8 dummy targets using a 128 MiB local dummy MSU, real SHA-256 validation and an inert SMB implementation. It performs no server operation. First-sample callback latency includes cold WPF dispatcher startup; compare synchronous call-entry and the subsequent 8-target sample, not cold callback latency as network latency.
+
+The CU-only run also exercises the actual WorkspaceViewModel with a blocked dummy preflight: dispatcher responsiveness, busy/Stop state, prompt cancellation, and a canceled retry that cannot accumulate a second blocked reader. It uses a temporary settings store and no production hosts or writes.

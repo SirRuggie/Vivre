@@ -142,9 +142,11 @@ public sealed class FullPackageLcuLane
 
         progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Checking the update package…"));
 
-        LcuPackageResolution package = _packages.Resolve(
+        // Folder access and optional full-package hashing must not occupy the caller's dispatcher.
+        LcuPackageResolution package = await Task.Run(() => _packages.Resolve(
             packageDirectory, target.Kb, target.Arch,
-            target.ExpectedSizeBytes, target.ToleranceBytes, target.ExpectedSha256);
+            target.ExpectedSizeBytes, target.ToleranceBytes, target.ExpectedSha256), cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (package.Status != LcuPackageStatus.Found || package.Path is null)
         {

@@ -6,6 +6,11 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.5 — 2026-10-15
+
+### Fixed
+- Server 2016 CU package discovery and hashing run off the UI thread during preflight and per-host staging. Preflight reuses the existing busy/Stop tracking, captures its target list and refuses duplicate clicks.
+
 ## 1.17.4 — 2026-10-14
 
 ### Fixed

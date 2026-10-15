@@ -592,3 +592,5 @@ standalone items further down, each "do only if it recurs / when a signal appear
 ## KNOWLEDGE DOCS
 
 The doc inventory (every doc, one-line purpose, read-when cue) lives in **docs/README.md** — the single map.
+
+- **F46 — CU staging dispatcher pause (2026-10-15):** reproduced synchronous package-hash blocking with dummy targets; background-validation fix and focused tests pass. Current acceptance and live-validation limits: [implementation ledger](vivre-audit-implementation-2026-10-14.md#f46--server-2016-multi-target-staging-pauses-the-dispatcher-2026-10-15).

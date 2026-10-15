@@ -112,6 +112,19 @@ public class FullPackageLcuLaneTests
         Assert.Equal(PatchPhase.Done, result.Phase);
     }
 
+    [Fact]
+    public async Task Cancelled_stage_does_not_resolve_or_contact_host()
+    {
+        using var dir = new TempDir();
+        dir.WriteFile("windows-kb9999999-x64.msu", 16);
+        var smb = new RecordingSmb();
+        var lane = new FullPackageLcuLane(smb);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => lane.StageAsync(
+            "DUMMY-CANCEL", dir.Path, new LcuTarget("KB9999999"), new PatchOptions(),
+            new SyncProgress(), new CancellationToken(true)));
+        Assert.Null(smb.StagedHost);
+    }
+
     private sealed class FakeBuildReader(int? build, int? ubr) : ILcuBuildReader
     {
         public Task<(int? CurrentBuild, int? Ubr)> ReadAsync(string host, CancellationToken cancellationToken = default) =>

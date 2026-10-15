@@ -87,6 +87,8 @@ internal static class StagedInstallInteraction
     private static Task InstallNormalAsync(WorkspaceViewModel vm, IReadOnlyList<Computer> normal) =>
         normal.Count > 0 ? vm.InstallSelectedAsync(normal) : Task.CompletedTask;
 
+    private static readonly HashSet<WorkspaceViewModel> PreparingStage = [];
+
     /// <summary>
     /// The Server 2016 chip Stage workflow scoped to a specific set of boxes: the scan-this-session gate, then the
     /// package-readiness loop (guided "drop the .msu here" prompt), then the stage. Shared by the panel's Stage
@@ -94,6 +96,15 @@ internal static class StagedInstallInteraction
     /// until the package is confirmed present.
     /// </summary>
     public static async Task RunStageWorkflowAsync(Window owner, WorkspaceViewModel vm, IReadOnlyList<Computer> boxes)
+    {
+        // UI-thread entry: a second click must not launch a duplicate wave while preflight awaits I/O.
+        if (!PreparingStage.Add(vm)) return;
+        try { await RunStageWorkflowCoreAsync(owner, vm, boxes.ToArray()); }
+        catch (OperationCanceledException) { /* Stop during package preflight: no staging starts. */ }
+        finally { PreparingStage.Remove(vm); }
+    }
+
+    private static async Task RunStageWorkflowCoreAsync(Window owner, WorkspaceViewModel vm, IReadOnlyList<Computer> boxes)
     {
         if (boxes.Count == 0)
         {
@@ -120,7 +131,8 @@ internal static class StagedInstallInteraction
 
         while (true)
         {
-            LcuStageReadiness readiness = vm.CheckLcuStageReadiness();
+            LcuStageReadiness readiness = await vm.CheckLcuStageReadinessAsync();
+            if (!owner.IsVisible) return;
             if (readiness.Ready)
             {
                 _ = vm.StageLcuForAsync(boxes); // fire-and-forget, like the panel's Stage button
