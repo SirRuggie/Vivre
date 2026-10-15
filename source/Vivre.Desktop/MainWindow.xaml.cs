@@ -602,7 +602,20 @@ public partial class MainWindow : FluentWindow
     protected override void OnClosing(CancelEventArgs e)
     {
         base.OnClosing(e);
-        if (e.Cancel || Settings is null) return;
+        if (e.Cancel) return;
+        if (!ScriptsSection.ConfirmCanClose())
+        {
+            e.Cancel = true;
+            return;
+        }
+        // WPF does not raise Closing on owned windows when their owner closes.
+        foreach (ScriptRunnerWindow runner in OwnedWindows.OfType<ScriptRunnerWindow>().ToArray())
+        {
+            if (runner.ConfirmCanClose()) continue;
+            e.Cancel = true;
+            return;
+        }
+        if (Settings is null) return;
 
         // Includes normal window close and the tray's Application.Shutdown path. Drain personal
         // preferences before Closed disposes the UI. Remote-operation shutdown is unchanged.
@@ -620,6 +633,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        ScriptsSection.Dispose();
         if (_relativeTimeTimer is { } rt)
         {
             rt.Stop();

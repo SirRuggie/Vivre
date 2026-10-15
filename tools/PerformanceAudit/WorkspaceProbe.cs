@@ -319,7 +319,7 @@ internal static class WorkspaceProbe
         void Stop(object? sender, EventArgs e) => frame.Continue = false;
     }
 
-    private static WorkspaceViewModel CreateWorkspace()
+    internal static WorkspaceViewModel CreateWorkspace()
     {
         var workspace = new WorkspaceViewModel(
             pinger: null!,

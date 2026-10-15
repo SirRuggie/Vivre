@@ -47,6 +47,79 @@ public class PSRunspaceHostTests
     }
 
     [Fact]
+    public async Task Bounded_capture_drains_all_streams_and_reports_truncation()
+    {
+        PSScriptCaptureResult result = await _host.RunLocalScriptCaptureAsync(
+            "$VerbosePreference='Continue'; 1..1000 | % { Write-Output \"o$_\"; Write-Warning \"w$_\"; Write-Verbose \"v$_\" }; Write-Error boom",
+            new PSScriptCaptureLimits(3, 100));
+        Assert.Equal(3, result.Output.Count);
+        Assert.Equal(3, result.Warnings.Count);
+        Assert.Equal(3, result.Verbose.Count);
+        Assert.True(result.HadErrors);
+        Assert.True(result.WasTruncated);
+        Assert.Contains(result.Errors, e => e.Contains("boom"));
+    }
+
+    [Fact]
+    public async Task Bounded_capture_preserves_cancellation()
+    {
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            _host.RunLocalScriptCaptureAsync("while ($true) { Write-Output x }", new(5, 100), cts.Token));
+    }
+
+    [Fact]
+    public async Task Bounded_capture_keeps_error_signal_when_error_stream_overflows()
+    {
+        PSScriptCaptureResult result = await _host.RunLocalScriptCaptureAsync(
+            "1..100 | % { Write-Error \"error-$_\" }", new(1, 5));
+        Assert.True(result.HadErrors);
+        Assert.True(result.WasTruncated);
+        Assert.Single(result.Errors);
+        Assert.Equal(5, result.Errors[0].Length);
+    }
+
+    [Fact]
+    public async Task Concurrent_bounded_calls_do_not_leak_capture_state()
+    {
+        Task<PSScriptCaptureResult> first = _host.RunLocalScriptCaptureAsync("'first'", new(5, 100));
+        Task<PSScriptCaptureResult> second = _host.RunLocalScriptCaptureAsync("'second'", new(5, 100));
+        PSScriptCaptureResult[] results = await Task.WhenAll(first, second);
+        Assert.Equal("first", Assert.Single(results[0].Output));
+        Assert.Equal("second", Assert.Single(results[1].Output));
+    }
+
+    [Fact]
+    public void Presentation_buffer_enforces_exact_bound()
+    {
+        var buffer = new BoundedTextBuffer(10);
+        buffer.Append("123456789012345");
+        Assert.Equal(10, buffer.ToString().Length);
+        Assert.True(buffer.WasTruncated);
+    }
+
+    [Fact]
+    public void Presentation_keeps_truncation_marker_and_errors_ahead_of_large_output()
+    {
+        var result = new PSScriptCaptureResult(
+            [new string('x', 1000)], ["important error"], [], [], [], [], [], HadErrors: true, WasTruncated: true);
+        string text = PSScriptCapturePresentation.Format(result, 80);
+        Assert.True(text.Length <= 80);
+        Assert.StartsWith("[output truncated]", text);
+        Assert.Contains("important error", text);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(10)]
+    [InlineData(18)]
+    public void Presentation_honors_tiny_exact_bounds(int maximum)
+    {
+        var result = new PSScriptCaptureResult(["payload"], ["error"], [], [], [], [], [], true, true);
+        Assert.True(PSScriptCapturePresentation.Format(result, maximum).Length <= maximum);
+    }
+
+    [Fact]
     public async Task Cancellation_stops_a_long_running_script()
     {
         using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(250));

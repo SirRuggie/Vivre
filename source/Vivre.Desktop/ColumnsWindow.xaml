@@ -78,7 +78,7 @@
                               Text="Runs on each machine; whatever it prints becomes the cell. Avoid [ ] and , in the name." />
                 <ui:Button Content="Add column" Margin="0,8,0,0" Click="OnAddCustom" />
 
-                <ui:TextBlock x:Name="StatusText" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+                <ui:TextBlock x:Name="StatusText" local:AccessibleStatus.Enabled="True" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
                               TextWrapping="Wrap" Margin="0,12,0,0" Visibility="Collapsed" />
             </StackPanel>
         </ScrollViewer>

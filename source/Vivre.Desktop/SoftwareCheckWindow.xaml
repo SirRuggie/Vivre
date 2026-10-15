@@ -52,7 +52,7 @@
                               Text="Pre-filled with the product name. If the service is named differently (CrowdStrike → CSFalconService), change it — Vivre remembers it for next time. An installed product whose service isn't running shows amber." />
             </StackPanel>
 
-            <ui:TextBlock x:Name="StatusText" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
+            <ui:TextBlock x:Name="StatusText" local:AccessibleStatus.Enabled="True" Foreground="{DynamicResource SystemFillColorCriticalBrush}"
                           TextWrapping="Wrap" Margin="0,12,0,0" Visibility="Collapsed" />
         </StackPanel>
         </ScrollViewer>

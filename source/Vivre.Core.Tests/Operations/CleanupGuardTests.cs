@@ -1,4 +1,5 @@
 using Vivre.Core.Operations;
+using Vivre.Core.Tests.IO;
 
 namespace Vivre.Core.Tests.Operations;
 
@@ -99,6 +100,30 @@ public sealed class CleanupGuardTests : IDisposable
             () => second.RegisterMany("server01", Enumerable.Range(0, 50).Select(i => $@"C:\stage\b{i}")));
 
         Assert.Equal(100, first.GetProtectedPaths("server01").Count);
+    }
+
+    [Fact]
+    public async Task External_process_lease_blocks_registry_merge_and_existing_protection_survives()
+    {
+        var registry = new ProtectedStagingPathRegistry(RegistryPath);
+        registry.Register("server01", @"C:\stage\existing");
+        using var holder = CrossProcessLeaseHolder.Start(RegistryPath + ".lock");
+        using var entered = new ManualResetEventSlim();
+
+        Task update = Task.Run(() =>
+        {
+            entered.Set();
+            registry.Register("server01", @"C:\stage\new");
+        });
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        await Task.Delay(200);
+        Assert.False(update.IsCompleted, "Registry update must wait while another process owns the lease.");
+
+        holder.Dispose();
+        await update.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(
+            [@"C:\stage\existing", @"C:\stage\new"],
+            registry.GetProtectedPaths("server01").OrderBy(static p => p, StringComparer.OrdinalIgnoreCase));
     }
 
     [Fact]

@@ -48,6 +48,7 @@
          Process/IO deps). The live stack-CPU + CBS-log sampling stays in the agent's Program.cs; the
          DECISIONS (IsStalled / IsWorking / LogAdvanced / CpuAdvancedMeaningfully) are tested here. -->
     <Compile Include="..\Vivre.UpdateAgent\CleanupLiveness.cs" Link="Updates\CleanupLiveness.cs" />
+    <Compile Include="..\Vivre.UpdateAgent\ServicingChildWatch.cs" Link="Updates\ServicingChildWatch.cs" />
   </ItemGroup>
 
 </Project>

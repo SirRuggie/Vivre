@@ -951,8 +951,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime, Vivre.Core.Operations.HostOperationCoordinator? operations = null)
     {
+        Operations = operations ?? new Vivre.Core.Operations.HostOperationCoordinator();
         _pinger = pinger;
         _hostProbe = hostProbe;
         _configMgr = configMgr;
@@ -1382,6 +1383,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>The shared script library — backs the cascading "Run script" menu and the Run Script window.</summary>
     public IScriptLibrary ScriptLibrary => _scripts;
+    public Vivre.Core.Operations.HostOperationCoordinator Operations { get; }
 
     /// <summary>The shared routing PowerShell host — also handed to the Run Script window so script runs go
     /// through the same Kerberos→SMB transport cache (fast-fail + WinRM-healthy recording) as every other op.</summary>
@@ -1739,6 +1741,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (existing is not null)
         {
             CustomColumns.Remove(existing);
+            foreach (Computer computer in Computers) computer.CustomValues.Remove(existing.Name);
         }
 
         CustomColumns.Add(spec);
@@ -1752,13 +1755,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (existing is not null)
         {
             CustomColumns.Remove(existing);
+            foreach (Computer computer in Computers) computer.CustomValues.Remove(existing.Name);
             SaveColumnLayout();
 
             // Cancel any running custom-column sweep whose EVERY captured spec is now gone (partial
-            // removal keeps the sweep running for its remaining columns). Known limitation (accepted
-            // at red-team): remove-then-re-add of the same name while the old sweep unwinds — or an
-            // AddCustomColumn replace — can transiently race a stale value into the cell; it
-            // self-heals on the next refresh.
+            // removal keeps the sweep running for its remaining columns). Result writes also require
+            // the exact captured spec to remain installed, so a late old run cannot refill a removed
+            // or replaced column merely because its name was reused.
             var live = CustomColumns.Select(c => c.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
             foreach ((CancellationTokenSource cts, IReadOnlyList<string> names) in _customColumnSweeps.ToArray())
             {
@@ -1854,8 +1857,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     // Skip cells whose column was removed mid-sweep (the sweep iterates a launch-time
     // snapshot). Safe to read CustomColumns here: this method's continuations resume on the
     // UI thread (no ConfigureAwait(false)), the same thread that mutates the collection.
-    private bool IsLiveCustomColumn(string name) =>
-        CustomColumns.Any(c => string.Equals(c.Name, name, StringComparison.OrdinalIgnoreCase));
+    private bool IsLiveCustomColumn(CustomColumnSpec spec) =>
+        CustomColumns.Any(c => ReferenceEquals(c, spec));
 
     // Per-row: one combined custom-column call, bounded by the scan throttle with a per-host timeout.
     // Uses AcquirePassiveAsync so the reserved pool guarantees prompt access even when the active pool
@@ -1871,7 +1874,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
-                if (!IsLiveCustomColumn(spec.Name)) { continue; }
+                if (!IsLiveCustomColumn(spec)) { continue; }
                 computer.CustomValues[spec.Name] = "Offline";
             }
 
@@ -1880,7 +1883,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
         foreach (CustomColumnSpec spec in specs)
         {
-            if (!IsLiveCustomColumn(spec.Name)) { continue; }
+            if (!IsLiveCustomColumn(spec)) { continue; }
             computer.CustomValues[spec.Name] = "…";
         }
 
@@ -1892,7 +1895,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 await _customColumns.RunAsync(computer.Name, specs, CurrentPsCredential(), perHost.Token);
             foreach (CustomColumnSpec spec in specs)
             {
-                if (!IsLiveCustomColumn(spec.Name)) { continue; }
+                if (!IsLiveCustomColumn(spec)) { continue; }
                 computer.CustomValues[spec.Name] = values.TryGetValue(spec.Name, out string? v) ? v : null;
             }
         }
@@ -1900,7 +1903,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
-                if (!IsLiveCustomColumn(spec.Name)) { continue; }
+                if (!IsLiveCustomColumn(spec)) { continue; }
                 computer.CustomValues[spec.Name] = "timed out";
             }
 
@@ -1910,7 +1913,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
-                if (IsLiveCustomColumn(spec.Name)) { computer.CustomValues[spec.Name] = "cancelled"; }
+                if (IsLiveCustomColumn(spec)) { computer.CustomValues[spec.Name] = "cancelled"; }
             }
 
             throw;
@@ -1919,7 +1922,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
-                if (!IsLiveCustomColumn(spec.Name)) { continue; }
+                if (!IsLiveCustomColumn(spec)) { continue; }
                 computer.CustomValues[spec.Name] = "WinRM n/a";
             }
 
@@ -1931,7 +1934,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             foreach (CustomColumnSpec spec in specs)
             {
-                if (!IsLiveCustomColumn(spec.Name)) { continue; }
+                if (!IsLiveCustomColumn(spec)) { continue; }
                 computer.CustomValues[spec.Name] = "error";
             }
 

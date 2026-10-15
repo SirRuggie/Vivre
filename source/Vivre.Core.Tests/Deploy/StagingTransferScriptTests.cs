@@ -107,17 +107,23 @@ public sealed class StagingTransferScriptTests : IDisposable
         string realParent = Path.Combine(_root, "real");
         string linkedParent = Path.Combine(_root, "linked");
         Directory.CreateDirectory(realParent);
-        try { Directory.CreateSymbolicLink(linkedParent, realParent); }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) { return; }
+        Vivre.Core.Tests.IO.ReparsePointFixture.CreateDirectoryLink(linkedParent, realParent);
         string directory = Path.Combine(linkedParent, $".vivre-transfer-{_id:N}");
 
-        using JsonDocument result = await RunScript(StagingTransferScripts.BuildInitialize(directory, _id.ToString("N"), _owner.ToString("N")));
-
-        Assert.False(result.RootElement.GetProperty("ok").GetBoolean());
-        Assert.False(Directory.Exists(Path.Combine(realParent, $".vivre-transfer-{_id:N}")));
+        try
+        {
+            using JsonDocument result = await RunScript(StagingTransferScripts.BuildInitialize(directory, _id.ToString("N"), _owner.ToString("N")));
+            Assert.False(result.RootElement.GetProperty("ok").GetBoolean());
+            Assert.False(Directory.Exists(Path.Combine(realParent, $".vivre-transfer-{_id:N}")));
+        }
+        finally
+        {
+            // Remove the junction itself before generic cleanup removes its target directory.
+            Directory.Delete(linkedParent);
+        }
     }
 
-    [Theory]
+    [Vivre.Core.Tests.IO.FileSymlinkTheory]
     [InlineData("owner.json", false)]
     [InlineData("transfer.lock", false)]
     [InlineData("payload.zip", true)]
@@ -131,7 +137,7 @@ public sealed class StagingTransferScriptTests : IDisposable
         File.WriteAllText(outside, "outside");
         File.Delete(Path.Combine(directory, name));
         try { File.CreateSymbolicLink(Path.Combine(directory, name), outside); }
-        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) { return; }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException or PlatformNotSupportedException) { throw new InvalidOperationException("Validation prerequisite unavailable: creating symlinks is required to exercise transfer reparse-point protection.", ex); }
 
         using JsonDocument result = publish
             ? await RunScript(StagingTransferScripts.WrapPublication(directory, _id.ToString("N"), _owner.ToString("N"), "[PSCustomObject]@{ ok=$true }") )

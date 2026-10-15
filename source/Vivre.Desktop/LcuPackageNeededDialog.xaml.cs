@@ -33,7 +33,7 @@ public partial class LcuPackageNeededDialog : FluentWindow
 
     /// <summary>Opens the package folder in Explorer, creating it first if it doesn't exist yet so the
     /// operator always lands somewhere they can drop the file.</summary>
-    private void OnOpenFolder(object sender, RoutedEventArgs e)
+    private async void OnOpenFolder(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(_folder))
         {
@@ -42,13 +42,18 @@ public partial class LcuPackageNeededDialog : FluentWindow
 
         try
         {
-            Directory.CreateDirectory(_folder);
+            if (sender is System.Windows.Controls.Control control) control.IsEnabled = false;
+            await Task.Run(() => Directory.CreateDirectory(_folder));
+            if (!IsVisible) return;
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{_folder}\"") { UseShellExecute = true });
         }
         catch (Exception ex)
         {
-            // Best-effort convenience action; surface to the debug sink rather than blocking the prompt.
-            Debug.WriteLine($"Open package folder failed: {ex.Message}");
+            ProblemBar.Message = $"Could not open the package folder: {ex.Message}";
+        }
+        finally
+        {
+            if (sender is System.Windows.Controls.Control control) control.IsEnabled = true;
         }
     }
 

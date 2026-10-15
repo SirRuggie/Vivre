@@ -221,6 +221,15 @@
                            Click="OnSave" />
                 <ui:Button Margin="8,0,0,0"
                            Appearance="Secondary"
+                           Content="Reset built-in"
+                           Click="OnResetScript"
+                           IsEnabled="{Binding CanResetSelectedScript}"
+                           ToolTip="Replace an edited built-in script with the current shipped version" />
+                <TextBlock Margin="8,0,0,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemFillColorCautionBrush}"
+                           Text="{Binding SelectedScriptNotice}" TextWrapping="Wrap" MaxWidth="280" />
+                <ui:Button Margin="8,0,0,0"
+                           Appearance="Secondary"
                            Icon="{ui:SymbolIcon Delete24}"
                            Content="Delete"
                            Click="OnDeleteScript"

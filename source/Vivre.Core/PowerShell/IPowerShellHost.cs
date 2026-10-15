@@ -83,4 +83,21 @@ public interface IPowerShellHost
         bool useSsl = false,
         CancellationToken cancellationToken = default,
         bool background = false);
+
+    /// <summary>Runs an operator script with bounded, presentation-ready capture of every PowerShell stream.</summary>
+    Task<PSScriptCaptureResult> RunRemoteScriptCaptureAsync(
+        string host,
+        string script,
+        PSScriptCaptureLimits limits,
+        PSCredential? credential = null,
+        int port = 5985,
+        bool useSsl = false,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This host does not support bounded script capture.");
+
+    Task<PSScriptCaptureResult> RunLocalScriptCaptureAsync(
+        string script,
+        PSScriptCaptureLimits limits,
+        CancellationToken cancellationToken = default) =>
+        throw new NotSupportedException("This host does not support bounded local script capture.");
 }

@@ -24,5 +24,14 @@ public sealed class CustomValueStore : INotifyPropertyChanged
         }
     }
 
+    public bool Remove(string key)
+    {
+        bool removed = false;
+        foreach (string stored in _values.Keys.Where(k => string.Equals(k, key, StringComparison.OrdinalIgnoreCase)).ToArray())
+            removed |= _values.Remove(stored);
+        if (removed) PropertyChanged?.Invoke(this, IndexerChanged);
+        return removed;
+    }
+
     public event PropertyChangedEventHandler? PropertyChanged;
 }

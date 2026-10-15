@@ -110,4 +110,68 @@ public class CleanupLivenessTests
         // A clock skew shouldn't ever produce a negative elapsed in the line; clamp to the floor.
         Assert.Equal("<1m", CleanupLiveness.FormatElapsed(TimeSpan.FromSeconds(-5)));
     }
+
+    [Fact]
+    public void Servicing_child_stall_is_nonterminal_actionable_guidance()
+    {
+        string message = ServicingChildWatch.CreateStallMessage("DISM package removal", TimeSpan.FromMinutes(45));
+
+        Assert.Contains("may still be working", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("DISM.log", message);
+        Assert.Contains("CBS.log", message);
+        Assert.Contains("before starting conflicting servicing work", message);
+        Assert.DoesNotContain("failed", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("kill", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Servicing_child_stall_reports_at_boundary_and_then_on_bounded_cadence()
+    {
+        TimeSpan window = TimeSpan.FromMinutes(45);
+        TimeSpan repeat = TimeSpan.FromMinutes(5);
+
+        Assert.False(ServicingChildWatch.ShouldReport(window - TimeSpan.FromSeconds(1), window, TimeSpan.MaxValue, repeat));
+        Assert.True(ServicingChildWatch.ShouldReport(window, window, TimeSpan.MaxValue, repeat));
+        Assert.False(ServicingChildWatch.ShouldReport(window + TimeSpan.FromMinutes(1), window, repeat - TimeSpan.FromSeconds(1), repeat));
+        Assert.True(ServicingChildWatch.ShouldReport(window + repeat, window, repeat, repeat));
+    }
+
+    [Fact]
+    public void Servicing_child_watch_discards_queued_status_after_dispose()
+    {
+        Action? queued = null;
+        int reports = 0;
+        var watch = new ServicingChildWatch(
+            "simulated child",
+            (_, __) => Interlocked.Increment(ref reports),
+            sampleCpu: () => new Dictionary<int, TimeSpan> { [7] = TimeSpan.Zero },
+            sampleLog: () => DateTime.MinValue,
+            cadence: TimeSpan.FromMilliseconds(10),
+            stallWindow: TimeSpan.Zero,
+            queueReport: action => queued = action);
+
+        Assert.True(SpinWait.SpinUntil(() => queued is not null, TimeSpan.FromSeconds(2)));
+        watch.Dispose();
+        queued!();
+        Assert.Equal(0, Volatile.Read(ref reports));
+    }
+
+    [Fact]
+    public void Per_process_cpu_activity_survives_process_exit_and_detects_child_work()
+    {
+        var prior = new Dictionary<int, TimeSpan>
+        {
+            [10] = TimeSpan.FromSeconds(100),
+            [20] = TimeSpan.FromSeconds(5)
+        };
+        var afterHighCpuProcessExited = new Dictionary<int, TimeSpan>
+        {
+            [20] = TimeSpan.FromSeconds(6.5)
+        };
+
+        Assert.True(ServicingChildWatch.CpuSetAdvancedMeaningfully(
+            prior, afterHighCpuProcessExited, TimeSpan.FromSeconds(1)));
+        Assert.True(ServicingChildWatch.CpuSetAdvancedMeaningfully(
+            prior, new Dictionary<int, TimeSpan> { [30] = TimeSpan.FromSeconds(2) }, TimeSpan.FromSeconds(1)));
+    }
 }

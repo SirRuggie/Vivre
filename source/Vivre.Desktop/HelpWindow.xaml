@@ -38,15 +38,15 @@
 
             <ui:TextBox Grid.Column="0"
                         Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                        PlaceholderText="Search — e.g. reboot, schedule, uninstall, WinRM…"
+                        AutomationProperties.Name="Search help" PlaceholderText="Search — e.g. reboot, schedule, uninstall, WinRM…"
                         Icon="{ui:SymbolIcon Search24}"
                         ClearButtonEnabled="True" />
 
             <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
-                <ui:Button Appearance="Secondary" ToolTip="Expand all"
+                <ui:Button Appearance="Secondary" ToolTip="Expand all" AutomationProperties.Name="Expand all help topics"
                            Command="{Binding ExpandAllCommand}"
                            Icon="{ui:SymbolIcon ChevronDown24}" />
-                <ui:Button Appearance="Secondary" Margin="6,0,0,0" ToolTip="Collapse all"
+                <ui:Button Appearance="Secondary" Margin="6,0,0,0" ToolTip="Collapse all" AutomationProperties.Name="Collapse all help topics"
                            Command="{Binding CollapseAllCommand}"
                            Icon="{ui:SymbolIcon ChevronUp24}" />
             </StackPanel>

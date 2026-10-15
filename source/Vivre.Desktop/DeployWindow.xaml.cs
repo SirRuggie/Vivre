@@ -23,9 +23,15 @@ public partial class DeployWindow : FluentWindow
     private readonly IReadOnlyList<Computer> _computers;
     // The package library folder is a machine-wide operational setting (shared across operators).
     private readonly SharedSettingsStore _shared = new();
+    private readonly Func<string?, IReadOnlyList<DeployPackage>> _listPackages;
+    private readonly Func<string?>? _readFolder;
+    private int _loadGeneration;
+    private bool _closed;
 
-    public DeployWindow(WorkspaceViewModel vm, IReadOnlyList<Computer> computers)
+    public DeployWindow(WorkspaceViewModel vm, IReadOnlyList<Computer> computers, Func<string?, IReadOnlyList<DeployPackage>>? listPackages = null, Func<string?>? readFolder = null)
     {
+        _listPackages = listPackages ?? PackageLibrary.List;
+        _readFolder = readFolder;
         InitializeComponent();
         _vm = vm;
         _computers = computers;
@@ -37,7 +43,8 @@ public partial class DeployWindow : FluentWindow
         StageButton.Content = $"Stage to {computers.Count}";
         StagePathBox.Text = PackageLibrary.DefaultStageRoot;
 
-        LoadPackages();
+        Loaded += async (_, _) => await LoadPackagesAsync();
+        Closed += (_, _) => { _closed = true; ++_loadGeneration; };
     }
 
     private string? PackagesFolder
@@ -46,7 +53,7 @@ public partial class DeployWindow : FluentWindow
         {
             try
             {
-                return _shared.Load().PackagesFolder;
+                return _readFolder is not null ? _readFolder() : _shared.Load().PackagesFolder;
             }
             catch
             {
@@ -58,21 +65,28 @@ public partial class DeployWindow : FluentWindow
 
     /// <summary>Fills the package dropdown from the configured Packages folder (subfolders + lone
     /// installers). Adds a hint when the folder is unset/empty so the user knows to set it or Browse….</summary>
-    private void LoadPackages()
+    private async Task LoadPackagesAsync()
     {
-        string? folder = PackagesFolder;
-        IReadOnlyList<DeployPackage> packages = PackageLibrary.List(folder);
-        PackageBox.ItemsSource = packages;
-
-        if (packages.Count > 0)
+        int generation = ++_loadGeneration;
+        PackageHint.Text = "Loading package library… You can still Browse to a package.";
+        try
         {
-            PackageBox.SelectedIndex = 0;
-        }
-        else
-        {
-            PackageHint.Text = string.IsNullOrWhiteSpace(folder)
+            var result = await Task.Run(() =>
+            {
+                string? folder = PackagesFolder;
+                return (Folder: folder, Packages: _listPackages(folder));
+            });
+            if (_closed || generation != _loadGeneration) return;
+            PackageBox.ItemsSource = result.Packages;
+            if (result.Packages.Count > 0) PackageBox.SelectedIndex = 0;
+            else PackageHint.Text = string.IsNullOrWhiteSpace(result.Folder)
                 ? "No package library folder set. Set one below, or use Browse… to pick a package anywhere."
-                : "No packages found in your library folder. Use Browse… to pick one anywhere, or set a different library folder.";
+                : "No packages found, or the library folder is unavailable. Browse to a package or choose a different library folder.";
+        }
+        catch (Exception ex)
+        {
+            if (!_closed && generation == _loadGeneration)
+                PackageHint.Text = $"Couldn't load the package library: {ex.Message}. Browse to a package or try another folder.";
         }
     }
 
@@ -104,14 +118,14 @@ public partial class DeployWindow : FluentWindow
             CheckFileExists = true,
         };
         string? folder = PackagesFolder;
-        if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+        if (!string.IsNullOrWhiteSpace(folder))
         {
             dialog.InitialDirectory = folder;
         }
 
         if (dialog.ShowDialog(this) == true)
         {
-            SelectBrowsedPackage(DeployPackage.FromPath(dialog.FileName));
+            SelectBrowsedPackage(new DeployPackage { Name = Path.GetFileName(dialog.FileName), Path = dialog.FileName, IsFolder = false });
         }
     }
 
@@ -122,24 +136,24 @@ public partial class DeployWindow : FluentWindow
             Title = "Pick a package folder",
         };
         string? folder = PackagesFolder;
-        if (!string.IsNullOrWhiteSpace(folder) && Directory.Exists(folder))
+        if (!string.IsNullOrWhiteSpace(folder))
         {
             dialog.InitialDirectory = folder;
         }
 
         if (dialog.ShowDialog(this) == true)
         {
-            SelectBrowsedPackage(DeployPackage.FromPath(dialog.FolderName));
+            SelectBrowsedPackage(new DeployPackage { Name = new DirectoryInfo(dialog.FolderName).Name, Path = dialog.FolderName, IsFolder = true });
         }
     }
 
     /// <summary>Sets (and persists) the package library folder, then reloads the dropdown from it. Lets
     /// the user point Vivre at their package collection once and pick from it on every later stage.</summary>
-    private void OnSetLibraryFolder(object sender, RoutedEventArgs e)
+    private async void OnSetLibraryFolder(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFolderDialog { Title = "Pick your package library folder" };
         string? current = PackagesFolder;
-        if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current))
+        if (!string.IsNullOrWhiteSpace(current))
         {
             dialog.InitialDirectory = current;
         }
@@ -153,7 +167,8 @@ public partial class DeployWindow : FluentWindow
         {
             // Sibling-safe: Update reads the shared file fresh and changes ONLY PackagesFolder; a degraded read
             // refuses the write (throws) rather than stomping the other operational keys with defaults.
-            _shared.Update(s => s.PackagesFolder = dialog.FolderName);
+            string selectedFolder = dialog.FolderName;
+            await Task.Run(() => _shared.Update(s => s.PackagesFolder = selectedFolder));
         }
         catch (Exception ex)
         {
@@ -161,14 +176,14 @@ public partial class DeployWindow : FluentWindow
             return;
         }
 
-        LoadPackages();
-        OnPackageSelected();
+        await LoadPackagesAsync();
     }
 
     /// <summary>Adds a browsed-to package to the dropdown (if not already there) and selects it, so the
     /// dropdown always reflects the chosen package even when it lives outside the Packages folder.</summary>
     private void SelectBrowsedPackage(DeployPackage package)
     {
+        ++_loadGeneration; // A late library read must not replace the operator's browsed choice.
         var items = (PackageBox.ItemsSource as IEnumerable<DeployPackage>)?.ToList() ?? [];
         DeployPackage? existing = items.FirstOrDefault(
             p => string.Equals(p.Path, package.Path, StringComparison.OrdinalIgnoreCase));

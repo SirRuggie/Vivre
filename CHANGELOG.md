@@ -6,6 +6,19 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- Script editors protect unsaved changes during selection, refresh and close, share incremental library projections and dirty-state handling, and expose explicit built-in reset. The unused duplicate Settings window was removed.
+- Publishing refuses unsafe/unowned output paths, preserves the prior release until a candidate is verified, serializes competing publishes, and checks ZIP contents before promoting the folder, archive and checksum.
+- Build inputs pin the validated PowerShell SDK, record its dependency graph, and select the .NET SDK feature band explicitly.
+- Script runs share existing host-operation guards, retain protection when a mutation's outcome is uncertain, approve captured mutating/custom code and target counts, and bound captured output and UI text with visible truncation.
+- Bundled WMI repair distinguishes inconsistent from consistent results and verifies salvage; update scripts reject partial/failed searches; cache reset reports phase and service-recovery errors.
+- Untouched older bundled scripts receive corrections automatically; edited copies are preserved and exposed for explicit reset.
+- Package-library loading runs off the dispatcher and cannot overwrite a newer manual choice. Removed/replaced custom columns retire row values and reject stale in-flight results.
+- Shared settings and staged-path protection serialize read/merge/write across processes; settings contention reports a save error immediately.
+- Quiet DISM/package-expansion/analysis children surface periodic recovery guidance based on servicing CPU and CBS activity; the observer never kills, retries or declares the operation failed.
+- Scheduled reboot approval names the target count and requires an explicit action; compact command buttons and dialog status expose accessible names/live updates. Help matches the current controls.
+- Local validation records prerequisites honestly, with runnable directory-junction protection checks and explicit skipped file-symlink checks when Windows privilege is unavailable.
+
 ## 1.17.3 — 2026-10-14
 
 ### Fixed

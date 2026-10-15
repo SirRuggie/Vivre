@@ -55,7 +55,7 @@
         </StackPanel>
 
         <!-- Result / error: a read-only box so it's always visible AND selectable (copyable). -->
-        <TextBox Grid.Row="2" x:Name="StatusText"
+        <TextBox Grid.Row="2" x:Name="StatusText" local:AccessibleStatus.Enabled="True"
                  Margin="24,12,24,0"
                  IsReadOnly="True" TextWrapping="Wrap" AcceptsReturn="True"
                  BorderThickness="0" Background="Transparent"

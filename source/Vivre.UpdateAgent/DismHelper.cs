@@ -26,12 +26,12 @@ namespace Vivre.UpdateAgent
         /// Removes the installed package matching <paramref name="kb"/> via DISM.
         /// Returns (succeeded, rebootRequired, failureReason).
         /// </summary>
-        public static (bool ok, bool reboot, string reason) RemoveByKb(string kb)
+        public static (bool ok, bool reboot, string reason) RemoveByKb(string kb, Action<string, Func<bool>> stalled = null)
         {
             string packageName;
             try
             {
-                packageName = ResolvePackage(kb);
+                packageName = ResolvePackage(kb, stalled);
             }
             catch (Exception ex)
             {
@@ -45,7 +45,8 @@ namespace Vivre.UpdateAgent
 
             try
             {
-                int exit = RunDism("/online /Remove-Package /PackageName:" + packageName + " /quiet /norestart");
+                int exit = RunDism("/online /Remove-Package /PackageName:" + packageName + " /quiet /norestart",
+                    "DISM package removal", stalled);
                 switch (exit)
                 {
                     case 0:
@@ -85,9 +86,9 @@ namespace Vivre.UpdateAgent
         }
 
         /// <summary>Finds the Installed package identity whose name carries this KB, or null.</summary>
-        private static string ResolvePackage(string kb)
+        private static string ResolvePackage(string kb, Action<string, Func<bool>> stalled)
         {
-            EnsurePackages();
+            EnsurePackages(stalled);
 
             // Match the KB as a whole token, NOT a bare substring. CBS identities carry the article
             // as "KB<digits>" bounded by non-digits (e.g. Package_for_KB5000802~31bf3856…), and KB
@@ -108,7 +109,7 @@ namespace Vivre.UpdateAgent
         }
 
         /// <summary>Enumerates installed packages once via <c>dism /online /get-packages /format:list</c>.</summary>
-        private static void EnsurePackages()
+        private static void EnsurePackages(Action<string, Func<bool>> stalled)
         {
             if (_packages != null)
             {
@@ -130,8 +131,12 @@ namespace Vivre.UpdateAgent
                 // Drain stderr concurrently so a chatty DISM (servicing-stack warnings, corrupt
                 // packages) can't deadlock by filling the stderr pipe while we block on stdout.
                 Task<string> errTask = proc.StandardError.ReadToEndAsync();
-                string output = proc.StandardOutput.ReadToEnd();
-                proc.WaitForExit();
+                string output;
+                using (var watch = new ServicingChildWatch(proc, "DISM package lookup", stalled ?? ((_, __) => { })))
+                {
+                    output = proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit();
+                }
                 errTask.GetAwaiter().GetResult();
 
                 // /format:list emits blocks of "Package Identity : X" then "State : Installed", etc.
@@ -161,7 +166,7 @@ namespace Vivre.UpdateAgent
             }
         }
 
-        private static int RunDism(string arguments)
+        private static int RunDism(string arguments, string operation, Action<string, Func<bool>> stalled)
         {
             var psi = new ProcessStartInfo("dism.exe", arguments)
             {
@@ -176,8 +181,11 @@ namespace Vivre.UpdateAgent
                 // Drain both pipes concurrently so a chatty DISM can't deadlock on a full buffer
                 // (reading stdout to end first would hang if DISM blocks writing a full stderr pipe).
                 Task<string> errTask = proc.StandardError.ReadToEndAsync();
-                proc.StandardOutput.ReadToEnd();
-                proc.WaitForExit();
+                using (var watch = new ServicingChildWatch(proc, operation, stalled ?? ((_, __) => { })))
+                {
+                    proc.StandardOutput.ReadToEnd();
+                    proc.WaitForExit();
+                }
                 errTask.GetAwaiter().GetResult();
                 return proc.ExitCode;
             }

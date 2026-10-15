@@ -1,5 +1,5 @@
 using System.Collections.ObjectModel;
-using System.Text;
+using System.IO;
 using Vivre.Core.Credentials;
 using Vivre.Core.Logging;
 using Vivre.Core.Models;
@@ -15,24 +15,28 @@ namespace Vivre.Desktop.ViewModels;
 /// saved script or paste one and run it against the machines selected in the grid,
 /// through the verified <see cref="IPowerShellHost"/>. Output is appended per machine.
 /// </summary>
-public partial class ScriptRunnerViewModel : ObservableObject
+public partial class ScriptRunnerViewModel : ObservableObject, IDisposable
 {
+    private readonly Vivre.Core.Operations.HostOperationCoordinator _operations;
     private readonly IPowerShellHost _powerShell;
     private readonly IScriptLibrary _library;
     private readonly CredentialStore _credentials;
     private readonly IActivityLog _activity;
+    public event EventHandler? LibraryRefreshed;
 
-    public ScriptRunnerViewModel(IReadOnlyList<Computer> targets, IPowerShellHost powerShell, IScriptLibrary library, CredentialStore credentials, IActivityLog activity)
+    public ScriptRunnerViewModel(IReadOnlyList<Computer> targets, IPowerShellHost powerShell, IScriptLibrary library, CredentialStore credentials, IActivityLog activity, Vivre.Core.Operations.HostOperationCoordinator? operations = null)
     {
-        Targets = targets;
+        _operations = operations ?? new Vivre.Core.Operations.HostOperationCoordinator();
+        Targets = targets.ToArray();
         _powerShell = powerShell;
         _library = library;
         _credentials = credentials;
         _activity = activity;
         TargetSummary = targets.Count == 0
             ? "No machines selected"
-            : $"Run against {targets.Count} machine(s): {string.Join(", ", targets.Select(t => t.Name))}";
+            : $"Run against {targets.Count} selected machine(s)";
         ReloadScripts();
+        _library.LibraryChanged += OnLibraryChanged;
     }
 
     /// <summary>Machines the script will run against (the grid's selection, or all).</summary>
@@ -49,10 +53,26 @@ public partial class ScriptRunnerViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanDeleteSelectedScript))]
+    [NotifyPropertyChangedFor(nameof(CanResetSelectedScript))]
+    [NotifyPropertyChangedFor(nameof(SelectedScriptNotice))]
     public partial ScriptFile? SelectedScript { get; set; }
 
     /// <summary>True when a user-created script is selected (built-in defaults can't be deleted).</summary>
     public bool CanDeleteSelectedScript => SelectedScript is { } script && !_library.IsDefault(script);
+
+    public bool CanResetSelectedScript => SelectedScript is { } script && _library.GetPolicy(script).CanReset;
+
+    public string SelectedScriptNotice
+    {
+        get
+        {
+            if (SelectedScript is not { } script) return string.Empty;
+            ScriptPolicy policy = _library.GetPolicy(script);
+            return policy.CanReset && !policy.IsVerifiedBuiltIn
+                ? "Your saved copy differs from the current built-in. Reset it to use the shipped version."
+                : string.Empty;
+        }
+    }
 
     /// <summary>Name used when saving the current editor content back to the library.</summary>
     [ObservableProperty]
@@ -75,6 +95,10 @@ public partial class ScriptRunnerViewModel : ObservableObject
     /// click can't start an overlapping pass over the same (production) targets.</summary>
     public bool CanRun => !IsBusy;
 
+    public ScriptOperationRisk GetExecutionRisk(string script) => SelectedScript is { } selected
+        ? _library.GetPolicy(selected, script).OperationRisk
+        : ScriptOperationRisk.ExclusiveMutation;
+
     /// <summary>Reads a saved script's contents (the window loads it into the editor).</summary>
     public string LoadScript(ScriptFile script) => _library.Load(script);
 
@@ -83,11 +107,16 @@ public partial class ScriptRunnerViewModel : ObservableObject
     {
         if (SelectedScript is { } script && !_library.IsDefault(script))
         {
-            _library.Delete(script);
-            SelectedScript = null;
-            ScriptName = string.Empty;
-            ReloadScripts();
+            DeleteScript(script);
         }
+    }
+
+    public void DeleteScript(ScriptFile script)
+    {
+        _library.Delete(script);
+        if (SelectedScript?.FullPath == script.FullPath) SelectedScript = null;
+        ScriptName = string.Empty;
+        ReloadScripts();
     }
 
     /// <summary>Saves the editor content into <see cref="SaveCategory"/> (creating the folder if new).</summary>
@@ -97,6 +126,12 @@ public partial class ScriptRunnerViewModel : ObservableObject
         ScriptFile saved = _library.Save(name, content, category);
         ReloadScripts();
         SelectedScript = Scripts.FirstOrDefault(s => s.FullPath == saved.FullPath);
+    }
+
+    public void ResetSelectedScript()
+    {
+        if (SelectedScript is not { } script) return;
+        _library.ResetToDefault(script);
     }
 
     /// <summary>
@@ -118,27 +153,42 @@ public partial class ScriptRunnerViewModel : ObservableObject
             return;
         }
 
+        ScriptOperationRisk risk = GetExecutionRisk(script);
         IsBusy = true;
-        var log = new StringBuilder();
+        var log = new BoundedTextBuffer(PSScriptCapturePresentation.AggregateMaximumCharacters);
         try
         {
             foreach (Computer target in Targets)
             {
                 token.ThrowIfCancellationRequested();
 
+                using var claim = risk == ScriptOperationRisk.ReadOnly
+                    ? _operations.TryBeginOperation(target.Name, "Read-only script")
+                    : _operations.TryBeginCleanup(target.Name, "Run script");
+                if (!claim.Acquired)
+                {
+                    target.CommandResult = claim.RefusalMessage ?? "Blocked by another host operation.";
+                    _activity.Warn(target.Name, target.CommandResult);
+                    log.Append($"===== {target.Name} =====\n{target.CommandResult}");
+                    Output = PresentAggregate(log);
+                    continue;
+                }
                 string machineOutput;
                 try
                 {
-                    PSExecutionResult result = IsLocal(target.Name)
-                        ? await _powerShell.RunLocalAsync(script, token)
-                        : await _powerShell.RunRemoteAsync(target.Name, script, _credentials.Current?.ToPowerShellCredential(), cancellationToken: token);
+                    PSScriptCaptureResult result = IsLocal(target.Name)
+                        ? await _powerShell.RunLocalScriptCaptureAsync(script, new PSScriptCaptureLimits(), token)
+                        : await _powerShell.RunRemoteScriptCaptureAsync(target.Name, script, new PSScriptCaptureLimits(), _credentials.Current?.ToPowerShellCredential(), cancellationToken: token);
 
-                    machineOutput = FormatResult(result);
+                    if (risk != ScriptOperationRisk.ReadOnly && result.HadErrors) claim.MarkRemoteStateUncertain();
+                    machineOutput = PSScriptCapturePresentation.Format(result);
+                    if (machineOutput.Length == 0 && !result.HadErrors) machineOutput = "(no output)";
                     _activity.Info(target.Name, result.HadErrors ? "Script ran with errors" : "Script ran");
                 }
                 catch (OperationCanceledException)
                 {
-                    target.CommandResult = "(cancelled)";
+                    if (risk != ScriptOperationRisk.ReadOnly) claim.MarkRemoteStateUncertain();
+                    target.CommandResult = "(cancelled — verify host work and recovery before retrying)";
                     throw;
                 }
                 catch (RemoteShellInitException ex)
@@ -150,17 +200,27 @@ public partial class ScriptRunnerViewModel : ObservableObject
                 }
                 catch (Exception ex) when (ex.IsWinRmUnavailable())
                 {
+                    bool mayStillBeRunning = ex is RemoteSessionLostException { AtConnect: false };
+                    if (risk != ScriptOperationRisk.ReadOnly && mayStillBeRunning)
+                    {
+                        claim.MarkRemoteStateUncertain();
+                    }
                     // WinRM is broken on this box (Kerberos/SPN, or the service is down). Scripts run over
                     // WinRM and there is no remote alternative here, so name the honest one (RDP) instead of
                     // dumping the raw SSPI text. No new execution channel is introduced. On a Kerberos
                     // rejection the software check's DCOM fallback still works, so point at it too.
-                    machineOutput = ex is KerberosWrongPrincipalException
+                    machineOutput = mayStillBeRunning
+                        ? "Connection was lost while the script may still be running. Verify host work and recovery before starting conflicting work."
+                        : ex is KerberosWrongPrincipalException
                         ? "WinRM is broken on this box (Kerberos/SPN), so scripts can't run here remotely — RDP into the box to run them. (For installed software, use Software ▸ Check software…; for a reboot, use the Reboot Wave.)"
                         : "WinRM is broken on this box (Kerberos/SPN), so scripts can't run here remotely — RDP into the box to run them. (For a reboot, use the Reboot Wave.)";
-                    _activity.Warn(target.Name, "Script skipped — WinRM unavailable (RDP to run scripts on this box).");
+                    _activity.Warn(target.Name, mayStillBeRunning
+                        ? "Script connection lost mid-run — host state is uncertain; verify before conflicting work."
+                        : "Script skipped — WinRM unavailable (RDP to run scripts on this box).");
                 }
                 catch (Exception ex)
                 {
+                    if (risk != ScriptOperationRisk.ReadOnly) claim.MarkRemoteStateUncertain();
                     machineOutput = $"FAILED: {ex.Message}";
                     _activity.Error(target.Name, $"Script failed — {ex.Message}");
                 }
@@ -169,16 +229,16 @@ public partial class ScriptRunnerViewModel : ObservableObject
                 target.CommandResult = machineOutput;
 
                 // …and in this window's combined log.
-                log.AppendLine($"===== {target.Name} =====");
-                log.AppendLine(machineOutput);
-                log.AppendLine();
-                Output = log.ToString();
+                log.Append($"===== {target.Name} =====");
+                log.Append(machineOutput);
+                log.Append(string.Empty);
+                Output = PresentAggregate(log);
             }
         }
         catch (OperationCanceledException)
         {
-            log.AppendLine("(cancelled)");
-            Output = log.ToString();
+            log.Append("(cancelled)");
+            Output = PresentAggregate(log);
         }
         finally
         {
@@ -186,50 +246,42 @@ public partial class ScriptRunnerViewModel : ObservableObject
         }
     }
 
-    private static string FormatResult(PSExecutionResult result)
-    {
-        var sb = new StringBuilder();
-        foreach (var o in result.Output)
-        {
-            sb.AppendLine(o?.ToString());
-        }
-
-        foreach (string w in result.Warnings)
-        {
-            sb.AppendLine("WARN : " + w);
-        }
-
-        foreach (string err in result.Errors)
-        {
-            sb.AppendLine("ERROR: " + err);
-        }
-
-        if (result.Output.Count == 0 && !result.HadErrors)
-        {
-            sb.AppendLine("(no output)");
-        }
-
-        return sb.ToString().TrimEnd();
-    }
-
     private void ReloadScripts()
     {
-        Scripts.Clear();
-        foreach (ScriptFile script in _library.List())
-        {
-            Scripts.Add(script);
-        }
+        string? selectedPath = SelectedScript?.FullPath;
+        ScriptLibrarySnapshot snapshot = _library.Snapshot();
+        ScriptProjectionSync.Apply(Scripts, snapshot.Scripts);
 
-        Categories.Clear();
-        foreach (string category in Scripts
-                     .Select(s => s.Category)
-                     .Where(c => !string.IsNullOrEmpty(c))
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
-        {
-            Categories.Add(category);
-        }
+        // An editable ComboBox writes back when its items change. Preserve typed folder text.
+        string saveCategory = SaveCategory;
+        ScriptProjectionSync.ApplyCategories(Categories, snapshot.Categories);
+        SaveCategory = saveCategory;
+        SelectedScript = selectedPath is null ? null : Scripts.FirstOrDefault(s => PathsEqual(s.FullPath, selectedPath));
     }
 
+    private void OnLibraryChanged(object? sender, EventArgs e)
+    {
+        ReloadScripts();
+        OnPropertyChanged(nameof(CanResetSelectedScript));
+        OnPropertyChanged(nameof(SelectedScriptNotice));
+        LibraryRefreshed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Dispose() => _library.LibraryChanged -= OnLibraryChanged;
+
+    private static bool PathsEqual(string a, string b) =>
+        string.Equals(Path.GetFullPath(a), Path.GetFullPath(b), StringComparison.OrdinalIgnoreCase);
+
     private static bool IsLocal(string host) => HostName.IsLocal(host);
+
+    private static string PresentAggregate(BoundedTextBuffer buffer)
+    {
+        string text = buffer.ToString();
+        if (!buffer.WasTruncated) return text;
+        const string marker = "[aggregate output truncated]";
+        int keep = Math.Max(0, PSScriptCapturePresentation.AggregateMaximumCharacters
+            - marker.Length - Environment.NewLine.Length);
+        if (text.Length > keep) text = text[..keep];
+        return text + Environment.NewLine + marker;
+    }
 }

@@ -93,20 +93,16 @@ public sealed class StagingArchiveTests : IDisposable
         Directory.CreateDirectory(source);
         Directory.CreateDirectory(outside);
         string link = Path.Combine(source, "link");
+        Vivre.Core.Tests.IO.ReparsePointFixture.CreateDirectoryLink(link, outside);
+
         try
         {
-            Directory.CreateSymbolicLink(link, outside);
+            IOException error = await Assert.ThrowsAsync<IOException>(
+                () => StagingArchive.CreateAsync(source, isFolder: true, CancellationToken.None, archiveDirectory));
+            Assert.Contains("reparse point", error.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Empty(Directory.GetFiles(archiveDirectory));
         }
-        catch (Exception linkError) when (linkError is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
-        {
-            return;
-        }
-
-        IOException error = await Assert.ThrowsAsync<IOException>(
-            () => StagingArchive.CreateAsync(source, isFolder: true, CancellationToken.None, archiveDirectory));
-
-        Assert.Contains("reparse point", error.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Empty(Directory.GetFiles(archiveDirectory));
+        finally { Directory.Delete(link); }
     }
 
     [Fact]

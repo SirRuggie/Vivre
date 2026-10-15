@@ -302,7 +302,8 @@ namespace Vivre.UpdateAgent
 
             progress.Write("Staging", "Extracting update…", 0, 1, 0, 0, false);
 
-            int exit = RunTool("expand.exe", "\"" + msuPath + "\" -F:*.cab \"" + dir + "\"");
+            int exit = RunTool("expand.exe", "\"" + msuPath + "\" -F:*.cab \"" + dir + "\"",
+                progress, "Staging", "Update extraction");
             if (exit != 0)
             {
                 progress.Write("Error",
@@ -330,7 +331,7 @@ namespace Vivre.UpdateAgent
 
         /// <summary>Runs a console tool silently, draining both pipes so neither can fill and deadlock, and
         /// returns its exit code. (RunDism stays separate — it live-parses DISM's percent redraws.)</summary>
-        private static int RunTool(string fileName, string arguments)
+        private static int RunTool(string fileName, string arguments, ProgressWriter progress, string phase, string operation)
         {
             var psi = new System.Diagnostics.ProcessStartInfo
             {
@@ -349,7 +350,11 @@ namespace Vivre.UpdateAgent
                 p.Start();
                 p.BeginOutputReadLine();
                 p.BeginErrorReadLine();
-                p.WaitForExit();
+                using (var watch = new ServicingChildWatch(p, operation,
+                    (message, closed) => progress.WriteAdvisory(closed, phase, message, null, 1, 0, 0, false)))
+                {
+                    p.WaitForExit();
+                }
                 return p.ExitCode;
             }
         }
@@ -383,6 +388,9 @@ namespace Vivre.UpdateAgent
                 var sb = new StringBuilder();
                 var chunk = new char[256];
                 int lastPct = -1;
+                using (var watch = new ServicingChildWatch(p, prefix,
+                    (message, closed) => progress.WriteAdvisory(closed, phase, message, lastPct >= 0 ? (int?)lastPct : null, 1, 0, 0, false)))
+                {
                 int n;
                 while ((n = p.StandardOutput.Read(chunk, 0, chunk.Length)) > 0)
                 {
@@ -411,6 +419,7 @@ namespace Vivre.UpdateAgent
                 }
 
                 p.WaitForExit();
+                }
                 return p.ExitCode;
             }
         }
@@ -429,10 +438,6 @@ namespace Vivre.UpdateAgent
         // A summed-stack CPU delta over the high-water mark must exceed this to count as activity and reset
         // the stall clock — filters idle-thread noise from a genuinely advancing servicing stack.
         private static readonly TimeSpan CpuAdvanceThreshold = TimeSpan.FromSeconds(1);
-
-        // The servicing-stack processes whose summed CPU is the "stack is working" signal. dism.exe is a
-        // thin client; the heavy reclamation runs in TiWorker / TrustedInstaller, so dism alone can idle.
-        private static readonly string[] ServicingStackProcessNames = { "dism", "TiWorker", "TrustedInstaller" };
 
         /// <summary>
         /// Reclaims component-store space: <c>DISM /Online /Cleanup-Image /StartComponentCleanup</c>,
@@ -467,7 +472,7 @@ namespace Vivre.UpdateAgent
                 // whether the read-only AnalyzeComponentStore parsed, reclaimable count) and let the
                 // controller's ComponentCleanupClassifier build the operator-facing wording — the agent
                 // builds none. AnalyzeComponentStore is read-only; nothing here reboots.
-                bool analyzeOk = TryGetReclaimablePackages(out int reclaimable);
+                bool analyzeOk = TryGetReclaimablePackages(progress, out int reclaimable);
                 progress.WriteCleanupFacts("Done",
                     "StartComponentCleanup exit 0x" + exit.ToString("X8")
                         + " (access denied); analyzeOk=" + analyzeOk
@@ -490,12 +495,13 @@ namespace Vivre.UpdateAgent
         /// label on localized hosts. Doubles as a store-health check: a store that can't be analyzed may be
         /// genuinely broken.
         /// </summary>
-        private static bool TryGetReclaimablePackages(out int reclaimable)
+        private static bool TryGetReclaimablePackages(ProgressWriter progress, out int reclaimable)
         {
             reclaimable = -1;
             try
             {
-                string stdout = RunDismCaptureStdout("/online /cleanup-image /analyzecomponentstore /english");
+                string stdout = RunDismCaptureStdout(
+                    "/online /cleanup-image /analyzecomponentstore /english", progress);
                 if (string.IsNullOrEmpty(stdout))
                 {
                     return false;
@@ -522,7 +528,7 @@ namespace Vivre.UpdateAgent
 
         /// <summary>Runs <c>dism.exe</c> with <paramref name="arguments"/>, capturing full stdout (stderr is
         /// drained so the pipe can't deadlock). Used by the read-only AnalyzeComponentStore probe.</summary>
-        private static string RunDismCaptureStdout(string arguments)
+        private static string RunDismCaptureStdout(string arguments, ProgressWriter progress)
         {
             var psi = new System.Diagnostics.ProcessStartInfo
             {
@@ -542,7 +548,11 @@ namespace Vivre.UpdateAgent
                 p.Start();
                 p.BeginOutputReadLine();
                 p.BeginErrorReadLine();
-                p.WaitForExit();
+                using (var watch = new ServicingChildWatch(p, "Component-store analysis",
+                    (message, closed) => progress.WriteAdvisory(closed, "Cleaning", message, null, 1, 0, 0, false)))
+                {
+                    p.WaitForExit();
+                }
                 return sb.ToString();
             }
         }
@@ -633,7 +643,7 @@ namespace Vivre.UpdateAgent
                 {
                     DateTime lastActivityUtc = startedUtc;
                     TimeSpan cpuHighWater = TimeSpan.Zero;
-                    DateTime logMaxWriteUtc = SampleCbsLogMaxWriteUtc(); // baseline before any work
+                    DateTime logMaxWriteUtc = ServicingChildWatch.SampleCbsLogMaxWriteUtc(); // baseline before any work
 
                     // Wait a full cadence between samples; Wait returns true if signalled to stop.
                     while (!stop.Wait(HeartbeatCadence))
@@ -644,7 +654,7 @@ namespace Vivre.UpdateAgent
                         // dism / TiWorker / TrustedInstaller processes; a MEANINGFUL advance over the
                         // high-water mark (filters idle-thread noise) is CPU activity. dism alone can idle
                         // while TiWorker burns the CPU, so sampling the whole stack is what makes this safe.
-                        TimeSpan stackCpu = SampleServicingStackCpu();
+                        TimeSpan stackCpu = ServicingChildWatch.SampleServicingStackCpu(p);
                         bool stackCpuAdvanced =
                             CleanupLiveness.CpuAdvancedMeaningfully(cpuHighWater, stackCpu, CpuAdvanceThreshold);
                         if (stackCpuAdvanced)
@@ -655,7 +665,7 @@ namespace Vivre.UpdateAgent
                         // Signal 2 — CBS log growth. The servicing stack appends to CBS.log (rolling over to
                         // CbsPersist_*.log when large) while it works, so a newer max last-write means the
                         // stack did work even if its CPU read was momentarily flat.
-                        DateTime newLogMaxWriteUtc = SampleCbsLogMaxWriteUtc();
+                        DateTime newLogMaxWriteUtc = ServicingChildWatch.SampleCbsLogMaxWriteUtc();
                         bool logAdvanced = CleanupLiveness.LogAdvanced(logMaxWriteUtc, newLogMaxWriteUtc);
                         if (newLogMaxWriteUtc > logMaxWriteUtc)
                         {
@@ -708,107 +718,6 @@ namespace Vivre.UpdateAgent
                 // Always return dism's real exit code — nothing is killed and there is no sentinel, so the
                 // caller's 0 → Done / 3010 → PendingReboot / else → Error mapping is the whole truth.
                 return p.ExitCode;
-            }
-        }
-
-        /// <summary>
-        /// Sums <see cref="System.Diagnostics.Process.TotalProcessorTime"/> across the running servicing
-        /// stack (<c>dism</c> / <c>TiWorker</c> / <c>TrustedInstaller</c>) — the "stack is working" signal,
-        /// because dism.exe is a thin client and the heavy reclamation runs in TiWorker / TrustedInstaller.
-        /// Any process can exit between enumeration and the CPU read, so each read is guarded individually
-        /// (skip the gone process, never throw out of a tick), and every enumerated handle is disposed.
-        /// </summary>
-        private static TimeSpan SampleServicingStackCpu()
-        {
-            TimeSpan total = TimeSpan.Zero;
-            foreach (string name in ServicingStackProcessNames)
-            {
-                System.Diagnostics.Process[] procs;
-                try
-                {
-                    procs = System.Diagnostics.Process.GetProcessesByName(name);
-                }
-                catch
-                {
-                    // Enumeration itself can fail transiently (e.g. a perf-counter hiccup); treat the whole
-                    // name as contributing nothing this tick rather than failing the sample.
-                    continue;
-                }
-
-                foreach (var proc in procs)
-                {
-                    try
-                    {
-                        total += proc.TotalProcessorTime;
-                    }
-                    catch
-                    {
-                        // Process exited between enumeration and the read, or access was denied; skip it.
-                    }
-                    finally
-                    {
-                        proc.Dispose();
-                    }
-                }
-            }
-
-            return total;
-        }
-
-        /// <summary>
-        /// The newest write time across the CBS log files (<c>%WINDIR%\Logs\CBS\CBS.log</c> and the rolled
-        /// <c>CbsPersist_*.log</c>) — robust to rollover. A later max last-write since the prior tick means
-        /// the servicing stack appended to the log, i.e. it did work. Returns <see cref="DateTime.MinValue"/>
-        /// when the folder/files can't be read (treated as "no info this tick" by the caller — never throws).
-        /// </summary>
-        private static DateTime SampleCbsLogMaxWriteUtc()
-        {
-            try
-            {
-                string windir = Environment.GetEnvironmentVariable("WINDIR");
-                if (string.IsNullOrEmpty(windir))
-                {
-                    // Fall back to the parent of the system directory (…\System32 → …\Windows).
-                    windir = System.IO.Directory.GetParent(Environment.SystemDirectory)?.FullName;
-                }
-
-                if (string.IsNullOrEmpty(windir))
-                {
-                    return DateTime.MinValue;
-                }
-
-                string cbsDir = System.IO.Path.Combine(windir, "Logs", "CBS");
-                if (!System.IO.Directory.Exists(cbsDir))
-                {
-                    return DateTime.MinValue;
-                }
-
-                DateTime max = DateTime.MinValue;
-                foreach (string pattern in new[] { "CBS.log", "CbsPersist_*.log" })
-                {
-                    foreach (string file in System.IO.Directory.EnumerateFiles(cbsDir, pattern))
-                    {
-                        try
-                        {
-                            DateTime w = System.IO.File.GetLastWriteTimeUtc(file);
-                            if (w > max)
-                            {
-                                max = w;
-                            }
-                        }
-                        catch
-                        {
-                            // The file may be locked/deleted mid-rollover; skip it, no info from this file.
-                        }
-                    }
-                }
-
-                return max;
-            }
-            catch
-            {
-                // IO / Unauthorized enumerating the folder — no info this tick, never throw out of a sample.
-                return DateTime.MinValue;
             }
         }
 
@@ -996,7 +905,9 @@ namespace Vivre.UpdateAgent
                 if (!ok)
                 {
                     progress.Write("Uninstalling", prefix + " — removing via DISM…", basePct, total, removed, failed, rebootPending);
-                    (ok, needReboot, reason) = DismHelper.RemoveByKb(kb);
+                    (ok, needReboot, reason) = DismHelper.RemoveByKb(kb,
+                        (message, closed) => progress.WriteAdvisory(closed, "Uninstalling", prefix + " — " + message,
+                            basePct, total, removed, failed, rebootPending));
                 }
 
                 if (ok)

@@ -52,6 +52,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'tools\publish-safety.ps1')
 
 $project = Join-Path $PSScriptRoot 'source\Vivre.Desktop\Vivre.Desktop.csproj'
 if (-not (Test-Path $project)) { throw "Project not found: $project" }
@@ -66,6 +67,22 @@ $selfContained = -not $FrameworkDependent
 $selfContainedArg = if ($selfContained) { 'true' } else { 'false' }
 $suffix = if ($FrameworkDependent) { "$Runtime-fxdep" } else { $Runtime }
 if (-not $OutputDir) { $OutputDir = Join-Path $PSScriptRoot "publish\Vivre-$suffix" }
+$OutputDir = Assert-VivrePublishTarget -Path $OutputDir -RepositoryRoot $PSScriptRoot
+$outputParent = [IO.Directory]::GetParent($OutputDir).FullName
+if (-not (Test-Path -LiteralPath $outputParent)) { New-Item -ItemType Directory -Path $outputParent -Force | Out-Null }
+$candidateId = [Guid]::NewGuid().ToString('N')
+$candidateDir = Join-Path $outputParent ('.' + [IO.Path]::GetFileName($OutputDir) + '.candidate-' + $candidateId)
+$zipPath = "$OutputDir.zip"
+$checksumPath = "$zipPath.sha256"
+$candidateZip = Join-Path $outputParent ('.' + [IO.Path]::GetFileNameWithoutExtension($zipPath) + '.candidate-' + $candidateId + '.zip')
+$candidateChecksum = Join-Path $outputParent ('.' + [IO.Path]::GetFileName($checksumPath) + '.candidate-' + $candidateId)
+if ($Zip -and ((Test-Path -LiteralPath $zipPath) -or (Test-Path -LiteralPath $checksumPath))) {
+    $ownerMarker = Join-Path $OutputDir '.vivre-publish-owner.json'
+    if (-not (Test-Path -LiteralPath $ownerMarker -PathType Leaf)) {
+        throw "Refusing to replace adjacent archive artifacts without an owned publish folder: $zipPath"
+    }
+}
+$publishLease = Enter-VivrePublishLease -TargetPath $OutputDir
 
 Write-Host "Publishing Vivre" -ForegroundColor Cyan
 Write-Host "  configuration  : $Configuration"
@@ -74,18 +91,16 @@ Write-Host "  self-contained : $selfContained"
 Write-Host "  output         : $OutputDir"
 Write-Host ""
 
-# Clean previous output so stale files never linger in the deployable folder.
-if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
+try {
+dotnet publish $project -p:RestoreLockedMode=true -c $Configuration -r $Runtime --self-contained $selfContainedArg -o $candidateDir
+if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit code $LASTEXITCODE); the last-good publish was preserved." }
 
-dotnet publish $project -c $Configuration -r $Runtime --self-contained $selfContainedArg -o $OutputDir
-if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed (exit code $LASTEXITCODE)." }
-
-$exe = Join-Path $OutputDir 'Vivre.exe'
+$exe = Join-Path $candidateDir 'Vivre.exe'
 if (-not (Test-Path $exe)) { throw "Publish finished but $exe is missing." }
 
 # A deploy package must contain the agent and carry the configured publisher signature.
 # Run in the publishing host so signing does not depend on MSBuild's child-process store view.
-$agent = Join-Path $OutputDir 'Vivre.UpdateAgent.exe'
+$agent = Join-Path $candidateDir 'Vivre.UpdateAgent.exe'
 if (-not (Test-Path -LiteralPath $agent)) { throw "Published update agent is missing: $agent" }
 $signature = Set-AuthenticodeSignature -LiteralPath $agent -Certificate $certificate -HashAlgorithm SHA256
 if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $thumbprint) {
@@ -95,24 +110,59 @@ Write-Host "Verified agent signature: $thumbprint" -ForegroundColor Green
 foreach ($required in @('Modules', 'Scripts', 'coreclr.dll', 'Vivre.runtimeconfig.json')) {
     # Framework-dependent packages intentionally omit the runtime.
     if ($FrameworkDependent -and $required -eq 'coreclr.dll') { continue }
-    if (-not (Test-Path -LiteralPath (Join-Path $OutputDir $required))) { throw "Published component missing: $required" }
+    if (-not (Test-Path -LiteralPath (Join-Path $candidateDir $required))) { throw "Published component missing: $required" }
 }
 
-$files = Get-ChildItem -LiteralPath $OutputDir -Recurse -File
-$sizeMb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 1)
-Write-Host ""
-Write-Host "Published $($files.Count) files, $sizeMb MB" -ForegroundColor Green
-Write-Host "  run: $exe"
+$version = (Get-Item -LiteralPath $exe).VersionInfo.ProductVersion
+Write-VivrePublishOwner -Directory $candidateDir -TargetPath $OutputDir
+$manifest = [ordered]@{
+    kind = 'VivrePublishManifest'
+    version = $version
+    runtime = $Runtime
+    selfContained = $selfContained
+    createdUtc = [DateTime]::UtcNow.ToString('o')
+} | ConvertTo-Json
+Set-Content -LiteralPath (Join-Path $candidateDir 'publish-manifest.json') -Value $manifest -Encoding UTF8
 
+Assert-VivreArtifactTree -Path $candidateDir
+$files = Get-ChildItem -LiteralPath $candidateDir -Recurse -File
+$sizeMb = [math]::Round((($files | Measure-Object Length -Sum).Sum) / 1MB, 1)
+
+$artifacts = @([PSCustomObject]@{ Live = $OutputDir; Candidate = $candidateDir })
 if ($Zip) {
-    $zipPath = "$OutputDir.zip"
-    if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
-    Compress-Archive -Path (Join-Path $OutputDir '*') -DestinationPath $zipPath
-    $zipMb = [math]::Round((Get-Item $zipPath).Length / 1MB, 1)
+    Compress-Archive -Path (Join-Path $candidateDir '*') -DestinationPath $candidateZip
+    if (-not (Test-Path -LiteralPath $candidateZip) -or (Get-Item -LiteralPath $candidateZip).Length -eq 0) {
+        throw 'Compression did not produce a nonempty archive; the last-good publish was preserved.'
+    }
+    Test-VivrePublishArchive -ArchivePath $candidateZip -SourceDirectory $candidateDir
+    $digest = (Get-FileHash -LiteralPath $candidateZip -Algorithm SHA256).Hash
+    "$digest  $([IO.Path]::GetFileName($zipPath))" | Set-Content -LiteralPath $candidateChecksum -Encoding ASCII
+    $artifacts += [PSCustomObject]@{ Live = $zipPath; Candidate = $candidateZip }
+    $artifacts += [PSCustomObject]@{ Live = $checksumPath; Candidate = $candidateChecksum }
+}
+
+Invoke-VivreArtifactPromotion -Artifacts $artifacts
+$exe = Join-Path $OutputDir 'Vivre.exe'
+Write-Host ""
+Write-Host "Published Vivre $version ($($files.Count) files, $sizeMb MB)" -ForegroundColor Green
+Write-Host "  run: $exe"
+if (-not $Zip -and (Test-Path -LiteralPath $zipPath)) { Write-Warning "Existing ZIP was NOT updated by this folder-only publish: $zipPath" }
+if ($Zip) {
+    $zipMb = [math]::Round((Get-Item -LiteralPath $zipPath).Length / 1MB, 1)
     Write-Host "  zip: $zipPath ($zipMb MB)" -ForegroundColor Green
-    $digest = (Get-FileHash -LiteralPath $zipPath -Algorithm SHA256).Hash
-    "$digest  $([IO.Path]::GetFileName($zipPath))" | Set-Content -LiteralPath "$zipPath.sha256" -Encoding ASCII
     Write-Host "  SHA256: $digest"
+}
+}
+finally {
+    try {
+        foreach ($temporaryPath in @($candidateDir, $candidateZip, $candidateChecksum)) {
+            if (Test-Path -LiteralPath $temporaryPath) {
+                try { Assert-VivreArtifactTree -Path $temporaryPath; Remove-Item -LiteralPath $temporaryPath -Recurse -Force }
+                catch { Write-Warning "Temporary publish files retained at '$temporaryPath': $($_.Exception.Message)" }
+            }
+        }
+    }
+    finally { if ($publishLease) { $publishLease.Dispose() } }
 }
 
 if ($FrameworkDependent) {

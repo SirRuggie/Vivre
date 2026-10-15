@@ -17,6 +17,7 @@ public partial class ScheduleWindow : FluentWindow
     {
         InitializeComponent();
 
+        string?[] targets = targetNames?.ToArray() ?? [];
         bool reboot = string.Equals(action, "reboot", StringComparison.OrdinalIgnoreCase);
         Title = reboot ? "Schedule reboot" : "Schedule install";
         Bar.Title = Title;
@@ -26,9 +27,13 @@ public partial class ScheduleWindow : FluentWindow
             : "Pick when the install should run on the selected machine(s). A one-time task runs as "
               + "SYSTEM at that time; reboot is reported, not forced.";
 
+        ScheduleButton.Content = reboot ? $"Schedule forced reboot ({targets.Length})" : "Schedule install";
+        ScheduleButton.IsDefault = !reboot;
+        if (reboot) Intro.Text = $"Targets: {targets.Length} selected machine(s).\n\n" + Intro.Text;
+
         // DISCLOSURE ONLY, and only on the reboot branch (a scheduled INSTALL never restarts this box —
         // "reboot is reported, not forced"). Every scheduled machine is still scheduled exactly as before.
-        if (reboot && LocalHostRebootWarning.WarningOrNull(targetNames) is { } localWarning)
+        if (reboot && LocalHostRebootWarning.WarningOrNull(targets) is { } localWarning)
         {
             Intro.Text += "\n\n" + localWarning;
         }

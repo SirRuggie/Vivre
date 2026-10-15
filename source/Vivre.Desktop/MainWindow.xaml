@@ -388,7 +388,7 @@
                                  All buttons use icon+label in a centred StackPanel as Content (no Icon= attribute)
                                  so collapsing the label TextBlock leaves the icon correctly centred. -->
                             <ui:SplitButton Style="{StaticResource ToolbarSplitButtonStyle}"
-                                            Command="{Binding SelectedTab.PingAllCommand}"
+                                            Command="{Binding SelectedTab.PingAllCommand}" AutomationProperties.Name="Ping all"
                                             ToolTip="Ping All — ping every machine in this tab (F5)">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" />
@@ -402,7 +402,7 @@
                             </ui:SplitButton>
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        Style="{StaticResource ToolbarButtonStyle}"
-                                       Command="{Binding SelectedTab.CheckVitalsCommand}"
+                                       Command="{Binding SelectedTab.CheckVitalsCommand}" AutomationProperties.Name="Check vitals"
                                        ToolTip="Check Vitals — pull SCCM client health AND deep OS vitals. Read-only.">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Pulse24" Margin="0,0,6,0" />
@@ -411,7 +411,7 @@
                             </ui:Button>
                             <ToggleButton Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}" Padding="11,6"
                                           Style="{StaticResource ToolbarMonitorStyle}"
-                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}"
+                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}" AutomationProperties.Name="Monitor"
                                           ToolTip="Monitor — continuously re-check online/offline. Stop halts it.">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Eye24" Margin="0,0,6,0" />
@@ -424,7 +424,7 @@
                             <!-- Operations: de-emphasised -->
                             <ui:Button Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.RemoveOfflineCommand}"
-                                       ToolTip="Remove Offline — remove every offline machine from this tab.">
+                                       ToolTip="Remove Offline — remove every offline machine from this tab." AutomationProperties.Name="Remove Offline — remove every offline machine from this tab.">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Delete24" Margin="0,0,6,0" />
                                     <TextBlock Text="Remove Offline" Style="{StaticResource ToolbarLabelStyle}" />
@@ -442,7 +442,7 @@
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        Style="{StaticResource ToolbarButtonStyle}"
                                        Command="{Binding SelectedTab.ClearResultsCommand}"
-                                       ToolTip="Clear results — clear the Command result column on every row.">
+                                       ToolTip="Clear results — clear the Command result column on every row." AutomationProperties.Name="Clear results — clear the Command result column on every row.">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Eraser24" Margin="0,0,6,0" />
                                     <TextBlock Text="Clear results" Style="{StaticResource ToolbarLabelStyle}" />
@@ -524,7 +524,7 @@
 
                             <!-- Updates (update-mode only, and only when no rows selected — the selection
                                  cluster owns Scan/Install for the selection so both don't show simultaneously). -->
-                            <ui:Button Command="{Binding SelectedTab.ScanTargetCommand}"
+                            <ui:Button Command="{Binding SelectedTab.ScanTargetCommand}" AutomationProperties.Name="Scan all machines"
                                        ToolTipService.ShowOnDisabled="True">
                                 <ui:Button.ToolTip>
                                     <ToolTip Content="Scan all — scan all machines in this tab for applicable updates."
@@ -548,7 +548,7 @@
                                     <TextBlock Text="Scan all" Style="{StaticResource ToolbarLabelStyle}" />
                                 </StackPanel>
                             </ui:Button>
-                            <ui:Button x:Name="InstallButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                            <ui:Button x:Name="InstallButton" AutomationProperties.Name="Install updates on all machines" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        IsEnabled="{Binding SelectedTab.CanInstallAll}"
                                        Click="OnInstallClick"
                                        ToolTipService.ShowOnDisabled="True">
@@ -630,7 +630,7 @@
                             <!-- Scan (N): HasSelection AND IsUpdateMode -->
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        IsEnabled="{Binding SelectedTab.CanActOnSelection}"
-                                       Click="OnSelectionScanClick"
+                                       Click="OnSelectionScanClick" AutomationProperties.Name="Scan selected machines"
                                        ToolTipService.ShowOnDisabled="True">
                                 <ui:Button.ToolTip>
                                     <ToolTip Content="Scan selected — scan only the selected machines for applicable updates."
@@ -661,7 +661,7 @@
                             <!-- Install (N): HasSelection AND IsUpdateMode AND CanShowInstallToolbar -->
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        IsEnabled="{Binding SelectedTab.CanActOnSelection}"
-                                       Click="OnSelectionInstallClick"
+                                       Click="OnSelectionInstallClick" AutomationProperties.Name="Install updates on selected machines"
                                        ToolTipService.ShowOnDisabled="True">
                                 <ui:Button.ToolTip>
                                     <ToolTip Content="Install selected — download and install applicable updates on the selected machines."
@@ -692,7 +692,7 @@
 
                             <!-- Clear selection: HasSelection (both modes) -->
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       Click="OnSelectionClearClick"
+                                       Click="OnSelectionClearClick" AutomationProperties.Name="Clear selection"
                                        ToolTip="Clear selection — deselect all rows.">
                                 <ui:Button.Style>
                                     <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
@@ -716,7 +716,7 @@
                         <StackPanel x:Name="RightCluster" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
                             <ui:Button x:Name="ListsButton"
                                        Style="{StaticResource ToolbarButtonStyle}"
-                                       Click="OnListsButtonClick"
+                                       Click="OnListsButtonClick" AutomationProperties.Name="Machine lists"
                                        ToolTip="Lists — open, save, or delete a named machine list">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="DocumentBulletList24" Margin="0,0,6,0" />
@@ -731,12 +731,12 @@
                                     </ContextMenu>
                                 </ui:Button.ContextMenu>
                             </ui:Button>
-                            <ui:TextBox x:Name="QuickAddBox" Width="180" Margin="8,0,0,0" PlaceholderText="Add computer…"
+                            <ui:TextBox x:Name="QuickAddBox" AutomationProperties.Name="Computer name to add" Width="180" Margin="8,0,0,0" PlaceholderText="Add computer…"
                                         ToolTip="Type a computer name and press Enter, or use Ctrl+L to jump here"
                                         KeyDown="OnQuickAddKeyDown" />
                             <ui:Button x:Name="AddButton" Margin="6,0,0,0"
                                        Style="{StaticResource ToolbarButtonStyle}"
-                                       Click="OnQuickAdd" ToolTip="Add — add this computer (or press Enter in the box)">
+                                       Click="OnQuickAdd" AutomationProperties.Name="Add computer" ToolTip="Add — add this computer (or press Enter in the box)">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Add24" Margin="0,0,6,0" />
                                     <TextBlock Text="Add" Style="{StaticResource ToolbarLabelStyle}" />
@@ -1230,7 +1230,7 @@
                                                    Appearance="Primary" Icon="{ui:SymbolIcon ArrowDownload24}" Content="Install checked"
                                                    Command="{Binding InstallCheckedCommand}"
                                                    Visibility="{Binding IsApplicableMode, Converter={StaticResource BoolToVis}}"
-                                                   ToolTip="Install only the ticked updates on this machine." />
+                                                   ToolTip="Install only the ticked updates on this machine."  AutomationProperties.Name="Install only the ticked updates on this machine." />
 
                                         <!-- Partial-failure banner: shown when the last install had failures.
                                              Cleared by the next Applicable-scope scan. -->
@@ -1260,7 +1260,7 @@
                                                    Click="OnUninstallChecked"
                                                    IsEnabled="{Binding CanUninstallChecked}"
                                                    Visibility="{Binding IsInstalledMode, Converter={StaticResource BoolToVis}}"
-                                                   ToolTip="Uninstall the ticked updates on this machine." />
+                                                   ToolTip="Uninstall the ticked updates on this machine."  AutomationProperties.Name="Uninstall the ticked updates on this machine." />
 
                                         <TabControl ItemContainerStyle="{StaticResource FluentSubTabItemStyle}">
                                             <TabItem Header="Applicable"
@@ -1367,7 +1367,7 @@
                                                         <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
                                                                    Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
                                                                    Command="{Binding ScanFocusedCommand}"
-                                                                   ToolTip="Scan only this machine.">
+                                                                   ToolTip="Scan only this machine." AutomationProperties.Name="Scan only this machine.">
                                                             <ui:Button.Style>
                                                                 <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
                                                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -1447,7 +1447,7 @@
                                                         <ui:Button Margin="0,16,0,0" HorizontalAlignment="Center" Appearance="Primary"
                                                                    Icon="{ui:SymbolIcon Search24}" Content="Scan this machine"
                                                                    Command="{Binding ScanFocusedCommand}"
-                                                                   ToolTip="Scan only this machine.">
+                                                                   ToolTip="Scan only this machine." AutomationProperties.Name="Scan only this machine.">
                                                             <ui:Button.Style>
                                                                 <Style TargetType="{x:Type ui:Button}" BasedOn="{StaticResource {x:Type ui:Button}}">
                                                                     <Setter Property="Visibility" Value="Collapsed" />
@@ -1592,7 +1592,7 @@
                                       IsChecked="False"
                                       Checked="OnActivityLogToggleChanged"
                                       Unchecked="OnActivityLogToggleChanged"
-                                      ToolTip="Show or hide the bottom panel">
+                                      ToolTip="Show or hide the bottom panel" AutomationProperties.Name="Show or hide the bottom panel">
                             <StackPanel Orientation="Horizontal">
                                 <ui:SymbolIcon Symbol="History24" FontSize="14" Margin="0,0,4,0" />
                                 <!-- Label flips with the fleet mode: Patching's dock has Updates + Activity tabs,

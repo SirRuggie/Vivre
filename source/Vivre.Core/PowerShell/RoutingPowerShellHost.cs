@@ -119,6 +119,32 @@ public sealed class RoutingPowerShellHost : IPowerShellHost, IWinRmRecovery
         }
     }
 
+    public async Task<PSScriptCaptureResult> RunRemoteScriptCaptureAsync(
+        string host, string script, PSScriptCaptureLimits limits, PSCredential? credential = null,
+        int port = 5985, bool useSsl = false, CancellationToken cancellationToken = default)
+    {
+        HostTransportCache.ConnectionKey key = _cache.KeyFor(host, credential, port, useSsl);
+        HostTransportCache.NormalAttempt normal = _cache.BeginNormal(key);
+        if (normal.Transport == HostTransport.SmbDcom) throw CachedKerberosRejection(host);
+        long attempt = normal.Generation;
+        try
+        {
+            PSScriptCaptureResult result = await _inner.RunRemoteScriptCaptureAsync(
+                host, script, limits, credential, port, useSsl, cancellationToken).ConfigureAwait(false);
+            _cache.TryCompleteNormal(key, attempt, HostTransport.WinRm);
+            return result;
+        }
+        catch (KerberosWrongPrincipalException)
+        {
+            _cache.TryCompleteNormal(key, attempt, HostTransport.SmbDcom);
+            throw;
+        }
+    }
+
+    public Task<PSScriptCaptureResult> RunLocalScriptCaptureAsync(
+        string script, PSScriptCaptureLimits limits, CancellationToken cancellationToken = default) =>
+        _inner.RunLocalScriptCaptureAsync(script, limits, cancellationToken);
+
     public async Task<WinRmRetryResult> RetryWinRmAsync(
         string host,
         PSCredential? credential = null,

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json;
+using Vivre.Core.IO;
 
 namespace Vivre.Core.Operations;
 
@@ -10,6 +11,7 @@ public sealed class ProtectedStagingPathRegistry
         new(StringComparer.OrdinalIgnoreCase);
 
     private readonly string _path;
+    private readonly string _leasePath;
     private readonly object _sync;
 
     public ProtectedStagingPathRegistry(string? path = null)
@@ -18,6 +20,7 @@ public sealed class ProtectedStagingPathRegistry
             Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
             "Vivre",
             "protected-staging-paths.json"));
+        _leasePath = _path + ".lock";
         _sync = FileLocks.GetOrAdd(_path, static _ => new object());
     }
 
@@ -40,6 +43,8 @@ public sealed class ProtectedStagingPathRegistry
 
         lock (_sync)
         {
+            EnsureParentDirectory();
+            using FileStream lease = ExclusiveFileLease.Acquire(_leasePath);
             Dictionary<string, HashSet<string>> entries = LoadExisting();
             if (!entries.TryGetValue(key, out HashSet<string>? existing))
             {
@@ -67,6 +72,8 @@ public sealed class ProtectedStagingPathRegistry
 
         lock (_sync)
         {
+            EnsureParentDirectory();
+            using FileStream lease = ExclusiveFileLease.Acquire(_leasePath);
             Dictionary<string, HashSet<string>> entries = LoadExisting();
             if (!entries.TryGetValue(key, out HashSet<string>? existing) ||
                 existing.RemoveWhere(removals.Contains) == 0)
@@ -158,13 +165,7 @@ public sealed class ProtectedStagingPathRegistry
 
     private void SaveAtomically(Dictionary<string, HashSet<string>> entries)
     {
-        string? directory = Path.GetDirectoryName(_path);
-        if (string.IsNullOrWhiteSpace(directory))
-        {
-            throw new InvalidOperationException("The protected staging-path registry location has no parent directory.");
-        }
-
-        Directory.CreateDirectory(directory);
+        string directory = EnsureParentDirectory();
         string temp = Path.Combine(directory, $".{Path.GetFileName(_path)}.{Guid.NewGuid():N}.tmp");
         try
         {
@@ -183,5 +184,17 @@ public sealed class ProtectedStagingPathRegistry
                 File.Delete(temp);
             }
         }
+    }
+
+    private string EnsureParentDirectory()
+    {
+        string? directory = Path.GetDirectoryName(_path);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new InvalidOperationException("The protected staging-path registry location has no parent directory.");
+        }
+
+        Directory.CreateDirectory(directory);
+        return directory;
     }
 }

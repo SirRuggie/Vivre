@@ -6,7 +6,7 @@ Runs isolated probes against existing Vivre production classes. Windows and the 
 dotnet run --project tools/PerformanceAudit/PerformanceAudit.csproj -c Release -- docs/performance-local.json
 ```
 
-Use a new output filename for each run; the supplied output file is overwritten. The harness creates and deletes its own uniquely named temporary directory containing dummy files and computer names. It creates a basic WPF Application, not Vivre.App, opens no windows, performs no server operations, and does not save user settings. Workspace construction reads existing local settings. Remote dependencies are inert and monitoring is disabled before inserting rows. No new packages or replacement application services are introduced.
+Use a new output filename for each run; the supplied output file is overwritten. The harness creates and deletes its own uniquely named temporary directory containing dummy files and computer names. It initializes Vivre.App resources without running application startup, shows no windows, performs no server operations, and does not save user settings. Workspace construction reads existing local settings. Remote dependencies are inert and monitoring is disabled before inserting rows. No new packages or replacement application services are introduced.
 
 The probes cover actual collection filtering, Clear versus Remove subscription lifetimes, ActivityLog dispatcher admission, SplitThrottle contention, protected staging registry parsing/writes, and package manifest preparation. Run sequentially without concurrent builds/tests. Timings depend on JIT, machine load, filesystem and antivirus. They are diagnostic samples, not release thresholds.
 
@@ -37,3 +37,12 @@ dotnet run --project tools/PerformanceAudit/PerformanceAudit.csproj -c Release -
 Uses production CU copy/hash and package publication/rollback methods on dummy files over the mapped drive. Leaves dummy files for inspection. It does not exercise remote PowerShell, agent launch, install, cleanup, reboot, or RDP.
 
 The main probe now loads production application resources (without running App.OnStartup), constructs a MainWindow with no operational services, and checks its real completion InfoBar offscreen. It verifies overflow/error severity, ordering and dismissal; no visible window or native tray interaction is asserted. The existing app icon is linked as a resource in the harness because MainWindow uses an entry-assembly pack URI. Run just this check with `--banners-only <output.json>`. Workspace probes also verify task tracking/display advancement and preservation of a cancellation warning.
+
+
+The default run also checks the F33/F38/F39/F43 fixes using isolated production controls: blocked package loading with a responsive dispatcher, stale result protection, explicit reboot scheduling/count, accessible field names and removed custom-column values. A focused run is available with `--audit-fixes-only <new-output.json>`. The column probe injects a temporary preference store and flushes it before cleanup. These are WPF automation-peer/offscreen checks, not screen-reader, real RDP or live servicing validation.
+
+`tools/validate-local.ps1` runs the Release solution build, Core tests and these existing probes, saving logs/TRX/JSON into a new output directory. Missing file-symlink privileges produce an explicit skipped theory instead of silently counting unexercised assertions as passed. Directory-reparse tests use real temporary junctions. Signing warnings must be reviewed separately before publishing.
+
+The script-execution probe uses the actual runner view model with temporary script libraries and a fake transport. It verifies host-conflict refusal, error/cancellation uncertainty, captured targets, local/remote bounded APIs and per-host/aggregate output bounds. It does not execute the displayed dummy mutation text.
+
+The script-editor probe uses actual runner and library-page controls with temporary scripts and injected choices/errors. It checks Save/Discard/Cancel, refresh preservation, close vetoes and built-in notices without interactive dialogs or production stores. The status probe also verifies that an unloaded live-status control can be garbage-collected.

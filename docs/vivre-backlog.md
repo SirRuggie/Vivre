@@ -24,7 +24,7 @@
 
 ## ▶ DO NEXT — recommended order
 
-**Comprehensive audit — 2026-10-14:** [F26–F45 ranked findings](vivre-comprehensive-audit-2026-10-14.md): five High, twelve Medium, three Low. All remain open; this pass changed documentation only. Includes explicitly identified known open gaps and source-only risks. F12 and fast-watch deferrals remain in force. Start with publish-path safety, script correctness/update delivery, operation ownership and bounded output; implementation is a separate step.
+**Comprehensive audit — 2026-10-14:** [Frozen F26–F45 findings](vivre-comprehensive-audit-2026-10-14.md); [current implementation, red-team corrections and acceptance evidence](vivre-audit-implementation-2026-10-14.md). F26–F45 source fixes are implemented with independent review and local regression evidence; the ledger records remaining live/native/signing validation limits. F12 and force-reboot fast-watch remain explicitly deferred.
 
 **Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking is implemented in 1.17.3 (see its release ledger). Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
 
@@ -102,24 +102,11 @@ The list is still in recommended do-next order.
    Production is SAFE today: one implementation, `ActivityLog.cs:81`, overrides correctly and writes at
    Information. **Fix = make the member abstract** so the compiler forces it; expect that to force changes in
    test doubles (e.g. `SharedSettingsStoreTests`' `CapturingLog`, which relies on the default today). Not built.
-- **[shared-settings-stomp-guard]** — **Shared-settings stomp guard (optimistic concurrency) — DEFERRED, build before real multi-operator
-   use.**
-   - **In already (the prerequisite):** the write path is `SharedSettingsStore.Update(Action<SharedSettings>)`
-     — a **sibling-key-safe read-merge-write** that changes only the keys the delta touches, preserves
-     every other key (including a future build's), and **refuses (throws) if an existing file can't be
-     read** instead of stomping unread keys with defaults. That closes the *single-writer* wipe vector
-     that once blanked `StagedHosts` (a degraded `Load` returned defaults, then a whole-file `Save`
-     wrote them back over everything).
-   - **What REMAINS — the concurrent-writer race:** writes are still **whole-file last-writer-wins**
-     between operators. Two operators editing at once, or one saving while another's Vivre holds an
-     older in-memory copy, each still merges onto the file **as they last read it** — so the later
-     writer's merge can revert a key the earlier writer just changed. Acceptable for the current
-     single-admin reality.
-   - **When building it:** add an optimistic-concurrency guard — read a version/mtime inside `Update`,
-     re-check it just before the atomic write, and reject-and-reload on mismatch. Adjacent small
-     hardening while in there: `AtomicFileWriter` uses a **fixed-name `.tmp`** (`path + ".tmp"`), so two
-     processes writing the same file at once can collide on the temp — give it a per-write unique
-     suffix. (No migration/copy/stomp-guard shipped with the initial split, by design.)
+- **[shared-settings-stomp-guard] — CLOSED by F35 (2026-10-14).** A cross-process file lease now
+  covers fresh read/merge/atomic replacement, also serializing the writer's fixed temporary filename.
+  Settings callers fail immediately on lease contention through their existing save-error path;
+  unknown keys and corrupt-file refusal remain intact. Separate-process contention and regression
+  tests passed. See the current audit acceptance ledger for evidence and commit linkage.
 
 The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
 (see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
@@ -485,8 +472,8 @@ standalone items further down, each "do only if it recurs / when a signal appear
   keys the delta touches, preserves every other key (including a future build's), and **refuses (throws) on a
   degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
   `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
-  prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer optimistic concurrency and the
-  `AtomicFileWriter` fixed-name `.tmp` hardening remain OPEN (DO NEXT ▸ [shared-settings-stomp-guard]). No migration/copy shipped with the
+  prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer exclusion and the
+  `AtomicFileWriter` fixed-name `.tmp` collision are now covered by F35 leases (see [shared-settings-stomp-guard]). No migration/copy shipped with the
   split by design.
 - **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
   DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the

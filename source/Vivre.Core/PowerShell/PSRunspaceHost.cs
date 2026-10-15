@@ -12,6 +12,7 @@ namespace Vivre.Core.PowerShell;
 /// </summary>
 public sealed class PSRunspaceHost : IPowerShellHost
 {
+    private static readonly AsyncLocal<BoundedScriptCapture?> ActiveCapture = new();
     /// <summary>How long to wait for a remote WinRM connection before giving up (ms).</summary>
     private const int RemoteOpenTimeoutMs = 20_000;
 
@@ -161,6 +162,41 @@ public sealed class PSRunspaceHost : IPowerShellHost
         {
             throw TranslateRemotingException(ex, host);
         }
+    }
+
+    public async Task<PSScriptCaptureResult> RunRemoteScriptCaptureAsync(
+        string host, string script, PSScriptCaptureLimits limits, PSCredential? credential = null,
+        int port = 5985, bool useSsl = false, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+        limits.Validate();
+        BoundedScriptCapture? previous = ActiveCapture.Value;
+        if (previous is not null) throw new InvalidOperationException("A bounded capture is already active.");
+        var capture = new BoundedScriptCapture(limits);
+        ActiveCapture.Value = capture;
+        try
+        {
+            PSExecutionResult result = await RunRemoteAsync(host, script, credential, port, useSsl, cancellationToken).ConfigureAwait(false);
+            return capture.ToResult(result.HadErrors);
+        }
+        finally { ActiveCapture.Value = previous; }
+    }
+
+    public async Task<PSScriptCaptureResult> RunLocalScriptCaptureAsync(
+        string script, PSScriptCaptureLimits limits, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(limits);
+        limits.Validate();
+        BoundedScriptCapture? previous = ActiveCapture.Value;
+        if (previous is not null) throw new InvalidOperationException("A bounded capture is already active.");
+        var capture = new BoundedScriptCapture(limits);
+        ActiveCapture.Value = capture;
+        try
+        {
+            PSExecutionResult result = await RunLocalAsync(script, cancellationToken).ConfigureAwait(false);
+            return capture.ToResult(result.HadErrors);
+        }
+        finally { ActiveCapture.Value = previous; }
     }
 
     public async Task<PSExecutionResult> RunRemoteStreamingAsync(
@@ -409,6 +445,9 @@ public sealed class PSRunspaceHost : IPowerShellHost
             ps.Runspace = runspace;
             ps.AddScript(script);
 
+            BoundedScriptCapture? boundedCapture = ActiveCapture.Value;
+            boundedCapture?.Attach(output, ps);
+
             // Bind named arguments to the script's param() block. Passing values (e.g. a
             // PSCredential or a string[]) as real parameters keeps sensitive/awkward data out of
             // the script TEXT — no interpolation, no quoting hazards, nothing to leak if logged.
@@ -485,11 +524,12 @@ public sealed class PSRunspaceHost : IPowerShellHost
 
                 cancellationToken.ThrowIfCancellationRequested();
 
+                boundedCapture?.Drain(output, ps);
                 return new PSExecutionResult(
                     Output: [.. output],
                     Errors: [.. ps.Streams.Error.Select(static e => e.ToString())],
                     Warnings: [.. ps.Streams.Warning.Select(static w => w.ToString())],
-                    HadErrors: ps.HadErrors);
+                    HadErrors: ps.HadErrors || (boundedCapture?.SawError ?? false));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -537,6 +577,72 @@ public sealed class PSRunspaceHost : IPowerShellHost
                 try { output?.Dispose(); } catch { }
                 try { ps?.Dispose(); } catch { }
                 try { runspace.Dispose(); } catch { }
+            }
+        }
+    }
+
+    private sealed class BoundedScriptCapture(PSScriptCaptureLimits limits)
+    {
+        private readonly object _sync = new();
+        private readonly Dictionary<string, Bucket> _buckets = new()
+        {
+            ["Output"] = new(limits), ["Error"] = new(limits), ["Warning"] = new(limits),
+            ["Verbose"] = new(limits), ["Debug"] = new(limits), ["Information"] = new(limits), ["Progress"] = new(limits),
+        };
+        public bool SawError { get; private set; }
+
+        public void Attach(PSDataCollection<PSObject> output, SmaPowerShell ps)
+        {
+            output.DataAdded += (_, _) => DrainCollection(output, "Output");
+            ps.Streams.Error.DataAdded += (_, _) => { SawError = true; DrainCollection(ps.Streams.Error, "Error"); };
+            ps.Streams.Warning.DataAdded += (_, _) => DrainCollection(ps.Streams.Warning, "Warning");
+            ps.Streams.Verbose.DataAdded += (_, _) => DrainCollection(ps.Streams.Verbose, "Verbose");
+            ps.Streams.Debug.DataAdded += (_, _) => DrainCollection(ps.Streams.Debug, "Debug");
+            ps.Streams.Information.DataAdded += (_, _) => DrainCollection(ps.Streams.Information, "Information");
+            ps.Streams.Progress.DataAdded += (_, _) => DrainCollection(ps.Streams.Progress, "Progress");
+        }
+
+        public void Drain(PSDataCollection<PSObject> output, SmaPowerShell ps)
+        {
+            DrainCollection(output, "Output"); DrainCollection(ps.Streams.Error, "Error");
+            DrainCollection(ps.Streams.Warning, "Warning"); DrainCollection(ps.Streams.Verbose, "Verbose");
+            DrainCollection(ps.Streams.Debug, "Debug"); DrainCollection(ps.Streams.Information, "Information");
+            DrainCollection(ps.Streams.Progress, "Progress");
+        }
+
+        private void DrainCollection<T>(PSDataCollection<T> collection, string name)
+        {
+            lock (_sync)
+            {
+                foreach (T item in collection.ReadAll())
+                {
+                    Bucket bucket = _buckets[name];
+                    if (bucket.CanAccept) bucket.Add(item?.ToString() ?? string.Empty);
+                    else bucket.MarkTruncated();
+                }
+            }
+        }
+
+        public PSScriptCaptureResult ToResult(bool hadErrors) => new(
+            _buckets["Output"].Snapshot(), _buckets["Error"].Snapshot(), _buckets["Warning"].Snapshot(),
+            _buckets["Verbose"].Snapshot(), _buckets["Debug"].Snapshot(), _buckets["Information"].Snapshot(),
+            _buckets["Progress"].Snapshot(), hadErrors || SawError, _buckets.Values.Any(static b => b.Truncated));
+
+        private sealed class Bucket(PSScriptCaptureLimits limits)
+        {
+            private readonly List<string> _items = [];
+            private int _characters;
+            public bool CanAccept => _items.Count < limits.MaxRecordsPerStream && _characters < limits.MaxCharactersPerStream;
+            public bool Truncated { get; private set; }
+            public string[] Snapshot() => [.. _items];
+            public void MarkTruncated() => Truncated = true;
+            public void Add(string value)
+            {
+                if (_items.Count >= limits.MaxRecordsPerStream) { Truncated = true; return; }
+                int available = limits.MaxCharactersPerStream - _characters;
+                if (available <= 0) { Truncated = true; return; }
+                if (value.Length > available) { value = value[..available]; Truncated = true; }
+                _items.Add(value); _characters += value.Length;
             }
         }
     }

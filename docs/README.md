@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F45 acceptance ledger, independent review corrections and exact local/live validation limits.
+
 - **[release-1.17.3-validation.md](release-1.17.3-validation.md)** — latest candidate, multiple-schedule fix and expanded banner checks; supersedes 1.17.2.
 
 - **[release-1.17.2-validation.md](release-1.17.2-validation.md)** — release acceptance ledger, package evidence, shared-drive checks and remaining pilot gaps.
@@ -36,7 +38,7 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
 
 ## Case files / findings (point-in-time, never edited)
 
-- **[vivre-comprehensive-audit-2026-10-14.md](vivre-comprehensive-audit-2026-10-14.md)** — F26–F45 ranked operations, resource, UX, reuse and release findings; source evidence, refutations and validation limits. Review only; fixes remain open.
+- **[vivre-comprehensive-audit-2026-10-14.md](vivre-comprehensive-audit-2026-10-14.md)** — F26–F45 ranked operations, resource, UX, reuse and release findings; source evidence, refutations and validation limits. Frozen review; current implementation status is in the acceptance ledger.
 
 - **[vivre-performance-implementation-2026-10-14.md](vivre-performance-implementation-2026-10-14.md)** — F13–F20 implementation, adversarial validation, measured changes and remaining operational limits. *Read when: checking the performance fixes and their actual test coverage.*
 

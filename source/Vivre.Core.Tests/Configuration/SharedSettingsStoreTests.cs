@@ -6,6 +6,7 @@ using System.Security.Principal;
 using System.Text.Json.Nodes;
 using Vivre.Core.Configuration;
 using Vivre.Core.Logging;
+using Vivre.Core.Tests.IO;
 using Xunit;
 
 namespace Vivre.Core.Tests.Configuration;
@@ -353,6 +354,37 @@ public class SharedSettingsStoreTests
             Assert.Equal("10.9.9.9", fresh.WugServer);                        // the mutation
             Assert.Equal(@"C:\Vivre\VivrePackages", fresh.LcuPackagesFolder); // an untouched default
             Assert.Empty(fresh.StagedHosts);
+        }
+        finally
+        {
+            Cleanup(dir);
+        }
+    }
+
+    [Fact]
+    public void External_process_lease_fails_fast_and_leaves_existing_and_unknown_keys_untouched()
+    {
+        string dir = NewTempDir();
+        try
+        {
+            var store = new SharedSettingsStore(dir);
+            store.Update(s => s.PackagesFolder = @"D:\existing");
+            string path = Path.Combine(dir, "settings.json");
+            JsonObject seeded = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            seeded["FutureKey"] = "preserve-me";
+            File.WriteAllText(path, seeded.ToJsonString());
+
+            using var holder = CrossProcessLeaseHolder.Start(path + ".lock");
+            var elapsed = System.Diagnostics.Stopwatch.StartNew();
+            IOException error = Assert.Throws<IOException>(() => store.Update(s => s.WugServer = "10.9.8.7"));
+            elapsed.Stop();
+            Assert.Contains("persistence lease", error.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.True(elapsed.Elapsed < TimeSpan.FromSeconds(2), "Synchronous UI save must fail fast under contention.");
+
+            JsonObject after = JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+            Assert.Equal(@"D:\existing", (string?)after["PackagesFolder"]);
+            Assert.Equal("preserve-me", (string?)after["FutureKey"]);
+            Assert.NotEqual("10.9.8.7", (string?)after["WugServer"]);
         }
         finally
         {

@@ -273,10 +273,14 @@ public static class HelpContent
             Keywords = "run script powershell saved library command right-click",
             Lines =
             [
+                "Changing scripts or closing an editor with unsaved changes offers Save, Discard or Cancel. A failed save keeps the editor open. Stop an active script run before closing its runner.",
+                "Untouched built-in scripts update automatically. Your edited copies are preserved; their notice offers Reset to the shipped version, with a separate replacement confirmation. Library refreshes preserve unsaved editor text.",
                 "1. Select the machines.",
                 "2. Right-click ▸ Run script ▸ Selected machines… (or All machines…) — opens the Run Script window.",
                 "3. Pick a saved script (grouped by category) or paste your own, review it, then click Run.",
-                "Output lands per-machine in the Command result column and in the window's log.",
+                "Mutating and custom scripts ask you to approve the captured script and target count. Verified read-only built-ins stay one-click. Conflicting patching, staging or cleanup blocks a mutating script on that host.",
+                "If a mutating script stops with errors or is cancelled, verify the host and service recovery before retrying conflicting work. A cancelled client request is not proof that remote work stopped.",
+                "Output lands per-machine in the Command result column and in the window's log. Captured streams and displayed text have limits; a truncation notice means some output was omitted, not that execution stopped.",
                 "Note: double-clicking a row opens that machine's Details, not the script runner.",
             ],
             Tip = "The window opens for review — it never auto-runs — so a stray click can't fire a script across your fleet.",
@@ -290,6 +294,7 @@ public static class HelpContent
                 "1. Select the machines (or none = all), then right-click ▸ Software ▸ Stage software….",
                 "2. Pick a package: a single .msi/.exe, or a folder of files (an installer plus your own install script).",
                 "   • Pick from the package library dropdown, or Browse file… / Browse folder… to anything anywhere. (Set package library folder… remembers a folder of packages for next time.)",
+                "The package library loads in the background. You can browse to a package while it loads; a late library result does not replace your choice.",
                 "3. Set where to drop it (default C:\\Windows\\Temp\\VivrePackages). A single file lands right there; a folder gets its own subfolder so its files stay together.",
                 "4. Click Stage. Vivre copies the files to each machine and reports the path per row (Command result): \"staged to C:\\Windows\\Temp\\VivrePackages\\…\".",
                 "Vivre first copies into a separate temporary location and verifies the package contents before replacing the selected package. Replacing a folder removes obsolete files from that package; neighboring packages are left alone.",
@@ -531,7 +536,7 @@ public static class HelpContent
             [
                 "Select machines, right-click ▸ Schedule ▸, then:",
                 "• Install updates… — pick a date/time to install.",
-                "• Reboot… — pick a date/time to force-reboot.",
+                "• Reboot… — pick a date/time, review the target count and lost-work warning, then explicitly click Schedule forced reboot. Pressing Enter in a date/time field does not approve it.",
                 "• Cancel scheduled task — clears a pending one; the row then reads 'Scheduled task cancelled' until its next action ('Cancel had errors' if the target reported problems removing it). If the machine couldn't actually remove the task, the row KEEPS its Scheduled marker and reads 'Cancel failed — task may still fire', so you never mistake a failed cancel for a cancelled task.",
                 "A box that doesn't answer within about a minute fails on its own row and the rest of the list still completes — one dead box no longer holds everything up. A schedule that couldn't be confirmed still shows as Scheduled with 'couldn't confirm — verify on the box' (never silently unscheduled: a hidden armed reboot is worse than a reboot that never comes), and a cancel that couldn't be confirmed keeps the Scheduled marker.",
                 "The time you pick is YOUR local time (this PC's). Every selected machine runs at that same moment — a box in another time zone (e.g. a UTC cloud VM) still fires at your chosen instant, not its own local clock.",
@@ -658,9 +663,9 @@ public static class HelpContent
             Lines =
             [
                 "• Right-click is the hub — Reboot, Schedule, Details, Run script, Client actions, Enable WinRM all live there.",
-                "• Select multiple machines with Ctrl+click / Shift+click; the bottom bar shows the selected count.",
+                "• Select multiple machines with Ctrl+click / Shift+click; the command-bar selection chip shows the selected count.",
                 "• Status dots use colour AND shape (✓ / ✕ / ?), so they're readable at a glance.",
-                "• Buttons and actions show what they'll target — \"Install on 12\", \"Scan selected (3)\".",
+                "• Buttons and actions show what they'll target — \"Install (12)\", \"Scan (3)\".",
             ],
         },
 

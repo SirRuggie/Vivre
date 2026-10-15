@@ -166,6 +166,137 @@ public class ScriptLibraryTests : IDisposable
         Assert.Equal("user-edited", library.Load(force));
     }
 
+    [Fact]
+    public void Legacy_unmodified_built_in_is_updated_but_an_edit_is_preserved_and_visible()
+    {
+        string bundle = NewTempDir();
+        string relative = Path.Combine("Repair", "Rebuild WMI repository.ps1");
+        Directory.CreateDirectory(Path.Combine(bundle, "Repair"));
+        File.WriteAllText(Path.Combine(bundle, relative), "corrected");
+        Directory.CreateDirectory(Path.Combine(_dir, "Repair"));
+        File.WriteAllText(Path.Combine(_dir, relative), "user edit");
+
+        var library = new ScriptLibrary(_dir, bundle);
+
+        Assert.Equal("user edit", File.ReadAllText(Path.Combine(_dir, relative)));
+        ScriptUpdateConflict conflict = Assert.Single(library.UpdateConflicts);
+        Assert.Equal(relative, conflict.RelativePath);
+    }
+
+    [Fact]
+    public void Exact_legacy_built_in_is_migrated_to_current_bundle()
+    {
+        string legacy = string.Join(Environment.NewLine,
+            "# Verify the WMI repository; salvage it only if it reports inconsistent. Safe first step for WMI corruption.",
+            "$check = (winmgmt /verifyrepository) | Out-String",
+            "if ($check -match 'consistent') {",
+            "    'WMI repository is consistent. No action needed.'",
+            "} else {",
+            "    winmgmt /salvagerepository | Out-Null",
+            "    'WMI repository was inconsistent - salvage attempted. Re-check: ' + ((winmgmt /verifyrepository) | Out-String).Trim()",
+            "}", "");
+        string bundle = NewTempDir();
+        string relative = Path.Combine("Repair", "Rebuild WMI repository.ps1");
+        Directory.CreateDirectory(Path.Combine(bundle, "Repair"));
+        File.WriteAllText(Path.Combine(bundle, relative), "corrected");
+        Directory.CreateDirectory(Path.Combine(_dir, "Repair"));
+        File.WriteAllText(Path.Combine(_dir, relative), legacy);
+
+        var library = new ScriptLibrary(_dir, bundle);
+
+        Assert.Equal("corrected", File.ReadAllText(Path.Combine(_dir, relative)));
+        Assert.Empty(library.UpdateConflicts);
+    }
+
+    [Fact]
+    public void Reset_to_default_replaces_a_conflict_and_notifies()
+    {
+        string bundle = NewTempDir();
+        Directory.CreateDirectory(Path.Combine(bundle, "Info"));
+        File.WriteAllText(Path.Combine(bundle, "Info", "Uptime and last boot.ps1"), "bundled");
+        var library = new ScriptLibrary(_dir, bundle);
+        ScriptFile script = library.List().Single(s => s.Name == "Uptime and last boot");
+        File.WriteAllText(script.FullPath, "edited");
+        var reopened = new ScriptLibrary(_dir, bundle);
+        script = reopened.List().Single(s => s.Name == "Uptime and last boot");
+        int notifications = 0;
+        reopened.LibraryChanged += (_, _) => notifications++;
+
+        reopened.ResetToDefault(script);
+
+        Assert.Equal("bundled", reopened.Load(script));
+        Assert.Empty(reopened.UpdateConflicts);
+        Assert.Equal(1, notifications);
+    }
+
+    [Fact]
+    public void Policy_verifies_exact_execution_content_and_is_conservative_for_edits()
+    {
+        string bundle = NewTempDir();
+        Directory.CreateDirectory(Path.Combine(bundle, "Info"));
+        File.WriteAllText(Path.Combine(bundle, "Info", "Uptime and last boot.ps1"), "bundled");
+        var library = new ScriptLibrary(_dir, bundle);
+        ScriptFile script = library.List().Single(s => s.Name == "Uptime and last boot");
+
+        ScriptPolicy verified = library.GetPolicy(script, "bundled");
+        ScriptPolicy edited = library.GetPolicy(script, "bundled`n# editor change");
+
+        Assert.True(verified.IsVerifiedBuiltIn);
+        Assert.Equal(ScriptOperationRisk.ReadOnly, verified.OperationRisk);
+        Assert.False(edited.IsVerifiedBuiltIn);
+        Assert.Equal(ScriptOperationRisk.ExclusiveMutation, edited.OperationRisk);
+    }
+
+    [Fact]
+    public void Persisted_bundle_hash_updates_an_unchanged_script_on_the_next_version()
+    {
+        string bundle = NewTempDir();
+        Directory.CreateDirectory(Path.Combine(bundle, "Info"));
+        string bundled = Path.Combine(bundle, "Info", "Uptime.ps1");
+        File.WriteAllText(bundled, "version one");
+        _ = new ScriptLibrary(_dir, bundle);
+        File.WriteAllText(bundled, "version two");
+
+        var upgraded = new ScriptLibrary(_dir, bundle);
+
+        Assert.Equal("version two", upgraded.Load(upgraded.List().Single(s => s.Name == "Uptime")));
+    }
+
+    [Fact]
+    public void Corrupt_bundle_manifest_never_authorizes_overwriting_an_edit()
+    {
+        string bundle = NewTempDir();
+        Directory.CreateDirectory(Path.Combine(bundle, "Info"));
+        string bundled = Path.Combine(bundle, "Info", "Uptime.ps1");
+        File.WriteAllText(bundled, "version one");
+        _ = new ScriptLibrary(_dir, bundle);
+        string current = Path.Combine(_dir, "Info", "Uptime.ps1");
+        File.WriteAllText(current, "user edit");
+        File.WriteAllText(Path.Combine(_dir, ".vivre-bundled-hashes.json"), "not json");
+        File.WriteAllText(bundled, "version two");
+
+        var upgraded = new ScriptLibrary(_dir, bundle);
+
+        Assert.Equal("user edit", File.ReadAllText(current));
+        Assert.Single(upgraded.UpdateConflicts);
+    }
+
+    [Fact]
+    public void Script_references_outside_the_library_are_rejected()
+    {
+        var library = new ScriptLibrary(_dir, bundleDirectory: null);
+        string outsideDir = NewTempDir();
+        Directory.CreateDirectory(outsideDir);
+        string outside = Path.Combine(outsideDir, "outside.ps1");
+        File.WriteAllText(outside, "safe");
+        var forged = new ScriptFile("outside", outside, string.Empty);
+
+        Assert.Throws<ArgumentException>(() => library.Load(forged));
+        Assert.Throws<ArgumentException>(() => library.IsDefault(forged));
+        Assert.Throws<ArgumentException>(() => library.GetPolicy(forged, "safe"));
+        Assert.Throws<ArgumentException>(() => library.ResetToDefault(forged));
+    }
+
     private string NewTempDir()
     {
         string dir = Path.Combine(Path.GetTempPath(), "vivre-scripts-" + Guid.NewGuid().ToString("N"));

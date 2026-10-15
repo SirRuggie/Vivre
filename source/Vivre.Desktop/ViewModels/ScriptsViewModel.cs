@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using Vivre.Core.Scripts;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -9,14 +10,16 @@ namespace Vivre.Desktop.ViewModels;
 /// No run, no targets, no output. Running scripts against machines stays in
 /// <see cref="ScriptRunnerWindow"/> (opened from the Computers grid right-click menu).
 /// </summary>
-public partial class ScriptsViewModel : ObservableObject
+public partial class ScriptsViewModel : ObservableObject, IDisposable
 {
     private readonly IScriptLibrary _library;
+    public event EventHandler? LibraryRefreshed;
 
     public ScriptsViewModel(IScriptLibrary library)
     {
         _library = library;
         ReloadScripts();
+        _library.LibraryChanged += OnLibraryChanged;
     }
 
     // ── Script list ────────────────────────────────────────────────────────
@@ -29,11 +32,28 @@ public partial class ScriptsViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanDeleteSelectedScript))]
+    [NotifyPropertyChangedFor(nameof(CanResetSelectedScript))]
+    [NotifyPropertyChangedFor(nameof(SelectedScriptNotice))]
     public partial ScriptFile? SelectedScript { get; set; }
 
     /// <summary>True when a user-created script is selected (built-ins can't be deleted).</summary>
     public bool CanDeleteSelectedScript =>
         SelectedScript is { } script && !_library.IsDefault(script);
+
+    public bool CanResetSelectedScript =>
+        SelectedScript is { } script && _library.GetPolicy(script).CanReset;
+
+    public string SelectedScriptNotice
+    {
+        get
+        {
+            if (SelectedScript is not { } script) return string.Empty;
+            ScriptPolicy policy = _library.GetPolicy(script);
+            return policy.CanReset && !policy.IsVerifiedBuiltIn
+                ? "Your saved copy differs from the current built-in. Reset it to use the shipped version."
+                : string.Empty;
+        }
+    }
 
     // ── Save fields ────────────────────────────────────────────────────────
 
@@ -75,32 +95,47 @@ public partial class ScriptsViewModel : ObservableObject
             return;
         }
 
-        // Delegate to the library — it throws InvalidOperationException for defaults.
+        DeleteScript(script);
+    }
+
+    public void DeleteScript(ScriptFile script)
+    {
         _library.Delete(script);
 
-        SelectedScript = null;
+        if (SelectedScript?.FullPath == script.FullPath) SelectedScript = null;
         ScriptName = string.Empty;
         ReloadScripts();
+    }
+
+    public void ResetSelectedScript()
+    {
+        if (SelectedScript is not { } script) return;
+        _library.ResetToDefault(script);
     }
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
     public void ReloadScripts()
     {
-        Scripts.Clear();
-        foreach (ScriptFile f in _library.List())
-        {
-            Scripts.Add(f);
-        }
+        string? selectedPath = SelectedScript?.FullPath;
+        ScriptLibrarySnapshot snapshot = _library.Snapshot();
+        ScriptProjectionSync.Apply(Scripts, snapshot.Scripts);
 
-        Categories.Clear();
-        foreach (string cat in Scripts
-                     .Select(s => s.Category)
-                     .Where(c => !string.IsNullOrEmpty(c))
-                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                     .OrderBy(c => c, StringComparer.OrdinalIgnoreCase))
-        {
-            Categories.Add(cat);
-        }
+        // An editable ComboBox writes back when its items change. Preserve typed folder text.
+        string saveCategory = SaveCategory;
+        ScriptProjectionSync.ApplyCategories(Categories, snapshot.Categories);
+        SaveCategory = saveCategory;
+        SelectedScript = selectedPath is null ? null : Scripts.FirstOrDefault(s =>
+            string.Equals(Path.GetFullPath(s.FullPath), Path.GetFullPath(selectedPath), StringComparison.OrdinalIgnoreCase));
     }
+
+    private void OnLibraryChanged(object? sender, EventArgs e)
+    {
+        ReloadScripts();
+        OnPropertyChanged(nameof(CanResetSelectedScript));
+        OnPropertyChanged(nameof(SelectedScriptNotice));
+        LibraryRefreshed?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void Dispose() => _library.LibraryChanged -= OnLibraryChanged;
 }

@@ -17,9 +17,10 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        bool auditFixesOnly = args.Length == 2 && args[0] == "--audit-fixes-only";
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -28,6 +29,11 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (auditFixesOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(new { auditFixes = AuditFixesProbe.Run(), scriptExecution = ScriptExecutionProbe.Run(), scriptEditor = ScriptEditorProbe.Run() }, new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (bannersOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(CompletionBannerProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
@@ -50,7 +56,10 @@ internal static class Program
                 registry = Measure("Registry", () => RegistryProbe(root)),
                 manifest = Measure("Manifest", () => ManifestProbe(root)),
                 completionBanners = Measure("Completion banners", CompletionBannerProbe.Run),
-                renderedWorkspace = Measure("Rendered workspace", RenderedWorkspaceProbe.Run)
+                renderedWorkspace = Measure("Rendered workspace", RenderedWorkspaceProbe.Run),
+                auditFixes = Measure("Audit fixes", AuditFixesProbe.Run),
+                scriptExecution = Measure("Script execution", ScriptExecutionProbe.Run),
+                scriptEditor = Measure("Script editor", ScriptEditorProbe.Run)
             };
             File.WriteAllText(Path.GetFullPath(outputPath), JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
             Console.WriteLine("Performance evidence saved: " + Path.GetFullPath(outputPath));

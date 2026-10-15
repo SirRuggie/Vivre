@@ -44,6 +44,7 @@ public sealed class SharedSettingsStore
 {
     private readonly string _dir;
     private readonly string _path;
+    private readonly string _leasePath;
 
     // Set once at App startup (static so every construction site shares it — the store is new()-constructed in
     // several places). Surfaces a read failure to the operator: a shared file that can't be read silently falls
@@ -77,6 +78,7 @@ public sealed class SharedSettingsStore
         _dir = directoryOverride
                ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Vivre");
         _path = Path.Combine(_dir, "settings.json");
+        _leasePath = _path + ".lock";
     }
 
     /// <summary>Fresh disk read every call (deliberately uncached). Absent file → defaults (no file created).
@@ -120,7 +122,15 @@ public sealed class SharedSettingsStore
         // (1) Runtime credential block — refuse to persist a shape that carries (or could carry) a secret.
         ValidateNoCredentialShapedFields(typeof(SharedSettings));
 
-        // (2) Read the CURRENT file fresh. Absent → an empty object (defaults fill in on merge). Present but
+        // (2) Ensure the shared folder, then hold one cross-process lease across the entire fresh
+        //     read/merge/write transaction. This prevents another Vivre process from changing the file between
+        //     our read and atomic replacement (and also serializes AtomicFileWriter's fixed temporary path).
+        EnsureSharedFolder();
+        // UI callers are synchronous today. Fail immediately on another process's lease instead of freezing
+        // the dispatcher; the sharing-violation IOException is surfaced through the existing save error path.
+        using FileStream lease = ExclusiveFileLease.Acquire(_leasePath, TimeSpan.Zero);
+
+        // (3) Read the CURRENT file fresh. Absent → an empty object (defaults fill in on merge). Present but
         //     unreadable/unparseable → REFUSE (throw): never let a degraded read feed a save.
         JsonObject onDisk = ReadRawForWriteOrRefuse();
         SharedSettings typed = onDisk.Deserialize<SharedSettings>() ?? new SharedSettings();
@@ -128,15 +138,14 @@ public sealed class SharedSettingsStore
         // ordinal) so the caller's case-insensitive Add/Remove behaves exactly as it did through the typed API.
         typed.StagedHosts = StagedHostMatching.Normalize(typed.StagedHosts);
 
-        // (3) Apply the caller's change to the typed view.
+        // (4) Apply the caller's change to the typed view.
         mutate(typed);
 
-        // (4) Merge the typed view back onto the raw object: overwrite ONLY POCO-declared keys, drop ONLY the
+        // (5) Merge the typed view back onto the raw object: overwrite ONLY POCO-declared keys, drop ONLY the
         //     obsolete keys, preserve everything else (unknown/future keys survive).
         JsonObject merged = MergeTypedOntoRaw(typed, onDisk);
 
-        // (5) Ensure the shared folder + ACL, then write atomically. Any failure propagates.
-        EnsureSharedFolder();
+        // (6) Write atomically while ownership is still held. Any failure propagates.
         AtomicFileWriter.Write(_path, merged.ToJsonString(SerializerOptions));
     }
 

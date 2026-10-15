@@ -88,7 +88,7 @@ dotnet test   source\Vivre.slnx
 dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 ```
 
-- .NET 10 SDK; build with `dotnet` (no Visual Studio / MSBuild needed).
+- SDK pinned in `global.json` (10.0.303, latest patch roll-forward); build with `dotnet`. Core dependency locks include normal, win-x64 and win-arm64 graphs; publish and local validation enforce locked restore.
 - **`dotnet test` on the solution does not build `Vivre.Desktop`** (it isn't a test dependency) —
   after a test-only run, `dotnet build` the solution (which DOES build it) or the Desktop project
   before launching, or you'll run a stale exe.
@@ -113,8 +113,7 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
       `StagedHosts`.
     - **Never put credential material here** — an Update-time reflection guard throws on a
       credential-shaped field.
-    - Still whole-file last-writer-wins between operators until an optimistic-concurrency stomp guard
-      lands — see docs/vivre-backlog.md.
+    - Cross-process updates hold a sibling file lease across read/merge/replace. Contention fails immediately through the existing save-error path so a dispatcher caller cannot freeze waiting for another writer.
   - **Logs** — `%LOCALAPPDATA%\Vivre\logs\` (Serilog, rolling daily).
 
 ## Conventions
@@ -130,13 +129,12 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
 - No empty `catch {}` — surface failures (to the activity log / `LastError`), don't swallow them.
 - Friction (a confirm) only on irreversible/production actions — reboot, uninstall, fleet install,
   large delete, closing a tab with work, replacing a loaded list. Keep ping/scan/check/copy one-click.
-  **This is the INTENDED rule, not a description of what ships today — there are known open exceptions.**
-  Remaining separate approval gaps are **Schedule ▸ Reboot** (the scheduling modal's default button
-  arms the task) and **Run script ▸ Reboot** (the runner is ungated). F02 corrected the install nudge:
-  its existing primary choice now explicitly approves the captured pending subset, force behavior,
-  and unsaved-work consequences. Scheduling/script applicability still requires a separate scope
-  decision. The historical evidence is in docs/reboot-path-and-guardrail-findings.md, findings 2–4.
-  Do not cite this rule as evidence that an unmodified path already confirms; check the path.
+  Schedule reboot now shows the target count and force/lost-work warning on an explicit, non-default
+  action. Script runner approves the captured code/targets when mutating or custom, including reboot
+  consequences; only exact-content allowlisted bundled read-only scripts bypass the prompt. Both use
+  the existing host coordinator; cancelled or failed mutations retain uncertain-state protection.
+  Historical findings remain in docs/reboot-path-and-guardrail-findings.md; current acceptance and
+  validation limits are in docs/vivre-audit-implementation-2026-10-14.md.
 - **Reboot cardinal — NOTHING auto-reboots.** Every reboot path (the Reboot & Verify wave, Force reboot
   including its narrow Kerberos-auth DCOM fallback in `ForceRebootRunner`, Schedule reboot, the script
   library) fires only from an operator's explicit per-box click + confirm — never an independent decision.

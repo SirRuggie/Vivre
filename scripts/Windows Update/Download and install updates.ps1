@@ -6,22 +6,27 @@
 # NOTE: run from an interactive/SYSTEM context — WUA install fails inside a WinRM
 # network logon (WU_E_NO_INTERACTIVE_USER). Vivre's app runs this as a one-time SYSTEM
 # scheduled task (Updates/WuaUpdateLane.cs); this script is the standalone reference.
-param([int]$ServerSelection = 2, [string[]]$Exclude = @())
+param([int]$ServerSelection = 2, [string[]]$Exclude = @(), [object]$SearchResult)
 
 $ErrorActionPreference = 'Stop'
-$session  = New-Object -ComObject Microsoft.Update.Session
-$searcher = $session.CreateUpdateSearcher()
+if ($null -eq $SearchResult) {
+    $session  = New-Object -ComObject Microsoft.Update.Session
+    $searcher = $session.CreateUpdateSearcher()
 
-if ($ServerSelection -eq 3) {
-    $muId = '7971f918-a847-4430-9279-4a52d1efe18d'
-    try { $null = (New-Object -ComObject Microsoft.Update.ServiceManager).AddService2($muId, 2, '') } catch { }
-    $searcher.ServerSelection = 3
-    $searcher.ServiceID = $muId
-} else {
-    $searcher.ServerSelection = $ServerSelection
+    if ($ServerSelection -eq 3) {
+        $muId = '7971f918-a847-4430-9279-4a52d1efe18d'
+        try { $null = (New-Object -ComObject Microsoft.Update.ServiceManager).AddService2($muId, 2, '') } catch { }
+        $searcher.ServerSelection = 3
+        $searcher.ServiceID = $muId
+    } else {
+        $searcher.ServerSelection = $ServerSelection
+    }
+
+    $result = $searcher.Search("IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'")
+} else { $result = $SearchResult }
+if ([int]$result.ResultCode -ne 2) {
+    throw "Windows Update search did not complete cleanly (result code $($result.ResultCode), HRESULT 0x80240438) - the update source was not fully reached."
 }
-
-$result = $searcher.Search("IsInstalled=0 and IsHidden=0 and DeploymentAction='Installation'")
 
 $applicable = @()
 foreach ($u in $result.Updates) {

@@ -88,7 +88,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Build & run
 
-Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0).
+Requires the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0), version 10.0.303 or a later servicing patch in that feature band (see `global.json`). Core dependencies are recorded in `packages.lock.json`; use `dotnet restore source/Vivre.Core/Vivre.Core.csproj --locked-mode` to verify the recorded graph.
 
 ```
 dotnet build  source\Vivre.slnx
@@ -107,7 +107,7 @@ Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 .\publish.ps1 -Runtime win-arm64
 ```
 
-Publish requires the configured agent code-signing certificate and private key in `CurrentUser\My`; it fails if the final agent signature is not valid. ZIP builds also write a `.zip.sha256` checksum file. The self-contained release bundles .NET 10.0.13.
+Publish requires the configured agent code-signing certificate and private key in `CurrentUser\My`; it fails if the final agent signature is not valid. ZIP builds also write a `.zip.sha256` checksum file and verify every archived file against the candidate folder before replacing the last-good artifacts. Output folders must be new/empty or carry the Vivre publish ownership marker. For an older nonempty output without a marker, choose a fresh `-OutputDir` under `publish` instead of deleting or force-adopting it. Competing publishes to the same target are refused. The self-contained release bundles .NET 10.0.13.
 
 Copy the output folder (or the zip) to the target and run `Vivre.exe`. The curated `Scripts\`
 library ships in the output and seeds `%APPDATA%\Vivre\Scripts` on first run. (`publish\` is

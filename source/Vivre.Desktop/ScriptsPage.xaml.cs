@@ -20,7 +20,12 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class ScriptsPage : UserControl
 {
+    public Func<ScriptEditChoice>? UnsavedChangesPromptOverride { get; set; }
+    public Action<string, string>? ErrorPresenterOverride { get; set; }
     private ScriptsViewModel? _vm;
+    private ScriptFile? _loadedScript;
+    private readonly ScriptEditorDirtyState _dirty = new();
+    private bool _changingSelection;
 
     public ScriptsPage()
     {
@@ -32,19 +37,41 @@ public partial class ScriptsPage : UserControl
     public void Initialize(IScriptLibrary library)
     {
         _vm = new ScriptsViewModel(library);
+        _vm.LibraryRefreshed += OnLibraryRefreshed;
         DataContext = _vm;
+        MarkClean();
     }
 
     // ── List selection ─────────────────────────────────────────────────────
 
     private void OnScriptSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (_vm is null) return;
-        if (ScriptList.SelectedItem is ScriptFile script)
+        if (_vm is null || _changingSelection) return;
+        ScriptFile? next = ScriptList.SelectedItem as ScriptFile;
+        if (next is not null && _loadedScript is not null
+            && string.Equals(next.FullPath, _loadedScript.FullPath, StringComparison.OrdinalIgnoreCase))
         {
+            _loadedScript = next;
+            return;
+        }
+        if (!ResolveUnsavedChanges())
+        {
+            _changingSelection = true;
+            ScriptList.SelectedItem = _loadedScript is null ? null : _vm.Scripts.FirstOrDefault(s => s.FullPath == _loadedScript.FullPath);
+            _changingSelection = false;
+            return;
+        }
+        if (next is { } script)
+        {
+            _changingSelection = true;
+            ScriptList.SelectedItem = script;
+            _vm.SelectedScript = script;
+            _changingSelection = false;
             Editor.Text = _vm.LoadScript(script);
             _vm.ScriptName = script.Name;
             _vm.SaveCategory = string.IsNullOrEmpty(script.Category) ? "My Scripts" : script.Category;
+            _loadedScript = script;
+            MarkClean();
         }
     }
 
@@ -53,13 +80,18 @@ public partial class ScriptsPage : UserControl
     private void OnAdd(object sender, RoutedEventArgs e)
     {
         if (_vm is null) return;
+        if (!ResolveUnsavedChanges()) return;
 
         // Deselect any script in the list and clear the editor + name for a new entry.
+        _changingSelection = true;
         ScriptList.SelectedItem = null;
+        _changingSelection = false;
         _vm.SelectedScript = null;
         _vm.ScriptName = string.Empty;
         _vm.SaveCategory = "My Scripts";
         Editor.Text = "# New script\n";
+        _loadedScript = null;
+        MarkClean();
         NameBox.Focus();
     }
 
@@ -75,7 +107,18 @@ public partial class ScriptsPage : UserControl
             return;
         }
 
-        _vm.SaveScript(_vm.ScriptName, Editor.Text);
+        try
+        {
+            _changingSelection = true;
+            ScriptFile saved = _vm.SaveScript(_vm.ScriptName, Editor.Text);
+            _loadedScript = saved;
+            MarkClean();
+        }
+        catch (Exception ex)
+        {
+            ShowError("Script was not saved", ex.Message);
+        }
+        finally { _changingSelection = false; }
     }
 
     // ── Delete ─────────────────────────────────────────────────────────────
@@ -105,21 +148,123 @@ public partial class ScriptsPage : UserControl
 
         try
         {
-            _vm.DeleteSelectedScript();
+            _changingSelection = true;
+            _vm.DeleteScript(script);
             Editor.Text = "# Pick a script on the left, or click Add to start a new one.\n";
+            _loadedScript = null;
+            MarkClean();
         }
-        catch (InvalidOperationException ex)
+        catch (Exception ex)
         {
-            // Library throws for built-in defaults (shouldn't reach here because the button
-            // is disabled, but surface it clearly rather than swallowing it).
             var warn = new MessageBox
             {
-                Title = "Cannot delete",
+                Title = "Script was not deleted",
                 Content = ex.Message,
                 CloseButtonText = "OK",
             };
             await warn.ShowDialogAsync();
         }
+        finally { _changingSelection = false; }
+    }
+
+    private void OnReset(object sender, RoutedEventArgs e)
+    {
+        if (_vm?.SelectedScript is not { } script || !_vm.CanResetSelectedScript) return;
+        if (System.Windows.MessageBox.Show(Window.GetWindow(this),
+            $"Replace your edited copy of '{script.Name}' with the current built-in version?",
+            "Reset built-in script", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Warning) != System.Windows.MessageBoxResult.OK) return;
+        try
+        {
+            _changingSelection = true;
+            _vm.ResetSelectedScript();
+            ScriptFile refreshed = _vm.Scripts.First(s => s.FullPath == script.FullPath);
+            Editor.Text = _vm.LoadScript(refreshed);
+            _loadedScript = refreshed;
+            MarkClean();
+        }
+        catch (Exception ex)
+        {
+            ShowError("Script was not reset", ex.Message);
+        }
+        finally { _changingSelection = false; }
+    }
+
+    public bool ConfirmCanClose() => ResolveUnsavedChanges();
+
+    private bool ResolveUnsavedChanges()
+    {
+        if (_vm is null || !IsDirty()) return true;
+        ScriptEditChoice choice = PromptUnsavedChanges();
+        if (choice == ScriptEditChoice.Cancel) return false;
+        if (choice == ScriptEditChoice.Discard)
+        {
+            return true;
+        }
+        if (string.IsNullOrWhiteSpace(_vm.ScriptName))
+        {
+            NameBox.Focus();
+            return false;
+        }
+        try
+        {
+            _changingSelection = true;
+            ScriptFile saved = _vm.SaveScript(_vm.ScriptName, Editor.Text);
+            _loadedScript = saved;
+            MarkClean();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            ShowError("Script was not saved", ex.Message);
+            return false;
+        }
+        finally { _changingSelection = false; }
+    }
+
+    private bool IsDirty() => _vm is not null && _dirty.IsDirty(Editor.Text, _vm.ScriptName, _vm.SaveCategory);
+
+    private void MarkClean()
+    {
+        if (_vm is null) return;
+        _dirty.MarkClean(Editor.Text, _vm.ScriptName, _vm.SaveCategory);
+    }
+
+    private ScriptEditChoice PromptUnsavedChanges()
+    {
+        if (UnsavedChangesPromptOverride is not null) return UnsavedChangesPromptOverride();
+        System.Windows.MessageBoxResult result = System.Windows.MessageBox.Show(Window.GetWindow(this),
+            "Save changes to the current script before continuing?", "Unsaved script changes",
+            System.Windows.MessageBoxButton.YesNoCancel, System.Windows.MessageBoxImage.Warning);
+        return result switch
+        {
+            System.Windows.MessageBoxResult.Yes => ScriptEditChoice.Save,
+            System.Windows.MessageBoxResult.No => ScriptEditChoice.Discard,
+            _ => ScriptEditChoice.Cancel
+        };
+    }
+
+    private void ShowError(string title, string message)
+    {
+        if (ErrorPresenterOverride is not null) ErrorPresenterOverride(title, message);
+        else System.Windows.MessageBox.Show(Window.GetWindow(this), message, title,
+            System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Error);
+    }
+
+    private void OnLibraryRefreshed(object? sender, EventArgs e)
+    {
+        if (_changingSelection || _vm is null || _loadedScript is null || IsDirty()) return;
+        ScriptFile? refreshed = _vm.Scripts.FirstOrDefault(s => s.FullPath == _loadedScript.FullPath);
+        if (refreshed is null) return;
+        Editor.Text = _vm.LoadScript(refreshed);
+        _loadedScript = refreshed;
+        MarkClean();
+    }
+
+    public void Dispose()
+    {
+        if (_vm is null) return;
+        _vm.LibraryRefreshed -= OnLibraryRefreshed;
+        _vm.Dispose();
     }
 
     // ── AvalonEdit helpers ─────────────────────────────────────────────────

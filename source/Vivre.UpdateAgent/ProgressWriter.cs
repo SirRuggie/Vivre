@@ -51,6 +51,17 @@ namespace Vivre.UpdateAgent
             });
         }
 
+        public void WriteAdvisory(Func<bool> isClosed, string phase, string message, int? percent,
+            int available, int installed, int failed, bool rebootPending)
+        {
+            Emit(new Dictionary<string, object>
+            {
+                ["phase"] = phase, ["message"] = message, ["percent"] = percent,
+                ["available"] = available, ["installed"] = installed, ["failed"] = failed,
+                ["rebootPending"] = rebootPending, ["ts"] = DateTime.Now.Ticks,
+            }, isClosed);
+        }
+
         /// <summary>
         /// Emits a component-cleanup terminal line carrying the RAW access-denied facts (the
         /// StartComponentCleanup exit code, whether AnalyzeComponentStore parsed, and the reclaimable count)
@@ -76,11 +87,12 @@ namespace Vivre.UpdateAgent
             });
         }
 
-        private void Emit(Dictionary<string, object> obj)
+        private void Emit(Dictionary<string, object> obj, Func<bool> isClosed = null)
         {
             string line = _serializer.Serialize(obj);
             lock (_gate)
             {
+                if (isClosed != null && isClosed()) return;
                 // Best-effort with a short retry, and NEVER throw. A transient sharing violation
                 // (AV/indexer touching the file in C:\Windows\Temp) must not abort the operation —
                 // and this is called from Main's error path too, so a throw here would escape Main

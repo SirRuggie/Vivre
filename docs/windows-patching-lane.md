@@ -330,6 +330,13 @@ These mechanisms exist because of real production failures. Don't undo them with
   (like 2016 Clean up); Scan/Schedule/Stage/Verify keep their bounds. The watcher's own 2-minute
   startup check is latched behind `$progressSeen`, so "did not start" can only fire before any
   progress was ever relayed.
+- **Servicing-child quiet guidance** — DISM install/remove/query, package expansion and read-only
+  component analysis now sample the exact child plus DISM/TiWorker/TrustedInstaller CPU and CBS-log
+  activity every 20 seconds. After 45 quiet minutes, repeat at most every five minutes with advice
+  to inspect DISM.log/CBS.log and verify host work before conflicting servicing. This is advisory:
+  no child kill, automatic retry, terminal failure or released operation ownership. Elapsed time is
+  monotonic; per-process CPU baselines tolerate process exit/reuse. Disposal is bounded and queued
+  advisory writes check closure under the progress writer lock so they cannot overwrite terminal status.
 - **Agent-death probe** — the heartbeat proves the **session**, not the agent (the controller
   synthesizes it even if the agent process is gone). Agent death is caught separately:
   - **Probe mechanics** — during a quiet stretch the controller also probes the scheduled task's
