@@ -82,3 +82,7 @@ Operational product work, not a prototype. Completion claims require actual evid
 - All existing workspace, log, throttle, registry, manifest, completion-banner and rendered-grid probes completed, followed by all audit, script-execution and editor assertions, including typed category preservation in both editors.
 - At 3,190 dummy rows, the actual offscreen DataGrid realized 16 rows; rapid filter setters took 0.43 ms and settled filtering/rendering took about 501 ms. These are single-run diagnostics, not a before/after speedup or visible-user latency guarantee.
 - Independent final review found no unresolved known blocker in publish artifact-tree protection, bounded capture or editor workflow changes. The original F26–F45 audit file is unchanged; `git diff --check` passed.
+
+## Delivery
+
+- Implementation and validation harness: [`1b7e87a`](https://github.com/SirRuggie/Vivre/commit/1b7e87a) — `fix: harden audited operations and editor workflows`, pushed to `origin/master`. No release package was published or deployed.
