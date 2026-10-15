@@ -454,8 +454,8 @@ public sealed class WuaUpdateLane
     /// <summary>
     /// Streaming variant of <see cref="RunScriptAsync"/>: each output object reaches
     /// <paramref name="onOutput"/> the moment the script writes it, not at end-of-script.
-    /// Local hosts fall back to the non-streaming path and replay output at end (local
-    /// install is the rare case; live progress matters most for remote targets).
+    /// Local and remote hosts both stream through their runspace output collection so the
+    /// liveness watchdog observes agent progress before the controller finishes.
     /// </summary>
     private async Task<PSExecutionResult> RunStreamingAsync(
         string host,
@@ -466,12 +466,7 @@ public sealed class WuaUpdateLane
     {
         if (IsLocal(host))
         {
-            PSExecutionResult result = await _powerShell.RunLocalAsync(script, cancellationToken).ConfigureAwait(false);
-            foreach (PSObject row in result.Output)
-            {
-                onOutput(row);
-            }
-            return result;
+            return await RunLocalControllerAsync(script, onOutput, cancellationToken).ConfigureAwait(false);
         }
 
         return await _powerShell.RunRemoteStreamingAsync(
@@ -480,6 +475,20 @@ public sealed class WuaUpdateLane
             onOutput,
             credential?.ToPowerShellCredential(),
             cancellationToken: cancellationToken).ConfigureAwait(false);
+    }
+
+    private Task<PSExecutionResult> RunLocalControllerAsync(
+        string script,
+        Action<PSObject> onOutput,
+        CancellationToken cancellationToken)
+    {
+        if (_powerShell is not IWuaLocalControllerHost trusted)
+        {
+            throw new NotSupportedException("The configured PowerShell host does not support the local WUA controller.");
+        }
+
+        return trusted.RunWuaControllerAsync(
+            WuaControllerScript.FromGenerated(script), onOutput, cancellationToken);
     }
 
     /// <summary>
@@ -499,7 +508,19 @@ public sealed class WuaUpdateLane
         try
         {
             string script = BuildSafetyCleanupScript(taskName, exePath, configPath, progressPath);
-            await RunScriptAsync(host, script, credential, CancellationToken.None).ConfigureAwait(false);
+            if (IsLocal(host))
+            {
+                await RunLocalControllerAsync(
+                    script, static _ => { }, CancellationToken.None).ConfigureAwait(false);
+            }
+            else
+            {
+                await _powerShell.RunRemoteAsync(
+                    host,
+                    script,
+                    credential?.ToPowerShellCredential(),
+                    cancellationToken: CancellationToken.None).ConfigureAwait(false);
+            }
         }
         catch
         {
@@ -861,6 +882,10 @@ public sealed class WuaUpdateLane
             ServerSelection = sel.ServerSelection,
             ServiceId = sel.ServiceId,
             IncludeDrivers = options.IncludeDrivers,
+            AllowPendingRebootInstall =
+                string.Equals(mode, "Install", StringComparison.OrdinalIgnoreCase) &&
+                options.RunBehavior == RunBehavior.InstallNow &&
+                options.AllowPendingRebootInstall,
             Excludes = (options.ExcludeNameContains ?? [])
                 .Where(t => !string.IsNullOrWhiteSpace(t))
                 .Select(t => t.Trim())
@@ -906,6 +931,11 @@ public sealed class WuaUpdateLane
     /// share. Per-run filenames keep concurrent runs from colliding.
     /// </summary>
     internal const string AgentDropDir = @"C:\ProgramData\Vivre\agent";
+
+    private const string ScheduledTasksModuleImport = """
+        $scheduledTasksModule = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\Modules\ScheduledTasks\ScheduledTasks.psd1'
+        Import-Module -Name $scheduledTasksModule -ErrorAction Stop
+        """;
 
 
     /// <summary>
@@ -985,6 +1015,10 @@ public sealed class WuaUpdateLane
             }
 
             Remove-Item '{{progressPath}}' -ErrorAction SilentlyContinue
+            # The embedded local PS7 runspace does not necessarily inherit Windows PowerShell's
+            # system module discovery path. Import the inbox ScheduledTasks module by its stable
+            # Windows path so local and remote bootstraps resolve the same cmdlets.
+            {{ScheduledTasksModuleImport}}
             {{trigger}}
             $action    = New-ScheduledTaskAction -Execute '{{exePath}}' -Argument '"{{configPath}}"'
             $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
@@ -1142,8 +1176,9 @@ public sealed class WuaUpdateLane
             """;
     }
 
-    private static string BuildSafetyCleanupScript(string taskName, string exePath, string configPath, string progressPath) =>
+    internal static string BuildSafetyCleanupScript(string taskName, string exePath, string configPath, string progressPath) =>
         $$"""
+            {{ScheduledTasksModuleImport}}
             $deadline = (Get-Date).AddSeconds(10)
             while ((Get-Date) -lt $deadline) {
                 $t = Get-ScheduledTask -TaskName '{{taskName}}' -ErrorAction SilentlyContinue

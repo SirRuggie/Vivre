@@ -122,6 +122,9 @@ public sealed class PatchOptions
     /// </summary>
     public bool AllowSmbScanFallback { get; set; } = true;
 
+    /// <summary>Per-operation approval for an immediate normal WUA install despite reboot-pending flags.</summary>
+    public bool AllowPendingRebootInstall { get; set; }
+
     /// <summary>
     /// A shallow copy, so a per-host install scope (<see cref="IncludeKbArticleIds"/>) can be set
     /// without mutating the shared session options that concurrent hosts read. The list properties

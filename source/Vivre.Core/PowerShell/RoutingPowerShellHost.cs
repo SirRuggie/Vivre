@@ -24,7 +24,7 @@ namespace Vivre.Core.PowerShell;
 /// </para>
 /// Local runs pass straight through — there is no transport choice for a local runspace.
 /// </summary>
-public sealed class RoutingPowerShellHost : IPowerShellHost, IWinRmRecovery
+public sealed class RoutingPowerShellHost : IPowerShellHost, IWinRmRecovery, IWuaLocalControllerHost
 {
     private const string RecoverySentinel = "VIVRE_WINRM_RECOVERY_7F4B2C19";
     private readonly IPowerShellHost _inner;
@@ -44,6 +44,25 @@ public sealed class RoutingPowerShellHost : IPowerShellHost, IWinRmRecovery
 
     public Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default) =>
         _inner.RunLocalAsync(script, cancellationToken);
+
+    public Task<PSExecutionResult> RunLocalStreamingAsync(
+        string script,
+        Action<PSObject> onOutput,
+        CancellationToken cancellationToken = default) =>
+        _inner.RunLocalStreamingAsync(script, onOutput, cancellationToken);
+
+    Task<PSExecutionResult> IWuaLocalControllerHost.RunWuaControllerAsync(
+        WuaControllerScript controller,
+        Action<PSObject> onOutput,
+        CancellationToken cancellationToken)
+    {
+        if (_inner is not IWuaLocalControllerHost trusted)
+        {
+            throw new NotSupportedException("The inner host does not support the local WUA controller.");
+        }
+
+        return trusted.RunWuaControllerAsync(controller, onOutput, cancellationToken);
+    }
 
     // Forward the parameterized overload too — the SMB-copy deploy path runs a local script with a
     // bound PSCredential through this seam, so swallowing it into the interface default (which throws

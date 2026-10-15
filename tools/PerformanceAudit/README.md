@@ -50,3 +50,7 @@ The script-editor probe uses actual runner and library-page controls with tempor
 `--cu-stage-only <output.json>` measures actual FullPackageLcuLane call-entry time and queued dispatcher callback latency for 1 and 8 dummy targets using a 128 MiB local dummy MSU, real SHA-256 validation and an inert SMB implementation. It performs no server operation. First-sample callback latency includes cold WPF dispatcher startup; compare synchronous call-entry and the subsequent 8-target sample, not cold callback latency as network latency.
 
 The CU-only run also exercises the actual WorkspaceViewModel with a blocked dummy preflight: dispatcher responsiveness, busy/Stop state, prompt cancellation, and a canceled retry that cannot accumulate a second blocked reader. It uses a temporary settings store and no production hosts or writes.
+
+### Install-anyway approval probe
+
+Run `dotnet run --project tools/PerformanceAudit -c Release -- --install-override-only "$env:TEMP\vivre-install-override.json"` from the repository in PowerShell. This invokes the real WorkspaceViewModel against an inert patch service and verifies approval is true for the approved immediate install, false for the next default install, and false for a scheduled install. It does not contact any target, show a window, or install updates.

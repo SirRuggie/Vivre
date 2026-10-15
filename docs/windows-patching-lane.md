@@ -27,6 +27,15 @@ list. The **Fleet ▸ Health** features (SCCM health, client actions, Run Script
   runs it from a **one-time SYSTEM scheduled task**, and streams the agent's progress back over a
   **single persistent WinRM session**.
 
+For the local Vivre host, the controller uses the embedded runspace with live output callbacks,
+including heartbeat delivery to the same timeout monitor. Task commands load from the Windows
+inbox ScheduledTasks manifest explicitly; this does not depend on a separate interactive shell's
+module discovery. Bootstrap and cleanup each initialize their own runspace dependencies. The internal
+`IWuaLocalControllerHost` capability accepts only app-generated controller tokens and uses a
+separate authorization manager so the inbox CDXML module can load. Effective script policy is
+not enforced inside that controller runspace; process, user and machine policy settings remain
+unchanged, and the arbitrary script runner retains its normal authorization manager.
+
 The drop directory is the **Administrators/SYSTEM-only** `C:\ProgramData\Vivre\agent` (the WinRM
 bootstrap creates + ACL-hardens it on the target), not the old world-writable `C:\Windows\Temp` —
 so a non-privileged local user can't plant or swap the binary that then runs as SYSTEM. Per-run
@@ -357,10 +366,13 @@ These mechanisms exist because of real production failures. Don't undo them with
   `RemoteSessionLostException` / `RemoteShellInitException` (at both the connect and invoke phases),
   so the UI shows actionable messages, never "The pipeline has been stopped." or the raw
   InitialSessionState text. A user Stop still maps to "Cancelled"; genuine in-script errors pass through.
-- **Servicing-collision guards** — the agent's `BootBusyGuard` defers cleanly if a reboot /
-  offline-servicing pass is already staged (CBS `RebootPending`, `pending.xml`,
-  `PendingFileRenameOperations`); `-StartWhenAvailable` was removed from the task (a missed trigger
-  could re-fire at boot); the agent releases its WUA COM RCWs before scheduling any reboot.
+- **Servicing-collision guards** — default agent behavior defers on CBS `RebootInProgress`,
+  `pending.xml`, `PackagesPending`, CBS `RebootPending` or Windows Update `RebootRequired`.
+  An explicit **Install anyway** approval for the captured immediate WUA install can bypass only
+  the last two pending-reboot flags. Active/staged transactions still defer; Stage CU, cleanup,
+  uninstall and scheduled operations retain the default guard. `PendingFileRenameOperations`
+  is not a servicing signal. Nothing here reboots a machine. The task omits `StartWhenAvailable`
+  so a missed trigger cannot unexpectedly re-fire at boot.
 - **Per-host serialization** — `PatchService` refuses two CBS/DISM ops (install / uninstall /
   Installed-scope scan) on the same host at once, which also catches the cross-tab "same host in two
   tabs" case the per-row UI guard can't see.

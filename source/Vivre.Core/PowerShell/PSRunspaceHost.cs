@@ -10,7 +10,7 @@ namespace Vivre.Core.PowerShell;
 /// pattern proven in Spike #1. Each call uses its own runspace so concurrent sweeps
 /// don't share engine state; a runspace pool can replace this if throughput demands it.
 /// </summary>
-public sealed class PSRunspaceHost : IPowerShellHost
+public sealed class PSRunspaceHost : IPowerShellHost, IWuaLocalControllerHost
 {
     private static readonly AsyncLocal<BoundedScriptCapture?> ActiveCapture = new();
     /// <summary>How long to wait for a remote WinRM connection before giving up (ms).</summary>
@@ -33,6 +33,43 @@ public sealed class PSRunspaceHost : IPowerShellHost
         runspace.Open();
 
         return await RunInRunspaceAsync(runspace, script, onOutput: null, arguments: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<PSExecutionResult> RunLocalStreamingAsync(
+        string script,
+        Action<PSObject> onOutput,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(script);
+        ArgumentNullException.ThrowIfNull(onOutput);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        Runspace runspace = RunspaceFactory.CreateRunspace();
+        runspace.Open();
+
+        return await RunInRunspaceAsync(runspace, script, onOutput, arguments: null, cancellationToken).ConfigureAwait(false);
+    }
+
+    async Task<PSExecutionResult> IWuaLocalControllerHost.RunWuaControllerAsync(
+        WuaControllerScript controller,
+        Action<PSObject> onOutput,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(controller);
+        ArgumentNullException.ThrowIfNull(onOutput);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // This authorization-isolated runspace executes only an opaque WUA controller generated
+        // inside Vivre.Core. It intentionally does not enforce effective execution policy inside
+        // this runspace, but it changes no process/user/machine policy and is unreachable from the
+        // arbitrary script runner.
+        InitialSessionState state = InitialSessionState.CreateDefault();
+        state.AuthorizationManager = new AuthorizationManager("Vivre.WuaController");
+        Runspace runspace = RunspaceFactory.CreateRunspace(state);
+        runspace.Open();
+
+        return await RunInRunspaceAsync(
+            runspace, controller.Text, onOutput, arguments: null, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>

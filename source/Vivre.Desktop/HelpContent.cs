@@ -509,7 +509,7 @@ public static class HelpContent
             Lines =
             [
                 "Select machines, then click Install all — or Install (N) with a selection (the confirm reads \"Install on N\"). Or Ctrl+Enter.",
-                "If any target already has a reboot pending, Install shows the pending count and original target scope. Force-reboot first closes applications and loses unsaved work; it acts on exactly the pending subset shown. Wait for those machines to return before installing, or choose Install anyway.",
+                "If any target already has a reboot pending, Install shows the pending count and original target scope. Force-reboot first closes applications and loses unsaved work; it acts on exactly the pending subset shown. Wait for those machines to return before installing, or choose Install anyway. That approval applies only to this immediate Windows Update install: pending-reboot flags may be bypassed, but active or staged servicing transactions still defer. Stage CU, cleanup and uninstall keep their reboot guards.",
                 "Progress shows live download then install percent; the chip turns green (Done) or amber (reboot pending).",
                 "A required reboot is reported, not forced — reboot when you're ready.",
                 "A box whose OS build is unknown is skipped with \"Unknown OS build — run Check Vitals first so Vivre can pick the right update lane.\"",

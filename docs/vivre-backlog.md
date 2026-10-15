@@ -594,3 +594,5 @@ standalone items further down, each "do only if it recurs / when a signal appear
 The doc inventory (every doc, one-line purpose, read-when cue) lives in **docs/README.md** — the single map.
 
 - **F46 — CU staging dispatcher pause (2026-10-15):** reproduced synchronous package-hash blocking with dummy targets; background-validation fix and focused tests pass. Current acceptance and live-validation limits: [implementation ledger](vivre-audit-implementation-2026-10-14.md#f46--server-2016-multi-target-staging-pauses-the-dispatcher-2026-10-15).
+
+- **F47/F48 — local-host install and pending-reboot approval (2026-10-15):** implemented embedded ScheduledTasks discovery/local streaming and the missing Install-anyway approval contract; independent source review and local regression checks passed. Current status and validation boundaries: [implementation ledger](vivre-audit-implementation-2026-10-14.md#f47f48--local-host-task-discovery-and-explicit-install-override-2026-10-15).

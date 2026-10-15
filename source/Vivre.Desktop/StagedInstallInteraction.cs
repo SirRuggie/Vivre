@@ -33,7 +33,9 @@ internal static class StagedInstallInteraction
     /// <summary>Runs the staged-patching gate for <paramref name="targets"/>. The View must NOT install the
     /// targets itself when this returns <see cref="StagedInstallOutcome.Handled"/> — the gate already installed
     /// the non-flagged remainder (and ran the chosen flagged-box action, if any).</summary>
-    public static async Task<StagedInstallOutcome> ResolveAsync(Window owner, WorkspaceViewModel vm, IReadOnlyList<Computer> targets)
+    public static async Task<StagedInstallOutcome> ResolveAsync(
+        Window owner, WorkspaceViewModel vm, IReadOnlyList<Computer> targets,
+        bool allowPendingRebootInstall = false, Func<bool>? targetScopeIsUnchanged = null)
     {
         StagedInstallPlan plan = vm.PlanStagedInstall(targets);
         if (!plan.NeedsDecision)
@@ -46,6 +48,10 @@ internal static class StagedInstallInteraction
         // log) and install their minor updates via WUA; fail-open leaves an unreadable box in the dialog. Re-plan so
         // the now-current boxes move from the dialog set into Normal.
         await vm.ResolveAlreadyCurrentAsync(plan.FlaggedNotStaged);
+        if (!await EnsureScopeUnchangedAsync(owner, targetScopeIsUnchanged))
+        {
+            return StagedInstallOutcome.Handled;
+        }
         plan = vm.PlanStagedInstall(targets);
         if (!plan.NeedsDecision)
         {
@@ -54,6 +60,11 @@ internal static class StagedInstallInteraction
 
         var dialog = new StagedInstallDecisionDialog(plan) { Owner = owner };
         dialog.ShowDialog();
+
+        if (!await EnsureScopeUnchangedAsync(owner, targetScopeIsUnchanged))
+        {
+            return StagedInstallOutcome.Handled;
+        }
 
         // The rest of the fleet installs normally regardless of the choice; the choice only governs the
         // flagged-not-staged boxes. (Cancel = "deal with these later" — skip them, but don't stop everything.)
@@ -64,28 +75,42 @@ internal static class StagedInstallInteraction
                 // the stage workflow (which may show the scan-gate / package-needed prompts and then fires the
                 // stage sweep). Both proceed concurrently — the long stage never holds up the other machines, and
                 // the two row sets are disjoint so the sweeps don't collide.
-                _ = InstallNormalAsync(vm, plan.Normal);
+                _ = InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall);
                 await RunStageWorkflowAsync(owner, vm, plan.FlaggedNotStaged);
                 break;
 
             case StagedInstallChoice.MinorOnly:
                 // Fire both sweeps (disjoint row sets) — same fire-and-forget shape as a normal install.
-                _ = vm.InstallMinorOnlyAsync(plan.FlaggedNotStaged);
-                _ = InstallNormalAsync(vm, plan.Normal);
+                _ = vm.InstallMinorOnlyAsync(plan.FlaggedNotStaged, allowPendingRebootInstall);
+                _ = InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall);
                 break;
 
             default: // Cancel — skip the flagged boxes ("deal with them later"); the rest of the run still installs.
-                _ = InstallNormalAsync(vm, plan.Normal);
+                _ = InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall);
                 break;
         }
 
         return StagedInstallOutcome.Handled;
     }
 
+    private static async Task<bool> EnsureScopeUnchangedAsync(Window owner, Func<bool>? validator)
+    {
+        if (validator is null || validator()) return true;
+        await new Wpf.Ui.Controls.MessageBox
+        {
+            Owner = owner,
+            Title = "Install cancelled",
+            Content = "A target name changed while confirmation was open. Review the targets and try again.",
+            CloseButtonText = "OK",
+        }.ShowDialogAsync();
+        return false;
+    }
+
     /// <summary>Installs the non-flagged remainder — guarded so an empty set never falls through to
     /// <see cref="WorkspaceViewModel.InstallSelectedAsync"/>'s "empty ⇒ all rows" behavior.</summary>
-    private static Task InstallNormalAsync(WorkspaceViewModel vm, IReadOnlyList<Computer> normal) =>
-        normal.Count > 0 ? vm.InstallSelectedAsync(normal) : Task.CompletedTask;
+    private static Task InstallNormalAsync(
+        WorkspaceViewModel vm, IReadOnlyList<Computer> normal, bool allowPendingRebootInstall) =>
+        normal.Count > 0 ? vm.InstallSelectedAsync(normal, allowPendingRebootInstall) : Task.CompletedTask;
 
     private static readonly HashSet<WorkspaceViewModel> PreparingStage = [];
 

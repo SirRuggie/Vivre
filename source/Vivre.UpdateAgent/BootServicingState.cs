@@ -55,5 +55,24 @@ namespace Vivre.UpdateAgent
 
             return (false, string.Empty);
         }
+
+        /// <summary>Applies the narrow Install-anyway exception to reboot-pending flags only.</summary>
+        public static (bool Busy, string Reason) EvaluateForOperation(
+            string mode, bool allowPendingRebootInstall,
+            bool cbsRebootInProgress, bool pendingXmlExists, bool cbsPackagesPending,
+            bool cbsRebootPending, bool wuauRebootRequired)
+        {
+            if (cbsRebootInProgress || pendingXmlExists || cbsPackagesPending)
+            {
+                return Evaluate(cbsRebootInProgress, pendingXmlExists, cbsPackagesPending,
+                    cbsRebootPending, wuauRebootRequired);
+            }
+
+            bool approvedInstall = allowPendingRebootInstall
+                && string.Equals(mode, "Install", System.StringComparison.OrdinalIgnoreCase);
+            return approvedInstall
+                ? (false, string.Empty)
+                : Evaluate(false, false, false, cbsRebootPending, wuauRebootRequired);
+        }
     }
 }

@@ -1966,8 +1966,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], ScanRowAsync, "Scan", _remoteSweepThrottle.Active);
 
     /// <summary>Installs on the given rows (right-click "Updates ▸ Install"); empty ⇒ all rows.</summary>
-    public Task InstallSelectedAsync(IReadOnlyList<Computer> rows) =>
-        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers], (c, ct) => InstallRowAsync(c, ct), "Install",
+    public Task InstallSelectedAsync(IReadOnlyList<Computer> rows, bool allowPendingRebootInstall = false) =>
+        RunPatchSweepAsync(rows.Count > 0 ? rows : [.. Computers],
+            (c, ct) => InstallRowAsync(c, ct, allowPendingRebootInstall: allowPendingRebootInstall), "Install",
             perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan);
 
     /// <summary>Registers a one-time SYSTEM task on each row to install at <paramref name="at"/>
@@ -3393,7 +3394,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <param name="minorOnly">True for the decision dialog's "Install minor updates only" branch: a flagged 2016
     /// box installs its non-CU updates via WUA, with the cumulative update KB explicitly excluded so the broken
     /// Express-delta CU is never pushed through WUA. Requires a scan (to know what to exclude).</param>
-    private async Task InstallRowAsync(Computer computer, CancellationToken token, DateTime? scheduleAt = null, bool minorOnly = false)
+    private async Task InstallRowAsync(Computer computer, CancellationToken token, DateTime? scheduleAt = null,
+        bool minorOnly = false, bool allowPendingRebootInstall = false)
     {
         // Don't start a second operation on a row already installing/uninstalling.
         if (computer.IsPatching)
@@ -3480,6 +3482,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // scope this host's install to its ticked KBs: never scanned ⇒ no checklist ⇒ install all
         // (not-excluded, unchanged); scanned but nothing ticked ⇒ skip without launching a task.
         PatchOptions options = _patchOptions.Clone();
+        // Operation-local only: shared session options stay fail-closed, and scheduled work never inherits
+        // an approval that was given for an immediate Install-anyway click.
+        options.AllowPendingRebootInstall = scheduleAt is null && allowPendingRebootInstall;
         if (scheduleAt is { } scheduledTime)
         {
             options.RunBehavior = RunBehavior.ScheduleAt;
@@ -3744,8 +3749,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// "Install minor updates only"). <see cref="InstallRowAsync"/> excludes the OS CU per row, so the broken
     /// Express-delta CU is never pushed through WUA; a box with no scan — or whose only pending update IS the CU —
     /// is skipped with a per-row note.</summary>
-    public Task InstallMinorOnlyAsync(IReadOnlyList<Computer> boxes) =>
-        RunPatchSweepAsync(boxes, (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true), "Install",
+    public Task InstallMinorOnlyAsync(IReadOnlyList<Computer> boxes, bool allowPendingRebootInstall = false) =>
+        RunPatchSweepAsync(boxes,
+            (c, ct) => InstallRowAsync(c, ct, null, minorOnly: true,
+                allowPendingRebootInstall: allowPendingRebootInstall), "Install",
             perHostTimeout: System.Threading.Timeout.InfiniteTimeSpan);
 
     /// <summary>Pre-dialog "already current this cycle" check for the staged-update decision. For each flagged

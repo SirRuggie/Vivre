@@ -140,6 +140,27 @@ public class WuaUpdateLaneStreamingTests
     }
 
     [Fact]
+    public async Task Local_install_uses_live_streaming_and_keeps_watchdog_alive()
+    {
+        var host = new ScriptedStreamingHost([Heartbeat, Done], delayBetweenLines: TimeSpan.FromMilliseconds(40));
+        var options = new PatchOptions { NoResponseTimeout = TimeSpan.FromMilliseconds(70) };
+        var lane = new WuaUpdateLane(
+            host,
+            watchdogPollInterval: TimeSpan.FromMilliseconds(10),
+            agentBytesProvider: () => StubAgent);
+
+        HostPatchStatus final = await lane.InstallAsync(
+            Environment.MachineName,
+            options,
+            credential: null,
+            Sink([]),
+            CancellationToken.None);
+
+        Assert.Equal(PatchPhase.Done, final.Phase);
+        Assert.Equal(1, host.LocalStreamingCalls);
+    }
+
+    [Fact]
     public async Task Scheduled_installs_return_distinct_actual_task_names_but_run_now_does_not()
     {
         var reports = new List<HostPatchStatus>();
@@ -179,16 +200,33 @@ public class WuaUpdateLaneStreamingTests
         string[] lines,
         PSExecutionResult? result = null,
         Exception? toThrow = null,
-        bool hangUntilCancelled = false) : IPowerShellHost
+        bool hangUntilCancelled = false,
+        TimeSpan? delayBetweenLines = null) : IPowerShellHost, IWuaLocalControllerHost
     {
         private readonly PSExecutionResult _result = result ?? new PSExecutionResult([], [], [], HadErrors: false);
         private int _cleanupCalls;
 
         public int CleanupCalls => _cleanupCalls;
+        public int LocalStreamingCalls { get; private set; }
         public string LastScript { get; private set; } = "";
 
         public Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default) =>
             Task.FromResult(_result);
+
+        public Task<PSExecutionResult> RunLocalStreamingAsync(
+            string script,
+            Action<PSObject> onOutput,
+            CancellationToken cancellationToken = default) =>
+            StreamAsync(script, onOutput, cancellationToken);
+
+        public Task<PSExecutionResult> RunWuaControllerAsync(
+            WuaControllerScript controller,
+            Action<PSObject> onOutput,
+            CancellationToken cancellationToken = default)
+        {
+            LocalStreamingCalls++;
+            return StreamAsync(controller.Text, onOutput, cancellationToken);
+        }
 
         public Task<PSExecutionResult> RunRemoteAsync(
             string host, string script, PSCredential? credential = null, int port = 5985, bool useSsl = false,
@@ -203,11 +241,23 @@ public class WuaUpdateLaneStreamingTests
             string host, string script, Action<PSObject> onOutput, PSCredential? credential = null, int port = 5985,
             bool useSsl = false, CancellationToken cancellationToken = default, bool background = false)
         {
+            return await StreamAsync(script, onOutput, cancellationToken).ConfigureAwait(false);
+        }
+
+        private async Task<PSExecutionResult> StreamAsync(
+            string script,
+            Action<PSObject> onOutput,
+            CancellationToken cancellationToken)
+        {
             LastScript = script;
             cancellationToken.ThrowIfCancellationRequested(); // user Stop before any line
 
             foreach (string line in lines)
             {
+                if (delayBetweenLines is { } delay)
+                {
+                    await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                }
                 cancellationToken.ThrowIfCancellationRequested();
                 onOutput(new PSObject(line));
             }

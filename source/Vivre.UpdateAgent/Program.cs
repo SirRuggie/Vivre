@@ -71,12 +71,13 @@ namespace Vivre.UpdateAgent
                 progress = new ProgressWriter(config.ProgressPath);
                 heartbeat?.Start(progress);
 
-                // Never touch the servicing stack (WUA/DISM) while a reboot is already pending or a
-                // servicing transaction is staged/in-flight — that's how we'd collide with the OS's
-                // boot-time offline-servicing pass. Defer cleanly and let the user reboot first.
-                // (A read-only Scan is safe during a pending reboot, so only the mutating modes defer.)
+                // Never touch WUA/DISM while servicing is staged/in-flight. An explicit, per-operation
+                // Install-anyway approval may ignore only plain reboot-pending flags for normal Install;
+                // AddPackage, Cleanup, Uninstall and all active/staged signals remain fail-closed.
+                // (A read-only Scan is safe during a pending reboot, so only mutating modes are guarded.)
                 bool isScan = string.Equals(config.Mode, "Scan", StringComparison.OrdinalIgnoreCase);
-                if (!isScan && BootBusyGuard.IsServicingBusy(out string busyReason))
+                if (!isScan && BootBusyGuard.IsServicingBusy(
+                    config.Mode, config.AllowPendingRebootInstall, out string busyReason))
                 {
                     // Phase "Deferred" (NOT "PendingReboot"): a servicing-busy refusal must NOT look
                     // like a successful stage's reboot-pending. The host maps "Deferred" to a

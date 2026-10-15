@@ -22,9 +22,11 @@ namespace Vivre.UpdateAgent
         /// <summary>True if a reboot/servicing operation is already pending; <paramref name="reason"/>
         /// is a short human explanation. Any read failure is treated as "signal absent" (a probe
         /// error must not block a legitimate install).</summary>
-        public static bool IsServicingBusy(out string reason)
+        public static bool IsServicingBusy(string mode, bool allowPendingRebootInstall, out string reason)
         {
-            (bool busy, string r) = BootServicingState.Evaluate(
+            (bool busy, string r) = BootServicingState.EvaluateForOperation(
+                mode,
+                allowPendingRebootInstall,
                 cbsRebootInProgress: SubKeyExists(CbsKey + @"\RebootInProgress"),
                 pendingXmlExists: PendingXmlExists(),
                 cbsPackagesPending: SubKeyExists(CbsKey + @"\PackagesPending"),

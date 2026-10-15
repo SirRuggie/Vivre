@@ -1137,16 +1137,27 @@ public partial class MainWindow : FluentWindow
         int count = targets.Count;
         if (count == 0 || !vm.InstallTargetCommand.CanExecute(null)) return;
 
+        InstallTargetScope installScope = InstallTargetScope.Capture(targets);
+        targets = installScope.Targets;
+
         var rebootApproval = RebootApproval.Pending(targets, selectionOnly || hasSelection);
 
         // Shared tail: route through the Server 2016 staged-patching gate, then — only when no decision was
         // needed — the usual "Install on N" confirm and the normal install command. When the gate shows its
         // decision dialog and handles the run, the generic confirm is skipped (the decision dialog IS the confirm).
-        async Task GatedProceedAsync(bool showConfirm)
+        async Task GatedProceedAsync(bool showConfirm, bool allowPendingRebootInstall = false)
         {
-            if (await StagedInstallInteraction.ResolveAsync(this, vm, targets) != StagedInstallOutcome.ProceedNormally)
+            if (await StagedInstallInteraction.ResolveAsync(
+                    this, vm, targets, allowPendingRebootInstall, installScope.IsUnchanged)
+                != StagedInstallOutcome.ProceedNormally)
             {
                 return; // gate handled the run, or the operator cancelled
+            }
+
+            if (!installScope.IsUnchanged())
+            {
+                await ShowInstallTargetsChangedAsync();
+                return;
             }
 
             if (showConfirm)
@@ -1168,10 +1179,15 @@ public partial class MainWindow : FluentWindow
                 }
             }
 
-            if (vm.InstallTargetCommand.CanExecute(null))
+            if (!installScope.IsUnchanged())
             {
-                vm.InstallTargetCommand.Execute(null);
+                await ShowInstallTargetsChangedAsync();
+                return;
             }
+
+            // Use the pre-dialog snapshot. Selection changes while either dialog is open must not redirect
+            // the approved operation, and the approval is carried by this call only.
+            await vm.InstallSelectedAsync(targets, allowPendingRebootInstall);
         }
 
         if (rebootApproval.Count > 0)
@@ -1187,7 +1203,8 @@ public partial class MainWindow : FluentWindow
             {
                 Title = "Reboot pending",
                 Content = rebootApproval.ForcePrompt + "\n\nA pending reboot can prevent installation. "
-                          + "After rebooting, wait for the machines to return before installing, or choose Install anyway."
+                          + "After rebooting, wait for the machines to return before installing, or choose Install anyway. "
+                          + "Install anyway overrides reboot-pending flags for this install only; active or staged Windows servicing still defers."
                           + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
                 PrimaryButtonText = $"Force-reboot {rebootApproval.Count} first",
                 SecondaryButtonText = "Install anyway",
@@ -1203,11 +1220,21 @@ public partial class MainWindow : FluentWindow
 
             if (choice != MessageBoxResult.Secondary) return;
 
-            await GatedProceedAsync(showConfirm: false); // operator already chose "Install anyway"
+            await GatedProceedAsync(showConfirm: false, allowPendingRebootInstall: true);
             return;
         }
 
         await GatedProceedAsync(showConfirm: true);
+    }
+
+    private async Task ShowInstallTargetsChangedAsync()
+    {
+        await new MessageBox
+        {
+            Title = "Install cancelled",
+            Content = "A target name changed while confirmation was open. Review the targets and try again.",
+            CloseButtonText = "OK",
+        }.ShowDialogAsync();
     }
 
     /// <summary>Re-seed every loaded row's <see cref="Computer.RequiresStagedPatching"/> from the persisted

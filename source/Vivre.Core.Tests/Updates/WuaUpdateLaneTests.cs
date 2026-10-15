@@ -432,6 +432,47 @@ public class WuaUpdateLaneTests
         Assert.Empty(root.GetProperty("Excludes").EnumerateArray());
     }
 
+    [Fact]
+    public void Bootstrap_imports_inbox_scheduled_tasks_module_by_system_path()
+    {
+        string script = WuaUpdateLane.BuildBootstrapScript(
+            "Vivre_WUA_test",
+            @"C:\ProgramData\Vivre\agent\agent.exe",
+            @"C:\ProgramData\Vivre\agent\config.json",
+            @"C:\ProgramData\Vivre\agent\progress.jsonl",
+            "AA==",
+            "e30=",
+            new string('0', 64),
+            new PatchOptions
+            {
+                RunBehavior = RunBehavior.ScheduleAt,
+                ScheduleAt = DateTime.Now.AddHours(1),
+            });
+
+        Assert.Contains(@"System32\WindowsPowerShell\v1.0\Modules\ScheduledTasks\ScheduledTasks.psd1", script);
+        Assert.Contains("Import-Module -Name $scheduledTasksModule -ErrorAction Stop", script);
+        Assert.True(
+            script.IndexOf("Import-Module -Name $scheduledTasksModule", StringComparison.Ordinal) <
+            script.IndexOf("$trigger = New-ScheduledTaskTrigger", StringComparison.Ordinal));
+        Assert.True(
+            script.IndexOf("Import-Module -Name $scheduledTasksModule", StringComparison.Ordinal) <
+            script.IndexOf("$action    = New-ScheduledTaskAction", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Safety_cleanup_imports_scheduled_tasks_before_first_cmdlet()
+    {
+        string script = WuaUpdateLane.BuildSafetyCleanupScript(
+            "Vivre_WUA_test",
+            @"C:\ProgramData\Vivre\agent\agent.exe",
+            @"C:\ProgramData\Vivre\agent\config.json",
+            @"C:\ProgramData\Vivre\agent\progress.jsonl");
+
+        Assert.True(
+            script.IndexOf("Import-Module -Name $scheduledTasksModule", StringComparison.Ordinal) <
+            script.IndexOf("Get-ScheduledTask", StringComparison.Ordinal));
+    }
+
     // --- helpers ---
 
     private static SoftwareUpdate Update(string title) => new(title, null, false, 0, 0);

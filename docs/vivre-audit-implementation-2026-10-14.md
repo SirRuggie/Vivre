@@ -119,3 +119,31 @@ Operational product work, not a prototype. Completion claims require actual evid
 - **Final local acceptance:** 39 CU/resolver/ownership tests plus 35 patch-service/staging-planner tests passed (74 total, zero failures/skips). Actual WorkspaceViewModel with a deliberately blocked dummy package check remained responsive, exposed Stop, returned Canceled promptly and cleared busy state. A canceled retry does not create a second blocked reader.
 - **Red-team correction:** Stop cannot abort an in-progress synchronous filesystem read. A per-workspace asynchronous semaphore now prevents canceled/retried preflights from accumulating blocking readers, while canceling the wait prevents server dispatch. No new polling, cache or transport was introduced.
 - **Release:** 1.17.5, current package destination `C:\src\Vivre\publish\Vivre-1.17.5-win-x64.zip`. Application version/changelog/README agree; the generated informational version identifies the committed source. Existing 1.17.4 and older artifacts are historical. Operator live-workload confirmation remains necessary.
+
+## F47/F48 — local-host task discovery and explicit install override (2026-10-15)
+
+| Capability | Acceptance status |
+| --- | --- |
+| F47: local-host update controller can resolve Windows ScheduledTasks commands and stream progress | Implemented; focused embedded-runtime/module construction, streaming, watchdog and cleanup checks passed. Full regression coverage completed; exact results below. |
+| F48: Install anyway carries an explicit, operation-scoped pending-reboot approval | Implemented; focused contract/guard/scope tests and actual inert ViewModel probe passed. |
+| Active/offline servicing, stage, cleanup and uninstall protections remain intact | Guard/config boundary tests passed; no reboot primitive added. Existing reboot primitive gate passed in the broad Core run. |
+| Independent refutation, regression build and signed package | Source review accepted; Release solution build and signed/verified 1.17.6 publish passed. |
+| Actual host installation | Not tested; requires operator-controlled live validation. |
+
+- Operator confirmed that choosing **Install anyway** still returns **Deferred**; no unsolicited reboot was reported. Screenshot identifies CBS RebootPending as the refusal reason.
+
+- **F47 runtime finding:** a fresh embedded-runspace probe found the inbox ScheduledTasks CDXML module blocked by the embedded default script policy even when imported by absolute path. A proposed InitialSessionState execution-policy change was rejected because PowerShell applies it to the process environment, affecting concurrent runspaces. The fix is being isolated to the app-generated update controller; generic script-runner behavior must remain unchanged.
+- **F48 review corrections:** approval follows the captured normal/minor-WUA subsets through the Server 2016 decision dialog, but never Stage CU. Host identities are checked after dialogs so a renamed row cannot redirect approval. The config serializer denies the flag for scheduled or non-Install work, even if supplied stale options.
+
+- **Independent review:** no unresolved source blocker after the corrections above. The controller uses an internal opaque capability; it does not enforce script execution policy inside that generated-controller runspace, but never changes process/user/machine policy or the generic script runner.
+- **Focused evidence:** 110 hosting/routing/WUA/config tests passed before final policy/cancellation assertions; 33 reboot-guard/config/target-scope tests passed. These sets overlap and are not an additive total. Actual WorkspaceViewModel with inert IPatchService observed `[true, false, false]` for approved immediate install, later default install, and scheduled install with an approval input. This does not simulate actual Windows servicing.
+
+### F47/F48 final local acceptance
+
+- Full Core run: **1,521 passed, 1 failed assertion, 1 skipped** (1,523 total). The sole failure was the new policy-isolation test expecting a thrown security exception; the host correctly returns policy failures through its error stream. The test now requires `HadErrors`, the explicit scripts-disabled policy message, and no execution marker. Its complete **44-test PowerShell host class passed** after that test-only correction. All 1,522 non-skipped tests therefore have passing evidence against the final implementation; a second complete-suite run was not performed.
+- The skipped owned-file symlink case requires a Windows privilege unavailable in this test process; it is the same previously documented environment limitation.
+- Release solution build passed with zero errors and the known child-process signing-store warning. The publisher separately signs and verifies the bundled agent; build success alone is not signing acceptance.
+- Actual task action/principal/settings construction succeeded through the dedicated local controller. No task was registered. Generic effective policy and process policy environment stayed unchanged; an unsigned script remained blocked in the generic Restricted runspace. Local streaming/cancellation and watchdog checks passed.
+- Version/changelog/README are aligned at **1.17.6**. Package destination: `C:\src\Vivre\publish\Vivre-1.17.6-win-x64.zip`; acceptance requires successful existing signature and ZIP verification. No deployment or live-host patching test was performed.
+
+- **Release acceptance:** full self-contained Windows x64 publish succeeded: 864 files, 231.5 MB folder, 93.1 MB ZIP. Agent Authenticode signature verified against `1A5CE867A4660C271C9C7AA0DD2F923A1FE05953`; ZIP path/count/length/SHA-256 checks passed. The adjacent `.sha256` and package manifest identify the exact committed build. Release is committed on `master` and tagged `v1.17.6`; it has not been deployed.

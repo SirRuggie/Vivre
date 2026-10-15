@@ -50,6 +50,9 @@ namespace Vivre.UpdateAgent
         /// <summary>When non-empty, restrict to updates whose first KB id is in this list (the ticked checklist).</summary>
         public string[] IncludeKbs { get; set; }
 
+        /// <summary>Explicit approval for this immediate normal WUA install to ignore reboot-pending flags.</summary>
+        public bool AllowPendingRebootInstall { get; set; }
+
         // NOTE: there is deliberately no "RebootAfter" / auto-reboot field. The agent never reboots the box —
         // it only reports reboot-required. Rebooting is always a separate, explicit operator action.
 

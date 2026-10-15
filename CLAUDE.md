@@ -169,6 +169,8 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   gate adapts to the code, never the reverse. Residual limits (obfuscated/encoded commands, and paths outside
   `source/ scripts/ tools/`) are stated in the script's header. Full site inventory:
   docs/reboot-path-and-guardrail-findings.md ▸ findings 5 and 12.
+- Install anyway approval is per immediate WUA operation and captured target set. It may bypass plain CBS/WUA pending-reboot flags only; active/staged servicing, CU staging, cleanup, uninstall and scheduled operations keep their guards. Never persist this approval or enable automatic reboot.
+- Local WUA controller output must stream through `PSRunspaceHost`; buffering until completion starves its liveness watchdog. Bootstrap and cleanup explicitly import the inbox ScheduledTasks module.
 - Force reboot, Reboot & verify, and the install pending-reboot nudge use `RebootApproval` snapshots.
   Keep confirmation and execution on the same captured rows; never restore a post-approval selection
   fallback. Show counts/scope and accurate force consequences, not machine-name lists. Scheduling and

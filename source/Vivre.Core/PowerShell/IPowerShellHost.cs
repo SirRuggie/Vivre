@@ -18,6 +18,26 @@ public interface IPowerShellHost
     Task<PSExecutionResult> RunLocalAsync(string script, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Runs <paramref name="script"/> in a local runspace and delivers each output object as it
+    /// arrives. Hosts without a native streaming implementation retain compatibility by replaying
+    /// the captured output after <see cref="RunLocalAsync(string,CancellationToken)"/> completes.
+    /// </summary>
+    async Task<PSExecutionResult> RunLocalStreamingAsync(
+        string script,
+        Action<PSObject> onOutput,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(onOutput);
+        PSExecutionResult result = await RunLocalAsync(script, cancellationToken).ConfigureAwait(false);
+        foreach (PSObject row in result.Output)
+        {
+            onOutput(row);
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Runs <paramref name="script"/> in a local runspace, binding <paramref name="arguments"/> to the
     /// script's <c>param()</c> block — so a typed value (e.g. a <see cref="PSCredential"/> or a
     /// <c>string[]</c>) is passed as a real parameter rather than interpolated into the script text

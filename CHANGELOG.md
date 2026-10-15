@@ -6,6 +6,12 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.6 — 2026-10-15
+
+### Fixed
+- Local-host update tasks explicitly load Windows ScheduledTasks commands and stream progress live so running installs do not falsely time out while output is buffered.
+- Install anyway carries approval only for the captured immediate Windows Update operation. Plain pending-reboot flags can be bypassed; active/staged servicing and other operation types keep their guards.
+
 ## 1.17.5 — 2026-10-15
 
 ### Fixed

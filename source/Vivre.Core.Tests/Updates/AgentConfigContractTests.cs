@@ -25,6 +25,7 @@ public class AgentConfigContractTests
             IncludeDrivers = true,
             ExcludeNameContains = ["SQL", " Silverlight "],
             IncludeKbArticleIds = ["5037782", " 5040442 "],
+            AllowPendingRebootInstall = true,
         };
 
         string json = WuaUpdateLane.BuildAgentConfigJson(options, @"C:\Windows\Temp\p.json", "Install");
@@ -37,6 +38,7 @@ public class AgentConfigContractTests
         Assert.Equal(@"C:\Windows\Temp\p.json", cfg.ProgressPath);
         Assert.Equal(new[] { "SQL", "Silverlight" }, cfg.Excludes);
         Assert.Equal(new[] { "5037782", "5040442" }, cfg.IncludeKbs);
+        Assert.True(cfg.AllowPendingRebootInstall);
     }
 
     [Fact]
@@ -52,6 +54,29 @@ public class AgentConfigContractTests
         Assert.Null(cfg.ServiceId);
         Assert.Empty(cfg.Excludes);
         Assert.Empty(cfg.IncludeKbs);
+        Assert.False(cfg.AllowPendingRebootInstall);
+    }
+
+    [Theory]
+    [InlineData("Install", RunBehavior.ScheduleAt)]
+    [InlineData("Uninstall", RunBehavior.InstallNow)]
+    [InlineData("AddPackage", RunBehavior.InstallNow)]
+    [InlineData("Cleanup", RunBehavior.InstallNow)]
+    public void Pending_reboot_override_is_emitted_only_for_immediate_install(
+        string mode,
+        RunBehavior runBehavior)
+    {
+        var options = new PatchOptions
+        {
+            AllowPendingRebootInstall = true,
+            RunBehavior = runBehavior,
+            ScheduleAt = runBehavior == RunBehavior.ScheduleAt ? DateTime.Now.AddHours(1) : null,
+        };
+
+        string json = WuaUpdateLane.BuildAgentConfigJson(options, "p", mode);
+        AgentConfig cfg = JsonSerializer.Deserialize<AgentConfig>(json)!;
+
+        Assert.False(cfg.AllowPendingRebootInstall);
     }
 
     [Fact]

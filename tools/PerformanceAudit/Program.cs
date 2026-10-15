@@ -20,8 +20,9 @@ internal static class Program
         bool cuStageOnly = args.Length == 2 && args[0] == "--cu-stage-only";
         bool auditFixesOnly = args.Length == 2 && args[0] == "--audit-fixes-only";
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
+        bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -43,6 +44,11 @@ internal static class Program
             if (bannersOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(CompletionBannerProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
+            if (installOverrideOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(InstallOverrideProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
                 return;
             }
             if (filterExperiment)

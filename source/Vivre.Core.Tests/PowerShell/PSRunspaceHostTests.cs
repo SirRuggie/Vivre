@@ -30,6 +30,142 @@ public class PSRunspaceHostTests
     }
 
     [Fact]
+    public async Task Local_streaming_delivers_output_before_script_completion()
+    {
+        var firstOutput = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        Task<PSExecutionResult> run = _host.RunLocalStreamingAsync(
+            "'first'; Start-Sleep -Milliseconds 500; 'second'",
+            row => firstOutput.TrySetResult(row.ToString()));
+
+        string first = await firstOutput.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal("first", first);
+        Assert.False(run.IsCompleted);
+        PSExecutionResult result = await run;
+        Assert.Equal(2, result.Output.Count);
+    }
+
+    [Fact]
+    public async Task Local_streaming_cancellation_stops_callbacks()
+    {
+        using var cts = new CancellationTokenSource();
+        var received = new List<string>();
+
+        Task<PSExecutionResult> run = _host.RunLocalStreamingAsync(
+            "'first'; Start-Sleep -Seconds 30; 'second'",
+            row =>
+            {
+                lock (received)
+                {
+                    received.Add(row.ToString());
+                }
+                cts.Cancel();
+            },
+            cts.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Task.Delay(200);
+
+        lock (received)
+        {
+            Assert.Equal(["first"], received);
+        }
+    }
+
+    [Fact]
+    public async Task Trusted_controller_cancellation_stops_callbacks()
+    {
+        using var cts = new CancellationTokenSource();
+        var received = new List<string>();
+        var trusted = (IWuaLocalControllerHost)_host;
+
+        Task<PSExecutionResult> run = trusted.RunWuaControllerAsync(
+            WuaControllerScript.FromGenerated("'first'; Start-Sleep -Seconds 30; 'second'"),
+            row =>
+            {
+                lock (received)
+                {
+                    received.Add(row.ToString());
+                }
+                cts.Cancel();
+            },
+            cts.Token);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => run.WaitAsync(TimeSpan.FromSeconds(5)));
+        await Task.Delay(200);
+
+        lock (received)
+        {
+            Assert.Equal(["first"], received);
+        }
+    }
+
+    [Fact]
+    public async Task Embedded_runtime_can_import_inbox_scheduled_tasks_module_by_system_path()
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            return;
+        }
+
+        string? policyPreferenceBefore = Environment.GetEnvironmentVariable("PSExecutionPolicyPreference");
+        PSExecutionResult effectivePolicyBeforeResult = await _host.RunLocalAsync("Get-ExecutionPolicy");
+        string effectivePolicyBefore = Assert.Single(effectivePolicyBeforeResult.Output).ToString();
+
+        const string script = """
+            $module = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\Modules\ScheduledTasks\ScheduledTasks.psd1'
+            Import-Module -Name $module -ErrorAction Stop
+            $action = New-ScheduledTaskAction -Execute 'cmd.exe' -Argument '/c exit 0'
+            $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
+            $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 1)
+            $scheduledTaskCommand = Get-Command New-ScheduledTaskAction -ErrorAction Stop
+            $cimCommand = Get-Command Get-CimInstance -ErrorAction Stop
+            "$($scheduledTaskCommand.ModuleName)|$($cimCommand.ModuleName)|$($action.Execute)|$($principal.UserId)|$($settings.ExecutionTimeLimit)"
+            """;
+
+        PSExecutionResult result = await ((IWuaLocalControllerHost)_host).RunWuaControllerAsync(
+            WuaControllerScript.FromGenerated(script), static _ => { });
+
+        Assert.False(result.HadErrors, string.Join(Environment.NewLine, result.Errors));
+        Assert.Contains(result.Output, row => row.ToString().StartsWith("ScheduledTasks|CimCmdlets|cmd.exe|SYSTEM|", StringComparison.Ordinal));
+
+        PSExecutionResult freshRunspace = await ((IWuaLocalControllerHost)_host).RunWuaControllerAsync(
+            WuaControllerScript.FromGenerated(
+                "if (Get-Module ScheduledTasks) { 'LOADED' } else { 'NOT_LOADED' }"),
+            static _ => { });
+        Assert.Contains(freshRunspace.Output, row => row.ToString() == "NOT_LOADED");
+        Assert.Equal(
+            policyPreferenceBefore,
+            Environment.GetEnvironmentVariable("PSExecutionPolicyPreference"));
+
+        PSExecutionResult effectivePolicyAfterResult = await _host.RunLocalAsync("Get-ExecutionPolicy");
+        Assert.Equal(
+            effectivePolicyBefore,
+            Assert.Single(effectivePolicyAfterResult.Output).ToString());
+
+        if (string.Equals(effectivePolicyBefore, "Restricted", StringComparison.OrdinalIgnoreCase))
+        {
+            string unsignedPath = Path.Combine(
+                Path.GetTempPath(), $"Vivre-unsigned-{Guid.NewGuid():N}.ps1");
+            await File.WriteAllTextAsync(unsignedPath, "'should-not-run'");
+            try
+            {
+                string escaped = unsignedPath.Replace("'", "''", StringComparison.Ordinal);
+                PSExecutionResult blocked = await _host.RunLocalAsync($"& '{escaped}'");
+                Assert.True(blocked.HadErrors);
+                Assert.DoesNotContain(blocked.Output, row => row.ToString() == "should-not-run");
+                Assert.Contains(blocked.Errors, error =>
+                    error.Contains("running scripts is disabled", StringComparison.OrdinalIgnoreCase));
+            }
+            finally
+            {
+                File.Delete(unsignedPath);
+            }
+        }
+    }
+
+    [Fact]
     public async Task Captures_error_stream_without_throwing()
     {
         PSExecutionResult result = await _host.RunLocalAsync("Write-Error 'boom'");
