@@ -71,7 +71,7 @@ Operational product work, not a prototype. Completion claims require actual evid
 ## Remaining validation and authorized deferrals
 
 - **Not validated:** owned-file symlink cases without Windows privilege; actual screen-reader/high-DPI keyboard experience; native RDP/full-app long-run heap/handle soak; live server repair, staging, patching, cleanup or reboot behavior.
-- **Not produced:** signed release or deployment. The configured signing certificate is unavailable on this machine. No certificate or server state was changed.
+- **At initial audit handoff:** no signed package or deployment was produced because the executing account could not see the configured certificate. The later F40 follow-up below supersedes the signing/package limitation; no deployment or server state change has occurred.
 - **Still deferred:** F12 cross-process host-operation coordination and force-reboot fast-watch, per earlier decisions. File-write leases do not make operation guards cross-process.
 - Bounded script capture constrains retained output, not arbitrary allocations inside user PowerShell. Local lifecycle checks are not proof that every possible native or application leak is absent.
 - Implementation and local regression acceptance do not establish universal regression freedom. The frozen audit remains unchanged; this ledger is the current evidence record.
@@ -86,3 +86,14 @@ Operational product work, not a prototype. Completion claims require actual evid
 ## Delivery
 
 - Implementation and validation harness: [`1b7e87a`](https://github.com/SirRuggie/Vivre/commit/1b7e87a) — `fix: harden audited operations and editor workflows`, pushed to `origin/master`. No release package was published or deployed.
+
+## F40 follow-up — actual Windows PowerShell publish failure
+
+- Shaun's full signed publish succeeded through signing but failed ZIP file-count verification. The original flat-file fixture missed Windows PowerShell 5.1 writing backslash ZIP paths and an empty directory entry being counted as a file.
+- Reproduced the exact failure with nested module content, an empty script directory and the ownership marker before changing the verifier. Entry paths now normalize separators before directory exclusion, duplicate detection and file lookup. Nonempty directory entries are rejected; length and SHA-256 verification remain mandatory. Count errors include both counts.
+- Expanded publish safety tests passed under Windows PowerShell 5.1 and PowerShell 7, including same-length tampering and separator-alias duplicate rejection. No application code changed.
+- The configured signing certificate is now accessible from the executing build account with its private key. Earlier missing-certificate observations remain historical and no longer block this publish attempt.
+
+- Independent follow-up review passed. Its requested adversarial directory-entry-with-data test was added; both PowerShell 5.1 and 7 suites passed again.
+- Full signed Windows PowerShell 5.1 publish now passed end-to-end: **864 files**, 231.5 MB folder, **93.1 MB ZIP**, every file checked by path/length/SHA-256 before promotion. Agent Authenticode signature verified with the configured certificate.
+- Package: `C:\src\Vivre\publish\Vivre-audited-8b0c2be.zip`; SHA-256 `5DFBFC0A274DA70836F487C74A36329C21E00D46A5F1455F91E1D41CA6C56A37`. App identity remains `1.17.3+build.202610142250.8b0c2bee821542c2c99bdf725705aacefdae4f28`; this follow-up changes packaging verification/tests/docs only, not app code. No deployment or live-server pilot was performed.

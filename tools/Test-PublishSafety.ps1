@@ -63,6 +63,10 @@ try {
     $archivePath = Join-Path $root 'candidate.zip'
     New-Item -ItemType Directory -Path $archiveSource | Out-Null
     Set-Content -LiteralPath (Join-Path $archiveSource 'Vivre.exe') -Value 'dummy'
+    New-Item -ItemType Directory -Path (Join-Path $archiveSource 'Modules\Nested') -Force | Out-Null
+    New-Item -ItemType Directory -Path (Join-Path $archiveSource 'Scripts\Empty') -Force | Out-Null
+    Set-Content -LiteralPath (Join-Path $archiveSource 'Modules\Nested\module.psm1') -Value 'dummy module'
+    Write-VivrePublishOwner -Directory $archiveSource -TargetPath $owned
     Compress-Archive -Path (Join-Path $archiveSource '*') -DestinationPath $archivePath
     if (-not (Test-Path -LiteralPath $archivePath) -or (Get-Item -LiteralPath $archivePath).Length -eq 0) {
         throw 'Candidate ZIP naming is incompatible with Compress-Archive.'
@@ -73,6 +77,33 @@ try {
     $threw = $false
     try { Test-VivrePublishArchive -ArchivePath $archivePath -SourceDirectory $archiveSource } catch { $threw = $true }
     if (-not $threw) { throw 'Same-length archive content mismatch was not detected.' }
+
+    # Separators must normalize before duplicate detection, without bypassing content checks.
+    Set-Content -LiteralPath (Join-Path $archiveSource 'Vivre.exe') -Value 'dummy'
+    $archive = [IO.Compression.ZipFile]::Open($archivePath, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $existing = @($archive.Entries | Where-Object { $_.FullName.Replace('\', '/') -eq 'Modules/Nested/module.psm1' })[0]
+        $alias = if ($existing.FullName.Contains('\')) { 'Modules/Nested/module.psm1' } else { 'Modules\Nested\module.psm1' }
+        $archive.CreateEntry($alias) | Out-Null
+    }
+    finally { $archive.Dispose() }
+    $threw = $false
+    try { Test-VivrePublishArchive -ArchivePath $archivePath -SourceDirectory $archiveSource }
+    catch { if ($_.Exception.Message -notlike 'Archive has duplicate entry:*') { throw }; $threw = $true }
+    if (-not $threw) { throw 'Separator-normalized duplicate was not detected.' }
+
+    $archive = [IO.Compression.ZipFile]::Open($archivePath, [IO.Compression.ZipArchiveMode]::Update)
+    try {
+        $archive.GetEntry($alias).Delete()
+        $badDirectory = $archive.CreateEntry('Scripts/Bad/')
+        $stream = $badDirectory.Open()
+        try { $stream.WriteByte(1) } finally { $stream.Dispose() }
+    }
+    finally { $archive.Dispose() }
+    $threw = $false
+    try { Test-VivrePublishArchive -ArchivePath $archivePath -SourceDirectory $archiveSource }
+    catch { if ($_.Exception.Message -notlike 'Archive directory entry contains data:*') { throw }; $threw = $true }
+    if (-not $threw) { throw 'Directory entry containing data was not rejected.' }
 
     $lease = Enter-VivrePublishLease -TargetPath $owned
     try {

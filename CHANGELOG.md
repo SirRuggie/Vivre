@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- ZIP verification accepts Windows PowerShell 5.1 archive path separators and empty-directory entries while preserving duplicate, length and SHA-256 checks.
 - Script editors protect unsaved changes during selection, refresh and close, share incremental library projections and dirty-state handling, and expose explicit built-in reset. The unused duplicate Settings window was removed.
 - Publishing refuses unsafe/unowned output paths, preserves the prior release until a candidate is verified, serializes competing publishes, and checks ZIP contents before promoting the folder, archive and checksum.
 - Build inputs pin the validated PowerShell SDK, record its dependency graph, and select the .NET SDK feature band explicitly.

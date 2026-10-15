@@ -168,13 +168,18 @@ function Test-VivrePublishArchive {
     try {
         $entries = @{}
         foreach ($entry in $archive.Entries) {
-            if ($entry.FullName.EndsWith('/')) { continue }
-            if ($entries.ContainsKey($entry.FullName)) { throw "Archive has duplicate entry: $($entry.FullName)" }
-            $entries[$entry.FullName] = $entry
+            # Windows PowerShell 5.1 Compress-Archive emits backslashes, including directory entries.
+            $entryPath = $entry.FullName.Replace('\', '/')
+            if ($entryPath.EndsWith('/')) {
+                if ($entry.Length -ne 0) { throw "Archive directory entry contains data: $($entry.FullName)" }
+                continue
+            }
+            if ($entries.ContainsKey($entryPath)) { throw "Archive has duplicate entry: $entryPath" }
+            $entries[$entryPath] = $entry
         }
         $sourceRoot = (Get-VivreCanonicalPath $SourceDirectory) + [IO.Path]::DirectorySeparatorChar
         $sourceFiles = @(Get-ChildItem -LiteralPath $SourceDirectory -Recurse -File -Force)
-        if ($entries.Count -ne $sourceFiles.Count) { throw 'Archive file count differs from the verified publish folder.' }
+        if ($entries.Count -ne $sourceFiles.Count) { throw "Archive file count differs from the verified publish folder (archive: $($entries.Count), folder: $($sourceFiles.Count))." }
         foreach ($file in $sourceFiles) {
             $relative = $file.FullName.Substring($sourceRoot.Length).Replace('\', '/')
             if (-not $entries.ContainsKey($relative)) { throw "Archive is missing published file: $relative" }
