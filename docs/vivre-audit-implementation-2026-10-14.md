@@ -97,3 +97,10 @@ Operational product work, not a prototype. Completion claims require actual evid
 - Independent follow-up review passed. Its requested adversarial directory-entry-with-data test was added; both PowerShell 5.1 and 7 suites passed again.
 - Full signed Windows PowerShell 5.1 publish now passed end-to-end: **864 files**, 231.5 MB folder, **93.1 MB ZIP**, every file checked by path/length/SHA-256 before promotion. Agent Authenticode signature verified with the configured certificate.
 - Package: `C:\src\Vivre\publish\Vivre-audited-8b0c2be.zip`; SHA-256 `5DFBFC0A274DA70836F487C74A36329C21E00D46A5F1455F91E1D41CA6C56A37`. App identity remains `1.17.3+build.202610142250.8b0c2bee821542c2c99bdf725705aacefdae4f28`; this follow-up changes packaging verification/tests/docs only, not app code. No deployment or live-server pilot was performed.
+
+## Release alignment — 1.17.4
+
+- Shaun confirmed retaining **master** as GitHub's default branch. The audit and packaging fixes are on that branch; the parked `feat/rdp-popout-window` and `perf/clean-measure` experiments remain excluded as documented in the RDP findings and backlog.
+- The audited 1.17.3 build is superseded by release **1.17.4**. VersionPrefix, the dated changelog and README now agree. This changes release metadata only; prior application regression results remain applicable.
+- Current package location: `C:\src\Vivre\publish\Vivre-1.17.4-win-x64.zip`, with adjacent `.sha256` and a manifest in the output folder. Build from the committed release revision so the informational version identifies its exact source. Older ZIPs remain historical, not current.
+- A signed, verified package does not establish live pilot acceptance. No broad deployment, remote operation or server-state change is part of this release alignment.

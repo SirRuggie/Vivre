@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.4 — 2026-10-14
+
 ### Fixed
 - ZIP verification accepts Windows PowerShell 5.1 archive path separators and empty-directory entries while preserving duplicate, length and SHA-256 checks.
 - Script editors protect unsaved changes during selection, refresh and close, share incremental library projections and dirty-state handling, and expose explicit built-in reset. The unused duplicate Settings window was removed.
