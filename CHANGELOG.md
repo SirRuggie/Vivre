@@ -6,6 +6,12 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.17.7 — 2026-10-16
+
+### Fixed
+- Software results and tooltips stay concise; full selectable diagnostics are available in the live Details → Software tab and existing CSV export.
+- The Software column starts at 320 pixels but can be widened beyond the former hard maximum.
+
 ## 1.17.6 — 2026-10-15
 
 ### Fixed

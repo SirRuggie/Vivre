@@ -654,11 +654,20 @@
                 </DataGridTextColumn>
                 <!-- Software check (right-click ▸ Check software…): shows the matched product + version,
                      or "Not installed — <query>" in red; incomplete checks show a reason in amber. Blank until a check is run for the row. -->
-                <DataGridTextColumn Header="Software" Binding="{Binding SoftwareCheck}" Width="Auto" MinWidth="120" MaxWidth="320" SortMemberPath="SoftwareCheck">
+                <DataGridTextColumn Header="Software" Binding="{Binding SoftwareCheck}" Width="320" MinWidth="120" CanUserResize="True" SortMemberPath="SoftwareCheck">
                     <DataGridTextColumn.ElementStyle>
                         <Style TargetType="TextBlock">
                             <Setter Property="TextTrimming" Value="CharacterEllipsis" />
-                            <Setter Property="ToolTip" Value="{Binding SoftwareCheck}" />
+                            <Setter Property="ToolTip">
+                                <Setter.Value>
+                                    <ToolTip MaxWidth="440">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding SoftwareCheck}" TextWrapping="Wrap" />
+                                            <TextBlock Text="Full results: right-click → Details → Software" Margin="0,6,0,0" />
+                                        </StackPanel>
+                                    </ToolTip>
+                                </Setter.Value>
+                            </Setter>
                             <Style.Triggers>
                                 <!-- Found = green, missing = red; "installed but service not running" overrides to amber. -->
                                 <DataTrigger Binding="{Binding SoftwareFound}" Value="True">

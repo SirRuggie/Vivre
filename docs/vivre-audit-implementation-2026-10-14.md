@@ -147,3 +147,10 @@ Operational product work, not a prototype. Completion claims require actual evid
 - Version/changelog/README are aligned at **1.17.6**. Package destination: `C:\src\Vivre\publish\Vivre-1.17.6-win-x64.zip`; acceptance requires successful existing signature and ZIP verification. No deployment or live-host patching test was performed.
 
 - **Release acceptance:** full self-contained Windows x64 publish succeeded: 864 files, 231.5 MB folder, 93.1 MB ZIP. Agent Authenticode signature verified against `1A5CE867A4660C271C9C7AA0DD2F923A1FE05953`; ZIP path/count/length/SHA-256 checks passed. The adjacent `.sha256` and package manifest identify the exact committed build. Release is committed on `master` and tagged `v1.17.6`; it has not been deployed.
+
+## F49 — software result readability and resizing (2026-10-16)
+
+- **Scope:** existing Windows software-result display only; Linux support is not implemented by this change.
+- **Capabilities:** concise result/tooltip implemented; 320-pixel hard maximum removed, with a stable 320-pixel initial width; full diagnostics reuse the existing Details window in a Software tab with selectable text. CSV diagnostic fields remain intact.
+- **Review correction:** structured software fields now notify bindings so an already-open Details window updates during checks/rechecks. Installed/absent/unknown and amber warning semantics remain unchanged.
+- **Acceptance:** 13 focused result/CSV tests passed; Release Desktop/agent/probe build passed (known child signing-store warning). Offscreen production grid accepted 720 pixels; Details preserved 6,798 diagnostic characters and refreshed after recheck. Initial offscreen binding assertion required layout/dispatcher initialization; the corrected probe passes without forcing the live recheck binding. Independent review accepted the final diff. No remote operation or production preference write was performed. Release 1.17.7 uses the existing signed publish/ZIP verifier; package destination is `C:\src\Vivre\publish\Vivre-1.17.7-win-x64.zip`.

@@ -62,7 +62,7 @@ public static class SoftwareCheckState
             ? null : result.Found && !string.Equals(result.ServiceState, "Running", StringComparison.OrdinalIgnoreCase);
         string label = string.IsNullOrWhiteSpace(result.Version) ? result.Name ?? query : $"{result.Name} {result.Version}";
         string servicePart = result.ServiceError is not null
-            ? $" · service could not be checked — {result.ServiceError}"
+            ? " · service could not be checked"
             : result.ServiceState switch
             {
                 null => string.Empty,
@@ -72,7 +72,7 @@ public static class SoftwareCheckState
             };
         computer.SoftwareCheck = (result.Found ? $"Installed — {label}" : $"Not installed — {query}") + servicePart;
         if (!string.IsNullOrWhiteSpace(result.QueryWarning))
-            computer.SoftwareCheck += $" · partial check — {result.QueryWarning}";
+            computer.SoftwareCheck += " · inventory incomplete";
         return true;
     }
 
@@ -84,7 +84,7 @@ public static class SoftwareCheckState
         computer.SoftwareWarning = true;
         computer.SoftwareError = reason;
         computer.SoftwareCheckedAt = DateTime.Now;
-        computer.SoftwareCheck = $"Could not check — {reason}";
+        computer.SoftwareCheck = $"Could not check — {query}";
         computer.LastError = $"Software check '{query}' — {reason}";
         return true;
     }

@@ -83,33 +83,41 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial bool SoftwareWarning { get; set; }
 
-    public string? SoftwareQueryWarning { get; set; }
-    public string? SoftwareServiceError { get; set; }
-    public string? SoftwareError { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareQueryWarning { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareServiceError { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareError { get; set; }
 
     // A cancelled sweep can unwind after its replacement has started.
     internal int SoftwareCheckGeneration;
 
-    // Raw software-check fields behind the display string, kept off the observable surface (like Vitals)
-    // — they back the on-demand "Export software report (CSV)" so the report has real per-column values.
+    // Structured software results drive both live Details bindings and the CSV export.
 
     /// <summary>What the last software check searched for (e.g. "CrowdStrike"); null until a check runs.</summary>
-    public string? SoftwareQuery { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareQuery { get; set; }
 
     /// <summary>Matched product display name from the last check (null if not found / not checked).</summary>
-    public string? SoftwareName { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareName { get; set; }
 
     /// <summary>Matched product version from the last check (null if not found / unversioned).</summary>
-    public string? SoftwareVersion { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareVersion { get; set; }
 
     /// <summary>Service the last check looked at, or null when no service was checked.</summary>
-    public string? SoftwareServiceName { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareServiceName { get; set; }
 
     /// <summary>Last check's service result: "Running" / "Stopped" / "not found", or null when none checked.</summary>
-    public string? SoftwareServiceState { get; set; }
+    [ObservableProperty]
+    public partial string? SoftwareServiceState { get; set; }
 
     /// <summary>When the last software check ran for this row (null = never).</summary>
-    public DateTime? SoftwareCheckedAt { get; set; }
+    [ObservableProperty]
+    public partial DateTime? SoftwareCheckedAt { get; set; }
 
     /// <summary>Per-machine values for user-defined custom columns (column name → value). Bindable per key
     /// (<c>{Binding CustomValues[Name]}</c>) so a custom column's cell updates live as a sweep fills it.</summary>

@@ -32,7 +32,8 @@ public class SoftwareCheckStateTests
         Assert.Equal(0, throttle.CurrentCount);
         Assert.Equal("New", computer.SoftwareQuery);
         Assert.Null(computer.SoftwareFound);
-        Assert.Contains("cancelled before check started", computer.SoftwareCheck);
+        Assert.Equal("Could not check — New", computer.SoftwareCheck);
+        Assert.Equal("cancelled before check started", computer.SoftwareError);
         Assert.NotNull(computer.SoftwareCheckedAt);
     }
 
@@ -78,7 +79,11 @@ public class SoftwareCheckStateTests
         Assert.True(computer.SoftwareWarning);
         Assert.Contains("Installed — Dummy product 1", computer.SoftwareCheck);
         Assert.Contains("service could not be checked", computer.SoftwareCheck);
-        Assert.Contains("partial check", computer.SoftwareCheck);
+        Assert.Contains("inventory incomplete", computer.SoftwareCheck);
+        Assert.DoesNotContain("one entry denied", computer.SoftwareCheck);
+        Assert.DoesNotContain("service query denied", computer.SoftwareCheck);
+        Assert.Equal("one entry denied", computer.SoftwareQueryWarning);
+        Assert.Equal("service query denied", computer.SoftwareServiceError);
     }
 
     [Fact]

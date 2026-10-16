@@ -54,3 +54,5 @@ The CU-only run also exercises the actual WorkspaceViewModel with a blocked dumm
 ### Install-anyway approval probe
 
 Run `dotnet run --project tools/PerformanceAudit -c Release -- --install-override-only "$env:TEMP\vivre-install-override.json"` from the repository in PowerShell. This invokes the real WorkspaceViewModel against an inert patch service and verifies approval is true for the approved immediate install, false for the next default install, and false for a scheduled install. It does not contact any target, show a window, or install updates.
+
+Software display probe: `dotnet run --project tools/PerformanceAudit -c Release -- --software-display-only "$env:TEMP\vivre-software-display.json"`. Exercises the real grid at 720 pixels and live Details diagnostics using dummy data, without remote operations.

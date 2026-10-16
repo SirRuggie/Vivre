@@ -98,7 +98,7 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.17.6** on the default branch **master**. Build its versioned package with `powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1 -Zip -OutputDir .\publish\Vivre-1.17.6-win-x64`. Older output folders and the `Vivre-audited-8b0c2be` package are historical artifacts, not this release.
+Current release: **1.17.7** on the default branch **master**. Build its versioned package with `powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1 -Zip -OutputDir .\publish\Vivre-1.17.7-win-x64`. Older output folders and the `Vivre-audited-8b0c2be` package are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 

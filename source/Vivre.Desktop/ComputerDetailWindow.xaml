@@ -533,6 +533,53 @@
                     </ui:DataGrid.Columns>
                 </ui:DataGrid>
             </TabItem>
+            <TabItem x:Name="SoftwareDetailsTab" Header="Software">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="12">
+                        <TextBlock Text="Latest software check" FontWeight="SemiBold" />
+                        <TextBlock Text="Result" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareCheck, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Searched for" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareQuery, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Product" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareName, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Version" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareVersion, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Service" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareServiceName, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Service state" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareServiceState, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Checked" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareCheckedAt, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Check error" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareError, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Inventory warning" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox x:Name="SoftwareInventoryWarning" Text="{Binding Computer.SoftwareQueryWarning, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                        <TextBlock Text="Service check error" Margin="0,12,0,4" FontWeight="SemiBold" />
+                        <TextBox Text="{Binding Computer.SoftwareServiceError, Mode=OneWay, TargetNullValue='—'}"
+                                 IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0"
+                                 Background="Transparent" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
             <TabItem Header="Messages">
                 <ui:DataGrid ItemsSource="{Binding Messages}"
                           AutoGenerateColumns="False" IsReadOnly="True"
