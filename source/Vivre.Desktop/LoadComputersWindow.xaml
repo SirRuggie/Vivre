@@ -24,10 +24,12 @@
 
         <ui:TitleBar Grid.Row="0" Title="Load computers" />
 
-        <ui:TextBlock Grid.Row="1"
-                      Margin="24,4,24,8"
-                      Appearance="Secondary"
-                      Text="Paste machine names, one per line." />
+        <StackPanel Grid.Row="1" Margin="24,4,24,8">
+            <ui:TextBlock Text="Paste machine names, one per line." />
+            <RadioButton x:Name="AddMode" Content="Add to this tab — keep existing results" IsChecked="True" Margin="0,8,0,0" />
+            <RadioButton x:Name="ReplaceMode" Content="Replace this tab's machine list" Margin="0,6,0,0" />
+            <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+        </StackPanel>
 
         <TextBox Grid.Row="2"
                  x:Name="NamesBox"
@@ -39,7 +41,7 @@
                  TextWrapping="NoWrap" />
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
-            <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" Content="Load" Click="OnLoad" />
+            <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" Content="Apply" Click="OnLoad" />
             <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>
     </Grid>

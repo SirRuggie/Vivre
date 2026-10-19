@@ -63,8 +63,8 @@ public static class HelpContent
             Lines =
             [
                 "Quick add: type a name in the \"Add computer…\" box (top-right) and press Enter — several at once works too (separate them with commas, semicolons or spaces).",
-                "A list: click the Paste button (clipboard icon, top-right) and paste names, one per line.",
-                "A saved list: click the Lists ▾ button (top-right) ▸ Open list ▸ pick one.",
+                "A list: click Paste and enter names, one per line. Add is the default and keeps existing results and selection; duplicates are ignored.",
+                "To replace membership, choose Replace in Paste, or Lists ▾ ▸ Open list. Retained machines keep their results; removing machines asks first and waits until active operations and monitor probes finish.",
             ],
         },
         new HelpTopic
@@ -88,6 +88,8 @@ public static class HelpContent
                 "1. Load the machines you want in the tab.",
                 "2. Click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box prefills with the tab's current title (rename the tab first if you want a tidy name; you can also overtype it in the prompt).",
                 "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
+                "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
+                "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
                 "Lists ▾ ▸ Delete list to remove a saved one.",
             ],
             Tip = "Lists are plain .txt files under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
@@ -103,6 +105,8 @@ public static class HelpContent
                 "• Rename: double-click the tab (or F2).",
                 "• Close: the \"✕\" on the tab, middle-click it, or Ctrl+W (it asks first if the tab has machines or a running op).",
                 "• Right-click a tab for Close other tabs / Close tabs to the right (browser-style) — plus Clear this tab and Close all tabs.",
+                "• Clear this tab asks before removing machines and results; wait for active work to finish, or Stop and wait for cancellation first.",
+                "• Closing Vivre or choosing tray Exit warns about active work, monitoring, and scheduled operations across tabs. Cancel keeps Vivre open; remote work or scheduled tasks may continue after exit.",
             ],
         },
         new HelpTopic

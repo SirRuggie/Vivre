@@ -10,7 +10,7 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - An unchecked item is a finding or recommendation, not authorization to implement it.
 - Mark complete only after its agreed behavior is implemented and validated; state remaining live-validation limits.
 - Preserve existing operational behavior and reuse current components where practical.
-- Next recommended item: **U-2**, preserving results when adding servers through Paste.
+- Next recommended item: **U-6**, making saved-list identity and unsaved membership changes visible.
 
 ## Highest priority — behavior found in the code
 
@@ -33,17 +33,38 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
   - **Evidence limits:** Review and tests used local inert services, not live servers; retry/fallback snapshot reuse was code-reviewed rather than remotely exercised, and visible-window/DPI checks remain outside this validation.
   - **Regression history:** The earlier full-suite result above remains the full-run evidence; this follow-up reran focused tests, not the entire suite.
 
-- [ ] **U-2 · High — Preserve existing results when pasting additional servers.**
-  - **Why:** Paste rebuilds every row—even for unchanged lists—discarding results and selection.
+- [x] **U-2 · High — Preserve existing results when pasting additional servers.**
+  - **Delivered:** Paste defaults to Add with empty input; existing row objects, results, selection, and focus survive additions and unchanged membership.
+  - **Replacement:** Explicit Replace reconciles membership and requested order while preserving retained rows.
 
-- [ ] **U-3 · High — Protect the current workspace when opening or clearing lists.**
-  - **Why:** These paths replace or remove rows without the replacement warning provided by Paste.
+- [x] **U-3 · High — Protect the current workspace when opening or clearing lists.**
+  - **Delivered:** Paste replacement, Open list, and Clear share removal confirmation; cancellation preserves the workspace.
+  - **Safeguards:** Active/draining work blocks removal, changed membership invalidates approval, and a missing saved file reports an error instead of clearing the tab.
+  - **Performance:** Full clear uses one collection Reset; near-total replacement preserves the actual grid selection.
 
-- [ ] **U-4 · High — Prevent silent saved-list overwrites.**
-  - **Why:** Existing names overwrite files, and automatic filename cleanup can make different names collide.
+- [x] **U-4 · High — Prevent silent saved-list overwrites.**
+  - **Delivered:** Invalid names show inline errors instead of silent filename cleanup; existing names require explicit overwrite approval.
+  - **Concurrency:** Revision checks and a shared file lease prevent stale save/delete approvals from overwriting newer changes made by another Vivre instance.
+  - **Compatibility:** Legacy names remain readable/deletable; contention and filesystem failures are displayed without losing the save dialog or crashing deletion.
 
-- [ ] **U-5 · High — Warn before exiting with active fleet work.**
-  - **Why:** Closing checks script work but lacks an equivalent fleet-operation warning explaining what stops or continues.
+- [x] **U-5 · High — Warn before exiting with active fleet work.**
+  - **Delivered:** Normal and tray Exit check all tabs for active work, monitoring, and scheduled operations; cancelling keeps the application open.
+  - **Wording:** The warning explains that local control stops, cancellation is requested, and remote or scheduled work may continue.
+
+### U-2–U-5 acceptance and independent review — 2026-10-19
+
+- **Acceptance ledger:** All four requested capabilities are implemented and locally tested; no requested implementation is deferred or blocked.
+- **Independent review:** A separate `gpt-5.6-sol` agent refuted the implementation, reviewed corrections, and reported no remaining concrete issue within U-2–U-5; runtime results were supplied by the parent, not independently rerun.
+- **Corrections from review:** Required-file reads, draining-monitor protection, retained-row ordering, single-Reset clear, revision-bound save/delete, legacy-name access, and handled delete failures.
+- **Core regression:** 1,557 passed, one skipped, zero failed; this full run preceded the final narrow delete correction, after which 28 focused storage/settings tests passed.
+- **Skip:** The Windows PowerShell file-reparse test could not exercise its privileged file-symlink case; it remains an explicit skip.
+- **Workspace validation:** Real view models and production WPF templates passed add/replace/cancel, stale approval, busy/draining work, saved-list open/clear, name errors, exit decisions, and selection-preservation probes with dummy data.
+- **Performance sample:** The offscreen 1280×720 grid replaced 3,190 rows with one retained selected row in 332.8 ms including layout; full clear took 25.4 ms with one Reset in the final probe run.
+- **Reporting correction:** The probe snapshots the full-clear Reset count before later cleanup can increment it; the original one-Reset assertion already passed.
+- **Builds:** Debug and Release passed with zero errors and one existing missing agent-signing-certificate warning each; no signed deployment package was produced.
+- **Limits:** No live-server operation, visible-window/high-DPI check, native tray interaction, or full-application soak; timings are diagnostic samples rather than a universal responsiveness guarantee.
+- **Storage boundary:** File leases coordinate Vivre instances; unrelated programs that ignore those leases are outside that concurrency guarantee.
+- **Delivery:** Included together in the commit containing this checklist update; see Git history for its identifier.
 
 ## Workflow improvements
 
@@ -51,7 +72,7 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
   - **Why:** Users cannot easily distinguish a saved list from its modified working copy or confirm a successful save.
 
 - [ ] **U-7 · Medium — Make Paste and Quick Add accept the same formats.**
-  - **Why:** Quick Add accepts several separators, while Paste only splits lines and positions the caret after existing names.
+  - **Why:** Quick Add accepts several separators, while Paste only splits lines; U-2 removed the old-name prefill but did not unify parsing.
 
 - [ ] **U-8 · Medium — Add an explicit handoff from Health to Patching.**
   - **Why:** Switching sections opens a separate workspace instead of carrying the machines the user was inspecting.

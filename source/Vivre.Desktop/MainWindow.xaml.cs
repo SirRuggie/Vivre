@@ -615,9 +615,16 @@ public partial class MainWindow : FluentWindow
             e.Cancel = true;
             return;
         }
+        if (Shell is { } exitShell && !WorkspaceListActions.ConfirmExit(exitShell.AllTabs, message =>
+            System.Windows.MessageBox.Show(this, message, "Exit Vivre", System.Windows.MessageBoxButton.YesNo,
+                MessageBoxImage.Warning, System.Windows.MessageBoxResult.No) == System.Windows.MessageBoxResult.Yes))
+        {
+            e.Cancel = true;
+            return;
+        }
         if (Settings is null) return;
 
-        // Includes normal window close and the tray's Application.Shutdown path. Drain personal
+        // Includes normal window close and tray Exit (both use Close). Drain personal
         // preferences before Closed disposes the UI. Remote-operation shutdown is unchanged.
         Core.IO.SaveFlushResult result = Settings.Flush(TimeSpan.FromSeconds(3));
         if (result.Status == Core.IO.SaveFlushStatus.Success) return;
@@ -685,7 +692,7 @@ public partial class MainWindow : FluentWindow
         Activate();
     }
 
-    private void OnTrayExit(object sender, RoutedEventArgs e) => Application.Current.Shutdown();
+    private void OnTrayExit(object sender, RoutedEventArgs e) => Close();
 
     // --- unified bottom dock (Activity + per-machine Updates) ---
 
@@ -1495,7 +1502,7 @@ public partial class MainWindow : FluentWindow
         if (openMenu is not null)
         {
             openMenu.Items.Clear();
-            AddListItems(openMenu, lists, name => vm?.OpenList(name));
+            AddListItems(openMenu, lists, name => { if (vm is not null) OpenSavedList(vm, name); });
             openMenu.IsEnabled = vm is not null;
         }
 
@@ -1544,7 +1551,7 @@ public partial class MainWindow : FluentWindow
             vm = Shell?.SelectedTab as WorkspaceViewModel;
         }
 
-        vm?.SetComputers([]);
+        if (vm is not null) ReplaceTabMachines(vm, [], "Clear this tab");
     }
 
     private static string SanitizeFileName(string name)
@@ -1574,30 +1581,81 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private bool ReplaceTabMachines(WorkspaceViewModel vm, IEnumerable<string> names, string title)
+    {
+        try
+        {
+            return WorkspaceListActions.Replace(vm, names, message => System.Windows.MessageBox.Show(this,
+                message, title, System.Windows.MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                System.Windows.MessageBoxResult.No) == System.Windows.MessageBoxResult.Yes);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, title, System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+            return false;
+        }
+    }
+
+    private void OpenSavedList(WorkspaceViewModel vm, string name)
+    {
+        try
+        {
+            var names = vm.ReadSavedList(name); // read before changing the existing workspace
+            if (ReplaceTabMachines(vm, names, "Open saved list")) vm.Title = name;
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "Could not open list", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void SaveCurrentAsList(WorkspaceViewModel vm)
     {
-        // Pre-fill with the tab's current title so a renamed tab ("Region C", etc.) doesn't need
-        // re-typing. The user can overtype it before saving.
         var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.Title)
         {
             Owner = this,
             Width = 440,
             SizeToContent = SizeToContent.Height,
             WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.None,
+            AcceptText = "Save list",
+        };
+        dialog.ValidateAndAccept = name =>
+        {
+            string? error = Vivre.Core.Computers.ComputerListStore.NameError(name);
+            if (error is not null) return error;
+            if (vm.IsClosed) return "This tab has been closed.";
+            string? revision = vm.SavedListRevision(name);
+            bool overwrite = revision is not null;
+            if (overwrite && System.Windows.MessageBox.Show(dialog,
+                $"Replace the saved list '{name}' with this tab's machines? Its previous saved contents will be overwritten.",
+                "Overwrite saved list", System.Windows.MessageBoxButton.YesNo, MessageBoxImage.Warning,
+                System.Windows.MessageBoxResult.No) != System.Windows.MessageBoxResult.Yes)
+                return "Not overwritten. Choose another name, or Cancel.";
+            vm.SaveCurrentAsList(name, overwrite, revision);
+            return null;
         };
         dialog.SetResourceReference(BackgroundProperty, "ApplicationBackgroundBrush");
-        if (dialog.ShowDialog() == true && dialog.Value is { } name) vm.SaveCurrentAsList(name);
+        dialog.ShowDialog();
     }
 
     private async void ConfirmDeleteList(WorkspaceViewModel vm, string name)
     {
-        var confirm = new MessageBox
+        try
         {
-            Title = "Delete list",
-            Content = $"Delete the saved list '{name}'? (Loaded machines stay in the tab.)",
-            PrimaryButtonText = "Delete",
-            CloseButtonText = "Cancel",
-        };
-        if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary) vm.DeleteList(name);
+            string? revision = vm.SavedListRevision(name);
+            if (revision is null) throw new IOException("That list no longer exists; reopen the Lists menu.");
+            var confirm = new MessageBox
+            {
+                Title = "Delete list",
+                Content = $"Delete the saved list '{name}'? (Loaded machines stay in the tab.)",
+                PrimaryButtonText = "Delete",
+                CloseButtonText = "Cancel",
+            };
+            if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary) vm.DeleteList(name, revision);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "Could not delete list", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
     }
 }

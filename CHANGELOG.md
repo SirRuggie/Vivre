@@ -7,6 +7,9 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- Preserve existing server results and selection when pasting additions; require approval for list replacement/clear and protect active operations and monitoring.
+- Validate saved-list names, require explicit overwrite approval, and reject stale overwrite revisions or missing list opens.
+- Warn before window/tray exit with active, monitored, or scheduled fleet work, with cancellation available.
 - Freeze each dispatched scan's update options through retries and result processing; preserve compact toolbar behavior for the per-tab source label.
 
 ### Changed

@@ -23,14 +23,22 @@ public partial class TextPromptWindow : FluentWindow
     /// <summary>The entered text once OK was pressed; null if cancelled.</summary>
     public string? Value { get; private set; }
 
+    public Func<string, string?>? ValidateAndAccept { get; set; }
+    public string AcceptText { get => (string)AcceptButton.Content; set => AcceptButton.Content = value; }
+
     private void OnOk(object sender, RoutedEventArgs e)
     {
         string text = InputBox.Text.Trim();
         if (text.Length == 0)
         {
-            return; // require something
+            ErrorText.Text = "Enter a name.";
+            return;
         }
 
+        string? error;
+        try { error = ValidateAndAccept?.Invoke(text); }
+        catch (Exception ex) { error = ex.Message; }
+        if (error is not null) { ErrorText.Text = error; return; }
         Value = text;
         DialogResult = true;
         Close();

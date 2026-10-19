@@ -26,10 +26,11 @@
         <StackPanel Grid.Row="1" Margin="24,8,24,0" VerticalAlignment="Center">
             <ui:TextBlock x:Name="PromptLabel" Margin="0,0,0,6" Text="Name:" />
             <ui:TextBox x:Name="InputBox" />
+            <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
-            <ui:Button Appearance="Primary" Content="OK" Click="OnOk" IsDefault="True" />
+            <ui:Button x:Name="AcceptButton" Appearance="Primary" Content="OK" Click="OnOk" IsDefault="True" />
             <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>
     </Grid>

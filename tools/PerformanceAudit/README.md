@@ -68,3 +68,11 @@ dotnet run --project tools/PerformanceAudit -- --tab-options-only tab-options-lo
 ```
 
 Exercises real workspaces sharing constructor defaults, checks bidirectional isolation of source/drivers/exclusions/scope and new-tab defaults, captures actual scan/install service arguments with inert services, and checks production Patching header and toolbar bindings across tab switches. Also checks scheduled installs, uninstall KB scope, settings changed during a suspended scan, and compact/expanded toolbar labels. No remote operations or production writes; this does not validate a visible window at every DPI or live update services.
+
+## Workspace and list protection (U-2–U-5)
+
+```powershell
+dotnet run --project tools/PerformanceAudit -- --workspace-safety-only workspace-safety-local.json
+```
+
+Uses real workspace membership/selection, shared approval helpers, and production paste/name UI with isolated dummy settings and lists. Checks cancelled and stale approvals, busy work, a cancellation-ignoring delayed monitor, retained row order/results, saved-list opening, exit decisions, a 3,190-row clear with one Reset, and a 3,190-to-one replacement with actual DataGrid selection retained and layout included in timing. No live servers, production writes, or visible-window automation; storage race/name tests live in ComputerListStoreTests.

@@ -17,11 +17,17 @@ public interface IComputerListStore
     /// <summary>Machine names in a saved list (empty if it doesn't exist).</summary>
     IReadOnlyList<string> Load(string name);
 
-    /// <summary>Writes <paramref name="machines"/> to the named list (one per line).</summary>
-    void Save(string name, IEnumerable<string> machines);
+    /// <summary>Reads an existing list; throws if it disappeared instead of treating it as empty.</summary>
+    IReadOnlyList<string> LoadRequired(string name);
+
+    /// <summary>Fingerprint for overwrite approval, or null when the file is absent.</summary>
+    string? GetRevision(string name);
+
+    /// <summary>Writes machines to the named list; replacing an existing list requires explicit overwrite approval.</summary>
+    void Save(string name, IEnumerable<string> machines, bool overwrite = false, string? expectedRevision = null);
 
     /// <summary>Deletes the named list if present.</summary>
-    void Delete(string name);
+    void Delete(string name, string? expectedRevision);
 
     /// <summary>True if a list with that name exists.</summary>
     bool Exists(string name);

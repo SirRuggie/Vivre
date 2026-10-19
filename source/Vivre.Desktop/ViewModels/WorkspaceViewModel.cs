@@ -1459,26 +1459,55 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>PowerShell credential for remote ops, or null to use the current Windows login.</summary>
     private PSCredential? CurrentPsCredential() => _credentials.Current?.ToPowerShellCredential();
 
-    /// <summary>Replaces the grid with a fresh set of machines (from the loader or a saved list).</summary>
+    public bool IsClosed => _disposed;
+
+    private int _activeMonitorPasses;
+
+    public bool HasActiveFleetWork => _activeMonitorPasses > 0 || IsBusy || _activeCts.Count > 0 || AnyRowWorking() || Computers.Any(c => c.IsPatching);
+
+    public bool NeedsExitWarning => HasActiveFleetWork || (IsMonitoring && Computers.Count > 0)
+        || Computers.Any(c => c.ScheduledNextRun is not null);
+
+    /// <summary>Reconciles membership, retaining surviving rows and their operational state.</summary>
     public void SetComputers(IEnumerable<string> names)
     {
-        // Drop per-host monitor state for the outgoing rows FIRST: Computers.Clear() raises a Reset
-        // (OldItems is null), so OnComputersChanged can't do it — a same-named host in the new list would
-        // otherwise inherit stale state (e.g. a permanently-suppressed reboot probe or a 5-min back-off).
-        foreach (Computer existing in Computers)
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        string[] wanted = names.Select(n => n.Trim()).Where(n => n.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        var keep = new HashSet<string>(wanted, StringComparer.OrdinalIgnoreCase);
+        Computer[] removed = Computers.Where(c => !keep.Contains(c.Name)).ToArray();
+        if (removed.Length > 0 && HasActiveFleetWork)
+            throw new InvalidOperationException("This tab has active operations. Wait for them to finish, or use Stop and wait for cancellation before removing machines.");
+        if (removed.Length == Computers.Count && removed.Length > 0)
         {
-            ForgetHostState(existing.Name);
+            foreach (Computer row in removed) ForgetHostState(row.Name);
+            SelectedComputers.Clear();
+            FocusedComputer = null;
+            Computers.Clear(); // One Reset for a full clear; no retained rows to preserve.
         }
-
-        Computers.Clear();
-        SelectedComputers.Clear();
-        FocusedComputer = null;
-        AddComputers(names);
+        else
+        {
+            foreach (Computer row in removed)
+            {
+                ForgetHostState(row.Name);
+                SelectedComputers.Remove(row);
+                Computers.Remove(row);
+            }
+        }
+        if (FocusedComputer is { } focused && !Computers.Contains(focused)) FocusedComputer = null;
+        AddComputers(wanted);
+        // Move existing objects rather than rebuilding them when the requested order changes.
+        var rowsByName = Computers.ToDictionary(c => c.Name, StringComparer.OrdinalIgnoreCase);
+        for (int i = 0; i < wanted.Length; i++)
+        {
+            Computer row = rowsByName[wanted[i]];
+            if (!ReferenceEquals(Computers[i], row)) Computers.Move(Computers.IndexOf(row), i);
+        }
     }
 
     /// <summary>Appends machines to the grid, skipping blanks and ones already present.</summary>
     public void AddComputers(IEnumerable<string> names)
     {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         var existing = new HashSet<string>(Computers.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
         var added = new List<Computer>();
         // Load settings once before the loop — StagedHosts is the persisted set of host names the
@@ -1579,18 +1608,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Names of the saved machine lists.</summary>
     public IReadOnlyList<string> SavedLists() => _lists.List();
 
-    /// <summary>Loads a saved list into the grid and renames the tab to the list's name.</summary>
-    public void OpenList(string name)
+    public IReadOnlyList<string> ReadSavedList(string name) => _lists.LoadRequired(name);
+
+    public string? SavedListRevision(string name) => _lists.GetRevision(name);
+
+    public void SaveCurrentAsList(string name, bool overwrite = false, string? expectedRevision = null)
     {
-        SetComputers(_lists.Load(name));
-        Title = name;
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _lists.Save(name, Computers.Select(c => c.Name).ToArray(), overwrite, expectedRevision);
     }
 
-    /// <summary>Saves the current grid as a named list.</summary>
-    public void SaveCurrentAsList(string name) => _lists.Save(name, Computers.Select(c => c.Name));
-
     /// <summary>Deletes a saved list.</summary>
-    public void DeleteList(string name) => _lists.Delete(name);
+    public void DeleteList(string name, string? expectedRevision) => _lists.Delete(name, expectedRevision);
 
     /// <summary>True when the tab has at least one row NOT currently held by the operation registry
     /// (or when no rows exist yet — the old IsBusy gate kept all commands off until busy cleared,
@@ -5306,6 +5335,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     private async Task MonitorRowsAsync(IReadOnlyList<Computer> rows, CancellationToken token)
     {
+        _activeMonitorPasses++;
         try
         {
             await Task.WhenAll(rows.Select(row => MonitorRowAsync(row, token)));
@@ -5314,6 +5344,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         {
             // Monitoring stopped mid-pass.
         }
+        finally { _activeMonitorPasses--; }
     }
 
     /// <summary>
