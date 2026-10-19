@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- Clarify WhatsUp Gold and SCCM menu labels, disable selection-only shortcuts without selected machines, and add Save tab as list to both tab menus using the existing guarded save flow.
 - Add selection-only Actions shortcuts using existing dialogs; group right-click connection and WhatsUp Gold commands and prevent an empty selected-script action from widening to all machines.
 - Wrap fleet filters, Server 2016 actions, and script save controls at narrow widths; allow resizing and wrapping in the CU comparison dialog.
 - Add distinct keyboard focus rings, titled tab-close labels, keyboard access to tab menus, field/status automation names, and polite dialog validation feedback.

@@ -26,6 +26,7 @@ internal static class ActionsMenuProbe
         }, () => rejected++);
         void Click(ContextMenu menu) => ((MenuItem)menu.Items[0]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         var menu = Create();
+        Require(menu.Items.Cast<MenuItem>().Any(i => i.Header.ToString()!.StartsWith("WhatsUp Gold maintenance")), "Maintenance label is ambiguous.");
         Require(launches == 0 && menu.Items.Count == 4, "Opening menu launched work or has extra entries.");
         foreach (MenuItem item in menu.Items) item.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         Require(launches == 4 && actions.Distinct().Count() == 4, "Missing shortcut dispatch.");
@@ -63,14 +64,24 @@ internal static class ActionsMenuProbe
         foreach (bool patching in new[] { false, true })
         {
             vm.IsUpdateMode = patching;
+            vm.SetSelection(Array.Empty<Computer>());
             build.Invoke(view, new object[] { vm });
             var grid = (ContextMenu)field.GetValue(view)!;
             var items = grid.Items.OfType<MenuItem>().ToArray();
             MenuItem Find(string name) => items.Single(i => (string)i.Header == name);
             Require(Find("Connection").Items.Count == 2 && Find("WhatsUp Gold").Items.Count == 2, "Grouping lost commands.");
+            Require(!Find("SCCM client actions").IsEnabled, "SCCM actions enabled without selection.");
+            Require(!Find("Copy").Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Selected rows")).IsEnabled, "Copy rows enabled without selection.");
+            Require(!Find("Connection").Items.OfType<MenuItem>().Single(i => i.Header.ToString()!.StartsWith("Enable WinRM")).IsEnabled, "Enable WinRM enabled without selection.");
             var script = Find("Run script");
             Require(!((MenuItem)script.Items[0]).IsEnabled, "Selected script enabled without selection.");
             Require(items.Any(i => (string)i.Header == "Software"), "Software menu lost.");
+            vm.SetSelection(new[] { a });
+            build.Invoke(view, new object[] { vm });
+            items = grid.Items.OfType<MenuItem>().ToArray();
+            Require(Find("SCCM client actions").IsEnabled && Find("SCCM client actions").Items.Count == 5, "SCCM selection commands lost.");
+            Require(Find("Copy").Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Selected rows")).IsEnabled, "Selected copy not enabled.");
+            Require(Find("Connection").Items.OfType<MenuItem>().Single(i => i.Header.ToString()!.StartsWith("Enable WinRM")).IsEnabled, "Selected Enable WinRM not enabled.");
         }
         // Exercise the old widening boundary with null operational services: empty must return.
         typeof(WorkspaceView).GetMethod("OpenScriptRunner", BindingFlags.Instance | BindingFlags.NonPublic)!

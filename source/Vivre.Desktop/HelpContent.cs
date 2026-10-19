@@ -99,7 +99,7 @@ public static class HelpContent
             Lines =
             [
                 "1. Load the machines you want in the tab.",
-                "2. Click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt.",
+                "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt.",
                 "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
                 "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
@@ -378,7 +378,7 @@ public static class HelpContent
             Keywords = "client action machine policy hardware inventory update scan trigger schedule stop cancel timed out busy",
             Lines =
             [
-                "Select the machines, then right-click ▸ Client actions ▸ and pick one (Machine Policy Retrieval & Evaluation, Hardware Inventory, Software Update Scan, …).",
+                "Select the machines, then right-click ▸ SCCM client actions ▸ and pick one (Machine Policy Retrieval & Evaluation, Hardware Inventory, Software Update Scan, …).",
                 "Actions run on all selected machines at once; each row shows its own result, and Stop cancels the batch.",
                 "A box that doesn't answer shows \"Timed out\" (after 60s), \"WinRM busy\" (try again shortly), or \"WinRM unavailable\" (for installed software on that box, Software ▸ Check software… still works) — the rest of the selection is unaffected.",
             ],
@@ -705,7 +705,7 @@ public static class HelpContent
             Keywords = "tips selection multi-select right click count",
             Lines =
             [
-                "• Right-click is the hub — Reboot, Schedule, Details, Run script, Client actions, Enable WinRM all live there.",
+                "• Right-click is the hub — Reboot, Schedule, Details, Run script, SCCM client actions, Enable WinRM all live there.",
                 "• Select multiple machines with Ctrl+click / Shift+click; the command-bar selection chip shows the selected count.",
                 "• Status dots use colour AND shape (✓ / ✕ / ?), so they're readable at a glance.",
                 "• Buttons and actions show what they'll target — \"Install (12)\", \"Scan (3)\".",

@@ -37,7 +37,7 @@ public static class WorkspaceActions
             (WorkspaceAction.CheckSoftware, "Check software…"),
             (WorkspaceAction.StageSoftware, "Stage software…"),
             (WorkspaceAction.RunScript, "Run script…"),
-            (WorkspaceAction.Maintenance, "Maintenance…") })
+            (WorkspaceAction.Maintenance, "WhatsUp Gold maintenance…") })
         {
             var item = new MenuItem { Header = title, IsEnabled = targets.Length > 0, Tag = action };
             item.Click += (_, _) =>

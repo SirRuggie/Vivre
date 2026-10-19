@@ -248,3 +248,30 @@ Research references:
 - [Bulk-selection UX discussion](https://www.reddit.com/r/UXDesign/comments/1tttvmd/showing_only_selected_items_in_data_tables/)
 
 Forum anecdotes informed recommendations; they are not evidence that Vivre has a particular defect.
+
+## Follow-up menu review - U-23 through U-27
+
+These findings came from source/workflow inspection after Windows UI automation repeatedly failed; they are not results of a completed hands-on usability study.
+
+- [ ] **U-23 - High - Clarify and confirm scheduled-task cancellation.**
+  - **Why:** The singular menu command immediately removes all Vivre_* tasks on selected machines without review.
+  - **Status:** Not part of this implementation batch.
+- [ ] **U-24 - High - State each right-click action's target scope.**
+  - **Why:** Commands mix clicked-machine, selected-machine, and whole-tab targeting without consistent labels/counts.
+  - **Status:** Not part of this implementation batch.
+- [x] **U-25 - Medium - Use specific, consistent action names.**
+  - **Delivered:** Actions says WhatsUp Gold maintenance; the grid submenu says SCCM client actions; help and README match.
+- [x] **U-26 - Medium - Disable commands that cannot act.**
+  - **Delivered:** Copy Selected rows, Enable WinRM, and SCCM client actions disable without selection and re-enable with selection in both modes; existing handler guards remain.
+- [x] **U-27 - Lower - Add Save tab as list to the tab menu.**
+  - **Delivered:** Health and Patching tab menus resolve the clicked tab, including inactive tabs; both entry points reuse the existing save dialog, duplicate-prompt guard, name validation, and overwrite checks.
+  - **Safeguard:** Missing, closed, or removed tabs cannot fall back to the active tab; membership is checked again after popup teardown.
+
+## Batch acceptance - U-25/U-26/U-27
+
+- **Implemented and locally tested:** All three capabilities above; no new dialog or operational service.
+- **Validation:** Debug/Release builds passed; actions-menu, tab-handoff (including save routing), and workspace-safety probes passed.
+- **Test limits:** Save-menu binding/resolution and hidden-window handler guard exercised with dummy workspaces; persistence regression uses isolated dummy storage. No physical mouse/keyboard walkthrough or live hosts.
+- **Independent review:** Separate gpt-5.6-sol read-only reviewer found no concrete defect in targeting, stale-tab handling, duplicate-dialog guarding, labels, enablement, or probe changes; visible-modal/physical input testing remains unverified.
+- **Delivery:** Included in the commit containing this checklist update; version stays 1.18.0 plus Unreleased. Existing missing-signing-certificate warning remains; no signed package.
+- **Deferred:** U-23/U-24 and remaining hands-on usability validation; no scope expansion into those tasks.

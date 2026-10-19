@@ -18,8 +18,9 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 - **Clear activity and settings** — Activity identifies its originating tab, including search/copy; CU KB/build/month save together, and invalid numeric settings explain the correction inline.
 
-- **Actions dropdown** - select machines, then choose Check software, Stage software, Run script, or Maintenance; each opens its existing review dialog. Right-click retains all commands, with Connection and WhatsUp Gold grouped into submenus.
+- **Actions dropdown** - select machines, then choose Check software, Stage software, Run script, or WhatsUp Gold maintenance; each opens its existing review dialog. Right-click retains all commands, with Connection and WhatsUp Gold grouped into submenus.
 - **Per-tab update options** — each Patching tab owns its update source, driver setting, exclusions, and applicable/installed scope; its source appears in the tab header and toolbar, and new tabs start with Windows Update.
+- **Tab saving** - right-click a Health or Patching tab and choose Save tab as list; saves that tab through the existing name/overwrite checks without switching tabs.
 - **List clarity** — each tab shows its saved-list identity and membership changes; Paste and Quick Add accept the same separators, and machine names stay visible while scrolling results.
 - **Workspace protection** — Paste adds without resetting existing results; explicit replacement and Clear confirm removals and refuse while work is active. Saved-list overwrites require approval and reject stale revisions; window and tray Exit warn about active or scheduled work.
 - **Health to Patching** — right-click a Health tab and choose Open tab in Patching to copy all names into a new same-name tab; the source stays intact and no checks or operations start automatically.

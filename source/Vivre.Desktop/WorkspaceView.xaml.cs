@@ -432,7 +432,7 @@ public partial class WorkspaceView : UserControl
         copyNames.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.Name));
         copy.Items.Add(copyNames);
 
-        var copyRows = new MenuItem { Header = "Selected rows" };
+        var copyRows = new MenuItem { Header = "Selected rows", IsEnabled = hasSelection };
         copyRows.Click += (_, _) => CopySelectedRows();
         copy.Items.Add(copyRows);
 
@@ -532,7 +532,7 @@ public partial class WorkspaceView : UserControl
         _gridMenu.Items.Add(runScript);
 
         // The SCCM client-action triggers grouped under one submenu.
-        var clientActions = WithIcon(new MenuItem { Header = "Client actions" }, SymbolRegular.Rocket24);
+        var clientActions = WithIcon(new MenuItem { Header = "SCCM client actions", IsEnabled = hasSelection }, SymbolRegular.Rocket24);
         foreach (ScheduleAction action in vm.ClientActions)
         {
             clientActions.Items.Add(new MenuItem
@@ -553,7 +553,7 @@ public partial class WorkspaceView : UserControl
         var connection = WithIcon(new MenuItem { Header = "Connection" }, SymbolRegular.PlugConnected24);
         connection.Items.Add(retryWinRm);
 
-        var enableWinRm = WithIcon(new MenuItem { Header = "Enable WinRM (PSRemoting)…" }, SymbolRegular.PlugConnected24);
+        var enableWinRm = WithIcon(new MenuItem { Header = "Enable WinRM (PSRemoting)…", IsEnabled = hasSelection }, SymbolRegular.PlugConnected24);
         enableWinRm.Click += OnEnableWinRm;
         connection.Items.Add(enableWinRm);
         _gridMenu.Items.Add(connection);

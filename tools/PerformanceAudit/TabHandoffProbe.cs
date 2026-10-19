@@ -61,6 +61,13 @@ internal static class TabHandoffProbe
             var menu = header.ContextMenu!;
             menu.PlacementTarget = header;
             Pump();
+            var resolver = typeof(MainWindow).GetMethod("ResolveSaveListTab", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            var save = menu.Items.OfType<MenuItem>().Single(i => i.Header.ToString()!.StartsWith("Save tab as list"));
+            Require(ReferenceEquals(resolver.Invoke(window, new object[] { save }), source), "Save resolved active tab instead of clicked inactive Health tab.");
+            Require(resolver.Invoke(window, new object[] { new MenuItem() }) is null, "Unbound save fell back to active tab.");
+            save.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+            Pump(); // hidden window: no prompt or persistence, exercises handler and guard teardown
+            Require(!(bool)typeof(MainWindow).GetField("_saveListPromptOpen", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(window)!, "Save guard remained stuck.");
             var action = menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Open tab in Patching"));
             Require(ReferenceEquals(action.DataContext, source), "Tab menu did not bind to the clicked tab.");
             action.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
@@ -79,6 +86,11 @@ internal static class TabHandoffProbe
             Require(ReferenceEquals(shell.SelectedHealthTab, selectedHealth), "Inactive source handoff changed Health selection.");
             Require(!shell.OpenTabInPatching(oldPatch), "Accepted a Patching source.");
             var patchHeader = (StackPanel)((TabControl)window.FindName("PatchingTabs")).ItemTemplate.LoadContent();
+            patchHeader.DataContext = oldPatch;
+            patchHeader.ContextMenu!.PlacementTarget = patchHeader;
+            Pump();
+            var patchSave = patchHeader.ContextMenu.Items.OfType<MenuItem>().Single(i => i.Header.ToString()!.StartsWith("Save tab as list"));
+            Require(ReferenceEquals(resolver.Invoke(window, new object[] { patchSave }), oldPatch), "Save resolved active tab instead of clicked inactive Patching tab.");
             Require(!patchHeader.ContextMenu!.Items.OfType<MenuItem>().Any(i => Equals(i.Header, "Open tab in Patching")), "Action exposed in Patching.");
             Require(shell.OpenTabInPatching(source) && shell.PatchingTabs.Count == 3, "Repeated handoff reused an existing tab.");
             Require(shell.OpenTabInPatching(selectedHealth) && shell.SelectedPatchingTab!.Computers.Count == 0, "Empty tab handoff failed.");
@@ -90,6 +102,7 @@ internal static class TabHandoffProbe
             Require(shell.PatchingTabs.Count == count && ReferenceEquals(beforeFailure, shell.SelectedPatchingTab), "Failed creation changed destination.");
             failFactory = false;
             shell.HealthTabs.Remove(source);
+            Require(resolver.Invoke(window, new object[] { save }) is null, "Removed tab accepted for saving.");
             Require(!shell.OpenTabInPatching(source) && shell.PatchingTabs.Count == count, "Stale source created a tab.");
             return new { pass = true, inactiveTabMenu = true, allNames = true, independentRowsAndDefaults = true,
                 sourcePreserved = true, noAutomaticChecks = true, navigation = true, emptyRepeatedStaleAndFailure = true,

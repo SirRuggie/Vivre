@@ -1578,17 +1578,35 @@ public partial class MainWindow : FluentWindow
     private async void OnSaveTabAsList(object sender, RoutedEventArgs e)
     {
         e.Handled = true;
-        if (_saveListPromptOpen || Shell?.SelectedTab is not WorkspaceViewModel vm) return;
+        await SaveTabAsListAsync(Shell?.SelectedTab);
+    }
 
-        // Capture the tab and guard before yielding: a second menu activation must not
-        // queue another prompt while the first modal dialog pumps dispatcher messages.
+    private WorkspaceViewModel? ResolveSaveListTab(object sender)
+    {
+        return sender is FrameworkElement { DataContext: WorkspaceViewModel vm }
+            && !vm.IsClosed && Shell?.AllTabs.Contains(vm) == true ? vm : null;
+    }
+
+    private async void OnSaveTabContextAsList(object sender, RoutedEventArgs e)
+    {
+        e.Handled = true;
+        var vm = ResolveSaveListTab(sender);
+        // Close the tab popup before showing the existing save dialog.
+        if (sender is MenuItem item && ItemsControl.ItemsControlFromItemContainer(item) is ContextMenu menu)
+            menu.IsOpen = false;
+        await SaveTabAsListAsync(vm);
+    }
+
+    private async Task SaveTabAsListAsync(WorkspaceViewModel? vm)
+    {
+        if (_saveListPromptOpen || vm is null || vm.IsClosed || Shell?.AllTabs.Contains(vm) != true) return;
+        // Capture the tab and guard before yielding; never retarget to the active tab.
         _saveListPromptOpen = true;
         try
         {
             if (ListsButton.ContextMenu is { } menu) menu.IsOpen = false;
-            // Finish menu input/capture teardown before creating another native window.
             await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
-            if (IsVisible) SaveCurrentAsList(vm);
+            if (IsVisible && !vm.IsClosed && Shell?.AllTabs.Contains(vm) == true) SaveCurrentAsList(vm);
         }
         finally
         {
