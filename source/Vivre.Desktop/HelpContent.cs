@@ -329,7 +329,7 @@ public static class HelpContent
             Keywords = "stage deploy software copy push package msi exe agent files folder script setup application install prep",
             Lines =
             [
-                "1. Select the machines (or none = all), then right-click ▸ Software ▸ Stage software….",
+                "1. Select machines and use Actions > Stage software, or select the machines (or none = all) and right-click ▸ Software ▸ Stage software….",
                 "2. Pick a package: a single .msi/.exe, or a folder of files (an installer plus your own install script).",
                 "   • Pick from the package library dropdown, or Browse file… / Browse folder… to anything anywhere. (Set package library folder… remembers a folder of packages for next time.)",
                 "The package library loads in the background. You can browse to a package while it loads; a late library result does not replace your choice.",
@@ -348,7 +348,7 @@ public static class HelpContent
             Keywords = "software installed check agent crowdstrike sentinelone version column present missing inventory product app",
             Lines =
             [
-                "1. Select the machines (or none = all), then right-click ▸ Software ▸ Check software….",
+                "1. Select machines and use Actions > Check software, or select the machines (or none = all) and right-click ▸ Software ▸ Check software….",
                 "2. Type a product name (or part of one) — e.g. CrowdStrike, SentinelOne, Chrome — or tap a quick-pick button, then Check (or press Enter).",
                 "3. Optional: tick \"Also check its service is running\" to confirm the agent is actually live. The service name pre-fills (it's remembered per product — CrowdStrike → CSFalconService) — change it if needed.",
                 "4. The Software column shows Installed, Not installed (a completed search with no match), or Could not check. Amber flags incomplete reads and service-query failures; an installed match is also amber if its service is missing or stopped. Drag the right edge of the Software header to widen it. Right-click the machine → Details → Software for full, selectable diagnostics; the tooltip stays concise. An unreachable machine remains unknown until a later successful check.",
@@ -389,7 +389,7 @@ public static class HelpContent
             Keywords = "winrm kerberos retry recover cache credentials connection repair",
             Lines =
             [
-                "Select the machine(s), then right-click ▸ Retry WinRM. It makes a fresh connection check with your current remote credentials, even when Vivre cached an earlier Kerberos rejection. Each dispatched check is limited to 25 seconds.",
+                "Select the machine(s), then right-click ▸ Connection > Retry WinRM. It makes a fresh connection check with your current remote credentials, even when Vivre cached an earlier Kerberos rejection. Each dispatched check is limited to 25 seconds.",
                 "A verified connection clears that connection's cached rejection so later operations can use WinRM again. The row and Activity report success, failure, timeout, or cancellation; Stop cancels outstanding checks.",
                 "This is a connection check only: it does not enable remoting, change server configuration, or replay a script, installation, or reboot. Check Vitals again to refresh the existing health snapshot.",
                 "Saving changed credentials permits a fresh attempt for that identity. Routine monitoring still avoids repeatedly retrying a cached Kerberos rejection.",
@@ -401,7 +401,7 @@ public static class HelpContent
             Keywords = "winrm psremoting enable dcom remoting unreachable",
             Lines =
             [
-                "Select the machine(s), right-click ▸ Enable WinRM (PSRemoting)…, and confirm.",
+                "Select the machine(s), right-click ▸ Connection > Enable WinRM (PSRemoting)…, and confirm.",
                 "It runs Enable-PSRemoting over DCOM — a different channel — so it works on boxes WinRM can't reach yet.",
                 "Machines run in parallel (a few at a time), and a box that doesn't answer times out after ~25 seconds instead of holding up the rest. The Stop button cancels whatever hasn't finished.",
             ],
@@ -425,13 +425,13 @@ public static class HelpContent
             Keywords = "whatsup gold wug maintenance mode monitoring alerts suppress enter exit patching check state read",
             Lines =
             [
-                "Select the machines (or none = all), right-click ▸ WhatsUp Gold maintenance….",
+                "Select the machines (or none = all), right-click ▸ WhatsUp Gold > WhatsUp Gold maintenance….",
                 "Pick Enter (suppress alerts) or Exit (resume) — the button label follows your choice — enter the WUG server + your WUG login, then click it. The Reason field only appears when you pick Enter (it's the note WUG records; Exit doesn't need one).",
                 "The window closes right away and the work runs in the background: each machine's row shows progress, with a summary in the activity log — handy to silence monitoring while you patch, then resume after.",
                 "It requires one unambiguous WUG device identity. An ambiguous name is skipped without changing maintenance; use the fully qualified name in your machine list and retry. If that full name still identifies multiple devices, resolve the duplicate identity in WUG first.",
                 "Rows distinguish ambiguous device, lookup failed, and no matching device. In a mixed batch, uniquely resolved devices can still be changed; Activity reports confirmed changes and skipped coverage. If WUG reports only partial batch success, individual rows remain change not confirmed because WUG does not identify which devices succeeded. IP fallback cannot override a conflicting name match.",
                 "Not sure it'll connect? Click Test connection first — it checks the server and your login. If the WhatsUp Gold PowerShell module isn't installed yet, an Install module button appears to add it for you.",
-                "Want to see where things stand first? Right-click ▸ Check WhatsUp Gold state… (works from both the Health and Patching grids). The server is pre-filled from Settings (read-only) — enter your WUG login and click Check. It reads each in-scope machine's current WUG state without changing anything; results fill in row by row in the Command result column as WUG answers (no long silent wait), with a summary in the activity log. The toolbar Stop can halt the check part-way — machines it never reached read \"not checked (read stopped)\". Unknown means the state couldn't be read — not that the machine is out of maintenance; \"not checked (read stopped)\" is a different thing: it means the check was stopped before it ever got to that machine.",
+                "Want to see where things stand first? Right-click ▸ WhatsUp Gold > Check WhatsUp Gold state… (works from both the Health and Patching grids). The server is pre-filled from Settings (read-only) — enter your WUG login and click Check. It reads each in-scope machine's current WUG state without changing anything; results fill in row by row in the Command result column as WUG answers (no long silent wait), with a summary in the activity log. The toolbar Stop can halt the check part-way — machines it never reached read \"not checked (read stopped)\". Unknown means the state couldn't be read — not that the machine is out of maintenance; \"not checked (read stopped)\" is a different thing: it means the check was stopped before it ever got to that machine.",
                 "In-maintenance machines also show WHY: the row reads e.g. in maintenance — \"Rebuilding - SB\" (admin_sbridges, since 2026-05-27, 54d) — the reason note, who set it, and when it entered. Hover the cell for the full text if it's cut off, and the activity log adds a digest naming every in-maintenance machine. Only machines actually in maintenance pay the small extra lookup, so the check stays as fast as before for everything else; if the extra detail can't be read, the row simply shows plain \"in maintenance\" and the summary says the reason lookup failed.",
                 "Settings ▸ WhatsUp Gold ▸ \"State check — simultaneous lookups\" sets how many machines the state check queries at once (default 2 — the measured sweet spot). Raising it past 2 gives little extra speed and just loads the WUG server; the change applies to the next check.",
             ],
@@ -729,7 +729,7 @@ public static class HelpContent
             Keywords = "winrm unreachable access denied credentials cannot connect",
             Lines =
             [
-                "• Try right-click ▸ Enable WinRM (PSRemoting)… — it works over DCOM, a different channel — to turn on remoting.",
+                "• Try right-click ▸ Connection > Enable WinRM (PSRemoting)… — it works over DCOM, a different channel — to turn on remoting.",
                 "• Set an admin account in Settings (left navigation) ▸ Remote credentials if your login can't reach the target.",
                 "• After repairing a Kerberos or connection problem, select the machine and use Retry WinRM to check it again without restarting Vivre.",
                 "• Confirm the box is online (Ping All) and not blocked by firewall.",

@@ -523,7 +523,7 @@ public partial class WorkspaceView : UserControl
         // ---- Run ----
         // Run a saved (or pasted) script against the selection or the whole tab; review before it runs.
         var runScript = WithIcon(new MenuItem { Header = "Run script" }, SymbolRegular.Play24);
-        var runSelected = new MenuItem { Header = "Selected machines…" };
+        var runSelected = new MenuItem { Header = "Selected machines…", IsEnabled = hasSelection };
         runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
         runScript.Items.Add(runSelected);
         var runAll = new MenuItem { Header = "All machines…" };
@@ -550,11 +550,13 @@ public partial class WorkspaceView : UserControl
             IsEnabled = vm.SelectedComputers.Count > 0 && vm.CanRetryWinRm,
         }, SymbolRegular.PlugConnected24);
         retryWinRm.Click += async (_, _) => await vm.RetryWinRmSelectedAsync();
-        _gridMenu.Items.Add(retryWinRm);
+        var connection = WithIcon(new MenuItem { Header = "Connection" }, SymbolRegular.PlugConnected24);
+        connection.Items.Add(retryWinRm);
 
         var enableWinRm = WithIcon(new MenuItem { Header = "Enable WinRM (PSRemoting)…" }, SymbolRegular.PlugConnected24);
         enableWinRm.Click += OnEnableWinRm;
-        _gridMenu.Items.Add(enableWinRm);
+        connection.Items.Add(enableWinRm);
+        _gridMenu.Items.Add(connection);
 
         _gridMenu.Items.Add(new Separator());
 
@@ -622,12 +624,14 @@ public partial class WorkspaceView : UserControl
         // whole tab. Runs locally against the WUG server — prompts for the WUG login.
         var wugMaintenance = WithIcon(new MenuItem { Header = "WhatsUp Gold maintenance…" }, SymbolRegular.Toolbox24);
         wugMaintenance.Click += OnWugMaintenance;
-        _gridMenu.Items.Add(wugMaintenance);
+        var whatsUpGold = WithIcon(new MenuItem { Header = "WhatsUp Gold" }, SymbolRegular.Toolbox24);
+        whatsUpGold.Items.Add(wugMaintenance);
 
         // Read-only sibling of the maintenance action — check current WUG state without changing it.
         var wugState = WithIcon(new MenuItem { Header = "Check WhatsUp Gold state…" }, SymbolRegular.Search24);
         wugState.Click += OnCheckWugState;
-        _gridMenu.Items.Add(wugState);
+        whatsUpGold.Items.Add(wugState);
+        _gridMenu.Items.Add(whatsUpGold);
 
         // ---- Grid setup (machine mode only) ----
         if (vm.IsMachineMode)
@@ -665,8 +669,10 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        IReadOnlyList<Computer> resolved = targets.Count > 0 ? targets : [.. vm.Computers];
-        new ScriptRunnerWindow(resolved, vm.PowerShell, vm.Credentials, vm.Activity, vm.ScriptLibrary, initialScript, vm.Operations) { Owner = OwnerWindow }.Show();
+        if (targets.Count == 0) return;
+        IReadOnlyList<Computer> resolved = targets;
+        if (initialScript is null) WorkspaceActions.Show(OwnerWindow, vm, WorkspaceAction.RunScript, resolved);
+        else new ScriptRunnerWindow(resolved, vm.PowerShell, vm.Credentials, vm.Activity, vm.ScriptLibrary, initialScript, vm.Operations) { Owner = OwnerWindow }.Show();
     }
 
     /// <summary>Copies the values one-per-line to the clipboard (Excel-friendly), skipping blanks.</summary>
@@ -789,7 +795,7 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        new MaintenanceWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+        WorkspaceActions.Show(OwnerWindow, vm, WorkspaceAction.Maintenance, targets);
     }
 
     private void OnCheckWugState(object sender, RoutedEventArgs e)
@@ -830,7 +836,7 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        new DeployWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+        WorkspaceActions.Show(OwnerWindow, vm, WorkspaceAction.StageSoftware, targets);
     }
 
     /// <summary>Opens the Check software window for the selection, else every machine in the tab. Asks for
@@ -851,7 +857,7 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        new SoftwareCheckWindow(vm, targets) { Owner = OwnerWindow }.ShowDialog();
+        WorkspaceActions.Show(OwnerWindow, vm, WorkspaceAction.CheckSoftware, targets);
     }
 
     /// <summary>Saves the current tab's software-check results to a CSV the user picks (right-click ▸

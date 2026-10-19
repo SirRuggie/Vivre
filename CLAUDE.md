@@ -332,3 +332,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 ## Layout and accessibility checks
 
 Keep fleet filters and script save actions width-constrained and wrapping. Preserve a separate focus ring on filter chips so checked-state colors cannot hide keyboard focus. Label status cells (including Unknown) and fields without adding live announcements to per-row progress. Reuse AccessibleStatus for dialog validation. Tab-menu keyboard routing must target the focused tab, not the selected workspace. U-21/U-22 remain partially validated until native DPI/physical keyboard/spoken assistive-technology checks are recorded; offscreen raster scaling is not equivalent.
+
+### U-18 Actions routing
+
+WorkspaceActions shares existing dialog entry points between the toolbar and right-click handlers. Toolbar Actions captures selected rows and rejects a changed tab, selection, name, or removed row before opening a dialog; never fall back to all rows. Run script selected also returns on empty; All machines passes its explicit target list. Keep the dropdown to four shortcuts and retain existing operation confirmations.

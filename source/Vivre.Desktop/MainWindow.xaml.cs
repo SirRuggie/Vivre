@@ -1497,6 +1497,19 @@ public partial class MainWindow : FluentWindow
 
     // --- Lists button and Update options button — open their ContextMenus on click ---
 
+    private void OnSelectedActionsClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement button || Shell?.SelectedTab is not { HasSelection: true } vm) return;
+        var menu = WorkspaceActions.CreateMenu(vm,
+            () => ReferenceEquals(Shell?.SelectedTab, vm) && Shell.AllTabs.Contains(vm),
+            (action, targets) => WorkspaceActions.Show(this, vm, action, targets),
+            () => System.Windows.MessageBox.Show(this, "The tab or selection changed. Reopen Actions and review the selected machines.",
+                "Selection changed", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information));
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
     private void OnListsButtonClick(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement btn && btn.ContextMenu is { } menu)

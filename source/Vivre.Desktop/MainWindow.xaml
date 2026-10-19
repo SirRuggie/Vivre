@@ -690,6 +690,18 @@
                                 </StackPanel>
                             </ui:Button>
 
+                            <ui:Button x:Name="SelectedActionsButton" Style="{StaticResource ToolbarButtonStyle}"
+                                       Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       IsEnabled="{Binding SelectedTab.HasSelection}"
+                                       Click="OnSelectedActionsClick" AutomationProperties.Name="Actions for selected machines"
+                                       ToolTipService.ShowOnDisabled="True" ToolTip="Select machines, then choose an action. Each action opens its existing review dialog.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Toolbox24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Actions" Style="{StaticResource ToolbarLabelStyle}" />
+                                    <TextBlock Text=" ▾" />
+                                </StackPanel>
+                            </ui:Button>
+
                             <!-- Clear selection: HasSelection (both modes) -->
                             <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
                                        Click="OnSelectionClearClick" AutomationProperties.Name="Clear selection"

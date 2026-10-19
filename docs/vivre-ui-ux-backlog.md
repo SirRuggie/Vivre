@@ -10,7 +10,7 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - An unchecked item is a finding or recommendation, not authorization to implement it.
 - Mark complete only after its agreed behavior is implemented and validated; state remaining live-validation limits.
 - Preserve existing operational behavior and reuse current components where practical.
-- **U-21/U-22:** local fixes/tests delivered; native DPI/physical keyboard/spoken screen-reader validation remains open. U-18 is the remaining unimplemented discoverability item.
+- **U-21/U-22:** local fixes/tests delivered; native DPI/physical keyboard/spoken screen-reader validation remains open. U-18 is implemented and locally validated; the follow-up usability study waits for explicit continuation.
 
 ## Completed batch acceptance — U-8 (2026-10-19)
 
@@ -31,6 +31,16 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - **Not yet verified:** actual Windows DPI/text-scaling changes, physical keyboard/Enter/Escape behavior, and spoken screen-reader output; offscreen tests are not substitutes.
 - **Status:** U-21/U-22 remain open for those real-environment checks. See [validation matrix and remaining steps](ui-ux-u21-u22-validation.md).
 - **Delivery:** product fixes and evidence included in the commit containing this checklist update; no live targets or signed package.
+
+## Completed batch acceptance — U-18
+
+- **Implemented/tested:** Four selection-only Actions shortcuts reuse software check, staging, script, and maintenance dialogs; empty or changed tab/selection/name/membership cannot widen the target scope.
+- **Implemented/tested:** Connection and WhatsUp Gold right-click groups retain existing commands in Health and Patching; selected-script is disabled without selection and its empty-target handler returns.
+- **Independent red team:** Separate gpt-5.6-sol reviewer found the selected-script fallback and an unnecessary count row; both fixed. Final scoped code review found no remaining material defect.
+- **Validation:** Debug and Release builds passed; focused probe passed four shortcuts, five stale-target cases, empty-selection guards, both right-click modes, and toolbar selection binding/accessibility label. Existing library/script-dialog regression passed.
+- **Limits:** Dummy local workspaces and intercepted dialog dispatch only; no live operations or physical-keyboard usability study. Existing unsigned-agent certificate warning remains; no package produced.
+- **Documentation/delivery:** Help, README, changelog, and harness instructions updated; included in the commit containing this checklist update. Version remains 1.18.0 plus Unreleased.
+- After delivery, stop. The requested hands-on usability study is deferred until Shaun says **continue**; start new findings at U-23, preserve U-1 through U-22, and report each finding with one bullet plus a Why sub-bullet. A study can compare usability, not prove universal optimality.
 
 ## Highest priority — behavior found in the code
 
@@ -181,7 +191,7 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - [x] **U-17 · Lower — Offer recovery for deleted saved lists.**
   - **Delivered:** Restore deleted list offers recoveries across restarts and refuses name collisions without overwriting.
 
-- [ ] **U-18 · Lower — Make frequent secondary actions easier to discover.**
+- [x] **U-18 · Lower — Make frequent secondary actions easier to discover.**
   - **Why:** Software, scheduling, deployment, and maintenance actions compete inside a large right-click menu.
 
 - [x] **U-19 · Lower — Use action-specific dialog buttons and consistent wording.**

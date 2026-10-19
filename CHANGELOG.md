@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- Add selection-only Actions shortcuts using existing dialogs; group right-click connection and WhatsUp Gold commands and prevent an empty selected-script action from widening to all machines.
 - Wrap fleet filters, Server 2016 actions, and script save controls at narrow widths; allow resizing and wrapping in the CU comparison dialog.
 - Add distinct keyboard focus rings, titled tab-close labels, keyboard access to tab menus, field/status automation names, and polite dialog validation feedback.
 - Preserve existing server results and selection when pasting additions; require approval for list replacement/clear and protect active operations and monitoring.
