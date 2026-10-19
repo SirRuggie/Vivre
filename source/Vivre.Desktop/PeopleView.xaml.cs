@@ -26,6 +26,13 @@ public partial class PeopleView : UserControl, IDisposable
         ResultsGrid.AddHandler(ContextMenuService.ContextMenuOpeningEvent,
             new ContextMenuEventHandler(OnMenuOpening), handledEventsToo: true);
     }
+    // Keep People actions and bindings owned here while the shell hosts the full-width footer.
+    internal FrameworkElement TakeStatusBar()
+    {
+        PeopleRoot.Children.Remove(PeopleStatusBar);
+        PeopleStatusBar.DataContext = Model;
+        return PeopleStatusBar;
+    }
     private async void OnPaste(object sender, RoutedEventArgs e)
     {
         string? entries = null;

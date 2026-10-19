@@ -8,7 +8,7 @@
   <local:InverseBooleanConverter x:Key="InverseBool"/>
   <BooleanToVisibilityConverter x:Key="BoolToVis"/>
  </UserControl.Resources>
- <Grid>
+ <Grid x:Name="PeopleRoot">
  <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
  <ScrollViewer x:Name="PageScroll" Margin="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
  <Grid MinHeight="500" Height="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
@@ -85,12 +85,13 @@
   </Grid>
  </Grid>
  </ScrollViewer>
- <Border Grid.Row="1" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="8,6">
+ <Border x:Name="PeopleStatusBar" Grid.Row="1" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="12,3">
   <DockPanel LastChildFill="True">
-   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
-    <ui:Button x:Name="OpenReviewButton" Content="Open review" Icon="{ui:SymbolIcon PanelRight24}" Click="OnOpenReview" IsEnabled="{Binding HasReviewable}" ToolTip="Review the selected person, or the next uncertain match."/>
+   <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+    <Border Width="1" Margin="12,2,8,2" Background="{DynamicResource DividerStrokeColorDefaultBrush}"/>
+    <ui:Button x:Name="OpenReviewButton" Content="Open review" FontSize="11" Padding="6,2" VerticalAlignment="Center" Icon="{ui:SymbolIcon PanelRight24, FontSize=14}" Click="OnOpenReview" IsEnabled="{Binding HasReviewable}" ToolTip="Review the selected person, or the next uncertain match."/>
    </StackPanel>
-   <TextBlock Text="Double-click a person to review a match; right-click a row to review, edit, or copy." TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+   <TextBlock Text="Double-click a person to review a match; right-click a row to review, edit, or copy." FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="Double-click a person to review a match; right-click a row to review, edit, or copy." VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
   </DockPanel>
  </Border>
  </Grid>

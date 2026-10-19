@@ -75,6 +75,7 @@ public partial class MainWindow : FluentWindow
     public MainWindow()
     {
         InitializeComponent();
+        PeopleStatusBarHost.Content = PeopleSection.TakeStatusBar();
         Loaded += OnWindowLoaded;
         Closed += OnWindowClosed;
     }

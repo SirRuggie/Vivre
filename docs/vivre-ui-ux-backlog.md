@@ -388,3 +388,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Implemented: normal AddComputers path respects Auto-check on load and fresh-workspace monitoring; title uses source name plus Patching and a collision suffix. No automatic update scan/install/reboot is added.
 - Implemented: themed banner combines Temporary list/saved-list state with per-tab update source, drivers and exclusions; long text truncates with full tooltips.
 - Verified: Release build and focused tab-handoff, patching-clarity/banner, and workspace-safety probes passed using real WPF controls with dummy hosts and temporary settings. Auto-check enabled/disabled, duplicate titles, source preservation, and list protection were exercised. No live-host or deployment visual validation is claimed; configured signing certificate remains unavailable.
+
+
+## People footer consistency (2026-10-19)
+
+- Implemented: full-window footer placement matching Health/Patching, compact review button, themed background/divider, and one-line help with full tooltip. Existing review handler and People bindings are reused.
+- Verified: Release build passed; existing People regression suite passed on rerun (actions, navigation, narrow/light/dark layouts with synthetic directory data). Inspected the dark rendered footer. Initial responsiveness run exceeded its 500 ms dispatcher threshold (555 ms); rerun measured 439 ms. This does not close deployment-host responsiveness validation. No lookup behavior changes or live directory operations; build warning remains for unavailable signing certificate.

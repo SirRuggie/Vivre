@@ -1531,6 +1531,9 @@
              During an operation (IsBusy) the center shows live narration + counts + elapsed + a slim
              progress bar along the top edge. At idle the center shows the summary text. This is the
              single progress/status surface — the toolbar ring and fleet band have been removed. -->
+        <ContentControl x:Name="PeopleStatusBarHost" Grid.Row="2"
+                        Visibility="{Binding Visibility, ElementName=PeopleSection}"
+                        HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
         <Border x:Name="StatusBar" Grid.Row="2"
                 Visibility="Collapsed"
                 Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
