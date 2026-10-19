@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[people-lookup-validation.md](people-lookup-validation.md)** — People lookup capabilities, independent review corrections, tests and live AD validation limits.
+
 - **[ui-ux-u21-u22-validation.md](ui-ux-u21-u22-validation.md)** — layout/accessibility fixes, local test evidence, and remaining native Windows validation.
 
 - **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-22 checklist, decisions, completion evidence, and strengths to preserve. *Read when: choosing or updating UI/UX work.*

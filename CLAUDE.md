@@ -34,9 +34,13 @@ Any new case-file / findings doc ships with the "point-in-time record, never edi
 header from creation (the wug-state-check-findings.md pattern) — that keeps docs/README.md's
 "never edited" claim true.
 
+## People lookup
+
+PeopleView/PeopleViewModel own a separate session-only workspace. AdPeopleLookup uses the current Windows identity and current AD naming context, signed/sealed LDAP, bounded background requests, and DomainScope; no remote machine operations or directory writes. Only unique enabled exact matches auto-resolve. Suggestions require review and missing mail is never replaced with a guessed address or UPN. Reuse GridReportCsv escaping. Keep fleet accelerators gated to the visible fleet section. See docs/people-lookup-validation.md.
+
 ## Shell / tab hosting
 
-The shell is a WPF-UI `ui:NavigationView` (LeftCompact pane: **Fleet ▸ Health / Patching · Scripts ·
+The shell is a WPF-UI `ui:NavigationView` (LeftCompact pane: **Fleet ▸ Health / Patching · People · Scripts ·
 Cross-Domain RDP**; **Settings** pinned bottom); the old shell→NavigationView migration is complete
 and retired. **Load-bearing constraints — DON'T break:**
 - **`TabControlEx` keep-alive is mandatory.** Tab content stays in the visual tree

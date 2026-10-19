@@ -96,3 +96,9 @@ Run --actions-menu-only with the existing harness and an output JSON path. Cover
 U-25/U-26 extend --actions-menu-only with explicit maintenance naming and disabled/enabled Copy selected rows, SCCM, and Enable WinRM states in both modes. U-27 extends --tab-handoff-only with production tab-menu binding, inactive Health/Patching save target resolution, missing/removed target rejection, and deferred save-guard teardown. Save persistence/overwrite regression remains --workspace-safety-only. These are local WPF probes, not a physical mouse/keyboard study.
 
 U-23/U-24 extend --actions-menu-only with selected/all-tab/this-machine labels, changed-menu membership/name/selection rejection, a real routed-click guard, and cancellation refusal/approval/selection-change/rename/removal/closure/empty cases. Dispatch is intercepted: no scheduled task is created or removed.
+
+## People lookup probes
+
+`--people-only <output.json>` exercises the real People view/model with dummy directory responses: exact/review/no-mail matching, copying/CSV escaping, paste preservation, retry/error/stop behavior, navigation and fleet-shortcut isolation. It saves offscreen layout renders under `.artifacts/people-renders`. This is not physical keyboard, clipboard, save-dialog, screen-reader, or native DPI validation.
+
+`--people-directory-check <output.json>` is an explicit live read-only check using the current Windows account: a generated nonexistent username, the current username, and its domain-qualified equivalent. It writes only counts and boolean results, not directory names or emails. Unlike the default isolated probes, this flag requires reachable AD and directory-read access. It is not an all-domain or cross-forest audit.

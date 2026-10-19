@@ -263,7 +263,7 @@ public partial class MainWindow : FluentWindow
     // --- NavigationView pane ---
 
     /// <summary>The nav destinations (Health and Patching replace Computers).</summary>
-    private enum NavSection { Health, Patching, Scripts, Rdp, Settings }
+    private enum NavSection { Health, Patching, People, Scripts, Rdp, Settings }
 
     /// <summary>Click handler on the Fleet parent nav item — expands/collapses only; does NOT change section.</summary>
     private void OnFleetNavClick(object sender, RoutedEventArgs e) { /* expand/collapse only — children are the real destinations */ }
@@ -275,6 +275,8 @@ public partial class MainWindow : FluentWindow
     private void OnPatchingNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Patching);
 
     /// <summary>Click handler on the Scripts nav item — drives the section toggle.</summary>
+    private void OnPeopleNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.People);
+
     private void OnScriptsNavClick(object sender, RoutedEventArgs e) => ShowNavSection(NavSection.Scripts);
 
     /// <summary>Click handler on the Cross-Domain RDP nav item — drives the section toggle.</summary>
@@ -302,6 +304,7 @@ public partial class MainWindow : FluentWindow
 
             NavSection section = ReferenceEquals(item, HealthNavItem)   ? NavSection.Health
                                : ReferenceEquals(item, PatchingNavItem) ? NavSection.Patching
+                               : ReferenceEquals(item, PeopleNavItem) ? NavSection.People
                                : ReferenceEquals(item, ScriptsNavItem)  ? NavSection.Scripts
                                : ReferenceEquals(item, RdpNavItem)      ? NavSection.Rdp
                                :                                           NavSection.Settings;
@@ -320,6 +323,8 @@ public partial class MainWindow : FluentWindow
     {
         if (ComputersSection is null || ScriptsSection is null || RdpSection is null || SettingsSection is null) return;
 
+        PeopleSection.Visibility = section == NavSection.People ? Visibility.Visible : Visibility.Collapsed;
+        PeopleNavItem.IsActive = section == NavSection.People;
         bool computers = section is NavSection.Health or NavSection.Patching;
         ComputersSection.Visibility = computers            ? Visibility.Visible : Visibility.Collapsed;
         ScriptsSection.Visibility   = section == NavSection.Scripts   ? Visibility.Visible : Visibility.Collapsed;
@@ -603,6 +608,7 @@ public partial class MainWindow : FluentWindow
     {
         base.OnClosing(e);
         if (e.Cancel) return;
+        if (!PeopleSection.ConfirmCanClose()) { e.Cancel = true; return; }
         if (!ScriptsSection.ConfirmCanClose())
         {
             e.Cancel = true;
@@ -640,6 +646,7 @@ public partial class MainWindow : FluentWindow
 
     private void OnWindowClosed(object? sender, EventArgs e)
     {
+        PeopleSection.Dispose();
         ScriptsSection.Dispose();
         if (_relativeTimeTimer is { } rt)
         {
@@ -1272,10 +1279,14 @@ public partial class MainWindow : FluentWindow
 
     // --- keyboard accelerator handlers ---
 
-    private void OnNewTabKey(object sender, ExecutedRoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);
+    private void OnNewTabKey(object sender, ExecutedRoutedEventArgs e)
+    {
+        if (ComputersSection.Visibility == Visibility.Visible) Shell?.NewTabCommand.Execute(null);
+    }
 
     private void OnCloseTabKey(object sender, ExecutedRoutedEventArgs e)
     {
+        if (ComputersSection.Visibility != Visibility.Visible) return;
         if (Shell?.SelectedTab is { } tab) CloseTabWithGuard(tab);
     }
 
@@ -1296,11 +1307,13 @@ public partial class MainWindow : FluentWindow
 
     private void OnRenameTabKey(object sender, ExecutedRoutedEventArgs e)
     {
+        if (ComputersSection.Visibility != Visibility.Visible) return;
         if (Shell?.SelectedTab is WorkspaceViewModel tab) RenameTab(tab);
     }
 
     private void OnToggleModeKey(object sender, ExecutedRoutedEventArgs e)
     {
+        if (ComputersSection.Visibility != Visibility.Visible) return;
         if (Shell is not { } shell) return;
 
         // Toggle between Health and Patching sections; update the nav highlight to match.
@@ -1313,12 +1326,14 @@ public partial class MainWindow : FluentWindow
 
     private void OnRefreshKey(object sender, ExecutedRoutedEventArgs e)
     {
+        if (ComputersSection.Visibility != Visibility.Visible) return;
         var cmd = (Shell?.SelectedTab as WorkspaceViewModel)?.PingAllCommand;
         if (cmd?.CanExecute(null) == true) cmd.Execute(null);
     }
 
     private void OnInstallKey(object sender, ExecutedRoutedEventArgs e)
     {
+        if (ComputersSection.Visibility != Visibility.Visible) return;
         if (Shell?.SelectedTab is WorkspaceViewModel { CanShowInstallToolbar: true })
         {
             OnInstallClick(sender, e);

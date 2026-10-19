@@ -42,6 +42,20 @@ public static class HelpContent
 
     public static IReadOnlyList<HelpTopic> Topics { get; } =
     [
+        new HelpTopic
+        {
+            Category = "People", Icon = SymbolRegular.Person24, Title = "How do I find and copy people's email addresses?",
+            Keywords = "AD directory username email lookup nickname ambiguous review CSV export",
+            Lines =
+            [
+                "1. Open People. Copy names, usernames, or emails with one entry per line, then choose Paste people. Comma names such as Smith, John stay together; additional pastes preserve existing results.",
+                "2. Unique enabled exact matches resolve automatically. Choose Review matches for uncertain names; compare username, email, department, office, and account state, then use the selected match or skip it.",
+                "3. Right-click rows to copy names, usernames, emails, or rows, or review/change a match. Copy resolved emails copies a deduplicated list and excludes unresolved entries and missing emails.",
+                "4. Use Stop or Retry unresolved as needed. Edit entry and retry corrects a single input without resetting the rest. Directory failures are shown separately from Not found.",
+                "5. Export all CSV keeps every row and its status. Results survive section switches but last only for this app session; Clear and Exit ask before discarding them.",
+            ],
+            Tip = "Reads your current AD domain with your Windows login; no RSAT or server login is needed. DOMAIN\\username must belong to that domain. No guessed email addresses or email sending. Stop waits for the pending bounded directory request.",
+        },
         // ---------------- Getting started ----------------
         new HelpTopic
         {

@@ -17,6 +17,26 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        if (args.Length == 2 && args[0] == "--people-directory-check")
+        {
+            object result;
+            try
+            {
+                var found = new Vivre.Core.People.AdPeopleLookup().LookupAsync("VIVRETEST" + Guid.NewGuid().ToString("N"), CancellationToken.None).GetAwaiter().GetResult();
+                var lookup = new Vivre.Core.People.AdPeopleLookup();
+                var self = lookup.LookupAsync(Environment.UserName, CancellationToken.None).GetAwaiter().GetResult();
+                var qualified = lookup.LookupAsync(Environment.UserDomainName + "\\" + Environment.UserName, CancellationToken.None).GetAwaiter().GetResult();
+                result = new { connected = true, syntheticQuery = true, candidateCount = found.Candidates.Count,
+                    currentAccountMatches = self.Candidates.Count, currentAccountExact = self.Exact,
+                    currentAccountHasEmail = self.Candidates.Count == 1 && !string.IsNullOrWhiteSpace(self.Candidates[0].Person.Email),
+                    qualifiedMatchesSameAccount = self.Candidates.Count == 1 && qualified.Candidates.Count == 1
+                        && self.Candidates[0].Person.Id == qualified.Candidates[0].Person.Id };
+            }
+            catch (Exception ex) { result = new { connected = false, error = ex.Message }; }
+            File.WriteAllText(args[1], JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
+            return;
+        }
+        bool peopleOnly = args.Length == 2 && args[0] == "--people-only";
         bool actionsMenuOnly = args.Length == 2 && args[0] == "--actions-menu-only";
         bool layoutAccessibilityOnly = args.Length == 2 && args[0] == "--layout-accessibility-only";
         bool tabHandoffOnly = args.Length == 2 && args[0] == "--tab-handoff-only";
@@ -32,7 +52,7 @@ internal static class Program
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly && !actionsMenuOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly && !actionsMenuOnly && !peopleOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -41,6 +61,13 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (peopleOnly)
+            {
+                string renders = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "people-renders");
+                Directory.CreateDirectory(renders);
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(PeopleProbe.Run(renders), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (actionsMenuOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(ActionsMenuProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));

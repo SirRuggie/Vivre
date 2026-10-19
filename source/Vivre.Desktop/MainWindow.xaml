@@ -326,6 +326,9 @@
                                                    Click="OnPatchingNavClick" />
                         </ui:NavigationViewItem.MenuItems>
                     </ui:NavigationViewItem>
+                    <ui:NavigationViewItem x:Name="PeopleNavItem" Content="People"
+                                           Icon="{ui:SymbolIcon Person24}" ToolTip="People - AD email lookup"
+                                           Click="OnPeopleNavClick" />
                     <ui:NavigationViewItem x:Name="ScriptsNavItem"
                                            Content="Scripts"
                                            Icon="{ui:SymbolIcon Code24}"
@@ -1512,6 +1515,7 @@
                 <!-- ═══════════════════ end COMPUTERS SECTION ═══════════════════ -->
 
                 <!-- ════════════════════ SETTINGS SECTION ════════════════════════ -->
+                <local:PeopleView x:Name="PeopleSection" Visibility="Collapsed" />
                 <local:SettingsPage x:Name="SettingsSection" Visibility="Collapsed" />
                 <!-- ════════════════════ end SETTINGS SECTION ════════════════════ -->
 

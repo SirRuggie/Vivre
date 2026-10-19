@@ -6,6 +6,9 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- Add a separate People section for read-only AD email lookup, uncertain-match review, selected-field copying, and CSV export; preserve results across navigation and warn before discarding session data.
+
 ### Fixed
 - Review cancellation of all Vivre schedules against captured targets; clarify right-click scopes and reject changed menu/Enable WinRM confirmation targets before dispatch.
 - Clarify WhatsUp Gold and SCCM menu labels, disable selection-only shortcuts without selected machines, and add Save tab as list to both tab menus using the existing guarded save flow.
