@@ -918,3 +918,11 @@ Shaun authorized release preparation and remaining-work follow-through, then res
 ## Remaining-work completion — 2026-10-14
 
 Shaun asked to finish the outstanding work. F25 multiple-task schedule display is implemented in 1.17.3; it changes local tracking and result identity only, not scheduled-task creation, cancellation or reboot commands. Actual MainWindow banner overflow/order/dismissal now has an offscreen runtime probe. The native UI helper still fails to initialize; visible tray interaction and live server/RDP checks remain unverified. The testing-folder-only authorization and earlier explicit F12/fast-watch deferrals remain in force. See [1.17.3 ledger](release-1.17.3-validation.md).
+
+## Save-list prompt follow-up — 2026-10-19
+
+- User evidence: Save list appears with white right/bottom margins; after OK another Save list appearance is shown. Rename is reported working. Screenshots cannot establish whether a second window opened or the same window repainted.
+- Implemented: close the Lists menu and yield past input teardown before opening the modal; guard repeated requests from entry through dialog completion; capture the original tab. Save-only dialog uses width 440, automatic height, no backdrop, and the existing application background brush. Rename and list storage are unchanged.
+- Verified: Release Desktop build succeeds (zero errors, one missing agent-signing certificate warning); five ComputerListStore tests pass. Source review confirms the guard resets on all exits and the existing help workflow remains accurate.
+- Not verified: reproduction of the operator's duplicate-prompt/white-margin symptom, mouse interaction or DPI/RDP rendering on the affected machine. This is a targeted mitigation, not a proven root-cause resolution. No deployment or release package produced.
+- Independent review: no blocking code regression found; changelog softened to reflect the unverified UI outcome.

@@ -1506,9 +1506,27 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void OnSaveTabAsList(object sender, RoutedEventArgs e)
+    private bool _saveListPromptOpen;
+
+    private async void OnSaveTabAsList(object sender, RoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is WorkspaceViewModel vm) SaveCurrentAsList(vm);
+        e.Handled = true;
+        if (_saveListPromptOpen || Shell?.SelectedTab is not WorkspaceViewModel vm) return;
+
+        // Capture the tab and guard before yielding: a second menu activation must not
+        // queue another prompt while the first modal dialog pumps dispatcher messages.
+        _saveListPromptOpen = true;
+        try
+        {
+            if (ListsButton.ContextMenu is { } menu) menu.IsOpen = false;
+            // Finish menu input/capture teardown before creating another native window.
+            await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+            if (IsVisible) SaveCurrentAsList(vm);
+        }
+        finally
+        {
+            _saveListPromptOpen = false;
+        }
     }
 
     // --- tab context menu: New tab / Clear this tab ---
@@ -1560,7 +1578,14 @@ public partial class MainWindow : FluentWindow
     {
         // Pre-fill with the tab's current title so a renamed tab ("Region C", etc.) doesn't need
         // re-typing. The user can overtype it before saving.
-        var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.Title) { Owner = this };
+        var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.Title)
+        {
+            Owner = this,
+            Width = 440,
+            SizeToContent = SizeToContent.Height,
+            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.None,
+        };
+        dialog.SetResourceReference(BackgroundProperty, "ApplicationBackgroundBrush");
         if (dialog.ShowDialog() == true && dialog.Value is { } name) vm.SaveCurrentAsList(name);
     }
 

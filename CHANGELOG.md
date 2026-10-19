@@ -6,6 +6,9 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+- Harden Save list against overlapping prompts and menu focus/rendering issues by closing the menu first and using a guarded, solid-background dialog; verification of the reported behavior on the affected machine remains pending.
+
 ## 1.17.7 — 2026-10-16
 
 ### Fixed
