@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         mc:Ignorable="d"
-        Title="Load computers"
+        Title="Paste machines"
         Height="520" Width="460"
         MinHeight="400" MinWidth="380"
         ExtendsContentIntoTitleBar="True"
@@ -22,12 +22,12 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="Load computers" />
+        <ui:TitleBar Grid.Row="0" Title="Paste machines" />
 
         <StackPanel Grid.Row="1" Margin="24,4,24,8">
-            <ui:TextBlock Text="Paste machine names, one per line." />
-            <RadioButton x:Name="AddMode" Content="Add to this tab — keep existing results" IsChecked="True" Margin="0,8,0,0" />
-            <RadioButton x:Name="ReplaceMode" Content="Replace this tab's machine list" Margin="0,6,0,0" />
+            <ui:TextBlock TextWrapping="Wrap" Text="Separate machine names with lines, spaces, commas, or semicolons." />
+            <RadioButton x:Name="AddMode" Checked="OnModeChanged" Content="Add to this tab — keep existing results" IsChecked="True" Margin="0,8,0,0" />
+            <RadioButton x:Name="ReplaceMode" Checked="OnModeChanged" Content="Replace this tab's machine list" Margin="0,6,0,0" />
             <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
         </StackPanel>
 
@@ -41,7 +41,7 @@
                  TextWrapping="NoWrap" />
 
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
-            <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" Content="Apply" Click="OnLoad" />
+            <ui:Button Appearance="Primary" Icon="{ui:SymbolIcon Checkmark24}" x:Name="ApplyButton" Content="Add machines" Click="OnLoad" />
             <ui:Button Margin="8,0,0,0" Content="Cancel" Click="OnCancel" IsCancel="True" />
         </StackPanel>
     </Grid>

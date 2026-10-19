@@ -23,6 +23,7 @@ internal static class WorkspaceSafetyProbe
         Set(vm, "_shared", new SharedSettingsStore(Path.Combine(root, "shared")));
         var store = new ComputerListStore(Path.Combine(root, "lists"));
         Set(vm, "_lists", store);
+        Require(vm.ListStatus == "List not saved", "New workspace claims a saved list.");
         var first = new Computer("DUMMY-A") { CommandResult = "Existing result", UpdateMessage = "Existing scan" };
         var second = new Computer("DUMMY-B") { CommandResult = "Keep this too" };
         vm.Computers.Add(first); vm.Computers.Add(second);
@@ -32,6 +33,31 @@ internal static class WorkspaceSafetyProbe
             && vm.SelectedComputers.Contains(first) && ReferenceEquals(vm.FocusedComputer, first), "Adding lost existing results/selection/focus.");
         vm.SetComputers(["DUMMY-A", "dummy-b", "DUMMY-C"]);
         Require(ReferenceEquals(first, vm.Computers[0]) && vm.SelectedComputers.Contains(first), "Unchanged membership rebuilt rows.");
+        vm.SaveCurrentAsList("Identity");
+        Require(vm.SavedListName == "Identity" && vm.ListStatus.EndsWith("Saved"), "Successful save lacks identity/feedback.");
+        vm.Title = "Renamed tab";
+        first.CommandResult = "Existing result";
+        RefreshStatus(vm);
+        Require(!vm.ListStatus.Contains("Unsaved changes"), "Rename/results dirtied membership.");
+        vm.AddComputers(["DUMMY-EXTRA"]);
+        RefreshStatus(vm);
+        Require(vm.ListStatus.Contains("Unsaved changes"), "Addition failed to mark list changes.");
+        vm.SetComputers(["DUMMY-A", "DUMMY-B", "DUMMY-C"]);
+        RefreshStatus(vm);
+        Require(!vm.ListStatus.Contains("Unsaved changes"), "Restoring saved membership stayed dirty.");
+        first.Name = "DUMMY-RENAMED";
+        RefreshStatus(vm);
+        Require(vm.ListStatus.Contains("Unsaved changes"), "Machine rename missed list changes.");
+        first.Name = "DUMMY-A";
+        RefreshStatus(vm);
+        string beforeFailedSave = vm.ListStatus;
+        try { vm.SaveCurrentAsList("Identity"); throw new Exception("Overwrite unexpectedly succeeded."); }
+        catch (IOException) { }
+        Require(vm.ListStatus == beforeFailedSave && vm.SavedListName == "Identity", "Failed save changed identity/status.");
+        vm.RecordListDeleted("unrelated");
+        Require(vm.SavedListName == "Identity", "Unrelated delete detached list.");
+        vm.RecordListDeleted("IDENTITY");
+        Require(vm.SavedListName is null && vm.ListStatus == "List not saved", "Deleted list still claims saved identity.");
         int prompts = 0;
         bool Deny(string _) { prompts++; return false; }
         Require(!Replace(vm, ["DUMMY-A"], Deny) && vm.Computers.Count == 3, "Cancelled replacement changed membership.");
@@ -81,6 +107,12 @@ internal static class WorkspaceSafetyProbe
         var retained = vm.Computers[2000];
         var grid = (DataGrid)view.FindName("ComputerGrid");
         view.Measure(new Size(1280, 720)); view.Arrange(new Rect(0, 0, 1280, 720)); view.UpdateLayout();
+        foreach (var testedGrid in new[] { grid, (DataGrid)view.FindName("UpdateGrid") })
+        {
+            Require(testedGrid.FrozenColumnCount == 1 && testedGrid.Columns[0].Header is "Name"
+                && testedGrid.Columns[0].IsFrozen && !testedGrid.Columns[0].CanUserReorder, "Name column is not fixed in both grids.");
+        }
+        Require(((TextBlock)view.FindName("ListStatusText")).Text == vm.ListStatus, "Saved-list status binding is not displayed.");
         grid.SelectedItems.Add(retained);
         watch.Restart();
         Replace(vm, [retained.Name], _ => true);
@@ -88,6 +120,24 @@ internal static class WorkspaceSafetyProbe
         double nearTotalMs = watch.Elapsed.TotalMilliseconds;
         Require(ReferenceEquals(vm.Computers.Single(), retained) && grid.SelectedItems.Contains(retained)
             && vm.SelectedComputers.Contains(retained), "Near-total replacement lost retained object or actual grid selection.");
+        retained.Name = "DUMMY-" + new string('X', 200);
+        foreach (bool patching in new[] { false, true })
+        {
+            vm.IsUpdateMode = patching;
+            RefreshStatus(vm);
+            view.Measure(new Size(720, 600)); view.Arrange(new Rect(0, 0, 720, 600)); view.UpdateLayout();
+            var testedGrid = (DataGrid)view.FindName(patching ? "UpdateGrid" : "ComputerGrid");
+            testedGrid.ScrollIntoView(retained);
+            testedGrid.UpdateLayout();
+            Require(testedGrid.Columns[0].ActualWidth <= 320, "Long frozen Name monopolized the grid.");
+            var scroll = VisualChildren<ScrollViewer>(testedGrid).First();
+            scroll.ScrollToHorizontalOffset(0); testedGrid.UpdateLayout();
+            var cell = VisualChildren<DataGridCell>(testedGrid).First(c => c.Column == testedGrid.Columns[0]);
+            double beforeX = cell.TranslatePoint(new Point(), testedGrid).X;
+            scroll.ScrollToHorizontalOffset(300); testedGrid.UpdateLayout();
+            Require(scroll.HorizontalOffset > 0 && Math.Abs(cell.TranslatePoint(new Point(), testedGrid).X - beforeX) < 1,
+                "Name moved during actual horizontal scrolling.");
+        }
         view.DataContext = null;
         Replace(vm, [], _ => true);
 
@@ -96,6 +146,14 @@ internal static class WorkspaceSafetyProbe
         {
             Require(((RadioButton)paste.FindName("AddMode")).IsChecked == true, "Paste doesn't default to Add.");
             Require(((TextBox)paste.FindName("NamesBox")).Text == "", "Paste contains old names instead of empty input.");
+            var apply = (Wpf.Ui.Controls.Button)paste.FindName("ApplyButton");
+            Require((string)apply.Content == "Add machines", "Default paste action is ambiguous.");
+            ((RadioButton)paste.FindName("ReplaceMode")).IsChecked = true;
+            Require((string)apply.Content == "Replace machines", "Replace action label did not follow mode.");
+            ((RadioButton)paste.FindName("AddMode")).IsChecked = true;
+            ((TextBox)paste.FindName("NamesBox")).Text = "DUMMY-ONE,DUMMY-TWO;dummy-one\tDUMMY-THREE";
+            typeof(LoadComputersWindow).GetMethod("OnLoad", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(paste, [paste, new RoutedEventArgs()]);
+            Require(vm.Computers.Select(c => c.Name).SequenceEqual(new[] { "DUMMY-ONE", "DUMMY-TWO", "DUMMY-THREE" }), "Actual Paste did not use shared separators.");
         }
         finally { paste.Close(); }
         var prompt = new TextPromptWindow("Save list", "Name") { ValidateAndAccept = ComputerListStore.NameError, AcceptText = "Save list" };
@@ -110,7 +168,7 @@ internal static class WorkspaceSafetyProbe
         finally { prompt.Close(); }
         vm.Dispose();
         ExpectBlocked(() => Replace(vm, [], _ => true));
-        return new { pass = true, preservedRowsResultsSelectionFocus = true, replacementCancelAndApproval = true,
+        return new { pass = true, savedListIdentityAndChanges = true, sharedPasteInput = true, frozenNamesBothGrids = true, actionSpecificLabels = true, preservedRowsResultsSelectionFocus = true, replacementCancelAndApproval = true,
             activeWorkAndStaleApprovalBlocked = true, savedListOpenAndClear = true, exitCancellationAndConsequences = true,
             nearTotalReplacementWithLayoutMs = nearTotalMs, actualGridSelectionRetained = true, largeClearMs = clearMs, largeClearResetCount, delayedMonitorProtected = true, pasteAddDefault = true, inlineNameValidation = true, scope = "Real workspace and production UI templates; isolated dummy storage, no network or production writes" };
     }
@@ -151,6 +209,17 @@ internal static class WorkspaceSafetyProbe
         try { action(); } catch (TargetInvocationException ex) when (ex.InnerException is InvalidOperationException or ObjectDisposedException) { return; }
         throw new Exception("Unsafe operation was not blocked.");
     }
+    private static IEnumerable<T> VisualChildren<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+            if (child is T match) yield return match;
+            foreach (var descendant in VisualChildren<T>(child)) yield return descendant;
+        }
+    }
+    private static void RefreshStatus(WorkspaceViewModel vm) => typeof(WorkspaceViewModel)
+        .GetMethod("RaiseFleetAggregates", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, null);
     private static void Set(object obj, string name, object value) => obj.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(obj, value);
     private static void Require(bool value, string message) { if (!value) throw new InvalidOperationException(message); }
 }

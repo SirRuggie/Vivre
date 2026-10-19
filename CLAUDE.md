@@ -45,6 +45,7 @@ and retired. **Load-bearing constraints — DON'T break:**
   destroys pages — so use NavigationView for the **pane only** and host section content in the
   keep-alive container.
 - **Patch options are per workspace, session-only.** Each workspace clones defaults; new tabs start with Windows Update, and source labels appear in Patching headers and the active toolbar. Credentials and read throttling remain app-wide.
+- **List clarity:** membership status uses the existing coalesced fleet timer and the last successful open/save snapshot, never polling disk or reacting to scan results. Paste and Quick Add share ComputerNameInput; Name is the fixed first column in both grids.
 - **Machine list safety:** Paste defaults to Add; SetComputers reconciles retained rows and order. Destructive replacement uses WorkspaceListActions and refuses active operations or undrained monitor passes. List opens use LoadRequired; list overwrites require a revision fingerprint under the existing cross-process lease. Tray Exit must use Close(), not Application.Shutdown(), so cancellation is honored.
 - **The bottom dock is window-level/global** (Activity + per-machine Updates), not per-tab.
 - **Mode is fixed by Fleet section, not a per-tab toggle** — Health tabs are health mode, Patching

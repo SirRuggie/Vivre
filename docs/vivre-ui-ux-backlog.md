@@ -10,7 +10,7 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - An unchecked item is a finding or recommendation, not authorization to implement it.
 - Mark complete only after its agreed behavior is implemented and validated; state remaining live-validation limits.
 - Preserve existing operational behavior and reuse current components where practical.
-- Next recommended item: **U-6**, making saved-list identity and unsaved membership changes visible.
+- Next recommended discussion: **U-8**, deciding the Health-to-Patching handoff; it remains unimplemented pending the desired transfer behavior.
 
 ## Highest priority — behavior found in the code
 
@@ -66,19 +66,34 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - **Storage boundary:** File leases coordinate Vivre instances; unrelated programs that ignore those leases are outside that concurrency guarantee.
 - **Delivery:** Included together in the commit containing this checklist update; see Git history for its identifier.
 
+## U-6, U-7, U-9, U-19 acceptance and independent review — 2026-10-19
+
+- **Acceptance ledger:** U-6, U-7, U-9, and the agreed U-19 list-entry/rename wording scope are implemented and locally tested; no requested capability in this batch is deferred or blocked.
+- **Simplicity:** One status line; existing dialogs, collection timer, and grid controls reused; no new save step, automatic saving, disk polling, or operational confirmation flow.
+- **Independent review:** A separate `gpt-5.6-sol` agent read the diff and found one medium risk: an unbounded frozen Name could consume the viewport; width is now capped at 320 with ellipsis and full-name hover text, and the reviewer accepted the correction.
+- **Focused tests:** 22 parser/list-store tests passed, zero skipped; the previous full regression evidence remains in U-2–U-5 above, and the full suite was not repeated for this UI/parser batch.
+- **Workspace probe:** Saved identity, membership changes/restoration, machine rename, failed-save preservation, deletion detachment, actual mixed-separator Paste, action labels, and real status binding passed alongside the U-2–U-5 safety checks.
+- **Scrolling:** Both production grids passed actual horizontal-offset checks at 720 pixels with a 206-character name; Name remained fixed and bounded while the rest scrolled.
+- **Performance sample:** 3,190-to-one replacement including layout took 405.6 ms; full clear took 26.9 ms and one Reset; these are local samples, not universal latency guarantees.
+- **Linux regression:** The existing 1,000-row AD-label probe passed, including rendered Linux badge, bounded delayed lookup, and stale-result protections; its old StackPanel-only diagnostic cast was generalized to Panel for the new name layout without removing assertions.
+- **Builds:** Debug and Release passed with the existing missing agent-signing-certificate warning; no signed package produced.
+- **Limits:** Offscreen production controls and dummy services/storage; no live targets, visible-window/high-DPI sweep, screen-reader run, or full-application soak; the reviewer did not independently rerun parent-owned tests.
+- **Delivery:** Included in the commit containing this checklist update; see Git history for the identifier.
+
 ## Workflow improvements
 
-- [ ] **U-6 · Medium — Make saved-list identity and changes visible.**
-  - **Why:** Users cannot easily distinguish a saved list from its modified working copy or confirm a successful save.
+- [x] **U-6 · Medium — Make saved-list identity and changes visible.**
+  - **Delivered:** Each tab shows its associated list and unsaved membership changes; successful saves show Saved and reuse the associated name next time.
+  - **Boundary:** Compared with the last open/save snapshot, not continuous disk state; scan results, sorting, selection, and tab renaming do not count as membership changes.
 
-- [ ] **U-7 · Medium — Make Paste and Quick Add accept the same formats.**
-  - **Why:** Quick Add accepts several separators, while Paste only splits lines; U-2 removed the old-name prefill but did not unify parsing.
+- [x] **U-7 · Medium — Make Paste and Quick Add accept the same formats.**
+  - **Delivered:** Both use one parser for lines, tabs, spaces, commas, and semicolons, preserving first-seen order and removing case-insensitive duplicates.
 
 - [ ] **U-8 · Medium — Add an explicit handoff from Health to Patching.**
   - **Why:** Switching sections opens a separate workspace instead of carrying the machines the user was inspecting.
 
-- [ ] **U-9 · Medium — Keep machine names visible during horizontal scrolling.**
-  - **Why:** Neither main grid freezes the identity column, making distant status columns harder to associate with servers.
+- [x] **U-9 · Medium — Keep machine names visible during horizontal scrolling.**
+  - **Delivered:** Name stays fixed at the left of both grids; its width is bounded, long names have ellipsis/full-name hover text, and other columns retain resizing/reordering.
 
 - [ ] **U-10 · Medium — Show active update options beside patching actions.**
   - **Why:** Driver inclusion and exclusions still require opening menus despite affecting results.
@@ -110,8 +125,9 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - [ ] **U-18 · Lower — Make frequent secondary actions easier to discover.**
   - **Why:** Software, scheduling, deployment, and maintenance actions compete inside a large right-click menu.
 
-- [ ] **U-19 · Lower — Use action-specific dialog buttons and consistent wording.**
-  - **Why:** Labels such as “Save list” communicate consequences better than “OK,” and mismatched control names hinder discovery.
+- [x] **U-19 · Lower — Use action-specific dialog buttons and consistent wording.**
+  - **Delivered:** Paste machines uses Add machines or Replace machines according to mode; Rename says Rename, and Save list retains its specific action label.
+  - **Scope:** Existing operational and native confirmation dialogs remain unchanged; no additional confirmation step or dialog framework was introduced.
 
 - [ ] **U-20 · Lower — Update the documentation index's release pointer.**
   - **Why:** It still calls 1.17.3 the latest candidate despite the current 1.18.0 release.

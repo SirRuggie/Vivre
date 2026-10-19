@@ -20,13 +20,17 @@
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
         <DataTemplate x:Key="ComputerNameWithOsLabel">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
-                <TextBlock Text="{Binding DirectoryOsLabel}" Margin="8,0,0,0" FontSize="11"
+            <Grid VerticalAlignment="Center" ToolTip="{Binding Name}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="1" Text="{Binding DirectoryOsLabel}" Margin="8,0,0,0" FontSize="11"
                            VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                            Visibility="{Binding DirectoryOsLabel, Converter={StaticResource StringToVis}}"
                            ToolTip="{Binding DirectoryOperatingSystem, StringFormat='AD operatingSystem: {0} (directory information)'}" />
-            </StackPanel>
+            </Grid>
         </DataTemplate>
 
         <!-- GridRowStyle: BasedOn Wpf.Ui's KEYED DefaultDataGridRowStyle (not {x:Type DataGridRow}
@@ -276,6 +280,9 @@
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
+
+            <TextBlock x:Name="ListStatusText" Grid.Row="0" Text="{Binding ListStatus}" TextTrimming="CharacterEllipsis" Margin="0,0,0,4"
+                       ToolTip="{Binding ListStatus}" AutomationProperties.Name="Saved list status" />
 
             <!-- Mode chips removed: tab mode is now fixed by the Fleet section (Health = Machines view,
                  Patching = Windows Update view). Navigate to Fleet ▸ Health or Fleet ▸ Patching
@@ -622,7 +629,7 @@
                      Grid.Row="2"
                      Visibility="{Binding ShowMachineGrid, Converter={StaticResource BoolToVis}}"
                      ItemsSource="{Binding Computers}"
-                     AutoGenerateColumns="False"
+                     AutoGenerateColumns="False" FrozenColumnCount="1"
                      IsReadOnly="True"
                      CanUserAddRows="False"
                      CanUserDeleteRows="False"
@@ -641,8 +648,8 @@
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
-                <DataGridTemplateColumn Header="Name" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
-                                        Width="Auto" MinWidth="120" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
+                <DataGridTemplateColumn Header="Name" CanUserReorder="False" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
+                                        Width="Auto" MinWidth="120" MaxWidth="320" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
                 <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -807,7 +814,7 @@
                      VirtualizingPanel.ScrollUnit="Pixel"
                      ScrollViewer.CanContentScroll="True"
                      ItemsSource="{Binding Computers}"
-                     AutoGenerateColumns="False"
+                     AutoGenerateColumns="False" FrozenColumnCount="1"
                      IsReadOnly="True"
                      CanUserAddRows="False"
                      CanUserDeleteRows="False"
@@ -827,8 +834,8 @@
                      PreviewMouseLeftButtonUp="OnUpdateGridLeftClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
-                <DataGridTemplateColumn Header="Name" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
-                                        Width="Auto" MinWidth="120" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
+                <DataGridTemplateColumn Header="Name" CanUserReorder="False" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
+                                        Width="Auto" MinWidth="120" MaxWidth="320" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>

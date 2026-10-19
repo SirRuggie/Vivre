@@ -62,7 +62,7 @@ internal static class AdLinuxLabelProbe
         cell.DataContext = rows[2];
         cell.Measure(new Size(500, 50)); cell.Arrange(new Rect(0, 0, 500, 50));
         await Dispatcher.Yield(DispatcherPriority.Background);
-        var badge = ((StackPanel)cell).Children.OfType<TextBlock>().Last();
+        var badge = ((Panel)cell).Children.OfType<TextBlock>().Last();
         if (badge.Text != "Linux" || badge.Visibility != Visibility.Visible || column.SortMemberPath != "Name")
             throw new Exception("Production name template did not show Linux or preserve sorting.");
         var disposalLookup = new DelayedLookup();

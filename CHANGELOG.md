@@ -13,6 +13,8 @@ it ships, then gets a dated heading.
 - Freeze each dispatched scan's update options through retries and result processing; preserve compact toolbar behavior for the per-tab source label.
 
 ### Changed
+- Show saved-list identity, membership changes, and successful save status without additional prompts or automatic saving.
+- Share Paste/Quick Add separators, keep Name fixed in both fleet grids, and label Paste and Rename actions explicitly.
 - Update options are independent per tab; Patching tab headers and the source/options toolbar button show Windows Update, Microsoft Update, or Managed (WSUS/SCCM). New tabs start with Windows Update.
 - `publish.ps1 -Zip` now defaults to `publish\Vivre.zip` for self-contained Windows x64 builds; other build variants and explicit output paths keep separate destinations.
 

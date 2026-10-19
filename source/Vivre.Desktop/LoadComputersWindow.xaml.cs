@@ -18,7 +18,7 @@ public partial class LoadComputersWindow : FluentWindow
 
     private void OnLoad(object sender, RoutedEventArgs e)
     {
-        string[] names = NamesBox.Text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] names = Vivre.Core.Computers.ComputerNameInput.Parse(NamesBox.Text);
         try
         {
             if (ReplaceMode.IsChecked == true)
@@ -31,6 +31,11 @@ public partial class LoadComputersWindow : FluentWindow
             Close();
         }
         catch (Exception ex) { ErrorText.Text = ex.Message; }
+    }
+
+    private void OnModeChanged(object sender, RoutedEventArgs e)
+    {
+        if (ApplyButton is not null) ApplyButton.Content = ReplaceMode.IsChecked == true ? "Replace machines" : "Add machines";
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => Close();

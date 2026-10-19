@@ -1422,7 +1422,7 @@ public partial class MainWindow : FluentWindow
 
     private void RenameTab(WorkspaceViewModel workspace)
     {
-        var dialog = new TextPromptWindow("Rename tab", "Tab name:", workspace.Title) { Owner = this };
+        var dialog = new TextPromptWindow("Rename tab", "Tab name:", workspace.Title) { Owner = this, AcceptText = "Rename" };
         if (dialog.ShowDialog() == true && dialog.Value is { } name) workspace.Title = name;
     }
 
@@ -1452,9 +1452,7 @@ public partial class MainWindow : FluentWindow
         if (Shell?.SelectedTab is not WorkspaceViewModel vm) return;
 
         var qab = FindName("QuickAddBox") as Wpf.Ui.Controls.TextBox;
-        string[] names = (qab?.Text ?? string.Empty).Split(
-            [',', ';', ' ', '\t', '\r', '\n'],
-            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        string[] names = Vivre.Core.Computers.ComputerNameInput.Parse(qab?.Text);
 
         if (names.Length > 0)
         {
@@ -1601,7 +1599,11 @@ public partial class MainWindow : FluentWindow
         try
         {
             var names = vm.ReadSavedList(name); // read before changing the existing workspace
-            if (ReplaceTabMachines(vm, names, "Open saved list")) vm.Title = name;
+            if (ReplaceTabMachines(vm, names, "Open saved list"))
+            {
+                vm.Title = name;
+                vm.RecordSavedList(name, names);
+            }
         }
         catch (Exception ex)
         {
@@ -1611,7 +1613,7 @@ public partial class MainWindow : FluentWindow
 
     private void SaveCurrentAsList(WorkspaceViewModel vm)
     {
-        var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.Title)
+        var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.SavedListName ?? vm.Title)
         {
             Owner = this,
             Width = 440,
@@ -1651,7 +1653,11 @@ public partial class MainWindow : FluentWindow
                 PrimaryButtonText = "Delete",
                 CloseButtonText = "Cancel",
             };
-            if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary) vm.DeleteList(name, revision);
+            if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
+            {
+                vm.DeleteList(name, revision);
+                foreach (var tab in Shell?.AllTabs ?? []) tab.RecordListDeleted(name);
+            }
         }
         catch (Exception ex)
         {

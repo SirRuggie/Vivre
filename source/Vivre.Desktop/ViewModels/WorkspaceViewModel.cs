@@ -1090,6 +1090,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Subscribe/unsubscribe row state changes and refresh the online/total summary.</summary>
     private void OnComputersChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
+        _listStatusDirty = true;
         if (e.Action == NotifyCollectionChangedAction.Reset)
         {
             foreach (Computer c in _subscribedComputers)
@@ -1137,6 +1138,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         switch (e.PropertyName)
         {
             case nameof(Computer.Name):
+                _listStatusDirty = true;
+                MarkFleetDirty();
                 if (sender is Computer renamed)
                 {
                     renamed.DirectoryOperatingSystem = null;
@@ -1251,6 +1254,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// actually change is harmless: WPF skips the binding update when the value is equal.)</summary>
     private void RaiseFleetAggregates()
     {
+        RefreshListStatus();
         OnPropertyChanged(nameof(OnlineSummary));
         OnPropertyChanged(nameof(HasComputers));
         OnPropertyChanged(nameof(VisibleRowCount));
@@ -1608,6 +1612,40 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// <summary>Names of the saved machine lists.</summary>
     public IReadOnlyList<string> SavedLists() => _lists.List();
 
+    private HashSet<string>? _savedListMembers;
+    private bool _listStatusDirty;
+    public string? SavedListName { get; private set; }
+    public string ListStatus { get; private set; } = "List not saved";
+
+    // Membership only: scans, selection, sorting, and tab renames never make a list dirty.
+    public void RecordSavedList(string name, IEnumerable<string> names, bool justSaved = false)
+    {
+        SavedListName = name.Trim();
+        _savedListMembers = names.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        _listStatusDirty = true;
+        RefreshListStatus(justSaved);
+    }
+
+    public void RecordListDeleted(string name)
+    {
+        if (!string.Equals(name, SavedListName, StringComparison.OrdinalIgnoreCase)) return;
+        SavedListName = null;
+        _savedListMembers = null;
+        _listStatusDirty = true;
+        RefreshListStatus();
+    }
+
+    private void RefreshListStatus(bool justSaved = false)
+    {
+        if (!_listStatusDirty) return;
+        _listStatusDirty = false;
+        ListStatus = SavedListName is null ? "List not saved"
+            : !_savedListMembers!.SetEquals(Computers.Select(c => c.Name)) ? $"List: {SavedListName} · Unsaved changes"
+            : $"List: {SavedListName} · {(justSaved ? "Saved" : "Unchanged since open/save")}";
+        OnPropertyChanged(nameof(ListStatus));
+        OnPropertyChanged(nameof(SavedListName));
+    }
+
     public IReadOnlyList<string> ReadSavedList(string name) => _lists.LoadRequired(name);
 
     public string? SavedListRevision(string name) => _lists.GetRevision(name);
@@ -1615,7 +1653,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public void SaveCurrentAsList(string name, bool overwrite = false, string? expectedRevision = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _lists.Save(name, Computers.Select(c => c.Name).ToArray(), overwrite, expectedRevision);
+        string[] names = Computers.Select(c => c.Name).ToArray();
+        _lists.Save(name, names, overwrite, expectedRevision);
+        RecordSavedList(name, names, justSaved: true);
     }
 
     /// <summary>Deletes a saved list.</summary>
