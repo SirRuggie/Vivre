@@ -324,3 +324,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 - Search reuses existing menu entries and grouped script collection views; never read files per keystroke or execute a script on search. Keep the open script pinned and editor/selection guards intact, including rename/category saves.
 - List deletion moves the approved revision into `Lists/Deleted/<GUID>` on the same volume. Restore is explicit, never overwrites, and does not replace a workspace. Reject linked recovery folders/payloads; retain existing save/delete leases and revision checks.
 - Version stays 1.18.0 with subsequent work under Unreleased; historical validation documents remain historical.
+
+## Health-to-Patching handoff
+
+`ShellViewModel.OpenTabInPatching` accepts only a live Health tab, copies all underlying names into a fresh same-title workspace, and never shares Computer objects or saved-list identity. Stop the new workspace monitor before adding rows and use `AddComputers(autoCheck: false)`; normal loads retain their existing automatic behavior. The tab-header handler uses the clicked tab, not SelectedTab, and reuses ShowNavSection for navigation.

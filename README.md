@@ -19,6 +19,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Per-tab update options** — each Patching tab owns its update source, driver setting, exclusions, and applicable/installed scope; its source appears in the tab header and toolbar, and new tabs start with Windows Update.
 - **List clarity** — each tab shows its saved-list identity and membership changes; Paste and Quick Add accept the same separators, and machine names stay visible while scrolling results.
 - **Workspace protection** — Paste adds without resetting existing results; explicit replacement and Clear confirm removals and refuse while work is active. Saved-list overwrites require approval and reject stale revisions; window and tray Exit warn about active or scheduled work.
+- **Health to Patching** — right-click a Health tab and choose Open tab in Patching to copy all names into a new same-name tab; the source stays intact and no checks or operations start automatically.
 - **Tabbed workspaces** — each tab is an independent set of machines and operations, run side by side. Text searches settle briefly before refreshing large lists; background activity and completion banners keep bounded UI queues.
 - **Ping All** — reachability, shown as colour-coded status dots.
 - **Check Vitals** — one read-only pull per machine that gathers SCCM client health (site code, agent

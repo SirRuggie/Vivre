@@ -114,9 +114,11 @@ public static class HelpContent
         new HelpTopic
         {
             Category = GettingStarted, Icon = SymbolRegular.Tabs24, Title = "How do I work with tabs?",
-            Keywords = "tab new close rename workspace multiple close others right",
+            Keywords = "tab new close rename workspace multiple close others right health patching handoff",
             Lines =
             [
+                "Right-click a Health tab ▸ Open tab in Patching to copy all its machine names into a new Patching tab with the same title, including machines hidden by filters or not selected.",
+                "The Health tab and existing Patching tabs stay unchanged. The new tab starts with normal update defaults, monitoring off, and no automatic checks, installs, or reboots; review its settings before running an action.",
                 "Each tab is independent — its own machine list, selection, and running operations.",
                 "Machine names stay fixed at the left when horizontally scrolling either fleet grid; other columns can still be resized and reordered.",
                 "• New tab: the \"+\" by the tabs, or Ctrl+T.",

@@ -816,6 +816,7 @@
                                             <MenuItem Header="New tab" Click="OnNewTab" InputGestureText="Ctrl+T">
                                                 <MenuItem.Icon><ui:SymbolIcon Symbol="Add24" /></MenuItem.Icon>
                                             </MenuItem>
+                                            <MenuItem Header="Open tab in Patching" Click="OnOpenTabInPatching" />
                                             <MenuItem Header="Clear this tab" Click="OnClearThisTab">
                                                 <MenuItem.Icon><ui:SymbolIcon Symbol="Eraser24" /></MenuItem.Icon>
                                             </MenuItem>

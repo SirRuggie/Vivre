@@ -1519,7 +1519,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     }
 
     /// <summary>Appends machines to the grid, skipping blanks and ones already present.</summary>
-    public void AddComputers(IEnumerable<string> names)
+    public void AddComputers(IEnumerable<string> names, bool autoCheck = true)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         var existing = new HashSet<string>(Computers.Select(c => c.Name), StringComparer.OrdinalIgnoreCase);
@@ -1553,7 +1553,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // Vitals button does (SCCM client health, the health dots, AND the 0-100 vitals score) — so the
         // grid's data is just there on load. Unless turned off (Settings ▸ Auto-check on load). Scoped to
         // the rows just loaded; the manual button stays for re-checks.
-        if (AutoCheckOnLoadEnabled())
+        if (autoCheck && AutoCheckOnLoadEnabled())
         {
             // Defer the auto-check kickoff to AFTER the just-added rows render. Kicking it inline runs the
             // sweep's synchronous prologue (a "Checking…" write per row + the first ping batch) on the UI

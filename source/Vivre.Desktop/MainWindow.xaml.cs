@@ -1329,6 +1329,20 @@ public partial class MainWindow : FluentWindow
 
     private void OnNewTab(object sender, RoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);
 
+    private void OnOpenTabInPatching(object sender, RoutedEventArgs e)
+    {
+        if (Shell is not { } shell || sender is not FrameworkElement { DataContext: WorkspaceViewModel source }) return;
+        try
+        {
+            if (shell.OpenTabInPatching(source)) ShowNavSection(NavSection.Patching);
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "Could not open tab in Patching",
+                System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void OnCloseTab(object sender, RoutedEventArgs e)
     {
         if (sender is FrameworkElement { DataContext: WorkspaceViewModel tab }) CloseTabWithGuard(tab);

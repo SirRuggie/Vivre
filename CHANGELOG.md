@@ -13,6 +13,7 @@ it ships, then gets a dated heading.
 - Freeze each dispatched scan's update options through retries and result processing; preserve compact toolbar behavior for the per-tab source label.
 
 ### Changed
+- Open a Health tab in Patching from its tab menu: all names copy into a fresh same-title tab with normal update defaults, monitoring off, and no automatic checks; existing tabs remain intact.
 - Search Open/Delete/Restore list menus and both script libraries by name/category while preserving the open script and edits.
 - Recover deleted saved lists across restarts with a new Restore deleted list action; existing names are never overwritten.
 - Point the documentation index to 1.18.0 and Unreleased while retaining historical validation reports.

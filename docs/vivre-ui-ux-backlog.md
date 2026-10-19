@@ -10,7 +10,18 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - An unchecked item is a finding or recommendation, not authorization to implement it.
 - Mark complete only after its agreed behavior is implemented and validated; state remaining live-validation limits.
 - Preserve existing operational behavior and reuse current components where practical.
-- Next recommended discussion: **U-8**, deciding the Health-to-Patching handoff; it remains unimplemented pending the desired transfer behavior.
+- Next recommended batch: **U-21/U-22**, narrow-window/high-DPI and keyboard/accessibility validation; U-18 remains a separate discoverability decision.
+
+## Completed batch acceptance — U-8 (2026-10-19)
+
+- **Implemented and locally tested:** Health tab context menu → Open tab in Patching copies all underlying names into a new same-title Patching tab, including unselected/filtered-out machines.
+- **Preservation:** Source rows, results, selection, and work remain unchanged; existing Patching tabs are not reused or overwritten, and saved-list identity/results are not copied.
+- **Idle defaults:** Fresh update defaults; new monitoring stopped before rows are added; auto-check suppressed for this handoff only, without changing global settings or normal loads.
+- **Independent red team:** Separate `gpt-5.6-sol` reviewer inspected implementation and probe, found no concrete defect, and made no edits; parent ran validation.
+- **Validation:** Debug and Release builds passed; production XAML/menu/handler/shell probe passed for inactive right-click source, all names, isolation/defaults, navigation, idle target with auto-check enabled, repeated/empty/stale/non-Health cases, and factory failure. Existing workspace safety regression passed.
+- **Limits:** Local dummy workspaces and temporary settings only; no live hosts, visible-window/high-DPI, or screen-reader validation. No-work assertion uses idle flags after dispatcher drain with null remote sentinels, not explicit service call counters. Cleanup after an AddComputers exception was reviewed statically; the exercised failure occurs at factory creation.
+- **Packaging:** Existing missing-signing-certificate build warning remains; no signed package produced; version stays 1.18.0 plus Unreleased.
+- **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
 
 ## Highest priority — behavior found in the code
 
@@ -127,8 +138,8 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - [x] **U-7 · Medium — Make Paste and Quick Add accept the same formats.**
   - **Delivered:** Both use one parser for lines, tabs, spaces, commas, and semicolons, preserving first-seen order and removing case-insensitive duplicates.
 
-- [ ] **U-8 · Medium — Add an explicit handoff from Health to Patching.**
-  - **Why:** Switching sections opens a separate workspace instead of carrying the machines the user was inspecting.
+- [x] **U-8 · Medium — Add an explicit handoff from Health to Patching.**
+  - **Delivered:** Right-click a Health tab → Open tab in Patching copies all names into a fresh same-title tab, preserving the source and starting no automatic operations.
 
 - [x] **U-9 · Medium — Keep machine names visible during horizontal scrolling.**
   - **Delivered:** Name stays fixed at the left of both grids; its width is bounded, long names have ellipsis/full-name hover text, and other columns retain resizing/reordering.
