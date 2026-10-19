@@ -106,6 +106,14 @@ public sealed class SharedSettingsStore
         }
     }
 
+    /// <summary>Strict read for explicit editor reloads; never replaces an unreadable file with defaults.</summary>
+    public SharedSettings LoadForEditing()
+    {
+        var settings = ReadRawForWriteOrRefuse().Deserialize<SharedSettings>() ?? new SharedSettings();
+        settings.StagedHosts = StagedHostMatching.Normalize(settings.StagedHosts);
+        return settings;
+    }
+
     /// <summary>Sibling-safe mutate-and-save (this REPLACES the old whole-object Save, which could stomp keys it
     /// never read). <paramref name="mutate"/> expresses only the DELTA; Update reads the CURRENT file fresh,
     /// applies the delta to the typed view, and writes back by MERGING onto the raw on-disk JSON so ONLY the keys

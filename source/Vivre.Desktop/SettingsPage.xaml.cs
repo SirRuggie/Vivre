@@ -55,9 +55,7 @@ public partial class SettingsPage : UserControl
         AutoToggle.IsChecked = s.AutoCheckOnLoad;
         WugServerBox.Text = shared.WugServer;
         PackagesFolderBox.Text = shared.PackagesFolder;
-        LcuKbBox.Text = shared.MonthlyCu?.Kb ?? string.Empty;
-        LcuUbrBox.Text = shared.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
-        LcuMonthTagBox.Text = shared.MonthlyCu?.MonthTag ?? string.Empty;
+        LoadCuDraft(shared.MonthlyCu ?? new MonthlyCu());
         LcuPackagesFolderBox.Text = shared.LcuPackagesFolder;
         // The install cap and WUG state-check concurrency are PERSONAL — seed them from the per-user snapshot.
         MaxInstallsBox.Text = s.MaxSimultaneousInstalls.ToString();
@@ -169,38 +167,85 @@ public partial class SettingsPage : UserControl
 
     // ── Server 2016 cumulative update ──────────────────────────────────────
 
-    private void OnLcuKbChanged(object sender, RoutedEventArgs e)
-    {
-        string value = LcuKbBox.Text.Trim();
-        PersistShared(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.Kb = value; });
-    }
+    private MonthlyCu _cuBaseline = new();
+    private bool _loadingCu;
 
-    private void OnLcuUbrChanged(object sender, RoutedEventArgs e)
+    private void LoadCuDraft(MonthlyCu cu)
     {
-        string raw = LcuUbrBox.Text.Trim();
-        if (!int.TryParse(raw, out int ubr))
+        _cuBaseline = new MonthlyCu { Kb = cu.Kb, TargetUbr = cu.TargetUbr, MonthTag = cu.MonthTag, Arch = cu.Arch };
+        _loadingCu = true;
+        try
         {
-            // Non-numeric input: snap the field back to the saved value rather than persisting junk.
-            LcuUbrBox.Text = _sharedStore.Load().MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
-            return;
+            LcuKbBox.Text = cu.Kb;
+            LcuUbrBox.Text = cu.TargetUbr == 0 ? string.Empty : cu.TargetUbr.ToString();
+            LcuMonthTagBox.Text = cu.MonthTag;
         }
-
-        PersistShared(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.TargetUbr = ubr; });
+        finally { _loadingCu = false; }
+        CuSettingsStatus.Text = "CU settings loaded. Edit the fields, then Save CU settings.";
     }
 
-    private void OnLcuMonthTagChanged(object sender, RoutedEventArgs e)
+    private void OnCuDraftChanged(object sender, TextChangedEventArgs e)
     {
-        string value = LcuMonthTagBox.Text.Trim();
-        PersistShared(s => { s.MonthlyCu ??= new MonthlyCu(); s.MonthlyCu.MonthTag = value; });
+        if (!_loadingCu && CuSettingsStatus is not null) CuSettingsStatus.Text = "Unsaved CU changes — Save CU settings to apply all three fields.";
+    }
+
+    private void OnSaveCuSettings(object sender, RoutedEventArgs e)
+    {
+        string kb = Lcu2016CuMatcher.NormalizeKb(LcuKbBox.Text.Trim());
+        string raw = LcuUbrBox.Text.Trim();
+        string month = LcuMonthTagBox.Text.Trim();
+        bool clear = kb.Length == 0 && raw.Length == 0 && month.Length == 0;
+        int ubr = 0;
+        if (!clear && (kb.Length == 0 || kb.Any(c => c < '0' || c > '9')))
+        { CuSettingsStatus.Text = "Enter a KB number such as KB5094122 (digits with an optional KB prefix). Nothing saved."; return; }
+        if (!clear && (!int.TryParse(raw, out ubr) || ubr <= 0))
+        { CuSettingsStatus.Text = "Enter a positive whole build revision, e.g. 9234 for 14393.9234. Nothing saved."; return; }
+        TrySaveCu(new MonthlyCu { Kb = clear ? "" : "KB" + kb, TargetUbr = ubr, MonthTag = month, Arch = _cuBaseline.Arch }, _cuBaseline);
+    }
+
+    private bool TrySaveCu(MonthlyCu candidate, MonthlyCu expected)
+    {
+        try
+        {
+            _sharedStore.Update(s =>
+            {
+                var current = s.MonthlyCu ?? new MonthlyCu();
+                if (current.Kb != expected.Kb || current.TargetUbr != expected.TargetUbr || current.MonthTag != expected.MonthTag || current.Arch != expected.Arch)
+                    throw new InvalidOperationException("CU settings changed elsewhere. Reload saved CU, review the current values, and try again.");
+                s.MonthlyCu = candidate;
+            });
+            LoadCuDraft(candidate);
+            CuSettingsStatus.Text = "CU settings saved.";
+            return true;
+        }
+        catch (Exception ex)
+        {
+            CuSettingsStatus.Text = $"Nothing saved: {ex.Message}";
+            _log?.Error(null, $"Couldn't save CU settings: {ex.Message}");
+            return false;
+        }
+    }
+
+    private void OnReloadCuSettings(object sender, RoutedEventArgs e)
+    {
+        try { LoadCuDraft(_sharedStore.LoadForEditing().MonthlyCu ?? new MonthlyCu()); }
+        catch (Exception ex) { CuSettingsStatus.Text = $"Could not reload; your draft is unchanged: {ex.Message}"; }
+    }
+
+    private void SetCuEditingEnabled(bool enabled)
+    {
+        LcuKbBox.IsEnabled = LcuUbrBox.IsEnabled = LcuMonthTagBox.IsEnabled = enabled;
+        SaveCuButton.IsEnabled = ReloadCuButton.IsEnabled = enabled;
     }
 
     private void OnMaxInstallsChanged(object sender, RoutedEventArgs e)
     {
         string raw = MaxInstallsBox.Text.Trim();
+        MaxInstallsError.Text = string.Empty;
         if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > 200)
         {
-            // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
-            MaxInstallsBox.Text = (_settingsStore?.Load() ?? new AppSettings()).MaxSimultaneousInstalls.ToString();
+            // Keep invalid input visible with an explanation; leave the active setting unchanged.
+            MaxInstallsError.Text = "Enter a whole number from 1–200. Your previous setting remains active.";
             return;
         }
 
@@ -218,10 +263,11 @@ public partial class SettingsPage : UserControl
     private void OnWugStateConcurrencyChanged(object sender, RoutedEventArgs e)
     {
         string raw = WugStateConcurrencyBox.Text.Trim();
+        WugStateConcurrencyError.Text = string.Empty;
         if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > Vivre.Core.Wug.WugMaintenance.StateReadMaxConcurrency)
         {
-            // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
-            WugStateConcurrencyBox.Text = (_settingsStore?.Load() ?? new AppSettings()).WugStateConcurrency.ToString();
+            // Keep invalid input visible with an explanation; leave the active setting unchanged.
+            WugStateConcurrencyError.Text = "Enter a whole number from 1–4. Your previous setting remains active.";
             return;
         }
 
@@ -239,10 +285,11 @@ public partial class SettingsPage : UserControl
     private void OnServicingWaitChanged(object sender, RoutedEventArgs e)
     {
         string raw = ServicingWaitBox.Text.Trim();
+        ServicingWaitError.Text = string.Empty;
         if (!int.TryParse(raw, out int parsed) || parsed < 5 || parsed > 120)
         {
-            // Non-numeric or out-of-range: snap the field back to the saved value rather than persisting junk.
-            ServicingWaitBox.Text = (_settingsStore?.Load() ?? new AppSettings()).ServicingWaitMinutes.ToString();
+            // Keep invalid input visible with an explanation; leave the active setting unchanged.
+            ServicingWaitError.Text = "Enter a whole number from 5–120. Your previous setting remains active.";
             return;
         }
 
@@ -295,6 +342,7 @@ public partial class SettingsPage : UserControl
         }
 
         ReadLcuPackageButton.IsEnabled = false;
+        SetCuEditingEnabled(false);
         try
         {
             // Read from the current box text (trimmed); fall back to the saved folder if the box is empty.
@@ -324,7 +372,7 @@ public partial class SettingsPage : UserControl
 
             var accepted = (MsuIdentityResult.Accepted)result.Identity;
 
-            SharedSettings s = _sharedStore.Load();
+            SharedSettings s = _sharedStore.LoadForEditing();
             string currentKb = s.MonthlyCu?.Kb?.Trim() ?? string.Empty;
             string currentUbr = s.MonthlyCu?.TargetUbr.ToString() ?? string.Empty;
             string currentArch = s.MonthlyCu?.Arch ?? "x64";
@@ -361,26 +409,11 @@ public partial class SettingsPage : UserControl
                 return; // "Keep my settings" / Esc / close — change nothing.
             }
 
-            // Confirmed — persist into the same shared fields the typed flow writes, then mirror the visible
-            // boxes (all are LostFocus-only wired, so setting .Text here is safe and won't re-trigger a handler).
-            // The month tag saves atomically in the SAME mutate as KB/UBR/arch. PersistShared surfaces its own
-            // failure (log + message box); only claim success + mirror when it saved.
+            // Package and typed edits share one atomic save and stale-settings check.
             string confirmedMonthTag = dialog.ConfirmedMonthTag;
-            if (!PersistShared(sx =>
-            {
-                sx.MonthlyCu ??= new MonthlyCu();
-                sx.MonthlyCu.Kb = accepted.Kb;
-                sx.MonthlyCu.TargetUbr = accepted.TargetUbr;
-                sx.MonthlyCu.Arch = accepted.Arch;
-                sx.MonthlyCu.MonthTag = confirmedMonthTag;
-            }))
-            {
+            if (!TrySaveCu(new MonthlyCu { Kb = accepted.Kb, TargetUbr = accepted.TargetUbr, Arch = accepted.Arch, MonthTag = confirmedMonthTag }, s.MonthlyCu ?? new MonthlyCu()))
                 return;
-            }
-
-            LcuKbBox.Text = accepted.Kb;
-            LcuUbrBox.Text = readUbr;
-            LcuMonthTagBox.Text = confirmedMonthTag;
+            CuSettingsStatus.Text = "CU settings saved from package.";
 
             string tagSuffix = confirmedMonthTag.Length == 0 ? string.Empty : $" ({confirmedMonthTag})";
             _log?.Info(null, $"Read {accepted.Kb} / build {accepted.TargetUbr} ({accepted.Arch}) from {result.FileName} — settings updated{tagSuffix}.");
@@ -401,6 +434,7 @@ public partial class SettingsPage : UserControl
         finally
         {
             ReadLcuPackageButton.IsEnabled = true;
+            SetCuEditingEnabled(true);
         }
     }
 

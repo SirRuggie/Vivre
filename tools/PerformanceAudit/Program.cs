@@ -17,6 +17,7 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        bool settingsClarityOnly = args.Length == 2 && args[0] == "--settings-clarity-only";
         bool patchingClarityOnly = args.Length == 2 && args[0] == "--patching-clarity-only";
         bool workspaceSafetyOnly = args.Length == 2 && args[0] == "--workspace-safety-only";
         bool tabOptionsOnly = args.Length == 2 && args[0] == "--tab-options-only";
@@ -27,7 +28,7 @@ internal static class Program
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -36,6 +37,11 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (settingsClarityOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(SettingsClarityProbe.Run(root), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (patchingClarityOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(PatchingClarityProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));

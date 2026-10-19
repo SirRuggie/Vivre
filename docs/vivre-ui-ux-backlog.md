@@ -92,6 +92,19 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - **Limits:** Offscreen WPF and inert callbacks/services; no live install, reboot, task registration, visible-window/high-DPI sweep, or screen-reader run; independent reviewer did not rerun parent-owned tests.
 - **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
 
+## U-12, U-13, U-14 acceptance and independent review — 2026-10-19
+
+- **Acceptance ledger:** All three requested capabilities are implemented and locally tested; nothing in this batch is deferred or blocked.
+- **Simplicity:** Reused the existing Activity queue, settings stores, and Settings page; one grouped CU Save and an explicit Reload saved CU action, with no extra normal confirmation dialog.
+- **Independent review:** A separate `gpt-5.6-sol` reviewer identified incorrect conflict-recovery guidance, missing origin in copied Activity, and error-driven numeric-column expansion; all were corrected and independently re-reviewed with no further concrete finding.
+- **Save integrity:** Typed and package saves share one guarded shared-store update; stale KB/build/month/architecture baselines refuse overwrites, strict reload preserves drafts on read failure, and package reading disables competing CU edits until completion.
+- **Focused tests:** 14 shared-settings tests passed, zero skipped; the full suite was not rerun for this batch.
+- **Production-control probe:** Actual Settings controls and temporary stores passed grouped/no-partial save, invalid input, stale-save refusal, reload, corrupt-file failure, package/typed baseline continuity, and numeric-error width checks; actual Activity passed historical origin capture, same-host/different-tab attribution, display binding, search, and clipboard-free TSV formatting.
+- **Logging regression:** Existing bounded-log probe passed at 2,000 and 10,000 messages; paused dispatch retained the newest 512 behind one queued drain plus one overflow summary, preserving sink admission. Counting sink only; no production disk-I/O or full-app memory claim.
+- **Builds:** Debug and Release passed with zero errors and the existing missing agent-signing-certificate warning; no signed package produced.
+- **Limits:** Offscreen WPF, dummy log entries, and temporary files; no live targets, production settings writes, visible-window/high-DPI sweep, or screen-reader run. Package-save integration was exercised without reading a live MSU; independent reviewer did not rerun parent-owned tests.
+- **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
+
 ## Workflow improvements
 
 - [x] **U-6 · Medium — Make saved-list identity and changes visible.**
@@ -114,14 +127,14 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
   - **Delivered:** Install anyway is primary; forced reboot is a separate secondary choice with its pending-target count and lost-work warning.
   - **Behavior:** Install does not reboot; reboot-first only reboots and requires starting installation again afterward; Cancel does neither.
 
-- [ ] **U-12 · Medium — Show the originating tab in Activity.**
-  - **Why:** Tab attribution exists in file logs but is absent from the shared Activity display.
+- [x] **U-12 · Medium — Show the originating tab in Activity.**
+  - **Delivered:** Activity displays, searches, and copies the originating workspace; titles and stable instance numbers are captured when entries are emitted, with app-wide entries left untagged.
 
-- [ ] **U-13 · Medium — Save related CU settings together.**
-  - **Why:** KB, target build, and month currently save separately as fields lose focus.
+- [x] **U-13 · Medium — Save related CU settings together.**
+  - **Delivered:** KB/build/month remain an explicit draft until Save CU settings commits them together; success, conflict, and reload errors are shown inline, and Reload saved CU discards the draft only after a successful read.
 
-- [ ] **U-14 · Medium — Explain invalid settings beside their fields.**
-  - **Why:** Some invalid numeric values silently revert, leaving users uncertain why their edit disappeared.
+- [x] **U-14 · Medium — Explain invalid settings beside their fields.**
+  - **Delivered:** Invalid install concurrency, WUG concurrency, servicing wait, and CU build input stay visible with corrective text; the prior settings remain active, and valid corrections clear errors.
 
 - [x] **U-15 · Medium — Show timezone and target count when scheduling.**
   - **Delivered:** Both schedule dialogs show captured target counts and the Vivre host timezone with the chosen date's UTC offset; invalid clock-change times are refused and repeated times disclose the chosen offset.

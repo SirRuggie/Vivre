@@ -13,4 +13,7 @@ public enum LogSeverity
 /// <param name="Severity">Info / Warning / Error (drives colour).</param>
 /// <param name="Machine">Target machine, or null for app-level entries.</param>
 /// <param name="Message">What happened.</param>
-public sealed record LogEntry(DateTime Timestamp, LogSeverity Severity, string? Machine, string Message);
+public sealed record LogEntry(DateTime Timestamp, LogSeverity Severity, string? Machine, string Message)
+{
+    public string? Origin { get; init; }
+}

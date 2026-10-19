@@ -1026,6 +1026,16 @@ public partial class MainWindow : FluentWindow
 
     private static void CopyActivityEntries(System.Collections.IEnumerable items)
     {
+        string text = FormatActivityEntries(items);
+        if (text.Length > 0)
+        {
+            try { Clipboard.SetText(text); }
+            catch { /* clipboard transiently locked */ }
+        }
+    }
+
+    internal static string FormatActivityEntries(System.Collections.IEnumerable items)
+    {
         var sb = new StringBuilder();
         foreach (object item in items)
         {
@@ -1035,15 +1045,13 @@ public partial class MainWindow : FluentWindow
                   .Append('\t')
                   .Append(entry.Machine ?? string.Empty)
                   .Append('\t')
+                  .Append(entry.Origin ?? string.Empty)
+                  .Append('\t')
                   .AppendLine(entry.Message);
             }
         }
 
-        if (sb.Length > 0)
-        {
-            try { Clipboard.SetText(sb.ToString()); }
-            catch { /* clipboard transiently locked */ }
-        }
+        return sb.ToString();
     }
 
     // --- update source ---

@@ -13,6 +13,8 @@ it ships, then gets a dated heading.
 - Freeze each dispatched scan's update options through retries and result processing; preserve compact toolbar behavior for the per-tab source label.
 
 ### Changed
+- Show/search/copy originating workspace in Activity without changing bounded log delivery.
+- Save CU KB/build/month together with draft, conflict, and reload feedback; show inline numeric errors without silently reverting input.
 - Show patch options without opening a menu; make Install anyway primary and forced reboot a separate choice.
 - Show schedule target counts and host timezone/selected-date offset; refuse nonexistent daylight-saving times and stale target-name approvals.
 - Show saved-list identity, membership changes, and successful save status without additional prompts or automatic saving.

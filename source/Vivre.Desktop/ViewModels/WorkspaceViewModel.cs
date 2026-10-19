@@ -432,11 +432,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly int _instanceId = Interlocked.Increment(ref _instanceCounter);
 
     /// <summary>
-    /// FILE-LOG-ONLY attribution tag for monitor lines, e.g. <c>Health · Fleet #3</c>. The activity log records
-    /// the machine but not which tab wrote the line, so when several tabs hold one host its lines are
-    /// indistinguishable — that ambiguity is exactly what blocked diagnosing the frozen-Health-grid incidents.
-    /// Section FIRST because Health-vs-Patching is the suspected discriminator. Never shown in the grid or the
-    /// activity panel; see <see cref="IActivityLog.Info(string?, string, string?)"/>.
+    /// Workspace attribution for Activity and the rolling file, e.g. <c>Health · Fleet #3</c>.
+    /// Captured when emitted; the stable instance number distinguishes tabs with identical titles.
     /// </summary>
     private string InstanceTag => $"{(IsUpdateMode ? "Patching" : "Health")} · {Title} #{_instanceId}";
 
@@ -972,7 +969,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _powerShell = powerShell;
         _credentials = credentials;
         _lists = lists;
-        _activity = activity;
+        _activity = new WorkspaceActivityLog(activity, () => InstanceTag);
         _scripts = scripts;
         _patch = patch;
         _patchOptions = patchOptions.Clone(); // Each workspace owns its operational settings.

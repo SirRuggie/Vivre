@@ -163,12 +163,15 @@
 
                     <!-- State check — simultaneous lookups (reformatted from the flat row) -->
                     <ui:TextBlock Text="State check — simultaneous lookups" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="WugStateConcurrencyBox"
+                    <StackPanel>
+                        <ui:TextBox x:Name="WugStateConcurrencyBox"
                                 MinWidth="70" HorizontalAlignment="Left"
                                 PlaceholderText="2"
                                 LostFocus="OnWugStateConcurrencyChanged"
                                 Margin="0,0,0,4"
                                 ToolTip="How many WUG devices the state check queries at once (1–4). Default 2." />
+                        <TextBlock x:Name="WugStateConcurrencyError" local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" MaxWidth="240" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                    </StackPanel>
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                   Text="How many WUG devices the state check queries at once. Measured on the live server: 2 is the sweet spot — more just loads the WUG server for no extra speed. Range 1–4; default 2. Takes effect on the next check." />
 
@@ -210,6 +213,7 @@
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -227,6 +231,7 @@
                                 PlaceholderText="50"
                                 LostFocus="OnMaxInstallsChanged"
                                 ToolTip="Cap on simultaneous installs/uninstalls/stages (1–200). Default 50." />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,6,0,0" x:Name="MaxInstallsError" local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                 </Grid>
             </Border>
 
@@ -235,6 +240,7 @@
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
@@ -252,6 +258,7 @@
                                 PlaceholderText="20"
                                 LostFocus="OnServicingWaitChanged"
                                 ToolTip="Max minutes the Reboot Wave waits for in-progress servicing before giving up WITHOUT rebooting (5–120). Default 20. The wave never force-reboots through active servicing." />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,6,0,0" x:Name="ServicingWaitError" local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
                 </Grid>
             </Border>
 
@@ -267,7 +274,7 @@
                     <ui:TextBlock Text="KB number" Margin="0,0,0,4" />
                     <ui:TextBox x:Name="LcuKbBox"
                                 PlaceholderText="e.g. KB5094122"
-                                LostFocus="OnLcuKbChanged"
+                                TextChanged="OnCuDraftChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="This month's update number, e.g. KB5094122 — it's in the update's title on the catalog and history pages below. Vivre uses it to find the .msu in the package folder and shows it in the 2016 panel." />
@@ -276,7 +283,7 @@
                     <ui:TextBlock Text="Build number after the update" Margin="0,0,0,4" />
                     <ui:TextBox x:Name="LcuUbrBox"
                                 PlaceholderText="e.g. 9234"
-                                LostFocus="OnLcuUbrChanged"
+                                TextChanged="OnCuDraftChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="After the update installs, servers should report OS Build 14393.XXXX — enter just the XXXX part (e.g. 9339). It's listed beside the KB on the update history page. Verify and the Reboot Wave compare servers against this number (it's also called the target UBR)." />
@@ -285,10 +292,17 @@
                     <ui:TextBlock Text="CU month label" Margin="0,0,0,4" />
                     <ui:TextBox x:Name="LcuMonthTagBox"
                                 PlaceholderText="e.g. July 2026"
-                                LostFocus="OnLcuMonthTagChanged"
+                                TextChanged="OnCuDraftChanged"
                                 Margin="0,0,0,4" />
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
                                   Text="A label for which month's update this is, e.g. July 2026 — everyone on this box sees it. Read from package fills it in for you (editable)." />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <ui:Button x:Name="SaveCuButton" Content="Save CU settings" Click="OnSaveCuSettings" />
+                        <ui:Button x:Name="ReloadCuButton" Content="Reload saved CU" Click="OnReloadCuSettings" Margin="8,0,0,0"
+                                   ToolTip="Discard these CU edits and reload the saved KB, build, and month." />
+                    </StackPanel>
+                    <TextBlock x:Name="CuSettingsStatus" local:AccessibleStatus.Enabled="True" Text="Edit the three fields, then Save CU settings." TextWrapping="Wrap" Margin="0,0,0,12" />
 
                     <!-- Find this month's update — read-only, selectable link. -->
                     <ui:TextBlock TextWrapping="Wrap" Margin="0,0,0,4"

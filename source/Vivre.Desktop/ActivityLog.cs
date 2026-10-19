@@ -119,10 +119,7 @@ public sealed class ActivityLog : IActivityLog
 
     private void Add(LogSeverity severity, string? machine, string message, string? origin = null)
     {
-        // NOTE the entry uses `message` UNTAGGED: the origin tag is a diagnostic for the rolling file only, so
-        // the operator-facing panel line stays byte-identical to what it has always been. Only the file write
-        // below carries it.
-        var entry = new LogEntry(DateTime.Now, severity, machine, message);
+        var entry = new LogEntry(DateTime.Now, severity, machine, message) { Origin = origin };
 
         // The UI entry is the user-visible record; the file write is best-effort and
         // must NEVER throw here. Info/Warn/Error are called from inside callers' catch blocks, so a

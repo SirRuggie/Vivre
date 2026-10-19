@@ -8,7 +8,7 @@ namespace Vivre.Desktop.ViewModels;
 
 /// <summary>
 /// Backs the activity-log panel: a filtered view over the shared
-/// <see cref="IActivityLog"/> entries. The search box matches machine OR message,
+/// <see cref="IActivityLog"/> entries. The search box matches originating tab, machine, or message,
 /// so typing a host name pinpoints it and typing "failed" shows failures.
 /// </summary>
 public partial class ActivityLogViewModel : ObservableObject
@@ -53,6 +53,7 @@ public partial class ActivityLogViewModel : ObservableObject
         }
 
         return (entry.Machine?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false)
-            || entry.Message.Contains(search, StringComparison.OrdinalIgnoreCase);
+            || entry.Message.Contains(search, StringComparison.OrdinalIgnoreCase)
+            || (entry.Origin?.Contains(search, StringComparison.OrdinalIgnoreCase) ?? false);
     }
 }

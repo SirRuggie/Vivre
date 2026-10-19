@@ -80,3 +80,5 @@ Uses real workspace membership/selection, shared approval helpers, and productio
 The workspace probe also covers U-6/U-7/U-9/U-19: saved identity and membership-only changes, failed saves, restored membership, deletion detachment, actual Paste with mixed separators, fixed Name columns in both grids, and mode-specific action text. These checks reuse the existing isolated workspace probe.
 
 `--patching-clarity-only <output.json>` checks U-10/U-11/U-15 using production controls and inert callbacks: per-tab option summaries, install/reboot/cancel routing, schedule counts and host timezone, DST offsets/gaps, and captured target identity. No live operation or production write.
+
+`--settings-clarity-only <output.json>` exercises U-12/U-13/U-14 with actual Activity and Settings controls, temporary shared/personal stores, and a sink-free logger: origin display/search/copy, grouped saves, conflict/reload/failure preservation, package-save integration, numeric errors and layout stability, plus existing bounded-log probes. No clipboard mutation, production settings, or live targets.

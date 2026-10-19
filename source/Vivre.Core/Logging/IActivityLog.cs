@@ -20,12 +20,8 @@ public interface IActivityLog
     void Error(string? machine, string message);
 
     /// <summary>
-    /// <paramref name="origin"/> overloads: same entry, plus a FILE-ONLY attribution tag naming which tab
-    /// emitted it (e.g. <c>Health · Fleet #3</c>). The operator-facing panel entry is byte-identical to the
-    /// two-argument form — the tag exists so a line can be traced to one instance when several tabs hold the
-    /// same host, which is otherwise impossible: <see cref="LogEntry"/> carries the machine but no tab identity.
-    /// Default implementations forward to the untagged overload, so existing implementations and test doubles
-    /// need no change (same pattern as <see cref="Trace"/>).
+    /// Origin overloads carry the emitting workspace identity to the Activity panel and rolling file.
+    /// Default implementations forward to untagged calls for compatibility with existing test doubles.
     /// </summary>
     void Info(string? machine, string message, string? origin) => Info(machine, message);
 

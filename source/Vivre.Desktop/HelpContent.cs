@@ -45,6 +45,19 @@ public static class HelpContent
         // ---------------- Getting started ----------------
         new HelpTopic
         {
+            Category = GettingStarted, Icon = SymbolRegular.Settings24, Title = "How do settings changes save?",
+            Keywords = "settings save CU invalid number validation reload",
+            Lines =
+            [
+                "CU KB, build revision, and month are a draft until you click Save CU settings; all three save together. The status confirms success or explains why nothing saved.",
+                "Reload saved CU discards your CU edits and reads the current shared values. If another operator changes the CU first, reload and review before saving. Read from package keeps its existing review dialog and uses the same grouped save.",
+                "To clear the CU configuration, empty all three fields and click Save CU settings.",
+                "Numeric preferences still apply when you leave the field. Invalid values stay visible with the allowed range beside them; the previous setting remains active until corrected.",
+                "Activity shows the originating tab and its instance number when available. Search or copy Activity to retain that attribution; app-wide messages have no tab.",
+            ],
+        },
+        new HelpTopic
+        {
             Category = GettingStarted, Icon = SymbolRegular.Info24, Title = "What is Vivre?",
             Keywords = "overview about intro what does",
             Lines =
@@ -633,7 +646,7 @@ public static class HelpContent
                 "Why Clean up? Windows Server 2016 accumulates old update pieces in a hidden store over time. Clean up tells Windows to clear that backlog — it speeds up normal Windows Update on any 2016 box and makes room before you stage a CU (without it, staging can stall or hang). It acts on the selected 2016 boxes, or all of them when none are selected; it never reboots the box and is safe to run any time.",
                 "Clean up on a backlogged box can run for hours. The row shows a live \"Cleaning — 12m\" readout (with a percent when Windows reports one) so you can see it's still working even while the percent sits still; it only flags \"looks stalled (may still be working)\" or \"still going, check the box\" as a heads-up — it won't give up on a working box. When it finishes you'll see one of these results: \"Cleaned — ready to Stage\" (green, good to go), \"Cleaned — reboot-pending\" (amber — reboot before you Stage), \"Cleaned · locked files (see log)\" (green — the backlog cleared, but security software held some files open so Windows couldn't remove the rest; staging isn't blocked, and the activity log explains how to reclaim it), or, if the box already has a reboot waiting, \"Couldn't clean up — reboot to clear the pending state first\" (it didn't run, to avoid clashing with Windows servicing).",
             ],
-            Tip = "Set the month's KB + build number in Settings ▸ Server 2016 cumulative update (the card holds the catalog and update-history links — copy this month's KB and build number from them), and drop the Catalog .msu in the CU package folder before staging. Shortcut: once the .msu is in the CU package folder, Settings ▸ Server 2016 cumulative update ▸ Read from package reads the KB, build number, and architecture off the file (and suggests a month label like July 2026 from the file's date) and asks you to confirm — it refuses anything that isn't a genuine Server 2016 cumulative update and never changes your values without showing you.",
+            Tip = "Set the month's KB, build number, and month label in Settings ▸ Server 2016 cumulative update, then click Save CU settings (the card holds the catalog and update-history links — copy this month's KB and build number from them), and drop the Catalog .msu in the CU package folder before staging. Shortcut: once the .msu is in the CU package folder, Settings ▸ Server 2016 cumulative update ▸ Read from package reads the KB, build number, and architecture off the file (and suggests a month label like July 2026 from the file's date) and asks you to confirm — it refuses anything that isn't a genuine Server 2016 cumulative update and never changes your values without showing you.",
         },
         new HelpTopic
         {

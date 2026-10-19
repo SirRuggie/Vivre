@@ -23,6 +23,23 @@ namespace Vivre.Core.Tests.Configuration;
 [SupportedOSPlatform("windows")] // DirectorySecurity / SecurityIdentifier are Windows-only (the whole app is)
 public class SharedSettingsStoreTests
 {
+    [Fact]
+    public void Editor_reload_refuses_corruption_without_creating_or_rewriting_files()
+    {
+        string dir = NewTempDir();
+        try
+        {
+            var store = new SharedSettingsStore(dir);
+            Assert.Equal(string.Empty, store.LoadForEditing().MonthlyCu.Kb);
+            string path = Path.Combine(dir, "settings.json");
+            Assert.False(File.Exists(path));
+            File.WriteAllText(path, "corrupt");
+            Assert.ThrowsAny<Exception>(() => store.LoadForEditing());
+            Assert.Equal("corrupt", File.ReadAllText(path));
+        }
+        finally { Directory.Delete(dir, recursive: true); }
+    }
+
     // 1 — full round-trip of the five operational keys (the two movers — install cap + WUG concurrency — left
     //     for the per-user store, so they're no longer here).
     [Fact]

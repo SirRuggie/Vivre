@@ -1096,7 +1096,7 @@
                                         </Grid.ColumnDefinitions>
                                         <ui:TextBlock Grid.Column="0" Text="Activity" FontTypography="BodyStrong" VerticalAlignment="Center" />
                                         <ui:TextBox Grid.Column="1" Margin="12,0"
-                                                    PlaceholderText="Search activity (machine or text)…"
+                                                    PlaceholderText="Search activity (tab, machine or text)…"
                                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" />
                                         <ui:Button Grid.Column="2" Icon="{ui:SymbolIcon Eraser24}" Content="Clear" Command="{Binding ClearCommand}" />
                                     </Grid>
@@ -1130,6 +1130,14 @@
                                                 </DataGridTemplateColumn>
                                                 <DataGridTextColumn Header="Time" Binding="{Binding Timestamp, StringFormat=HH:mm:ss}" Width="Auto" />
                                                 <DataGridTextColumn Header="Machine" Binding="{Binding Machine}" Width="Auto" />
+                                                <DataGridTextColumn Header="Tab" Binding="{Binding Origin}" Width="160" MinWidth="80">
+                                                    <DataGridTextColumn.ElementStyle>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+                                                            <Setter Property="ToolTip" Value="{Binding Origin}" />
+                                                        </Style>
+                                                    </DataGridTextColumn.ElementStyle>
+                                                </DataGridTextColumn>
                                                 <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*">
                                                     <DataGridTextColumn.ElementStyle>
                                                         <Style TargetType="TextBlock">
