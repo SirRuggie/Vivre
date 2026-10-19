@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.18.0 — 2026-10-19
+
 ### Added
 - Display a Linux label beside hostnames when the current AD domain reports a recognized Linux OS. Cached background batches use the current Windows login; existing checks and operations are unchanged.
 
