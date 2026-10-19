@@ -118,6 +118,7 @@ public static class HelpContent
                 "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
                 "The line above the filters shows the associated list and unsaved membership changes; Saved confirms a successful save. Status compares with the last open/save, not continuous disk monitoring.",
+                "Opening a saved list in a populated tab offers Append list, Replace list, or New tab (default). Empty tabs open the list directly. Append keeps existing results and the current tab identity; Replace removes rows outside the opened list.",
                 "Scans, selection, sorting, and tab renaming do not change saved-list membership; returning to the saved membership clears the changed state.",
                 "Lists ▾ ▸ Delete list removes a saved list; Restore deleted list brings it back, even after restarting Vivre. Choose another name if the original is in use; restore never overwrites.",
                 "Open, Delete, and Restore list menus have search boxes. Restored lists do not replace the machines in your current tab.",

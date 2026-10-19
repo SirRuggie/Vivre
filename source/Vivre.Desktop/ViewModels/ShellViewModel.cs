@@ -166,14 +166,22 @@ public partial class ShellViewModel : ObservableObject
         return true;
     }
 
-    /// <summary>Paste into a fresh tab in the originating section; existing work stays untouched.</summary>
-    public void OpenPastedListInNewTab(WorkspaceViewModel source, string[] names)
+    /// <summary>Open pasted or saved names in a fresh tab in the originating section; existing work stays untouched.</summary>
+    public void OpenPastedListInNewTab(WorkspaceViewModel source, string[] names, string? savedListName = null)
     {
         bool patching = PatchingTabs.Contains(source);
         if (!patching && !HealthTabs.Contains(source)) throw new InvalidOperationException("The original tab is no longer open.");
-        if (names.Length == 0) throw new ArgumentException("Enter at least one machine name.");
+        if (names.Length == 0 && savedListName is null) throw new ArgumentException("Enter at least one machine name.");
         var target = CreateWorkspace(patching, $"Tab {(patching ? _nextPatchingTabNumber : _nextHealthTabNumber)}");
-        try { target.AddComputers(names); }
+        try
+        {
+            target.AddComputers(names);
+            if (savedListName is not null)
+            {
+                target.Title = savedListName;
+                target.RecordSavedList(savedListName, names);
+            }
+        }
         catch { target.Dispose(); throw; }
         if (patching)
         {

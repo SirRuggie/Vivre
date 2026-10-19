@@ -134,6 +134,21 @@ internal static class TabHandoffProbe
                 try { shell.OpenPastedListInNewTab(origin, []); throw new Exception("Empty paste accepted."); } catch (ArgumentException) { }
                 Require(shell.AllTabs.Count() == before, "Empty paste created a tab.");
             }
+            foreach (var origin in new[] { selectedHealth, oldPatch })
+            {
+                var originalRows = origin.Computers.ToArray();
+                shell.OpenPastedListInNewTab(origin, ["DUMMY-SAVED"], "Saved example");
+                Require(shell.SelectedTab!.SavedListName == "Saved example" && shell.SelectedTab.Title == "Saved example"
+                    && shell.SelectedTab.IsUpdateMode == origin.IsUpdateMode, "Saved-list tab lost identity or section.");
+                Require(origin.Computers.SequenceEqual(originalRows), "Opening saved list in new tab changed source.");
+                shell.OpenPastedListInNewTab(origin, [], "Empty saved list");
+                Require(shell.SelectedTab!.Computers.Count == 0, "Empty saved list could not open in a new tab.");
+            }
+            var choice = new LoadComputersWindow("Saved example", _ => { });
+            Require(((RadioButton)choice.FindName("NewTabMode")).IsChecked == true
+                && ((TextBox)choice.FindName("NamesBox")).Visibility == Visibility.Collapsed,
+                "Saved-list choice must default to new tab without a paste box.");
+            choice.Close();
             var paste = new LoadComputersWindow(selectedHealth, names => shell.OpenPastedListInNewTab(selectedHealth, names));
             Require(((RadioButton)paste.FindName("AddMode")).IsChecked == true && ((RadioButton)paste.FindName("NewTabMode")).Visibility == Visibility.Visible, "Paste choices/default incorrect.");
             ((RadioButton)paste.FindName("NewTabMode")).IsChecked = true;

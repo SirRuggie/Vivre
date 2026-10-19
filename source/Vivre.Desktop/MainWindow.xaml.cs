@@ -1715,11 +1715,36 @@ public partial class MainWindow : FluentWindow
         try
         {
             var names = vm.ReadSavedList(name); // read before changing the existing workspace
-            if (ReplaceTabMachines(vm, names, "Open saved list"))
+            void ReplaceAndRecord()
             {
+                // The explicit Replace choice is approval; preserve the shared active-work guards.
+                if (!WorkspaceListActions.Replace(vm, names, _ => true)) return;
                 vm.Title = name;
                 vm.RecordSavedList(name, names);
             }
+            if (vm.Computers.Count == 0)
+            {
+                ReplaceAndRecord();
+                return;
+            }
+            var before = vm.Computers.Select(c => c.Name).ToArray();
+            new LoadComputersWindow(name, mode =>
+            {
+                if (vm.IsClosed) throw new InvalidOperationException("This tab has been closed.");
+                if (mode == LoadComputersWindow.SavedListOpenMode.NewTab)
+                {
+                    var shell = Shell ?? throw new InvalidOperationException("The workspace is unavailable.");
+                    shell.OpenPastedListInNewTab(vm, names.ToArray(), name);
+                }
+                else if (mode == LoadComputersWindow.SavedListOpenMode.Append)
+                    vm.AddComputers(names);
+                else
+                {
+                    if (!before.SequenceEqual(vm.Computers.Select(c => c.Name), StringComparer.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("The tab's list changed. Cancel and reopen the saved list to review it again.");
+                    ReplaceAndRecord();
+                }
+            }) { Owner = this }.ShowDialog();
         }
         catch (Exception ex)
         {

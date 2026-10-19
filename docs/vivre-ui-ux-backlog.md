@@ -394,3 +394,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 
 - Implemented: full-window footer placement matching Health/Patching, compact review button, themed background/divider, and one-line help with full tooltip. Existing review handler and People bindings are reused.
 - Verified: Release build passed; existing People regression suite passed on rerun (actions, navigation, narrow/light/dark layouts with synthetic directory data). Inspected the dark rendered footer. Initial responsiveness run exceeded its 500 ms dispatcher threshold (555 ms); rerun measured 439 ms. This does not close deployment-host responsiveness validation. No lookup behavior changes or live directory operations; build warning remains for unavailable signing certificate.
+
+
+## Saved-list opening choices (2026-10-19)
+
+- Implemented: populated tabs offer Append list, Replace list, or New tab (default); empty tabs open directly. Reuses the paste dialog and new-tab creation. Append preserves current identity/results; replacement records opened-list identity and retains active-work/stale-membership guards. New tabs stay in the originating Health/Patching section.
+- Verified: Release build, tab-handoff and workspace-safety probes passed with dummy data and temporary storage. Covered default choice, saved-list identity/section, empty saved-list creation, source preservation, and existing replacement safeguards. No live server checks or native user interaction certification; signing certificate warning remains.
