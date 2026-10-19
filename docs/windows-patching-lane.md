@@ -275,11 +275,11 @@ Update, not for every 2016 box — so the operator declares which ones, instead 
 - **Routing** (`InstallRowAsync`): a non-flagged 2016 box → WUA. A flagged box that's already staged → skip
   ("CU staged — run Reboot Wave"); already verified this session → WUA for its remaining minor updates; not
   yet staged → the decision dialog owns it (the row is never silently auto-staged or WUA-installed — reaching
-  it directly skips with guidance). `Server2016Targets()` (the panel's Stage / Clean up / Verify) is
-  flagged-only, and `LcuRouting.RebootVerifyLaneFor(osBuild, requiresStaging)` is override-aware: a non-flagged
+  it directly skips with guidance). `Server2016Targets()` (the panel's Install CU / Verify) is
+  flagged-only; Clean up uses its separate Server 2016 selection helper, and `LcuRouting.RebootVerifyLaneFor(osBuild, requiresStaging)` is override-aware: a non-flagged
   2016 box verifies via the WUA lane, not UBR.
 - **Decision dialog** (`StagedInstallDecisionDialog`, gated by the View-layer `StagedInstallInteraction`):
-  when Install / Install all hits a flagged box whose CU isn't staged, the operator chooses **Stage CU first**
+  when Install / Install all hits a flagged box whose CU isn't staged, the operator chooses **Install CU (no reboot)**
   (the chip Stage workflow, scoped to those boxes), **Install minor updates only** (WUA with **every**
   CU-titled KB excluded so the broken Express-delta CU never goes via WUA — requires this month's CU set in
   Settings as a floor), or **Cancel** (skip the flagged boxes; the rest of the fleet still installs). A
@@ -293,10 +293,10 @@ Update, not for every 2016 box — so the operator declares which ones, instead 
   a null/unreadable read (`Unreachable`), a `WrongBuild`, or any error keeps the box in the dialog; only a
   definitive `Verified` excludes it. All flagged boxes current → no dialog at all. Reads are bounded by the
   shared remote throttle and the reader self-times-out (8s), so a dead box can't hang the prompt.
-- **Operator surface:** right-click a 2016 row ▸ **Mark as Staged patching** / **Remove Staged flag** (2016 +
-  Patching mode only); a narrow **Staged** pill column in the grid (`StagedColumn`, code-behind visibility
+- **Operator surface:** right-click a 2016 row ▸ **Use CU lane** / **Remove CU lane flag** (2016 +
+  Patching mode only); a narrow **CU lane** configuration column in the grid (`StagedColumn`, code-behind visibility
   driven by `WorkspaceViewModel.HasStagedServer2016` — hidden entirely when nothing is flagged); **Settings ▸
-  Staged patching machines** lists / removes / clears flagged hosts, and a remove/clear re-syncs loaded rows
+  CU lane machines** lists / removes / clears flagged hosts, and a remove/clear re-syncs loaded rows
   (`MainWindow.ResyncStagedPatchingFlags`) so routing never goes stale. Nothing here reboots or stages on its
   own — every CU-committing action stays operator-driven.
 
@@ -870,3 +870,7 @@ The Server 2016 AddPackage SMB copy now hashes the source and copied destination
 ## CU staging responsiveness
 
 Package-directory reads and optional full-file SHA-256 validation run in background work, both before the Stage workflow and inside each FullPackageLcuLane stage. The preflight uses the existing workspace operation tracker so Stop can cancel waiting without dispatching staging; repeated clicks in one workspace share the guarded workflow. Per-host cancellation is checked again after validation and before the SMB lane. Row updates retain the UI synchronization context. Validation is not cached or skipped; this fixes dispatcher blocking without changing transfer concurrency, DISM, reboot behavior or hash guarantees.
+
+## Release 1.19.0 operator wording
+
+Install CU (no reboot) copies and installs the CU through DISM and may affect server performance; a later operator-approved reboot completes it. CU lane is a configuration label, not a completion state. Health/Patching paste can create a fresh tab in the same section, and each grid remembers column widths/order independently. These UI changes do not change patch execution or reboot guards.

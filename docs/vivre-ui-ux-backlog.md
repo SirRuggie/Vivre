@@ -4,6 +4,8 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
+Current release: **1.19.0** (2026-10-19). U-21/U-22 native validation and U-39 deployment-host responsiveness remain open. Earlier version references below describe the implementation checkpoints at that time.
+
 ## How to use
 
 - Keep all U identifiers stable; record decisions, commits, and validation under the matching item.
@@ -373,3 +375,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Independent red team: fixed missing keyboard/row reset access, combined People resets, and malformed-key handling. Added uncached disk round-trip proof after review; final re-review found no blocking issues.
 - Validation: Release build, seven AppSettingsStore tests, settings/grid/service probe, Fleet actions-menu probe and People probe passed. Checked service transitions, width/order restoration, reset, malformed preferences, identity pinning, redundant-write suppression and unload detachment using dummy data and temporary settings.
 - Limits: no live server checks, native mouse/high-DPI certification, or signed deployment package. U-21/U-22 and deployment-host U-39 validation remain separate; build account lacks the configured signing certificate.
+
+## Release metadata — 1.19.0 (2026-10-19)
+
+- Requested: roll accumulated feature/fix work into the app version and synchronize current documentation.
+- Updated: VersionPrefix single source, dated changelog, README, documentation index, repository guidance and living validation ledgers. Stable publish output remains `publish/Vivre.zip`; About/build metadata derive from VersionPrefix.
+- Verified: Release build passed; generated assembly/file version is 1.19.0.0 and product/About informational version begins 1.19.0 with build/commit identity. Current patching references and README operation sections reconciled. No signed ZIP or deployment is claimed; the build account still lacks the configured signing certificate.

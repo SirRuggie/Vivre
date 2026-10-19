@@ -91,11 +91,22 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Named machine lists** and a **searchable activity log** (in-app panel + rolling file).
 - Session credentials (current login by default, or supply your own in Settings).
 
+## Operation details
+
+Linux identification: Health and Patching show a small Linux label beside hostnames when the current AD domain advertises a recognized Linux OS. Background batched LDAP reads use the current Windows login without RSAT or target login. Hover the label for the AD value; directory metadata can be stale. This display-only label does not change scans or enable Linux operations. Missing/unreachable AD and other-domain records remain unlabeled.
+
+Server 2016 **Install CU (no reboot)** copies and installs the full CU package using DISM; it can affect performance and requires a later reboot to complete. The **CU lane** badge only identifies the configured patching route, not completed installation. Use the row menu **Use CU lane** / **Remove CU lane flag** to change that route.
+
+In Health and Patching, **Paste** offers **Add to this tab**, **Replace this tab's machine list**, or **Create a new tab with this list**. New-tab paste selects a fresh tab in the same section with default update settings and keeps the original results intact.
+
+Script saves ask before replacing an existing destination and reject stale approvals; declining preserves editor text. Custom-column names must be unique (case-insensitive); duplicate additions keep the existing script and values without executing a replacement.
+
+Column widths and order are remembered separately for Health, Patching, People results, and People review. Right-click a Fleet grid and choose **Reset column layout**; in People, use **Actions → Reset results column layout** or **Reset review column layout**. Names stay pinned first. Changing the product in Check software clears the previous product’s service and uses a remembered suggestion only for the new product.
+
 ## Roadmap
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
-- Accessibility polish deferred as low-value for a single sighted user: full screen-reader naming
-  on the grids + automation IDs; light-theme tuning of the script editor's highlight colours.
+- Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22), plus People responsiveness on the deployment host (U-39); see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a
@@ -114,7 +125,7 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.18.0** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
+Current release: **1.19.0** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 
@@ -144,13 +155,3 @@ git-ignored.)
 - `docs/windows-patching-lane.md` — the Windows patching (WUA) lane: how it works and its reliability constraints.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
-
-Linux identification: Health and Patching show a small Linux label beside hostnames when the current AD domain advertises a recognized Linux OS. Background batched LDAP reads use the current Windows login without RSAT or target login. Hover the label for the AD value; directory metadata can be stale. This display-only label does not change scans or enable Linux operations. Missing/unreachable AD and other-domain records remain unlabeled.
-
-Server 2016 **Install CU (no reboot)** copies and installs the full CU package using DISM; it can affect performance and requires a later reboot to complete. The **CU lane** badge only identifies the configured patching route, not completed installation. Use the row menu **Use CU lane** / **Remove CU lane flag** to change that route.
-
-In Health and Patching, **Paste** offers **Add to this tab**, **Replace this tab's machine list**, or **Create a new tab with this list**. New-tab paste selects a fresh tab in the same section with default update settings and keeps the original results intact.
-
-Script saves ask before replacing an existing destination and reject stale approvals; declining preserves editor text. Custom-column names must be unique (case-insensitive); duplicate additions keep the existing script and values without executing a replacement.
-
-Column widths and order are remembered separately for Health, Patching, People results, and People review. Right-click a Fleet grid and choose **Reset column layout**; in People, use **Actions → Reset results column layout** or **Reset review column layout**. Names stay pinned first. Changing the product in Check software clears the previous product’s service and uses a remembered suggestion only for the new product.

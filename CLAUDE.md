@@ -103,7 +103,7 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   before launching, or you'll run a stale exe.
 - Data locations (split by scope):
   - **Personal, per-user** — `AppSettingsStore` writes `%APPDATA%\Vivre\settings.json`: theme, grid
-    columns, hidden columns, auto-check-on-load, max simultaneous installs, WUG state-check
+    columns, hidden columns, per-grid widths/order, auto-check-on-load, max simultaneous installs, WUG state-check
     concurrency, nav-pane state, dock height, software→service map. Computer **lists** and
     **scripts** also live under `%APPDATA%\Vivre\`.
     - Every personal-store instance for the same path shares a FIFO save queue and cache. Save captures
@@ -327,7 +327,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 
 - Search reuses existing menu entries and grouped script collection views; never read files per keystroke or execute a script on search. Keep the open script pinned and editor/selection guards intact, including rename/category saves.
 - List deletion moves the approved revision into `Lists/Deleted/<GUID>` on the same volume. Restore is explicit, never overwrites, and does not replace a workspace. Reject linked recovery folders/payloads; retain existing save/delete leases and revision checks.
-- Version stays 1.18.0 with subsequent work under Unreleased; historical validation documents remain historical.
+- Current release is 1.19.0; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
 
 ## Health-to-Patching handoff
 

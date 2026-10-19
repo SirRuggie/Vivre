@@ -6,6 +6,10 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+No changes yet.
+
+## 1.19.0 — 2026-10-19
+
 ### Added
 - Add a third Health/Patching Paste option to create a fresh tab from the pasted list without changing the current tab.
 - Add a separate People section for read-only AD email lookup, uncertain-match review, selected-field copying, and CSV export; preserve results across navigation and warn before discarding session data.
@@ -15,7 +19,7 @@ it ships, then gets a dated heading.
 - Require explicit, revision-checked script overwrite approval in both editors; preserve external edits displaced during the atomic save in a recovery file. Reject duplicate custom-column names without replacing scripts, clearing values, or running replacements.
 - Put People review/edit actions first in the row right-click menu, override cell copy menus, and remove the redundant footer Row actions button while retaining Open review.
 - Rename Server 2016 Stage to Install CU (no reboot), explain installation impact, and distinguish the CU lane configuration badge from actual installation progress; patching behavior is unchanged.
-- Align People with Fleet using the shared toolbar style, Quick Add, editable Paste list, and fixed review/row-action buttons; batch additions and coalesce result refreshes to keep input responsive.
+- Align People with Fleet using the shared toolbar style, Quick Add, editable Paste list, and fixed Open review button and row context menu; batch additions and coalesce result refreshes to keep input responsive.
 - Review cancellation of all Vivre schedules against captured targets; clarify right-click scopes and reject changed menu/Enable WinRM confirmation targets before dispatch.
 - Clarify WhatsUp Gold and SCCM menu labels, disable selection-only shortcuts without selected machines, and add Save tab as list to both tab menus using the existing guarded save flow.
 - Add selection-only Actions shortcuts using existing dialogs; group right-click connection and WhatsUp Gold commands and prevent an empty selected-script action from widening to all machines.
@@ -30,7 +34,7 @@ it ships, then gets a dated heading.
 - Open a Health tab in Patching from its tab menu: all names copy into a fresh same-title tab with normal update defaults, monitoring off, and no automatic checks; existing tabs remain intact.
 - Search Open/Delete/Restore list menus and both script libraries by name/category while preserving the open script and edits.
 - Recover deleted saved lists across restarts with a new Restore deleted list action; existing names are never overwritten.
-- Point the documentation index to 1.18.0 and Unreleased while retaining historical validation reports.
+- Align current release documentation with 1.19.0 while retaining historical validation reports.
 - Show/search/copy originating workspace in Activity without changing bounded log delivery.
 - Save CU KB/build/month together with draft, conflict, and reload feedback; show inline numeric errors without silently reverting input.
 - Show patch options without opening a menu; make Install anyway primary and forced reboot a separate choice.

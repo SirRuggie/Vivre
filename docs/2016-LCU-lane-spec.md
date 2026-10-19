@@ -2,6 +2,8 @@
 
 > **Project knowledge note:** The canonical spec for the Server 2016 patching lane — root cause, scope, and build requirements. Reference this for any change to the LCU lane.
 
+> **Current UI terminology (1.19.0):** the Stage action is labeled **Install CU (no reboot)** and the configured-route badge is **CU lane**. Internal stage/state names below remain unchanged; installation can affect performance and is not guaranteed safe during business hours.
+
 ## Background — the problem
 
 ~30 Server 2016 boxes (incl. APVVISIONB-F3, APVVISIONB-SQL2) chronically fail to install monthly/quarterly OS Cumulative Updates through normal Windows Update, and have for multiple quarters.

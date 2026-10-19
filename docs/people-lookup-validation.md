@@ -38,7 +38,7 @@ Real integration is implemented; session results are deliberately not automatica
 
 No production account was modified. Synthetic tests cover ambiguous, disabled and missing-mail records; those cases were not deliberately sought in the live directory. No live patch/install/reboot operations, native dialog/clipboard interaction, long-running memory soak, or signed package validation were performed for this feature. Existing signing material is unavailable on this build context, so successful compilation does not assert a signed deployment package.
 
-Version remains 1.18.0 with this work recorded under Unreleased, consistent with repository release policy.
+Released in 1.19.0 (2026-10-19); the original validation below predates subsequent UI corrections recorded in the UI/UX backlog.
 
 ## People flow follow-up acceptance — 2026-10-19
 
@@ -66,3 +66,7 @@ The final probe uses real WPF dispatcher context, a 10ms UI heartbeat and a sepa
 Stop was dispatched during a pending lookup and during adding; late lookup results were discarded and all 250 stop-during-add inputs were preserved as Stopped. Quick Add preserved a new draft typed while submission was pending. The application no longer calls Clipboard.GetText when opening Paste list; the user pastes into the native text box, reviews, then confirms.
 
 The exact reported five-person pause on the deployment host remains unverified. Native clipboard redirection can still have its own latency, and cancellation of an already-running LDAP request still waits for that request. No production directory or server operation was run in this follow-up. Diagnostic artifacts remain untracked; an earlier crashed probe temporarily locked the normal harness output and could not be terminated from this execution context (access denied), so a separate output directory was used; that process had exited by the final check.
+
+## Current release — 1.19.0
+
+People uses Quick Add and Paste list, Open review, and a row right-click menu with review/edit before copying; the footer Row actions button was removed. Results/review column widths and order are remembered independently with separate resets under Actions. The deployment-host responsiveness check (U-39) remains open.
