@@ -179,7 +179,7 @@
                     BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="4">
-                <avalon:TextEditor x:Name="Editor"
+                <avalon:TextEditor x:Name="Editor" AutomationProperties.Name="PowerShell script editor"
                                    ShowLineNumbers="True"
                                    WordWrap="False"
                                    FontFamily="Cascadia Code, Consolas, monospace"
@@ -191,7 +191,7 @@
         </Grid>
 
         <!-- ── Add / Save / Delete toolbar ──────────────────────────────── -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+        <WrapPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
 
             <!-- Add — clears editor + name for a new entry. -->
             <ui:Button Icon="{ui:SymbolIcon Add24}"
@@ -203,7 +203,7 @@
                     Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
 
             <!-- Category picker and name box for Save -->
-            <ComboBox x:Name="CategoryCombo"
+            <ComboBox x:Name="CategoryCombo" AutomationProperties.Name="Script category"
                       Width="150"
                       IsEditable="True"
                       VerticalAlignment="Center"
@@ -211,7 +211,7 @@
                       Text="{Binding SaveCategory, UpdateSourceTrigger=PropertyChanged}"
                       ToolTip="Category (folder) — pick one or type a new name to create it" />
 
-            <ui:TextBox x:Name="NameBox"
+            <ui:TextBox x:Name="NameBox" AutomationProperties.Name="Script name"
                         Width="200"
                         Margin="8,0,0,0"
                         PlaceholderText="Script name"
@@ -240,6 +240,6 @@
                        Click="OnDelete"
                        IsEnabled="{Binding CanDeleteSelectedScript}"
                        ToolTip="Delete the selected script (built-in scripts cannot be deleted)" />
-        </StackPanel>
+        </WrapPanel>
     </Grid>
 </UserControl>

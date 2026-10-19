@@ -10,7 +10,7 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - An unchecked item is a finding or recommendation, not authorization to implement it.
 - Mark complete only after its agreed behavior is implemented and validated; state remaining live-validation limits.
 - Preserve existing operational behavior and reuse current components where practical.
-- Next recommended batch: **U-21/U-22**, narrow-window/high-DPI and keyboard/accessibility validation; U-18 remains a separate discoverability decision.
+- **U-21/U-22:** local fixes/tests delivered; native DPI/physical keyboard/spoken screen-reader validation remains open. U-18 is the remaining unimplemented discoverability item.
 
 ## Completed batch acceptance — U-8 (2026-10-19)
 
@@ -22,6 +22,15 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - **Limits:** Local dummy workspaces and temporary settings only; no live hosts, visible-window/high-DPI, or screen-reader validation. No-work assertion uses idle flags after dispatcher drain with null remote sentinels, not explicit service call counters. Cleanup after an AddComputers exception was reviewed statically; the exercised failure occurs at factory creation.
 - **Packaging:** Existing missing-signing-certificate build warning remains; no signed package produced; version stays 1.18.0 plus Unreleased.
 - **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
+
+## Partial validation — U-21/U-22 (2026-10-19)
+
+- **Implemented/tested locally:** wrapping filters, captions and script actions; resizable/wrapping CU comparison; focus rings, tab-menu keyboard routing, field/status names, and polite error feedback.
+- **Automated evidence:** 48 workspace raster/layout cases across dark/light themes and three widths/four output scales; five dialogs at minimum/default widths; focus/automation probes; editor/settings/tab-handoff regressions passed. Debug/Release builds passed with the existing signing-certificate warning.
+- **Independent red team:** separate reviewer caught a checked-filter focus-color conflict; a separate contrasting ring fixed it, and re-review found no further concrete defect in the scoped diff.
+- **Not yet verified:** actual Windows DPI/text-scaling changes, physical keyboard/Enter/Escape behavior, and spoken screen-reader output; offscreen tests are not substitutes.
+- **Status:** U-21/U-22 remain open for those real-environment checks. See [validation matrix and remaining steps](ui-ux-u21-u22-validation.md).
+- **Delivery:** product fixes and evidence included in the commit containing this checklist update; no live targets or signed package.
 
 ## Highest priority — behavior found in the code
 
@@ -185,10 +194,12 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 ## Validation gaps — not confirmed visual failures
 
 - [ ] **U-21 · Medium — Verify narrow-window and high-DPI layouts.**
-  - **Why:** Fixed-width search controls and non-wrapping filter rows create clipping risks despite the adaptive main toolbar.
+  - **Delivered locally:** Wrapping filters/script controls and CU comparison improvements; automated narrow-layout/raster checks pass.
+  - **Remaining:** Actual Windows DPI/text scaling and broader visible-window sweep.
 
 - [ ] **U-22 · Medium — Complete keyboard and screen-reader testing.**
-  - **Why:** Some controls have explicit accessibility names, but icon statuses and remaining fields need end-to-end verification.
+  - **Delivered locally:** Distinct focus rings, keyboard tab-menu access, field/status labels, and polite errors; offscreen focus/Automation checks pass.
+  - **Remaining:** Physical keyboard/default/cancel behavior and spoken screen-reader verification.
 
 ## Strengths to preserve
 

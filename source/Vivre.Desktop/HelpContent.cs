@@ -123,6 +123,7 @@ public static class HelpContent
                 "Machine names stay fixed at the left when horizontally scrolling either fleet grid; other columns can still be resized and reordered.",
                 "• New tab: the \"+\" by the tabs, or Ctrl+T.",
                 "• Rename: double-click the tab (or F2).",
+                "• Tab menu: focus the tab and press the Menu key or Shift+F10; filter buttons and tab-close buttons show a keyboard focus outline.",
                 "• Close: the \"✕\" on the tab, middle-click it, or Ctrl+W (it asks first if the tab has machines or a running op).",
                 "• Right-click a tab for Close other tabs / Close tabs to the right (browser-style) — plus Clear this tab and Close all tabs.",
                 "• Clear this tab asks before removing machines and results; wait for active work to finish, or Stop and wait for cancellation first.",
@@ -693,7 +694,7 @@ public static class HelpContent
             [
                 "• Ctrl+T new tab · Ctrl+W close tab · F2 rename tab · Ctrl+L focus the add box.",
                 "• Ctrl+M toggle Fleet ▸ Health / Patching · F5 Ping All · Ctrl+Enter Install.",
-                "• Shift+F10 (or the Menu key) opens the right-click menu from the keyboard.",
+                "• Shift+F10 (or the Menu key) opens the right-click menu from the keyboard, including a focused workspace tab.",
                 "• Delete removes the selected machines · Ctrl+C copies the selected rows.",
                 "• F1 opens this guide.",
             ],

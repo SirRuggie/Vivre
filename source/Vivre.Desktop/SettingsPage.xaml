@@ -36,7 +36,7 @@
                             <ui:TextBlock Text="App theme" />
                             <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" Text="Select which app theme to display" />
                         </StackPanel>
-                        <ComboBox Grid.Column="2" x:Name="ThemeCombo" MinWidth="160"
+                        <ComboBox Grid.Column="2" x:Name="ThemeCombo" AutomationProperties.Name="Theme" MinWidth="160"
                                   VerticalAlignment="Center"
                                   SelectionChanged="OnThemeComboChanged">
                             <ComboBoxItem Content="Use system setting" />
@@ -68,7 +68,7 @@
                             <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                           Text="When on, loading a list auto-pings and checks vitals. When off, the grid is a frozen snapshot until you click Ping All or Check Vitals." />
                         </StackPanel>
-                        <ui:ToggleSwitch Grid.Column="2" x:Name="AutoToggle"
+                        <ui:ToggleSwitch Grid.Column="2" x:Name="AutoToggle" AutomationProperties.Name="Automatically check newly loaded machines"
                                          VerticalAlignment="Center" Margin="16,0,0,0"
                                          Checked="OnAutoCheckChanged"
                                          Unchecked="OnAutoCheckChanged"
@@ -131,12 +131,12 @@
                                       Text="{Binding Domain, UpdateSourceTrigger=PropertyChanged}" />
 
                         <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Username" />
-                        <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserNameBox"
+                        <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserNameBox" AutomationProperties.Name="Explicit credentials username"
                                       PlaceholderText="e.g. admin_sbridges"
                                       Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}" />
 
                         <ui:TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Password" />
-                        <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox"
+                        <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox" AutomationProperties.Name="Explicit credentials password"
                                       Height="32" VerticalContentAlignment="Center" Margin="0,0,0,8" />
 
                         <ui:Button Grid.Row="3" Grid.Column="1" HorizontalAlignment="Left"
@@ -154,7 +154,7 @@
 
                     <!-- WhatsUp Gold server (moved verbatim) -->
                     <ui:TextBlock Text="WhatsUp Gold server" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="WugServerBox"
+                    <ui:TextBox x:Name="WugServerBox" AutomationProperties.Name="WhatsUp Gold server"
                                 PlaceholderText="e.g. 10.70.25.111"
                                 LostFocus="OnWugServerChanged"
                                 Margin="0,0,0,4" />
@@ -164,7 +164,7 @@
                     <!-- State check — simultaneous lookups (reformatted from the flat row) -->
                     <ui:TextBlock Text="State check — simultaneous lookups" Margin="0,0,0,4" />
                     <StackPanel>
-                        <ui:TextBox x:Name="WugStateConcurrencyBox"
+                        <ui:TextBox x:Name="WugStateConcurrencyBox" AutomationProperties.Name="Concurrent WUG checks"
                                 MinWidth="70" HorizontalAlignment="Left"
                                 PlaceholderText="2"
                                 LostFocus="OnWugStateConcurrencyChanged"
@@ -191,7 +191,7 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <ui:TextBox Grid.Column="0" x:Name="PackagesFolderBox"
+                        <ui:TextBox Grid.Column="0" x:Name="PackagesFolderBox" AutomationProperties.Name="Package library folder"
                                     PlaceholderText="e.g. \\server\packages"
                                     LostFocus="OnPackagesFolderChanged"
                                     Margin="0,0,8,0" />
@@ -226,7 +226,7 @@
                         <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                       Text="How many machines install, uninstall, stage, or clean up at once. The practical limit is download bandwidth. Range 1–200; default 50. Takes effect on the next install sweep — in-flight sweeps are not interrupted." />
                     </StackPanel>
-                    <ui:TextBox Grid.Column="2" x:Name="MaxInstallsBox"
+                    <ui:TextBox Grid.Column="2" x:Name="MaxInstallsBox" AutomationProperties.Name="Maximum simultaneous installs"
                                 MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
                                 PlaceholderText="50"
                                 LostFocus="OnMaxInstallsChanged"
@@ -253,7 +253,7 @@
                         <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
                                       Text="When a machine is still installing Windows updates, the Reboot Wave waits for servicing to finish (then reboots immediately) rather than rebooting into a long 'Stopping' hang. If servicing hasn't finished within this many minutes the wave stops WITHOUT rebooting — it never force-reboots through active servicing; the row says 'not rebooted — use Force reboot to override'. Range 5–120; default 20." />
                     </StackPanel>
-                    <ui:TextBox Grid.Column="2" x:Name="ServicingWaitBox"
+                    <ui:TextBox Grid.Column="2" x:Name="ServicingWaitBox" AutomationProperties.Name="Servicing wait minutes"
                                 MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
                                 PlaceholderText="20"
                                 LostFocus="OnServicingWaitChanged"
@@ -272,7 +272,7 @@
 
                     <!-- KB number -->
                     <ui:TextBlock Text="KB number" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="LcuKbBox"
+                    <ui:TextBox x:Name="LcuKbBox" AutomationProperties.Name="Monthly CU KB"
                                 PlaceholderText="e.g. KB5094122"
                                 TextChanged="OnCuDraftChanged"
                                 Margin="0,0,0,4" />
@@ -281,7 +281,7 @@
 
                     <!-- Build number after the update -->
                     <ui:TextBlock Text="Build number after the update" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="LcuUbrBox"
+                    <ui:TextBox x:Name="LcuUbrBox" AutomationProperties.Name="Monthly CU build revision"
                                 PlaceholderText="e.g. 9234"
                                 TextChanged="OnCuDraftChanged"
                                 Margin="0,0,0,4" />
@@ -290,7 +290,7 @@
 
                     <!-- CU month label -->
                     <ui:TextBlock Text="CU month label" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="LcuMonthTagBox"
+                    <ui:TextBox x:Name="LcuMonthTagBox" AutomationProperties.Name="Monthly CU month label"
                                 PlaceholderText="e.g. July 2026"
                                 TextChanged="OnCuDraftChanged"
                                 Margin="0,0,0,4" />

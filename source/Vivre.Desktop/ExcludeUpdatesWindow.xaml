@@ -32,7 +32,7 @@
                               Text="Comma-separated terms to skip during scans and installs. Any update whose title contains one of these terms (case-insensitive) will be excluded." />
 
                 <!-- Input box -->
-                <ui:TextBox x:Name="InputBox"
+                <ui:TextBox x:Name="InputBox" AutomationProperties.Name="Excluded update terms"
                             PlaceholderText="e.g. SQL, Silverlight, Edge"
                             TextWrapping="Wrap"
                             AcceptsReturn="False"

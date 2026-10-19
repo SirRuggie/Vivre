@@ -7,6 +7,8 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- Wrap fleet filters, Server 2016 actions, and script save controls at narrow widths; allow resizing and wrapping in the CU comparison dialog.
+- Add distinct keyboard focus rings, titled tab-close labels, keyboard access to tab menus, field/status automation names, and polite dialog validation feedback.
 - Preserve existing server results and selection when pasting additions; require approval for list replacement/clear and protect active operations and monitoring.
 - Validate saved-list names, require explicit overwrite approval, and reject stale overwrite revisions or missing list opens.
 - Warn before window/tray exit with active, monitored, or scheduled fleet work, with cancellation available.

@@ -39,20 +39,20 @@
 
                 <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
                 <ui:TextBlock Text="WhatsUp Gold server" FontTypography="BodyStrong" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="ServerBox" Margin="0,0,0,12" />
+                <ui:TextBox x:Name="ServerBox" AutomationProperties.Name="WhatsUp Gold server" Margin="0,0,0,12" />
 
                 <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
                 <ui:TextBlock Text="WhatsUp Gold username" FontTypography="BodyStrong" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="UserBox" PlaceholderText="domain\user or user" Margin="0,0,0,12" />
+                <ui:TextBox x:Name="UserBox" AutomationProperties.Name="Username" PlaceholderText="domain\user or user" Margin="0,0,0,12" />
 
                 <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
                 <ui:TextBlock Text="WhatsUp Gold password" FontTypography="BodyStrong" Margin="0,0,0,4" />
-                <PasswordBox x:Name="PasswordBox" Height="32" VerticalContentAlignment="Center" Margin="0,0,0,12" />
+                <PasswordBox x:Name="PasswordBox" AutomationProperties.Name="Password" Height="32" VerticalContentAlignment="Center" Margin="0,0,0,12" />
 
                 <StackPanel x:Name="ReasonSection">
                     <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
                     <ui:TextBlock Text="Reason" FontTypography="BodyStrong" Margin="0,0,0,4" />
-                    <ui:TextBox x:Name="ReasonBox" Margin="0,0,0,4" />
+                    <ui:TextBox x:Name="ReasonBox" AutomationProperties.Name="Maintenance reason" Margin="0,0,0,4" />
                 </StackPanel>
             </StackPanel>
         </ScrollViewer>

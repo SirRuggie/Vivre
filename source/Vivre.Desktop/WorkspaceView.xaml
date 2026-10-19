@@ -232,7 +232,7 @@
              fill by default, accent fill + light text when active. Checked state binds to ActiveFilter
              via the enum⇄bool converter, so the chips behave as one radio group. -->
         <Style x:Key="FilterChip" TargetType="ToggleButton">
-            <Setter Property="Margin" Value="4,0,0,0" />
+            <Setter Property="Margin" Value="4,2,0,2" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="VerticalAlignment" Value="Center" />
             <Setter Property="Cursor" Value="Hand" />
@@ -240,6 +240,7 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="ToggleButton">
+                        <Grid>
                         <Border x:Name="Chip" CornerRadius="14" Padding="12,7"
                                 Background="{DynamicResource ControlFillColorDefaultBrush}"
                                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}"
@@ -247,9 +248,14 @@
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}" />
                         </Border>
+                        <Border x:Name="FocusRing" Margin="2" CornerRadius="12" BorderThickness="2" BorderBrush="Transparent" IsHitTestVisible="False" />
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
                                 <Setter TargetName="Chip" Property="Background" Value="{DynamicResource CardBackgroundFillColorSecondaryBrush}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="FocusRing" Property="BorderBrush" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                             </Trigger>
                             <Trigger Property="IsChecked" Value="True">
                                 <Setter TargetName="Chip" Property="Background" Value="{DynamicResource AccentTextFillColorPrimaryBrush}" />
@@ -296,23 +302,24 @@
             <!-- Filter sub-row: hidden until the tab has machines. -->
             <Grid Grid.Row="1" Margin="0,0,0,4"
                   Visibility="{Binding HasComputers, Converter={StaticResource BoolToVis}}">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <ui:TextBox Grid.Column="0" Width="220" VerticalAlignment="Center"
+                <ui:TextBox x:Name="MachineFilterBox" AutomationProperties.Name="Filter machines by name" Grid.Column="0" Width="220" VerticalAlignment="Center"
                             Icon="{ui:SymbolIcon Search24}"
                             ClearButtonEnabled="True"
                             PlaceholderText="Filter by name…"
                             Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
 
             <!-- Health (machine mode) chip bar — hidden in Patching mode. No Updates chip, no Server 2016 chip. -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+            <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0" VerticalAlignment="Center"
                         Visibility="{Binding IsMachineMode, Converter={StaticResource BoolToVis}}">
                 <ToggleButton Style="{StaticResource FilterChip}" Margin="0"
-                              Tag="{x:Static vm:RowFilter.All}"
+                              AutomationProperties.Name="All machines" Tag="{x:Static vm:RowFilter.All}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -322,7 +329,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.RebootPending}"
+                              AutomationProperties.Name="Reboot pending" Tag="{x:Static vm:RowFilter.RebootPending}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -332,7 +339,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Errors}"
+                              AutomationProperties.Name="Errors" Tag="{x:Static vm:RowFilter.Errors}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -342,7 +349,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Offline}"
+                              AutomationProperties.Name="Offline" Tag="{x:Static vm:RowFilter.Offline}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -352,7 +359,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Done}"
+                              AutomationProperties.Name="Done or up to date" Tag="{x:Static vm:RowFilter.Done}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -362,7 +369,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Unhealthy}"
+                              AutomationProperties.Name="Unhealthy" Tag="{x:Static vm:RowFilter.Unhealthy}"
                               Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines whose vitality is Warning, Critical, or Offline (run Check Vitals first)"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}">
@@ -375,15 +382,15 @@
 
                 <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="{Binding FilterStatus}"
+                           Text="{Binding FilterStatus}" local:AccessibleStatus.Enabled="True"
                            Visibility="{Binding FilterStatus, Converter={StaticResource StringToVis}}" />
-            </StackPanel>
+            </WrapPanel>
 
             <!-- Patching (update mode) chip bar — hidden in Health mode. Includes Updates + Server 2016 chips. -->
-            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="8,0,0,0" VerticalAlignment="Center"
+            <WrapPanel Grid.Row="1" Grid.ColumnSpan="3" Margin="0,6,0,0" VerticalAlignment="Center"
                         Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}">
                 <ToggleButton Style="{StaticResource FilterChip}" Margin="0"
-                              Tag="{x:Static vm:RowFilter.All}"
+                              AutomationProperties.Name="All machines" Tag="{x:Static vm:RowFilter.All}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.All}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -393,7 +400,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.UpdatesAvailable}"
+                              AutomationProperties.Name="Updates available" Tag="{x:Static vm:RowFilter.UpdatesAvailable}"
                               Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines with updates available to install"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.UpdatesAvailable}, Mode=TwoWay}">
@@ -404,7 +411,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.RebootPending}"
+                              AutomationProperties.Name="Reboot pending" Tag="{x:Static vm:RowFilter.RebootPending}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.RebootPending}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -414,7 +421,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Errors}"
+                              AutomationProperties.Name="Errors" Tag="{x:Static vm:RowFilter.Errors}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Errors}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -424,7 +431,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Offline}"
+                              AutomationProperties.Name="Offline" Tag="{x:Static vm:RowFilter.Offline}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Offline}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -434,7 +441,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Done}"
+                              AutomationProperties.Name="Done or up to date" Tag="{x:Static vm:RowFilter.Done}"
                               Unchecked="OnFilterChipUnchecked"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Done}, Mode=TwoWay}">
                     <StackPanel Orientation="Horizontal">
@@ -444,7 +451,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Unhealthy}"
+                              AutomationProperties.Name="Unhealthy" Tag="{x:Static vm:RowFilter.Unhealthy}"
                               Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines whose vitality is Warning, Critical, or Offline (run Check Vitals first)"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Unhealthy}, Mode=TwoWay}">
@@ -455,7 +462,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.NotScanned}"
+                              AutomationProperties.Name="Not scanned" Tag="{x:Static vm:RowFilter.NotScanned}"
                               Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines that have not yet been scanned in this session"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.NotScanned}, Mode=TwoWay}">
@@ -466,7 +473,7 @@
                     </StackPanel>
                 </ToggleButton>
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Scheduled}"
+                              AutomationProperties.Name="Scheduled" Tag="{x:Static vm:RowFilter.Scheduled}"
                               Unchecked="OnFilterChipUnchecked"
                               ToolTip="Machines with a scheduled update run queued"
                               IsChecked="{Binding ActiveFilter, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static vm:RowFilter.Scheduled}, Mode=TwoWay}">
@@ -480,7 +487,7 @@
                 <!-- Server 2016 chip: self-populating — appears (Collapsed by default) only once a vitals
                      check has confirmed at least one 14393 box in this tab; unread boxes never count. -->
                 <ToggleButton Style="{StaticResource FilterChip}"
-                              Tag="{x:Static vm:RowFilter.Server2016}"
+                              AutomationProperties.Name="Server 2016" Tag="{x:Static vm:RowFilter.Server2016}"
                               Unchecked="OnFilterChipUnchecked"
                               ToolTip="Confirmed Windows Server 2016 (build 14393) — the full-package cumulative-update lane. Run Check Vitals on a box first if it isn't here yet."
                               Visibility="{Binding HasServer2016, Converter={StaticResource BoolToVis}}"
@@ -495,9 +502,9 @@
 
                 <TextBlock Margin="12,0,0,0" VerticalAlignment="Center" FontSize="12"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                           Text="{Binding FilterStatus}"
+                           Text="{Binding FilterStatus}" local:AccessibleStatus.Enabled="True"
                            Visibility="{Binding FilterStatus, Converter={StaticResource StringToVis}}" />
-            </StackPanel>
+            </WrapPanel>
 
             <ui:Button Grid.Column="2" VerticalAlignment="Center"
                        Icon="{ui:SymbolIcon CheckboxChecked24}" Content="Select shown"
@@ -537,7 +544,7 @@
                 </Border.Style>
                 <StackPanel>
                     <!-- This month's CU + where the package goes -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                    <WrapPanel Orientation="Horizontal" Margin="0,0,0,6">
                         <ui:SymbolIcon Symbol="Box24" FontSize="16" Margin="0,0,8,0" VerticalAlignment="Center"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         <TextBlock VerticalAlignment="Center" FontSize="12" Margin="0,0,6,0"
@@ -549,9 +556,9 @@
                         <TextBlock VerticalAlignment="Center" FontSize="11" Margin="12,0,0,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                    Text="{Binding LcuPackagesFolder, Mode=OneWay, StringFormat='Drop the .msu in {0}'}" />
-                    </StackPanel>
+                    </WrapPanel>
                     <!-- Workflow caption + the four actions -->
-                    <StackPanel Orientation="Horizontal">
+                    <WrapPanel Orientation="Horizontal">
                         <TextBlock VerticalAlignment="Center" FontSize="11" Margin="0,0,12,0"
                                    Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                    Text="Clean up → Stage today → Reboot Wave tonight → Verify." />
@@ -580,7 +587,7 @@
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
                                    Click="OnVerify2016"
                                    ToolTip="Read each 2016 box's build and confirm the CU committed. Read-only — safe to run any time." />
-                    </StackPanel>
+                    </WrapPanel>
                 </StackPanel>
             </Border>
         </Grid><!-- end outer filter bar Grid -->
@@ -656,6 +663,11 @@
                 <DataGridTemplateColumn Header="Name" CanUserReorder="False" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
                                         Width="Auto" MinWidth="120" MaxWidth="320" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
                 <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding IsOnline, Converter={StaticResource YesNo}, StringFormat='Online: {0}'}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -719,6 +731,11 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding RebootRequired, Converter={StaticResource YesNo}, StringFormat='Reboot pending: {0}'}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Reboot" /><LineBreak /><Run Text="Pending" /></TextBlock>
                     </DataGridTemplateColumn.Header>
@@ -732,6 +749,11 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="MissingUpdates">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding MissingUpdates, Converter={StaticResource YesNo}, StringFormat='Updates missing: {0}'}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Updates" /><LineBreak /><Run Text="Missing" /></TextBlock>
                     </DataGridTemplateColumn.Header>
@@ -745,6 +767,11 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RunningUpdates">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding RunningUpdates, Converter={StaticResource YesNo}, StringFormat='Install running: {0}'}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Install" /><LineBreak /><Run Text="Running" /></TextBlock>
                     </DataGridTemplateColumn.Header>
@@ -806,12 +833,12 @@
             <Border DockPanel.Dock="Top" Margin="0,0,0,6" Padding="10,6" CornerRadius="4"
                     Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}"
                     Visibility="{Binding ShowUpdateFirstRunHint, Converter={StaticResource BoolToVis}}">
-                <StackPanel Orientation="Horizontal">
+                <DockPanel>
                     <ui:SymbolIcon Symbol="Lightbulb24" Margin="0,0,8,0" VerticalAlignment="Center" />
                     <TextBlock VerticalAlignment="Center" FontSize="12" TextWrapping="Wrap"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                                Text="Select machines and click Scan (selected or all), or click a machine to open its panel and scan just it. Status appears here per machine." />
-                </StackPanel>
+                </DockPanel>
             </Border>
             <ui:DataGrid x:Name="UpdateGrid"
                      VirtualizingPanel.IsVirtualizing="True"
@@ -842,6 +869,11 @@
                 <DataGridTemplateColumn Header="Name" CanUserReorder="False" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
                                         Width="Auto" MinWidth="120" MaxWidth="320" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding IsOnline, Converter={StaticResource YesNo}, StringFormat='Online: {0}'}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <ui:SymbolIcon Margin="8,0" FontSize="15" HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -1113,6 +1145,12 @@
                     </DataGridTextColumn.ElementStyle>
                 </DataGridTextColumn>
                 <DataGridTemplateColumn Header="Progress" Width="140">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding PatchState, StringFormat='Update progress: {0}'}" />
+                            <Setter Property="AutomationProperties.HelpText" Value="{Binding UpdateMessage}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
                             <Grid Margin="8,0">
@@ -1156,6 +1194,11 @@
                     </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
                 <DataGridTemplateColumn Width="Auto" SortMemberPath="RebootRequired">
+                    <DataGridTemplateColumn.CellStyle>
+                        <Style TargetType="DataGridCell" BasedOn="{StaticResource GridCellStyle}">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding RebootRequired, Converter={StaticResource YesNo}, StringFormat='Reboot pending: {0}'}" />
+                        </Style>
+                    </DataGridTemplateColumn.CellStyle>
                     <DataGridTemplateColumn.Header>
                         <TextBlock TextAlignment="Center"><Run Text="Pending" /><LineBreak /><Run Text="Reboot" /></TextBlock>
                     </DataGridTemplateColumn.Header>

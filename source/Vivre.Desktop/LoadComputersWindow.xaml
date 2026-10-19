@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Paste machines"
         Height="520" Width="460"
@@ -28,11 +29,11 @@
             <ui:TextBlock TextWrapping="Wrap" Text="Separate machine names with lines, spaces, commas, or semicolons." />
             <RadioButton x:Name="AddMode" Checked="OnModeChanged" Content="Add to this tab — keep existing results" IsChecked="True" Margin="0,8,0,0" />
             <RadioButton x:Name="ReplaceMode" Checked="OnModeChanged" Content="Replace this tab's machine list" Margin="0,6,0,0" />
-            <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+            <TextBlock x:Name="ErrorText" local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
         </StackPanel>
 
         <TextBox Grid.Row="2"
-                 x:Name="NamesBox"
+                 x:Name="NamesBox" AutomationProperties.Name="Machine names"
                  Margin="24,0,24,0"
                  AcceptsReturn="True"
                  AcceptsTab="False"

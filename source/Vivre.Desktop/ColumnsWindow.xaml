@@ -63,15 +63,15 @@
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="GalleryBox" Grid.Column="0" VerticalAlignment="Center" DisplayMemberPath="Name" />
+                    <ComboBox x:Name="GalleryBox" AutomationProperties.Name="Column templates" Grid.Column="0" VerticalAlignment="Center" DisplayMemberPath="Name" />
                     <ui:Button Grid.Column="1" Margin="8,0,0,0" Content="Add" Click="OnAddFromGallery" />
                 </Grid>
 
                 <!-- Add your own -->
                 <Border Height="1" Background="{DynamicResource DividerStrokeColorDefaultBrush}" Margin="0,8,0,12" />
                 <ui:TextBlock Text="Add your own" FontTypography="BodyStrong" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="NameBox" Margin="0,0,0,6" PlaceholderText="Column name (e.g. Serial)" />
-                <ui:TextBox x:Name="ScriptBox" MinHeight="56" AcceptsReturn="True" TextWrapping="Wrap"
+                <ui:TextBox x:Name="NameBox" AutomationProperties.Name="Column name" Margin="0,0,0,6" PlaceholderText="Column name (e.g. Serial)" />
+                <ui:TextBox x:Name="ScriptBox" AutomationProperties.Name="Column PowerShell script" MinHeight="56" AcceptsReturn="True" TextWrapping="Wrap"
                             FontFamily="Cascadia Code, Consolas, monospace"
                             PlaceholderText="PowerShell one-liner, e.g. (Get-CimInstance Win32_BIOS).SerialNumber" />
                 <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap" Margin="0,6,0,0"

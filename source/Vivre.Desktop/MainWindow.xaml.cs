@@ -1327,6 +1327,23 @@ public partial class MainWindow : FluentWindow
 
     // --- tabs ---
 
+    private void OnTabContextMenuKey(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Apps && !(e.Key == Key.F10 && Keyboard.Modifiers == ModifierKeys.Shift)) return;
+        if (sender is not TabControl tabs || Keyboard.FocusedElement is not DependencyObject focused) return;
+        DependencyObject? current = focused;
+        while (current is not null && current is not TabItem && current != tabs)
+            current = current is System.Windows.Media.Visual or System.Windows.Media.Media3D.Visual3D
+                ? System.Windows.Media.VisualTreeHelper.GetParent(current)
+                : LogicalTreeHelper.GetParent(current);
+        if (current is not TabItem item || !tabs.Items.Contains(item.DataContext)) return;
+        var header = FindDescendant<StackPanel>(item, panel => panel.ContextMenu is not null);
+        if (header?.ContextMenu is not { } menu) return;
+        menu.PlacementTarget = header;
+        menu.IsOpen = true;
+        e.Handled = true;
+    }
+
     private void OnNewTab(object sender, RoutedEventArgs e) => Shell?.NewTabCommand.Execute(null);
 
     private void OnOpenTabInPatching(object sender, RoutedEventArgs e)

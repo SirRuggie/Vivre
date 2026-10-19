@@ -193,7 +193,7 @@
                     BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                     BorderThickness="1"
                     CornerRadius="4">
-                <avalon:TextEditor x:Name="Editor"
+                <avalon:TextEditor x:Name="Editor" AutomationProperties.Name="PowerShell script editor"
                                    ShowLineNumbers="True"
                                    WordWrap="False"
                                    FontFamily="Cascadia Code, Consolas, monospace"
@@ -211,14 +211,14 @@
             </Grid.ColumnDefinitions>
 
             <!-- Save current editor content into a folder (pick one or type a new name to create it) -->
-            <StackPanel Orientation="Horizontal" Grid.Column="0">
-                <ComboBox Width="150"
+            <WrapPanel Orientation="Horizontal" Grid.Column="0">
+                <ComboBox AutomationProperties.Name="Script category" Width="150"
                           IsEditable="True"
                           VerticalAlignment="Center"
                           ItemsSource="{Binding Categories}"
                           Text="{Binding SaveCategory, UpdateSourceTrigger=PropertyChanged}"
                           ToolTip="Folder to save into — pick one or type a new name to create it" />
-                <ui:TextBox x:Name="NameBox"
+                <ui:TextBox x:Name="NameBox" AutomationProperties.Name="Script name"
                             Width="200"
                             Margin="8,0,0,0"
                             PlaceholderText="Script name"
@@ -243,7 +243,7 @@
                            Click="OnDeleteScript"
                            IsEnabled="{Binding CanDeleteSelectedScript}"
                            ToolTip="Delete the selected saved script (built-in scripts can't be deleted)" />
-            </StackPanel>
+            </WrapPanel>
 
             <!-- Run / Stop -->
             <StackPanel Orientation="Horizontal" Grid.Column="1">
@@ -277,7 +277,7 @@
                     BorderBrush="{DynamicResource ControlElevationBorderBrush}"
                     BorderThickness="1"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}">
-                <TextBox x:Name="OutputBox"
+                <TextBox x:Name="OutputBox" AutomationProperties.Name="Script output"
                          IsReadOnly="True"
                          Background="Transparent"
                          BorderThickness="0"

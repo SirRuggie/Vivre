@@ -764,7 +764,7 @@
                          never removes a TabControlEx from the tree. -->
 
                     <!-- Health section tabs — Visible when ActiveFleetSection == Health -->
-                    <local:TabControlEx x:Name="HealthTabs" Grid.Row="2"
+                    <local:TabControlEx x:Name="HealthTabs" Grid.Row="2" PreviewKeyDown="OnTabContextMenuKey"
                                 Margin="8,4,8,8"
                                 ItemsSource="{Binding HealthTabs}"
                                 SelectedItem="{Binding SelectedHealthTab, Mode=TwoWay}"
@@ -845,7 +845,7 @@
                                             Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"
                                             Click="OnCloseTab"
                                             Visibility="{Binding CanClose, Converter={StaticResource BoolToVis}}"
-                                            AutomationProperties.Name="Close tab"
+                                            AutomationProperties.Name="{Binding Title, StringFormat=Close tab {0}}"
                                             ToolTip="Close tab (Ctrl+W)">
                                         <Button.Style>
                                             <Style TargetType="Button">
@@ -858,6 +858,10 @@
                                                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                             </Border>
                                                             <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                                    <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
+                                                                </Trigger>
                                                                 <Trigger Property="IsMouseOver" Value="True">
                                                                     <Setter TargetName="Bd" Property="Background"
                                                                             Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
@@ -885,7 +889,7 @@
 
                     <!-- Patching section tabs — Visible when ActiveFleetSection == Patching.
                          Collapsed (not removed) when Health is active — its content stays alive. -->
-                    <local:TabControlEx x:Name="PatchingTabs" Grid.Row="2"
+                    <local:TabControlEx x:Name="PatchingTabs" Grid.Row="2" PreviewKeyDown="OnTabContextMenuKey"
                                 Margin="8,4,8,8"
                                 ItemsSource="{Binding PatchingTabs}"
                                 SelectedItem="{Binding SelectedPatchingTab, Mode=TwoWay}"
@@ -967,7 +971,7 @@
                                             Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"
                                             Click="OnCloseTab"
                                             Visibility="{Binding CanClose, Converter={StaticResource BoolToVis}}"
-                                            AutomationProperties.Name="Close tab"
+                                            AutomationProperties.Name="{Binding Title, StringFormat=Close tab {0}}"
                                             ToolTip="Close tab (Ctrl+W)">
                                         <Button.Style>
                                             <Style TargetType="Button">
@@ -980,6 +984,10 @@
                                                                 <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                             </Border>
                                                             <ControlTemplate.Triggers>
+                                                                <Trigger Property="IsKeyboardFocused" Value="True">
+                                                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentFillColorDefaultBrush}" />
+                                                                    <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
+                                                                </Trigger>
                                                                 <Trigger Property="IsMouseOver" Value="True">
                                                                     <Setter TargetName="Bd" Property="Background"
                                                                             Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
@@ -1120,7 +1128,12 @@
                                                 </ContextMenu>
                                             </ui:DataGrid.ContextMenu>
                                             <ui:DataGrid.Columns>
-                                                <DataGridTemplateColumn Header="" Width="Auto">
+                                                <DataGridTemplateColumn Header="Severity" Width="Auto">
+                                                    <DataGridTemplateColumn.CellStyle>
+                                                        <Style TargetType="DataGridCell" BasedOn="{StaticResource DefaultDataGridCellStyle}">
+                                                            <Setter Property="AutomationProperties.Name" Value="{Binding Severity, StringFormat='Severity: {0}'}" />
+                                                        </Style>
+                                                    </DataGridTemplateColumn.CellStyle>
                                                     <DataGridTemplateColumn.CellTemplate>
                                                         <DataTemplate>
                                                             <ui:SymbolIcon Margin="6,0" FontSize="14"

@@ -12,6 +12,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Features
 
+- **Layout and keyboard clarity** — wrapping filters/script actions, visible focus rings, keyboard tab menus, and explicit field/status labels; native DPI and spoken screen-reader validation remain tracked in the UI/UX checklist.
+
 - **Search and recovery** — filter saved-list menus and script libraries; restore deleted lists without overwriting existing lists.
 
 - **Clear activity and settings** — Activity identifies its originating tab, including search/copy; CU KB/build/month save together, and invalid numeric settings explain the correction inline.

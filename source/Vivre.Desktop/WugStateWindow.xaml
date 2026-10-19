@@ -42,15 +42,15 @@
                 </Grid.RowDefinitions>
 
                 <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Server" />
-                <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="ServerBox"
+                <ui:TextBox   Grid.Row="0" Grid.Column="1" Margin="0,0,0,8" x:Name="ServerBox" AutomationProperties.Name="WhatsUp Gold server"
                               IsReadOnly="True" ToolTip="Set in Settings — read-only here. Select to copy." />
 
                 <ui:TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Username" />
-                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserBox"
+                <ui:TextBox   Grid.Row="1" Grid.Column="1" Margin="0,0,0,8" x:Name="UserBox" AutomationProperties.Name="Username"
                               PlaceholderText="domain\user or user" />
 
                 <ui:TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Password" />
-                <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox" Height="32" VerticalContentAlignment="Center" />
+                <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox" AutomationProperties.Name="Password" Height="32" VerticalContentAlignment="Center" />
             </Grid>
         </StackPanel>
 

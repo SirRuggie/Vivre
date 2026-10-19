@@ -17,6 +17,7 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        bool layoutAccessibilityOnly = args.Length == 2 && args[0] == "--layout-accessibility-only";
         bool tabHandoffOnly = args.Length == 2 && args[0] == "--tab-handoff-only";
         bool librarySearchOnly = args.Length == 2 && args[0] == "--library-search-only";
         bool settingsClarityOnly = args.Length == 2 && args[0] == "--settings-clarity-only";
@@ -30,7 +31,7 @@ internal static class Program
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -39,6 +40,15 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (layoutAccessibilityOnly)
+            {
+                string renders = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "u21-renders");
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(new {
+                    dark = LayoutAccessibilityProbe.Run(Path.Combine(renders, "dark")),
+                    light = LayoutAccessibilityProbe.Run(Path.Combine(renders, "light"), dark: false)
+                }, new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (tabHandoffOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(TabHandoffProbe.Run(root), new JsonSerializerOptions { WriteIndented = true }));

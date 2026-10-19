@@ -38,7 +38,7 @@
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="PackageBox" Grid.Column="0"
+                    <ComboBox x:Name="PackageBox" AutomationProperties.Name="Software package" Grid.Column="0"
                               VerticalAlignment="Center"
                               SelectionChanged="OnPackageChanged"
                               ToolTip="Packages found in your package library folder. Or Browse… to a file/folder anywhere." />
@@ -53,7 +53,7 @@
 
                 <!-- Where to drop the files on each target -->
                 <ui:TextBlock Text="Stage to (on each machine)" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <ui:TextBox x:Name="StagePathBox" Margin="0,0,0,4"
+                <ui:TextBox x:Name="StagePathBox" AutomationProperties.Name="Destination staging folder" Margin="0,0,0,4"
                             TextChanged="OnStagePathChanged"
                             PlaceholderText="C:\Windows\Temp\VivrePackages" />
                 <ui:TextBlock Appearance="Secondary" FontSize="12" TextWrapping="Wrap"

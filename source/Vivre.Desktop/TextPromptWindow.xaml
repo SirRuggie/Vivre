@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:local="clr-namespace:Vivre.Desktop"
         mc:Ignorable="d"
         Title="Vivre"
         SizeToContent="WidthAndHeight" MinWidth="400" MaxWidth="640"
@@ -24,9 +25,9 @@
         <ui:TitleBar Grid.Row="0" x:Name="TitleBarControl" Title="Vivre" />
 
         <StackPanel Grid.Row="1" Margin="24,8,24,0" VerticalAlignment="Center">
-            <ui:TextBlock x:Name="PromptLabel" Margin="0,0,0,6" Text="Name:" />
-            <ui:TextBox x:Name="InputBox" />
-            <TextBlock x:Name="ErrorText" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+            <ui:TextBlock x:Name="PromptLabel" TextWrapping="Wrap" Margin="0,0,0,6" Text="Name:" />
+            <ui:TextBox x:Name="InputBox" AutomationProperties.Name="{Binding Text, ElementName=PromptLabel}" />
+            <TextBlock x:Name="ErrorText" local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
