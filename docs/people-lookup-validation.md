@@ -39,3 +39,30 @@ Real integration is implemented; session results are deliberately not automatica
 No production account was modified. Synthetic tests cover ambiguous, disabled and missing-mail records; those cases were not deliberately sought in the live directory. No live patch/install/reboot operations, native dialog/clipboard interaction, long-running memory soak, or signed package validation were performed for this feature. Existing signing material is unavailable on this build context, so successful compilation does not assert a signed deployment package.
 
 Version remains 1.18.0 with this work recorded under Unreleased, consistent with repository release policy.
+
+## People flow follow-up acceptance — 2026-10-19
+
+| Requested capability | Status |
+|---|---|
+| Fleet-like command bar, Quick Add and editable Paste list; no tabs or saved lists | Implemented and locally tested |
+| Obvious bottom-right review launcher and instruction; preserve right-click/double-click | Implemented and locally tested |
+| Responsive paste/result handling with measurements and Stop preserved | Implemented and synthetically measured; reported host pause not reproduced |
+| Independent red team, regression checks, docs, commit/push | Review/tests/docs complete; commit contains this ledger |
+
+### Follow-up validation and review
+
+- Real People view/model probe passed matching/review/no-mail preservation, input validation with no partial mutation, search, pinned identity columns, duplicate export-state retention, navigation and hidden-fleet-shortcut isolation. Shared paste dialog hides machine add/replace choices and shows inline validation.
+- Offscreen renders at 800/1280 by 400/680 verify fixed footer action geometry; short content remains scrollable. This is not native Windows DPI or physical input validation.
+- Reused the Fleet toolbar style (moved unchanged to App resources), existing multiline list-entry dialog, and existing row-menu handlers. No People tabs or saved-list storage added; AD matching unchanged.
+- Nine core People tests passed; Release workspace-safety, actions-menu and tab-handoff regressions passed after the shared style/dialog changes.
+- Independent gpt-5.6-sol read-only reviewer found a footer menu placement reset; fixed and re-reviewed. Parent additionally caught and removed invalid DeferRefresh use during ObservableCollection insertion. Final independent review found no remaining delivery-blocking defect within the diff.
+
+### Responsiveness measurement
+
+Baseline, isolated dummy data: five additions plus layout 80.7ms; 2,000 additions plus layout 172.5ms; 2,000 immediately completed fake lookups plus layout 1,022.4ms in one synchronous call. These figures exclude native clipboard transfer and real AD.
+
+The final probe uses real WPF dispatcher context, a 10ms UI heartbeat and a separate background timer observing its age; unrelated queued setup/render work is drained before timing. An initial contaminated measurement included pending prior render work and was discarded after isolating setup. Additions now yield in batches, so elapsed time is not continuous UI blockage. The accepted measured run recorded 2,000 additions/layout 577.7ms total, immediate fake lookups/layout 245.9ms total, with heartbeat ticks continuing and maximum sampled dispatcher gap 343.5ms (under the probe's 500ms threshold). This demonstrates cooperative input processing, not a universal latency guarantee or faster total list insertion.
+
+Stop was dispatched during a pending lookup and during adding; late lookup results were discarded and all 250 stop-during-add inputs were preserved as Stopped. Quick Add preserved a new draft typed while submission was pending. The application no longer calls Clipboard.GetText when opening Paste list; the user pastes into the native text box, reviews, then confirms.
+
+The exact reported five-person pause on the deployment host remains unverified. Native clipboard redirection can still have its own latency, and cancellation of an already-running LDAP request still waits for that request. No production directory or server operation was run in this follow-up. Diagnostic artifacts remain untracked; an earlier crashed probe temporarily locked the normal harness output and could not be terminated from this execution context (access denied), so a separate output directory was used; that process had exited by the final check.

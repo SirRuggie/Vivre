@@ -10,6 +10,7 @@ it ships, then gets a dated heading.
 - Add a separate People section for read-only AD email lookup, uncertain-match review, selected-field copying, and CSV export; preserve results across navigation and warn before discarding session data.
 
 ### Fixed
+- Align People with Fleet using the shared toolbar style, Quick Add, editable Paste list, and fixed review/row-action buttons; batch additions and coalesce result refreshes to keep input responsive.
 - Review cancellation of all Vivre schedules against captured targets; clarify right-click scopes and reject changed menu/Enable WinRM confirmation targets before dispatch.
 - Clarify WhatsUp Gold and SCCM menu labels, disable selection-only shortcuts without selected machines, and add Save tab as list to both tab menus using the existing guarded save flow.
 - Add selection-only Actions shortcuts using existing dialogs; group right-click connection and WhatsUp Gold commands and prevent an empty selected-script action from widening to all machines.

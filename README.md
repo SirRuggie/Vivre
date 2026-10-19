@@ -12,7 +12,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Features
 
-- **People email lookup** — paste names, usernames, or emails (one per line) into People; unique exact AD matches resolve automatically, while uncertain matches open for review. Copy selected fields or deduplicated resolved emails, or export all results to CSV. Uses your current Windows login and current AD domain; results are session-only.
+- **People email lookup** — use Quick Add or the editable Paste list (one person per line) in People; unique exact AD matches resolve automatically, while uncertain matches open for review. Use the bottom-right Open review and Row actions buttons, or double-click/right-click rows. Copy all resolved emails and CSV export are under Actions. Uses your current Windows login and current AD domain; results are session-only.
 
 - **Layout and keyboard clarity** — wrapping filters/script actions, visible focus rings, keyboard tab menus, and explicit field/status labels; native DPI and spoken screen-reader validation remain tracked in the UI/UX checklist.
 

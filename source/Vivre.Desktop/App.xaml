@@ -12,6 +12,17 @@
                 <ui:ControlsDictionary />
             </ResourceDictionary.MergedDictionaries>
 
+        <Style x:Key="ToolbarButtonStyle" TargetType="ui:Button"
+               BasedOn="{StaticResource {x:Type ui:Button}}">
+            <Setter Property="Appearance"          Value="Transparent" />
+            <Setter Property="BorderThickness"     Value="0" />
+            <Setter Property="BorderBrush"         Value="Transparent" />
+            <Setter Property="MouseOverBackground" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
+            <Setter Property="MouseOverBorderBrush" Value="Transparent" />
+            <Setter Property="PressedBackground"   Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
+            <Setter Property="PressedBorderBrush"  Value="Transparent" />
+        </Style>
+
             <!-- M3: standard horizontal inset for dialog content and footer rows. -->
             <Thickness x:Key="DialogContentMargin">24,8,24,0</Thickness>
 

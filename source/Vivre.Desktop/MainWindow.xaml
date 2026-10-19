@@ -53,16 +53,7 @@
              hover uses Fluent SubtleFill tokens instead of the default elevated fill.
              BorderThickness=0 + BorderBrush=Transparent removes the rest-state box.
              BasedOn preserves all sizing, padding, icon layout, and disabled state. -->
-        <Style x:Key="ToolbarButtonStyle" TargetType="ui:Button"
-               BasedOn="{StaticResource {x:Type ui:Button}}">
-            <Setter Property="Appearance"          Value="Transparent" />
-            <Setter Property="BorderThickness"     Value="0" />
-            <Setter Property="BorderBrush"         Value="Transparent" />
-            <Setter Property="MouseOverBackground" Value="{DynamicResource SubtleFillColorSecondaryBrush}" />
-            <Setter Property="MouseOverBorderBrush" Value="Transparent" />
-            <Setter Property="PressedBackground"   Value="{DynamicResource SubtleFillColorTertiaryBrush}" />
-            <Setter Property="PressedBorderBrush"  Value="Transparent" />
-        </Style>
+
 
         <!-- Frameless ui:SplitButton.  SplitButton is BasedOn DefaultUiButtonStyle and
              exposes the same MouseOverBackground / PressedBackground attached properties,

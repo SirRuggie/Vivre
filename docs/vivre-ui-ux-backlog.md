@@ -306,17 +306,29 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - [ ] **U-32 · Medium — Protect custom columns from accidental replacement.**
   - **Why:** Adding an existing column name replaces its script and immediately runs the replacement.
 
-- [ ] **U-33 · Medium — Keep identity columns visible in People.**
+- [x] **U-33 · Medium — Keep identity columns visible in People.**
   - **Why:** Horizontal scrolling hides the person or candidate name while comparing other details.
 
-- [ ] **U-34 · Medium — Make People copy scope explicit.**
+- [x] **U-34 · Medium — Make People copy scope explicit.**
   - **Why:** Copy resolved emails includes hidden rows even when the grid is filtered.
 
-- [ ] **U-35 · Lower — Show which People entries can be retried.**
+- [x] **U-35 · Lower — Show which People entries can be retried.**
   - **Why:** Retry unresolved stays enabled with nothing eligible and does not retry No email or Needs review.
 
-- [ ] **U-36 · Lower — Avoid false unsaved-result warnings in People.**
+- [x] **U-36 · Lower — Avoid false unsaved-result warnings in People.**
   - **Why:** Pasting only existing entries marks an exported session dirty without changing its results.
 
 - [ ] **U-37 · Lower — Remember grid widths and column order.**
   - **Why:** Visibility is saved, but operators must repeat manual sizing and rearranging after reopening.
+
+## People flow follow-up — U-33–U-36, U-38/U-39
+
+- [x] **U-38 · Medium — Make People follow the Fleet entry and review flow.**
+  - **Why:** A flat button row and hidden review interactions made People feel disconnected from the rest of Vivre.
+  - **Delivered:** Shared Fleet toolbar style; Quick Add; existing multiline paste dialog reused with People validation, no replacement/tabs/saved-list controls; fixed bottom-right Open review and Row actions, plus explicit double-click/right-click guidance.
+- [ ] **U-39 · Medium — Keep People additions and result updates responsive.**
+  - **Why:** Synchronous clipboard access and repeated grid refreshes could interrupt the input flow.
+  - **Delivered:** Paste opens without reading the clipboard automatically; validated additions yield every 100 rows, fast results every 25, and expensive aggregate/filter refreshes coalesce to 100ms. Stop during adding keeps submitted inputs as Stopped and prevents automatic lookup restart.
+- **U-33–U-36 delivered within this flow change:** identity columns pinned; Actions explicitly says Copy all resolved emails; Look up again is enabled only for eligible retry states; duplicate-only paste no longer dirties exported results.
+- **Evidence:** Release build, People/dispatcher probes and Fleet workspace/menu/tab regressions passed; independent read-only reviewer caught the footer-menu anchor issue, corrected before final re-review. See [People validation](people-lookup-validation.md) for measurements and remaining host-specific validation.
+- **Limits:** The reported five-person remote clipboard/host pause is not reproduced; native/RDP/DPI/physical-input checks remain open under U-21/U-22. U-39 remains open for deployment-host confirmation despite the delivered local mitigation and passing tests.

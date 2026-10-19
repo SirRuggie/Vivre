@@ -23,10 +23,10 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="Paste machines" />
+        <ui:TitleBar x:Name="PasteTitleBar" Grid.Row="0" Title="Paste machines" />
 
         <StackPanel Grid.Row="1" Margin="24,4,24,8">
-            <ui:TextBlock TextWrapping="Wrap" Text="Separate machine names with lines, spaces, commas, or semicolons." />
+            <ui:TextBlock x:Name="InstructionsText" TextWrapping="Wrap" Text="Separate machine names with lines, spaces, commas, or semicolons." />
             <RadioButton x:Name="AddMode" Checked="OnModeChanged" Content="Add to this tab — keep existing results" IsChecked="True" Margin="0,8,0,0" />
             <RadioButton x:Name="ReplaceMode" Checked="OnModeChanged" Content="Replace this tab's machine list" Margin="0,6,0,0" />
             <TextBlock x:Name="ErrorText" local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" Margin="0,6,0,0" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
