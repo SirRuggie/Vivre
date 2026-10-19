@@ -83,7 +83,7 @@ public partial class App : Application
         // One shared catalog-size lookup: its per-KB cache is process-wide, so many machines showing the same
         // KB hit the Microsoft Update Catalog once. Self-contained HTTPS GET; failures fall back silently.
         var catalogSize = new MicrosoftUpdateCatalogService();
-        // Session-only, shared across tabs (consistent with the in-memory credential model).
+        // Session-only defaults; each workspace clones these so new tabs start independently.
         var patchOptions = new PatchOptions();
         // Reaps orphaned Vivre_Reboot_* services left when the SMB/SCM reboot fallback's best-effort
         // delete lost the race with the reboot; swept per host on list load (once per session).

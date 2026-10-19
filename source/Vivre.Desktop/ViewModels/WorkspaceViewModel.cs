@@ -863,6 +863,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     [ObservableProperty]
     public partial UpdateSource SelectedSource { get; set; }
 
+    public string UpdateSourceLabel => SelectedSource switch
+    {
+        UpdateSource.MicrosoftUpdate => "Microsoft Update",
+        UpdateSource.Managed => "Managed (WSUS/SCCM)",
+        _ => "Windows Update",
+    };
+
     /// <summary>Comma/newline-separated exclude terms (bound to the Exclude box); parsed into <see cref="PatchOptions"/>.</summary>
     [ObservableProperty]
     public partial string ExcludeText { get; set; } = string.Empty;
@@ -965,7 +972,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _activity = activity;
         _scripts = scripts;
         _patch = patch;
-        _patchOptions = patchOptions;
+        _patchOptions = patchOptions.Clone(); // Each workspace owns its operational settings.
         _patchThrottleCap = ClampInstallCap(_appSettings.Load().MaxSimultaneousInstalls);
         _patchThrottle = new SemaphoreSlim(_patchThrottleCap);
         // First tab wins: the shared read budget is set once from the singleton PatchOptions and then
@@ -1349,20 +1356,24 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public bool ShowUpdateFirstRunHint =>
         IsUpdateMode && Computers.Count > 0 && Computers.All(c => c.PatchState == PatchState.Idle);
 
-    /// <summary>Push the Source toggle's value into the shared patch options.</summary>
-    partial void OnSelectedSourceChanged(UpdateSource value) => _patchOptions.Source = value;
+    /// <summary>Push the Source toggle's value into this tab's patch options.</summary>
+    partial void OnSelectedSourceChanged(UpdateSource value)
+    {
+        _patchOptions.Source = value;
+        OnPropertyChanged(nameof(UpdateSourceLabel));
+    }
 
-    /// <summary>Parse the Exclude box into the shared patch options (split on comma/newline, trim, drop blanks).</summary>
+    /// <summary>Parse the Exclude box into this tab's patch options (split on comma/newline, trim, drop blanks).</summary>
     partial void OnExcludeTextChanged(string value) =>
         _patchOptions.ExcludeNameContains =
             [.. (value ?? string.Empty)
                 .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 
-    /// <summary>Push the "Include drivers" checkbox into the shared patch options.</summary>
+    /// <summary>Push the "Include drivers" checkbox into this tab's patch options.</summary>
     partial void OnIncludeDriversChanged(bool value) => _patchOptions.IncludeDrivers = value;
 
     /// <summary>
-    /// Push the side-panel scope toggle into the shared patch options and restore each row's
+    /// Push the side-panel scope toggle into this tab's patch options and restore each row's
     /// visible "Windows update message" / count from the per-scope cache (so the grid reflects
     /// whichever scope is active). The per-scope SelectableUpdate collections on
     /// <see cref="Computer"/> are NOT cleared — once a scope has been scanned, that data sticks

@@ -486,9 +486,10 @@ public static class HelpContent
             Keywords = "source windows microsoft update wsus managed drivers exclude",
             Lines =
             [
-                "Click Update options ▾ in the command bar (visible in Patching mode) ▸ Source ▸ Windows Update / Microsoft Update / Managed (WSUS/SCCM).",
-                "Update options ▾ ▸ Include drivers to also scan/install drivers (off by default).",
-                "Update options ▾ ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
+                "Click the source button in the Patching command bar (Windows Update, Microsoft Update, or Managed) ▸ Source to change it for this tab only. The source also appears beside the tab name.",
+                "New tabs start with Windows Update, drivers off, no exclusions, and applicable updates; options stay in memory for this tab only.",
+                "Source button ▸ Include drivers to also scan/install drivers (off by default).",
+                "Source button ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
             ],
         },
         new HelpTopic

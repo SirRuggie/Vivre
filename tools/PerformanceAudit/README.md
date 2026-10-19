@@ -60,3 +60,11 @@ Software display probe: `dotnet run --project tools/PerformanceAudit -c Release 
 ### AD Linux label probe
 
 `dotnet tools/PerformanceAudit/bin/Release/net10.0-windows/PerformanceAudit.dll --ad-linux-only <output.json>` runs the production workspace and Name template with 1,000 dummy rows and delayed fake AD. It checks batching, UI heartbeat while waiting, Linux rendering, unchanged operational OS facts, and stale-result protection after rename/remove/reset/dispose or directory outage. No live AD, target operations, or production writes. Core `AdLinuxLabelLookupTests` additionally exercise the actual cache/serialization/background service with a fake transport.
+
+## Per-tab update options
+
+```powershell
+dotnet run --project tools/PerformanceAudit -- --tab-options-only tab-options-local.json
+```
+
+Exercises real workspaces sharing constructor defaults, checks bidirectional isolation of source/drivers/exclusions/scope and new-tab defaults, captures actual scan/install service arguments with inert services, and checks production Patching header and toolbar bindings across tab switches. No remote operations or production writes; this does not validate a visible window at every DPI or live update services.

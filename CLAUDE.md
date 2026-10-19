@@ -44,6 +44,7 @@ and retired. **Load-bearing constraints — DON'T break:**
   live RDP sessions survive tab/section switches. `NavigationView`'s default `Frame` navigation
   destroys pages — so use NavigationView for the **pane only** and host section content in the
   keep-alive container.
+- **Patch options are per workspace, session-only.** Each workspace clones defaults; new tabs start with Windows Update, and source labels appear in Patching headers and the active toolbar. Credentials and read throttling remain app-wide.
 - **The bottom dock is window-level/global** (Activity + per-machine Updates), not per-tab.
 - **Mode is fixed by Fleet section, not a per-tab toggle** — Health tabs are health mode, Patching
   tabs are patching mode.

@@ -451,12 +451,12 @@
 
                             <!-- Update options button — visible only in Patching mode. -->
                             <ui:Button x:Name="UpdateOptionsButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       AutomationProperties.Name="Update options"
-                                       ToolTip="Update options — configure update source, drivers, and exclusions"
+                                       AutomationProperties.Name="{Binding SelectedTab.UpdateSourceLabel, StringFormat=Update options for this tab: {0}}"
+                                       ToolTip="Update options for this tab — configure source, drivers, and exclusions"
                                        Click="OnUpdateOptionsButtonClick">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Update options" Style="{StaticResource ToolbarLabelStyle}" />
+                                    <TextBlock Text="{Binding SelectedTab.UpdateSourceLabel}" />
                                 </StackPanel>
                                 <ui:Button.Style>
                                     <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
@@ -958,6 +958,8 @@
                                         </ContextMenu>
                                     </StackPanel.ContextMenu>
                                     <TextBlock Text="{Binding Title}" VerticalAlignment="Center" />
+                                    <TextBlock Text="{Binding UpdateSourceLabel}" Margin="8,0,0,0" FontSize="11"
+                                               VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                                     <Button Content="✕"
                                             Margin="10,0,0,0" Padding="4,0" BorderThickness="0"
                                             Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=TabItem}}"

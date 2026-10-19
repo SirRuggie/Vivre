@@ -320,6 +320,9 @@ internal static class WorkspaceProbe
     }
 
     internal static WorkspaceViewModel CreateWorkspace(Vivre.Core.Computers.IAdLinuxLabelLookup? adLinuxLabels = null)
+        => CreateWorkspaceWithOptions(new PatchOptions(), adLinuxLabels);
+
+    internal static WorkspaceViewModel CreateWorkspaceWithOptions(PatchOptions options, Vivre.Core.Computers.IAdLinuxLabelLookup? adLinuxLabels = null)
     {
         var workspace = new WorkspaceViewModel(
             pinger: null!,
@@ -331,7 +334,7 @@ internal static class WorkspaceProbe
             activity: new InertActivityLog(),
             scripts: null!,
             patch: null!,
-            patchOptions: new PatchOptions(),
+            patchOptions: options,
             rebootProbe: null!,
             powerShell: null!,
             vitals: null!,

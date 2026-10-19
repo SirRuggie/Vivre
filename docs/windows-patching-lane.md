@@ -12,6 +12,8 @@ schedules updates directly on each target via the **Windows Update Agent (WUA)**
 deployment required** (an SCCM-deployment lane would only install updates an admin has deployed, and
 this environment deploys none, so it would install nothing). The **Update Source** choice (Windows
 Update / Microsoft Update / Managed-WSUS) and the **exclude-by-name** list live here.
+Each tab owns its source, drivers, exclusions, and applicable/installed scope for the session.
+New tabs start with Windows Update; the source is visible in each Patching header and the active toolbar.
 
 Open **Fleet ▸ Patching** in the left nav to get the update grid + patch actions over the same machine
 list. The **Fleet ▸ Health** features (SCCM health, client actions, Run Script) are untouched.
@@ -401,7 +403,7 @@ These mechanisms exist because of real production failures. Don't undo them with
   Opening: the status-bar Activity-log toggle lands on Activity; clicking a machine in Patching opens +
   lands on Updates. Resizable via the splitter.
 - **Command bar** (Patching) — Scan and Install, labelled for the current target ("…selected (N)" vs
-  "…all"). Source / Include-drivers / Exclude live under the **Update options ▾** toolbar button.
+  "…all"). Source / Include-drivers / Exclude live under the **source-labelled options** toolbar button.
 - **Right-click** — Scan / Install selected · **Reboot (force now)** · **Schedule ▸** (Install
   updates / Reboot / Cancel) · **Details…** · **Show messages** · Run script… · Client actions ▸ ·
   Enable WinRM.

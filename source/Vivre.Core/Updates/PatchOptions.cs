@@ -22,8 +22,7 @@ public enum RunBehavior
 }
 
 /// <summary>
-/// The shared, session-only patch settings (mirrors the session-only credential model —
-/// held in memory, not persisted). Steers scope via <see cref="Source"/> +
+/// Per-workspace patch settings, held in memory for the session and not persisted. Steers scope via <see cref="Source"/> +
 /// <see cref="ExcludeNameContains"/> rather than per-KB selection.
 /// </summary>
 public sealed class PatchOptions
@@ -127,7 +126,7 @@ public sealed class PatchOptions
 
     /// <summary>
     /// A shallow copy, so a per-host install scope (<see cref="IncludeKbArticleIds"/>) can be set
-    /// without mutating the shared session options that concurrent hosts read. The list properties
+    /// without mutating the workspace options that concurrent hosts read. The list properties
     /// are treated as immutable (always reassigned, never mutated), so a shallow copy is safe.
     /// </summary>
     public PatchOptions Clone() => (PatchOptions)MemberwiseClone();

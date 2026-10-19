@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Changed
+- Update options are independent per tab; Patching tab headers and the source/options toolbar button show Windows Update, Microsoft Update, or Managed (WSUS/SCCM). New tabs start with Windows Update.
 - `publish.ps1 -Zip` now defaults to `publish\Vivre.zip` for self-contained Windows x64 builds; other build variants and explicit output paths keep separate destinations.
 
 ## 1.18.0 — 2026-10-19
