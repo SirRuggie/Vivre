@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- Review cancellation of all Vivre schedules against captured targets; clarify right-click scopes and reject changed menu/Enable WinRM confirmation targets before dispatch.
 - Clarify WhatsUp Gold and SCCM menu labels, disable selection-only shortcuts without selected machines, and add Save tab as list to both tab menus using the existing guarded save flow.
 - Add selection-only Actions shortcuts using existing dialogs; group right-click connection and WhatsUp Gold commands and prevent an empty selected-script action from widening to all machines.
 - Wrap fleet filters, Server 2016 actions, and script save controls at narrow widths; allow resizing and wrapping in the CU comparison dialog.

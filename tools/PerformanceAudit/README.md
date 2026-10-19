@@ -94,3 +94,5 @@ The workspace probe also covers U-6/U-7/U-9/U-19: saved identity and membership-
 Run --actions-menu-only with the existing harness and an output JSON path. Covers four selected-target shortcuts, stale tab/selection/name/membership rejection, empty-selection guards, and right-click grouping in both modes. Uses dummy machines and intercepted dialog dispatch; no remote operations.
 
 U-25/U-26 extend --actions-menu-only with explicit maintenance naming and disabled/enabled Copy selected rows, SCCM, and Enable WinRM states in both modes. U-27 extends --tab-handoff-only with production tab-menu binding, inactive Health/Patching save target resolution, missing/removed target rejection, and deferred save-guard teardown. Save persistence/overwrite regression remains --workspace-safety-only. These are local WPF probes, not a physical mouse/keyboard study.
+
+U-23/U-24 extend --actions-menu-only with selected/all-tab/this-machine labels, changed-menu membership/name/selection rejection, a real routed-click guard, and cancellation refusal/approval/selection-change/rename/removal/closure/empty cases. Dispatch is intercepted: no scheduled task is created or removed.

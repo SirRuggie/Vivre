@@ -253,12 +253,12 @@ Forum anecdotes informed recommendations; they are not evidence that Vivre has a
 
 These findings came from source/workflow inspection after Windows UI automation repeatedly failed; they are not results of a completed hands-on usability study.
 
-- [ ] **U-23 - High - Clarify and confirm scheduled-task cancellation.**
+- [x] **U-23 - High - Clarify and confirm scheduled-task cancellation.**
   - **Why:** The singular menu command immediately removes all Vivre_* tasks on selected machines without review.
-  - **Status:** Not part of this implementation batch.
-- [ ] **U-24 - High - State each right-click action's target scope.**
+  - **Delivered:** Cancellation reviews all Vivre_* schedules and the captured machine count; Keep schedules does nothing; changed names, removed targets, or a closed tab prevent dispatch.
+- [x] **U-24 - High - State each right-click action's target scope.**
   - **Why:** Commands mix clicked-machine, selected-machine, and whole-tab targeting without consistent labels/counts.
-  - **Status:** Not part of this implementation batch.
+  - **Delivered:** Leaf labels distinguish this machine, selected count, all in tab, and shown rows; every menu action rejects changed row identities/membership/selection before dispatch.
 - [x] **U-25 - Medium - Use specific, consistent action names.**
   - **Delivered:** Actions says WhatsUp Gold maintenance; the grid submenu says SCCM client actions; help and README match.
 - [x] **U-26 - Medium - Disable commands that cannot act.**
@@ -274,4 +274,15 @@ These findings came from source/workflow inspection after Windows UI automation 
 - **Test limits:** Save-menu binding/resolution and hidden-window handler guard exercised with dummy workspaces; persistence regression uses isolated dummy storage. No physical mouse/keyboard walkthrough or live hosts.
 - **Independent review:** Separate gpt-5.6-sol read-only reviewer found no concrete defect in targeting, stale-tab handling, duplicate-dialog guarding, labels, enablement, or probe changes; visible-modal/physical input testing remains unverified.
 - **Delivery:** Included in the commit containing this checklist update; version stays 1.18.0 plus Unreleased. Existing missing-signing-certificate warning remains; no signed package.
-- **Deferred:** U-23/U-24 and remaining hands-on usability validation; no scope expansion into those tasks.
+- **At that batch:** U-23/U-24 were deferred; delivered in the following batch below. Hands-on validation remains open.
+
+## Completed batch acceptance - U-23/U-24
+
+- **Implemented and locally tested:** cancellation review states all Vivre_* install/reboot schedules, captured count, and that already-started work is not stopped; no approval or empty selection causes no dispatch.
+- **Target fidelity:** approval retains the reviewed machines if selection changes during cancellation; changed names, removed rows, or closed tabs abort. Enable WinRM separately refuses changed confirmation targets before calling its existing operation.
+- **Menu scope:** leaf labels identify this machine, selected count, all in tab, shown rows, or this view; online/offline copy explicitly says whole tab without implying the whole tab is copied.
+- **Stale menu guard:** first routed Click handler rejects changed identities, tab membership, selection, or closed tab before the existing action; SCCM invokes its same command only after that guard.
+- **Validation:** Debug/Release builds and focused actions-menu probe passed; tests cover labels in both modes, fresh/stale routed clicks, cancellation approval/refusal, selection change, renamed/removed targets, empty selection, and tab closure.
+- **Independent red team:** found stale-menu dispatch and Enable WinRM post-confirmation drift; both fixed. Final separate gpt-5.6-sol read-only review found no remaining concrete defect in the scoped diff.
+- **Limits:** local dummy workspaces and intercepted dispatch only; no live task removal, visible confirmation/physical keyboard study, or signed package. Existing signing-certificate warning remains.
+- **Delivery:** included in the commit containing this checklist update; version remains 1.18.0 plus Unreleased.

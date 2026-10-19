@@ -412,55 +412,68 @@ public partial class WorkspaceView : UserControl
     private void BuildContextMenu(WorkspaceViewModel vm)
     {
         _gridMenu.Items.Clear();
+        var valid = WorkspaceActions.CaptureContextValidity(vm);
+        MenuItem GuardItem(MenuItem item) => WorkspaceActions.GuardContextItem(item, valid, () =>
+        {
+            _gridMenu.IsOpen = false;
+            System.Windows.MessageBox.Show(OwnerWindow,
+                "The machines or selection changed. Reopen the menu to review its targets.",
+                "Menu targets changed", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information);
+        });
         bool hasSelection = vm.SelectedComputers.Count > 0;
+        string selectedScope = $"selected ({vm.SelectedComputers.Count})";
+        string tabScope = $"all in tab ({vm.Computers.Count})";
+        string selectionOrTab = hasSelection ? selectedScope : tabScope;
+        string Scoped(string label, string scope) => label.EndsWith("…")
+            ? $"{label[..^1]} - {scope}…" : $"{label} - {scope}";
 
         // ---- Inspect ----
-        var details = WithIcon(new MenuItem { Header = "Details…" }, SymbolRegular.Info24);
+        var details = WithIcon(GuardItem(new MenuItem { Header = Scoped("Details…", "this machine") }), SymbolRegular.Info24);
         details.Click += OnShowDetails;
         _gridMenu.Items.Add(details);
 
-        var showMessages = WithIcon(new MenuItem { Header = "Show messages" }, SymbolRegular.History24);
+        var showMessages = WithIcon(GuardItem(new MenuItem { Header = Scoped("Show messages", "this machine") }), SymbolRegular.History24);
         showMessages.Click += OnShowMessages;
         _gridMenu.Items.Add(showMessages);
 
         // Copy ▸ — per-field items act on the right-clicked row (_contextRow); the multi-row items
         // (Name(s) / Selected rows / online / offline) act on the selection.
         Computer? ctx = _contextRow;
-        var copy = WithIcon(new MenuItem { Header = "Copy" }, SymbolRegular.Copy24);
+        var copy = WithIcon(GuardItem(new MenuItem { Header = "Copy" }), SymbolRegular.Copy24);
 
-        var copyNames = new MenuItem { Header = "Name(s)", IsEnabled = hasSelection };
+        var copyNames = GuardItem(new MenuItem { Header = Scoped("Name(s)", selectedScope), IsEnabled = hasSelection });
         copyNames.Click += (_, _) => CopyLines(vm.SelectedComputers.Select(c => c.Name));
         copy.Items.Add(copyNames);
 
-        var copyRows = new MenuItem { Header = "Selected rows", IsEnabled = hasSelection };
+        var copyRows = GuardItem(new MenuItem { Header = Scoped("Selected rows", selectedScope), IsEnabled = hasSelection });
         copyRows.Click += (_, _) => CopySelectedRows();
         copy.Items.Add(copyRows);
 
         copy.Items.Add(new Separator());
 
-        var copyUpdate = new MenuItem { Header = "Update message", IsEnabled = !string.IsNullOrEmpty(ctx?.UpdateMessage) };
+        var copyUpdate = GuardItem(new MenuItem { Header = Scoped("Update message", "this machine"), IsEnabled = !string.IsNullOrEmpty(ctx?.UpdateMessage) });
         copyUpdate.Click += (_, _) => CopyField(static c => c.UpdateMessage);
         copy.Items.Add(copyUpdate);
 
-        var copyReboot = new MenuItem { Header = "Reboot message", IsEnabled = !string.IsNullOrEmpty(ctx?.RebootMessage) };
+        var copyReboot = GuardItem(new MenuItem { Header = Scoped("Reboot message", "this machine"), IsEnabled = !string.IsNullOrEmpty(ctx?.RebootMessage) });
         copyReboot.Click += (_, _) => CopyField(static c => c.RebootMessage);
         copy.Items.Add(copyReboot);
 
-        var copyCmd = new MenuItem { Header = "Command result", IsEnabled = !string.IsNullOrEmpty(ctx?.CommandResult) };
+        var copyCmd = GuardItem(new MenuItem { Header = Scoped("Command result", "this machine"), IsEnabled = !string.IsNullOrEmpty(ctx?.CommandResult) });
         copyCmd.Click += (_, _) => CopyField(static c => c.CommandResult);
         copy.Items.Add(copyCmd);
 
-        var copyErr = new MenuItem { Header = "Last error", IsEnabled = !string.IsNullOrEmpty(ctx?.LastError) };
+        var copyErr = GuardItem(new MenuItem { Header = Scoped("Last error", "this machine"), IsEnabled = !string.IsNullOrEmpty(ctx?.LastError) });
         copyErr.Click += (_, _) => CopyField(static c => c.LastError);
         copy.Items.Add(copyErr);
 
         copy.Items.Add(new Separator());
 
-        var copyOnline = new MenuItem { Header = "All online devices", IsEnabled = vm.OnlineNames.Count > 0 };
+        var copyOnline = GuardItem(new MenuItem { Header = Scoped("All online devices", "whole tab"), IsEnabled = vm.OnlineNames.Count > 0 });
         copyOnline.Click += (_, _) => CopyLines(vm.OnlineNames);
         copy.Items.Add(copyOnline);
 
-        var copyOffline = new MenuItem { Header = "All offline devices", IsEnabled = vm.OfflineNames.Count > 0 };
+        var copyOffline = GuardItem(new MenuItem { Header = Scoped("All offline devices", "whole tab"), IsEnabled = vm.OfflineNames.Count > 0 });
         copyOffline.Click += (_, _) => CopyLines(vm.OfflineNames);
         copy.Items.Add(copyOffline);
 
@@ -475,15 +488,15 @@ public partial class WorkspaceView : UserControl
             bool anyActionable = vm.SelectedComputers.Any(c => !c.IsPatching);
             int selCount = vm.SelectedComputers.Count;
 
-            var scan = WithIcon(new MenuItem { Header = $"Scan selected ({selCount})", IsEnabled = anyActionable }, SymbolRegular.Search24);
+            var scan = WithIcon(GuardItem(new MenuItem { Header = $"Scan selected ({selCount})", IsEnabled = anyActionable }), SymbolRegular.Search24);
             scan.Click += (_, _) => _ = vm.ScanSelectedAsync([.. vm.SelectedComputers]);
             _gridMenu.Items.Add(scan);
 
-            var install = WithIcon(new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable }, SymbolRegular.ArrowDownload24);
+            var install = WithIcon(GuardItem(new MenuItem { Header = $"Install selected ({selCount})", IsEnabled = anyActionable }), SymbolRegular.ArrowDownload24);
             install.Click += async (_, _) =>
             {
                 var sel = vm.SelectedComputers.ToList();
-                IReadOnlyList<Computer> targets = sel.Count > 0 ? sel : [.. vm.Computers];
+                IReadOnlyList<Computer> targets = sel;
                 if (targets.Count == 0)
                 {
                     return;
@@ -505,13 +518,13 @@ public partial class WorkspaceView : UserControl
                 Computer row2016 = ctx!;
                 if (row2016.RequiresStagedPatching)
                 {
-                    var unmark = WithIcon(new MenuItem { Header = "Remove Staged flag" }, SymbolRegular.Dismiss24);
+                    var unmark = WithIcon(GuardItem(new MenuItem { Header = Scoped("Remove Staged flag", "this machine") }), SymbolRegular.Dismiss24);
                     unmark.Click += (_, _) => vm.SetStagedPatching(row2016, false);
                     _gridMenu.Items.Add(unmark);
                 }
                 else
                 {
-                    var mark = WithIcon(new MenuItem { Header = "Mark as Staged patching" }, SymbolRegular.Box24);
+                    var mark = WithIcon(GuardItem(new MenuItem { Header = Scoped("Mark as Staged patching", "this machine") }), SymbolRegular.Box24);
                     mark.Click += (_, _) => vm.SetStagedPatching(row2016, true);
                     _gridMenu.Items.Add(mark);
                 }
@@ -522,38 +535,38 @@ public partial class WorkspaceView : UserControl
 
         // ---- Run ----
         // Run a saved (or pasted) script against the selection or the whole tab; review before it runs.
-        var runScript = WithIcon(new MenuItem { Header = "Run script" }, SymbolRegular.Play24);
-        var runSelected = new MenuItem { Header = "Selected machines…", IsEnabled = hasSelection };
+        var runScript = WithIcon(GuardItem(new MenuItem { Header = "Run script" }), SymbolRegular.Play24);
+        var runSelected = GuardItem(new MenuItem { Header = Scoped("Selected machines…", selectedScope), IsEnabled = hasSelection });
         runSelected.Click += (_, _) => OpenScriptRunner([.. vm.SelectedComputers]);
         runScript.Items.Add(runSelected);
-        var runAll = new MenuItem { Header = "All machines…" };
+        var runAll = GuardItem(new MenuItem { Header = Scoped("All machines…", tabScope) });
         runAll.Click += (_, _) => OpenScriptRunner([.. vm.Computers]);
         runScript.Items.Add(runAll);
         _gridMenu.Items.Add(runScript);
 
         // The SCCM client-action triggers grouped under one submenu.
-        var clientActions = WithIcon(new MenuItem { Header = "SCCM client actions", IsEnabled = hasSelection }, SymbolRegular.Rocket24);
+        var clientActions = WithIcon(GuardItem(new MenuItem { Header = "SCCM client actions", IsEnabled = hasSelection }), SymbolRegular.Rocket24);
         foreach (ScheduleAction action in vm.ClientActions)
         {
-            clientActions.Items.Add(new MenuItem
+            var clientAction = GuardItem(new MenuItem { Header = Scoped(action.Label, selectedScope) });
+            clientAction.Click += (_, _) =>
             {
-                Header = action.Label,
-                Command = vm.TriggerScheduleCommand,
-                CommandParameter = action,
-            });
+                if (vm.TriggerScheduleCommand.CanExecute(action)) vm.TriggerScheduleCommand.Execute(action);
+            };
+            clientActions.Items.Add(clientAction);
         }
         _gridMenu.Items.Add(clientActions);
 
-        var retryWinRm = WithIcon(new MenuItem
+        var retryWinRm = WithIcon(GuardItem(new MenuItem
         {
-            Header = "Retry WinRM",
+            Header = Scoped("Retry WinRM", selectedScope),
             IsEnabled = vm.SelectedComputers.Count > 0 && vm.CanRetryWinRm,
-        }, SymbolRegular.PlugConnected24);
+        }), SymbolRegular.PlugConnected24);
         retryWinRm.Click += async (_, _) => await vm.RetryWinRmSelectedAsync();
-        var connection = WithIcon(new MenuItem { Header = "Connection" }, SymbolRegular.PlugConnected24);
+        var connection = WithIcon(GuardItem(new MenuItem { Header = "Connection" }), SymbolRegular.PlugConnected24);
         connection.Items.Add(retryWinRm);
 
-        var enableWinRm = WithIcon(new MenuItem { Header = "Enable WinRM (PSRemoting)…", IsEnabled = hasSelection }, SymbolRegular.PlugConnected24);
+        var enableWinRm = WithIcon(GuardItem(new MenuItem { Header = Scoped("Enable WinRM (PSRemoting)…", selectedScope), IsEnabled = hasSelection }), SymbolRegular.PlugConnected24);
         enableWinRm.Click += OnEnableWinRm;
         connection.Items.Add(enableWinRm);
         _gridMenu.Items.Add(connection);
@@ -561,26 +574,26 @@ public partial class WorkspaceView : UserControl
         _gridMenu.Items.Add(new Separator());
 
         // ---- Software ▸ ----
-        var software = WithIcon(new MenuItem { Header = "Software" }, SymbolRegular.Apps24);
+        var software = WithIcon(GuardItem(new MenuItem { Header = "Software" }), SymbolRegular.Apps24);
         // Check whether a named product is installed across the selection (else all) → the Software column.
-        var checkSoftware = new MenuItem { Header = "Check software…" };
+        var checkSoftware = GuardItem(new MenuItem { Header = Scoped("Check software…", selectionOrTab) });
         checkSoftware.Click += OnCheckSoftware;
         software.Items.Add(checkSoftware);
         // Copy a package (MSI/EXE or folder) to the selection (else all); Vivre stages the files, doesn't install.
-        var stage = new MenuItem { Header = "Stage software…" };
+        var stage = GuardItem(new MenuItem { Header = Scoped("Stage software…", selectionOrTab) });
         stage.Click += OnStageSoftware;
         software.Items.Add(stage);
         _gridMenu.Items.Add(software);
 
         // ---- Export ▸ ----
-        var export = WithIcon(new MenuItem { Header = "Export" }, SymbolRegular.ArrowExportUp24);
+        var export = WithIcon(GuardItem(new MenuItem { Header = "Export" }), SymbolRegular.ArrowExportUp24);
         // The rows currently shown (respects the filter) + the clicked grid's visible columns, in
         // display order (hidden columns excluded; custom columns where they render).
-        var exportShown = new MenuItem { Header = "Shown rows + columns (CSV)…", IsEnabled = vm.VisibleRowCount > 0 };
+        var exportShown = GuardItem(new MenuItem { Header = "Shown rows + columns (CSV)…", IsEnabled = vm.VisibleRowCount > 0 });
         exportShown.Click += OnExportShownRows;
         export.Items.Add(exportShown);
         // The software-check results (on-demand; enabled once a check has run).
-        var exportSoftware = new MenuItem { Header = "Software report (CSV)…", IsEnabled = vm.HasSoftwareResults };
+        var exportSoftware = GuardItem(new MenuItem { Header = Scoped("Software report (CSV)…", "shown rows"), IsEnabled = vm.HasSoftwareResults });
         exportSoftware.Click += OnExportSoftwareReport;
         export.Items.Add(exportSoftware);
         _gridMenu.Items.Add(export);
@@ -589,7 +602,7 @@ public partial class WorkspaceView : UserControl
 
         // ---- Power / maintenance ----
         // Force-reboot the selected machines now — the most common Windows-Update follow-up.
-        var rebootForce = WithIcon(new MenuItem { Header = "Reboot (force now)…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwise24);
+        var rebootForce = WithIcon(GuardItem(new MenuItem { Header = Scoped("Reboot (force now)…", selectedScope), IsEnabled = hasSelection }), SymbolRegular.ArrowClockwise24);
         rebootForce.Click += OnRebootForce;
         _gridMenu.Items.Add(rebootForce);
 
@@ -601,34 +614,34 @@ public partial class WorkspaceView : UserControl
         // Reboot & verify flow.
         if (vm.SelectedComputers.Any(c => RebootVerifyMenu.ShouldOfferRebootVerify(c, vm.IsUpdateMode)))
         {
-            var rebootVerify = WithIcon(new MenuItem { Header = "Reboot & verify…", IsEnabled = hasSelection }, SymbolRegular.ArrowClockwiseDashes24);
+            var rebootVerify = WithIcon(GuardItem(new MenuItem { Header = Scoped("Reboot & verify…", selectedScope), IsEnabled = hasSelection }), SymbolRegular.ArrowClockwiseDashes24);
             rebootVerify.Click += OnRebootAndVerify;
             _gridMenu.Items.Add(rebootVerify);
         }
 
         // Timed actions: a one-time SYSTEM task that runs at a chosen time (works in either mode).
-        var schedule = WithIcon(new MenuItem { Header = "Schedule", IsEnabled = hasSelection }, SymbolRegular.CalendarClock24);
-        var schedInstall = new MenuItem { Header = "Install updates…" };
+        var schedule = WithIcon(GuardItem(new MenuItem { Header = "Schedule", IsEnabled = hasSelection }), SymbolRegular.CalendarClock24);
+        var schedInstall = GuardItem(new MenuItem { Header = Scoped("Install updates…", selectedScope) });
         schedInstall.Click += OnScheduleInstall;
         schedule.Items.Add(schedInstall);
-        var schedReboot = new MenuItem { Header = "Reboot…" };
+        var schedReboot = GuardItem(new MenuItem { Header = Scoped("Reboot…", selectedScope) });
         schedReboot.Click += OnScheduleReboot;
         schedule.Items.Add(schedReboot);
         schedule.Items.Add(new Separator());
-        var schedCancel = new MenuItem { Header = "Cancel scheduled task" };
+        var schedCancel = GuardItem(new MenuItem { Header = Scoped("Cancel Vivre scheduled tasks…", selectedScope) });
         schedCancel.Click += OnCancelScheduled;
         schedule.Items.Add(schedCancel);
         _gridMenu.Items.Add(schedule);
 
         // WhatsUp Gold maintenance mode (enter before patching / exit after) for the selection, else the
         // whole tab. Runs locally against the WUG server — prompts for the WUG login.
-        var wugMaintenance = WithIcon(new MenuItem { Header = "WhatsUp Gold maintenance…" }, SymbolRegular.Toolbox24);
+        var wugMaintenance = WithIcon(GuardItem(new MenuItem { Header = Scoped("WhatsUp Gold maintenance…", selectionOrTab) }), SymbolRegular.Toolbox24);
         wugMaintenance.Click += OnWugMaintenance;
-        var whatsUpGold = WithIcon(new MenuItem { Header = "WhatsUp Gold" }, SymbolRegular.Toolbox24);
+        var whatsUpGold = WithIcon(GuardItem(new MenuItem { Header = "WhatsUp Gold" }), SymbolRegular.Toolbox24);
         whatsUpGold.Items.Add(wugMaintenance);
 
         // Read-only sibling of the maintenance action — check current WUG state without changing it.
-        var wugState = WithIcon(new MenuItem { Header = "Check WhatsUp Gold state…" }, SymbolRegular.Search24);
+        var wugState = WithIcon(GuardItem(new MenuItem { Header = Scoped("Check WhatsUp Gold state…", selectionOrTab) }), SymbolRegular.Search24);
         wugState.Click += OnCheckWugState;
         whatsUpGold.Items.Add(wugState);
         _gridMenu.Items.Add(whatsUpGold);
@@ -637,7 +650,7 @@ public partial class WorkspaceView : UserControl
         if (vm.IsMachineMode)
         {
             _gridMenu.Items.Add(new Separator());
-            var columns = WithIcon(new MenuItem { Header = "Columns…" }, SymbolRegular.ColumnTriple24);
+            var columns = WithIcon(GuardItem(new MenuItem { Header = Scoped("Columns…", "this view") }), SymbolRegular.ColumnTriple24);
             columns.Click += OnManageColumns;
             _gridMenu.Items.Add(columns);
         }
@@ -735,6 +748,7 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
+        var targetsUnchanged = WorkspaceActions.CaptureContextValidity(vm);
         var confirm = new MessageBox
         {
             Title = "Enable WinRM",
@@ -747,6 +761,13 @@ public partial class WorkspaceView : UserControl
 
         if (await confirm.ShowDialogAsync() == MessageBoxResult.Primary)
         {
+            if (!targetsUnchanged())
+            {
+                System.Windows.MessageBox.Show(OwnerWindow,
+                    "The tab or selected machines changed. Review the targets and try again.",
+                    "Enable WinRM not started", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
             await vm.EnableWinRmSelectedAsync();
         }
     }
@@ -1099,10 +1120,21 @@ public partial class WorkspaceView : UserControl
     /// <summary>Cancel any pending Vivre scheduled task (install or reboot) on the selected machines.</summary>
     private async void OnCancelScheduled(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is { } vm && vm.SelectedComputers.Count > 0)
+        if (ViewModel is not { } vm) return;
+        await ScheduledTaskCancellation.ReviewAsync(vm, async prompt =>
         {
-            await vm.CancelScheduledTaskSelectedAsync([.. vm.SelectedComputers]);
-        }
+            var confirm = new MessageBox
+            {
+                Title = "Cancel Vivre scheduled tasks",
+                Content = prompt,
+                PrimaryButtonText = "Remove schedules",
+                CloseButtonText = "Keep schedules",
+            };
+            return await confirm.ShowDialogAsync() == MessageBoxResult.Primary;
+        }, targets => vm.CancelScheduledTaskSelectedAsync(targets),
+        () => System.Windows.MessageBox.Show(OwnerWindow,
+            "The tab closed or a target changed. Reopen the menu and review the machines.",
+            "Cancellation not started", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning));
     }
 
     // --- grid interactions ---

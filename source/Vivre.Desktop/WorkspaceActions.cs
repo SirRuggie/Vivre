@@ -10,6 +10,28 @@ public enum WorkspaceAction { CheckSoftware, StageSoftware, RunScript, Maintenan
 /// <summary>Shared dialog entry points: opening a shortcut never starts an operation.</summary>
 public static class WorkspaceActions
 {
+    public static Func<bool> CaptureContextValidity(WorkspaceViewModel vm)
+    {
+        var all = Vivre.Core.Updates.InstallTargetScope.Capture(vm.Computers);
+        var selected = vm.SelectedComputers.ToHashSet();
+        return () => !vm.IsClosed && all.IsUnchanged()
+            && vm.Computers.SequenceEqual(all.Targets)
+            && vm.SelectedComputers.Count == selected.Count
+            && vm.SelectedComputers.All(selected.Contains);
+    }
+
+    public static MenuItem GuardContextItem(MenuItem item, Func<bool> valid, Action stale)
+    {
+        // Register before the action handler so mouse, keyboard and automation clicks share the guard.
+        item.Click += (_, e) =>
+        {
+            if (!ReferenceEquals(e.OriginalSource, item) || valid()) return;
+            e.Handled = true;
+            stale();
+        };
+        return item;
+    }
+
     public static void Show(Window? owner, WorkspaceViewModel vm, WorkspaceAction action, IReadOnlyList<Computer> targets)
     {
         if (targets.Count == 0) return; // never widen an empty selection to the whole tab
