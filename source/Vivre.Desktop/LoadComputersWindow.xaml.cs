@@ -9,11 +9,14 @@ public partial class LoadComputersWindow : FluentWindow
 {
     private readonly WorkspaceViewModel? _workspace;
     private readonly Action<string>? _acceptEntries;
+    private readonly Action<string[]>? _createTab;
 
-    public LoadComputersWindow(WorkspaceViewModel workspace)
+    public LoadComputersWindow(WorkspaceViewModel workspace, Action<string[]>? createTab = null)
     {
         InitializeComponent();
         _workspace = workspace;
+        _createTab = createTab;
+        NewTabMode.Visibility = createTab is null ? Visibility.Collapsed : Visibility.Visible;
         Loaded += (_, _) => NamesBox.Focus();
     }
 
@@ -23,7 +26,7 @@ public partial class LoadComputersWindow : FluentWindow
         _acceptEntries = acceptEntries;
         Title = PasteTitleBar.Title = title;
         InstructionsText.Text = instructions;
-        AddMode.Visibility = ReplaceMode.Visibility = Visibility.Collapsed;
+        AddMode.Visibility = ReplaceMode.Visibility = NewTabMode.Visibility = Visibility.Collapsed;
         ApplyButton.Content = acceptText;
         System.Windows.Automation.AutomationProperties.SetName(NamesBox, "People names, usernames, or emails");
         Loaded += (_, _) => NamesBox.Focus();
@@ -41,7 +44,12 @@ public partial class LoadComputersWindow : FluentWindow
             }
             string[] names = Vivre.Core.Computers.ComputerNameInput.Parse(NamesBox.Text);
             if (_workspace is null) return;
-            if (ReplaceMode.IsChecked == true)
+            if (NewTabMode.IsChecked == true)
+            {
+                if (names.Length == 0) { ErrorText.Text = "Enter at least one machine name."; return; }
+                _createTab?.Invoke(names);
+            }
+            else if (ReplaceMode.IsChecked == true)
             {
                 if (!WorkspaceListActions.Replace(_workspace, names, message =>
                     System.Windows.MessageBox.Show(this, message, "Replace machine list", System.Windows.MessageBoxButton.YesNo,
@@ -55,7 +63,7 @@ public partial class LoadComputersWindow : FluentWindow
 
     private void OnModeChanged(object sender, RoutedEventArgs e)
     {
-        if (ApplyButton is not null) ApplyButton.Content = ReplaceMode.IsChecked == true ? "Replace machines" : "Add machines";
+        if (ApplyButton is not null) ApplyButton.Content = NewTabMode?.IsChecked == true ? "Create tab" : ReplaceMode.IsChecked == true ? "Replace machines" : "Add machines";
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => Close();

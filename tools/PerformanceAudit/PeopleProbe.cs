@@ -107,6 +107,7 @@ internal static class PeopleProbe
         }
         var pasteDialog = new LoadComputersWindow("Paste people", "One person per line", "Add people", vm.ValidateAdd);
         Require(((RadioButton)pasteDialog.FindName("AddMode")).Visibility == Visibility.Collapsed
+            && ((RadioButton)pasteDialog.FindName("NewTabMode")).Visibility == Visibility.Collapsed
             && ((RadioButton)pasteDialog.FindName("ReplaceMode")).Visibility == Visibility.Collapsed, "People exposes machine replacement modes.");
         typeof(LoadComputersWindow).GetMethod("OnLoad", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(pasteDialog, new object?[] { pasteDialog, null });
         Require(!string.IsNullOrEmpty(((TextBlock)pasteDialog.FindName("ErrorText")).Text), "Empty People paste has no inline error.");

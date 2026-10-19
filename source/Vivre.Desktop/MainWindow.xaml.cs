@@ -1490,9 +1490,9 @@ public partial class MainWindow : FluentWindow
 
     private void OnPasteList(object sender, RoutedEventArgs e)
     {
-        if (Shell?.SelectedTab is WorkspaceViewModel vm)
+        if (Shell is { SelectedTab: WorkspaceViewModel vm } shell)
         {
-            new LoadComputersWindow(vm) { Owner = this }.ShowDialog();
+            new LoadComputersWindow(vm, names => shell.OpenPastedListInNewTab(vm, names)) { Owner = this }.ShowDialog();
         }
     }
 

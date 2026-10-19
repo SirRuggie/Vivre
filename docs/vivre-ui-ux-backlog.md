@@ -348,3 +348,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Requested: remove footer Row actions; expose review, edit, and copy directly on row right-click; retain Open review.
 - Implemented: one shared row menu overrides cell copy menus, with review/edit first; blank-space clicks do not act on stale selection.
 - Verified: Release build and full local People probe passed, including handled row-menu events, keyboard opening, blank-space suppression, review/edit ordering, and removed footer button. Synthetic data only; no live AD changes or deployment-host mouse testing.
+
+## Paste into new tab (2026-10-19)
+
+- Requested: three choices in Health/Patching Paste: Add, Replace, Create new tab; no tabs in People.
+- Implemented: existing workspace factory and AddComputers reused; fresh default settings, original rows/results untouched, same section selected; blank input creates no tab.
+- Verified: Release build, tab-handoff/new-tab probe, workspace-safety probe, and People probe passed with dummy data. Includes both sections, preserved source rows, deduplication, empty-input rejection, default Add selection, and hidden tab options in People. No live server operations or deployment-host UI testing.

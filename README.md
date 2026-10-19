@@ -148,3 +148,5 @@ See [CHANGELOG.md](CHANGELOG.md) for version history.
 Linux identification: Health and Patching show a small Linux label beside hostnames when the current AD domain advertises a recognized Linux OS. Background batched LDAP reads use the current Windows login without RSAT or target login. Hover the label for the AD value; directory metadata can be stale. This display-only label does not change scans or enable Linux operations. Missing/unreachable AD and other-domain records remain unlabeled.
 
 Server 2016 **Install CU (no reboot)** copies and installs the full CU package using DISM; it can affect performance and requires a later reboot to complete. The **CU lane** badge only identifies the configured patching route, not completed installation. Use the row menu **Use CU lane** / **Remove CU lane flag** to change that route.
+
+In Health and Patching, **Paste** offers **Add to this tab**, **Replace this tab's machine list**, or **Create a new tab with this list**. New-tab paste selects a fresh tab in the same section with default update settings and keeps the original results intact.

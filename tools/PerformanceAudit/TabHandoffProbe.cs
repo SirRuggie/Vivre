@@ -24,12 +24,13 @@ internal static class TabHandoffProbe
         var shared = new SharedSettingsStore(Path.Combine(root, "shared"));
         var created = new List<WorkspaceViewModel>();
         bool failFactory = false;
+        bool pasteTesting = false;
         WorkspaceViewModel Factory()
         {
             if (failFactory) throw new IOException("Synthetic creation failure");
             var vm = WorkspaceProbe.CreateWorkspace();
             Set(vm, "_appSettings", settings); Set(vm, "_shared", shared);
-            vm.IsMonitoring = true; // production default; handoff must stop it before adding rows
+            vm.IsMonitoring = !pasteTesting; // production default; handoff must stop it before adding rows
             created.Add(vm);
             return vm;
         }
@@ -104,6 +105,27 @@ internal static class TabHandoffProbe
             shell.HealthTabs.Remove(source);
             Require(resolver.Invoke(window, new object[] { save }) is null, "Removed tab accepted for saving.");
             Require(!shell.OpenTabInPatching(source) && shell.PatchingTabs.Count == count, "Stale source created a tab.");
+            pasteTesting = true;
+            File.WriteAllText(Path.Combine(root, "settings.json"), "{\"AutoCheckOnLoad\":false}");
+            foreach (var origin in new[] { selectedHealth, oldPatch })
+            {
+                var originalRows = origin.Computers.ToArray();
+                shell.OpenPastedListInNewTab(origin, ["DUMMY-PASTE-A", "dummy-paste-a", "DUMMY-PASTE-B"]);
+                var pasted = shell.SelectedTab!;
+                Require(pasted != origin && pasted.IsUpdateMode == origin.IsUpdateMode && pasted.Computers.Count == 2, "Paste created wrong section or duplicated names.");
+                Require(origin.Computers.SequenceEqual(originalRows), "New-tab paste changed original rows.");
+                Require(pasted.SelectedSource == UpdateSource.WindowsUpdate, "Paste inherited another tab's update source.");
+                int before = shell.AllTabs.Count();
+                try { shell.OpenPastedListInNewTab(origin, []); throw new Exception("Empty paste accepted."); } catch (ArgumentException) { }
+                Require(shell.AllTabs.Count() == before, "Empty paste created a tab.");
+            }
+            var paste = new LoadComputersWindow(selectedHealth, names => shell.OpenPastedListInNewTab(selectedHealth, names));
+            Require(((RadioButton)paste.FindName("AddMode")).IsChecked == true && ((RadioButton)paste.FindName("NewTabMode")).Visibility == Visibility.Visible, "Paste choices/default incorrect.");
+            ((RadioButton)paste.FindName("NewTabMode")).IsChecked = true;
+            Require(((Wpf.Ui.Controls.Button)paste.FindName("ApplyButton")).Content.ToString() == "Create tab", "New-tab submit label incorrect.");
+            typeof(LoadComputersWindow).GetMethod("OnLoad", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(paste, [paste, new RoutedEventArgs()]);
+            Require(((TextBlock)paste.FindName("ErrorText")).Text.Length > 0, "Blank new-tab input lacks feedback.");
+            paste.Close();
             return new { pass = true, inactiveTabMenu = true, allNames = true, independentRowsAndDefaults = true,
                 sourcePreserved = true, noAutomaticChecks = true, navigation = true, emptyRepeatedStaleAndFailure = true,
                 scope = "Production XAML/handler/shell with dummy workspaces, remote-service null sentinels and temporary settings; no live hosts or visible UI" };

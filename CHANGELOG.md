@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Added
+- Add a third Health/Patching Paste option to create a fresh tab from the pasted list without changing the current tab.
 - Add a separate People section for read-only AD email lookup, uncertain-match review, selected-field copying, and CSV export; preserve results across navigation and warn before discarding session data.
 
 ### Fixed

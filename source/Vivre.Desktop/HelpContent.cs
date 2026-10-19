@@ -91,7 +91,7 @@ public static class HelpContent
             [
                 "Quick add: type a name in the \"Add computer…\" box (top-right) and press Enter — several at once works too (separate them with commas, semicolons or spaces).",
                 "A list: click Paste; both entry methods accept lines, spaces, tabs, commas, and semicolons. Add is the default and keeps existing results and selection; duplicates are ignored.",
-                "To replace membership, choose Replace in Paste, or Lists ▾ ▸ Open list. Retained machines keep their results; removing machines asks first and waits until active operations and monitor probes finish.",
+                "Choose Create a new tab with this list in Paste to keep the current tab untouched and open the names in a fresh tab in the same section. To replace membership, choose Replace in Paste, or Lists ▾ ▸ Open list. Retained machines keep their results; removing machines asks first and waits until active operations and monitor probes finish.",
             ],
         },
         new HelpTopic
