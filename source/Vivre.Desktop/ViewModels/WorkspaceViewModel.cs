@@ -3315,9 +3315,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         computer.UpdateProgress = null;
         computer.UpdatePhase = PatchPhase.Scanning.ToString();
         computer.UpdateMessage = "Scanning…";
-        // Capture the scope at scan start so a mid-scan scope toggle doesn't route the result into
-        // the wrong per-scope cache.
-        UpdateScope scopeAtScan = _patchOptions.Scope;
+        // Freeze this scan's settings through retries/fallback and result processing; later UI
+        // changes apply to subsequent scans, not an operation already dispatched.
+        PatchOptions scanOptions = _patchOptions.Clone();
+        UpdateScope scopeAtScan = scanOptions.Scope;
         try
         {
             // A transient WU reach hiccup (the proven SLS 0x80072EE2 timeout) re-runs the whole scan
@@ -3335,7 +3336,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                     attemptCts.CancelAfter(TimeSpan.FromSeconds(ScanAttemptTimeoutSeconds));
                     try
                     {
-                        return await _patch.ScanAsync(computer.Name, _patchOptions, _credentials.Current, attemptCts.Token);
+                        return await _patch.ScanAsync(computer.Name, scanOptions, _credentials.Current, attemptCts.Token);
                     }
                     catch (OperationCanceledException) when (attemptCts.IsCancellationRequested && !ct.IsCancellationRequested)
                     {

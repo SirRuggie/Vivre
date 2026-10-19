@@ -14,6 +14,8 @@ this environment deploys none, so it would install nothing). The **Update Source
 Update / Microsoft Update / Managed-WSUS) and the **exclude-by-name** list live here.
 Each tab owns its source, drivers, exclusions, and applicable/installed scope for the session.
 New tabs start with Windows Update; the source is visible in each Patching header and the active toolbar.
+Compact toolbar mode hides button text; the tab-header source remains visible. Each dispatched scan
+uses a settings snapshot through retries, fallback, and result processing, so later edits affect subsequent scans.
 
 Open **Fleet ▸ Patching** in the left nav to get the update grid + patch actions over the same machine
 list. The **Fleet ▸ Health** features (SCCM health, client actions, Run Script) are untouched.

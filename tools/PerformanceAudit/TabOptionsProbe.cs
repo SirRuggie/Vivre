@@ -43,6 +43,8 @@ internal static class TabOptionsProbe
         // Exercise the real install option boundary with inert services, never a remote server.
         var seen = new List<PatchOptions>();
         var scans = new List<PatchOptions>();
+        var schedules = new List<PatchOptions>();
+        var uninstalls = new List<PatchOptions>();
         foreach (var vm in new[] { a, b, c })
         {
             var patch = DispatchProxy.Create<IPatchService, CapturingPatchProxy>();
@@ -53,13 +55,30 @@ internal static class TabOptionsProbe
             ((CapturingPatchProxy)(object)patch).Options.Clear();
             var method = typeof(WorkspaceViewModel).GetMethod("InstallRowAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
             ((Task)method.Invoke(vm, [new Computer("DUMMY-OPTIONS") { OsBuild = 20348 }, CancellationToken.None, null, false, false])!).GetAwaiter().GetResult();
-            seen.Add(((CapturingPatchProxy)(object)patch).Options.Single());
+            var captured = ((CapturingPatchProxy)(object)patch).Options;
+            seen.Add(captured.Single());
+            captured.Clear();
+            var at = DateTime.Now.AddHours(1);
+            ((Task)method.Invoke(vm, [new Computer("DUMMY-SCHEDULE") { OsBuild = 20348 }, CancellationToken.None, at, false, false])!).GetAwaiter().GetResult();
+            schedules.Add(captured.Single());
+            Require(schedules[^1].RunBehavior == RunBehavior.ScheduleAt && schedules[^1].ScheduleAt == at, "Schedule lost requested time.");
+            captured.Clear();
+            var uninstallRow = new Computer("DUMMY-UNINSTALL") { OsBuild = 20348 };
+            uninstallRow.InstalledUpdates.Add(new SelectableUpdate(new SoftwareUpdate("Dummy removable update", "1234567", true, 0, 0)));
+            var uninstall = typeof(WorkspaceViewModel).GetMethod("UninstallRowAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+            ((Task)uninstall.Invoke(vm, [uninstallRow, CancellationToken.None])!).GetAwaiter().GetResult();
+            uninstalls.Add(captured.Single());
         }
         Require(seen.Select(o => o.Source).SequenceEqual(new[] { UpdateSource.MicrosoftUpdate, UpdateSource.Managed, UpdateSource.WindowsUpdate }), "Actual install received another tab's source.");
         Require(scans.Select(o => o.Source).SequenceEqual(seen.Select(o => o.Source)), "Actual scan source crossed tabs.");
         Require(scans[0].Scope == UpdateScope.Installed && scans[1].Scope == UpdateScope.Applicable && scans[2].Scope == UpdateScope.Applicable, "Actual scan scope crossed tabs.");
         Require(seen[0].IncludeDrivers && seen[0].ExcludeNameContains.Count == 2 && !seen[1].IncludeDrivers && seen[1].ExcludeNameContains.SequenceEqual(new[] { "Defender" }), "Install drivers/exclusions crossed tabs.");
 
+        Require(schedules.Select(o => o.Source).SequenceEqual(seen.Select(o => o.Source)), "Scheduled install source crossed tabs.");
+        Require(uninstalls.Select(o => o.Source).SequenceEqual(seen.Select(o => o.Source)), "Uninstall source crossed tabs.");
+        Require(uninstalls.All(o => o.Scope == UpdateScope.Installed && o.IncludeKbArticleIds!.SequenceEqual(new[] { "1234567" })), "Uninstall lost checked KB scope.");
+        Require(Options(a).Scope == UpdateScope.Installed && Options(b).Scope == UpdateScope.Applicable, "Operation scope leaked back into tab settings.");
+        VerifyPendingScanSnapshot();
         var window = new MainWindow(); // production XAML, no Show or App startup
         try
         {
@@ -76,9 +95,65 @@ internal static class TabOptionsProbe
             window.DataContext = new { SelectedTab = b };
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             Require(label.Text == "Managed (WSUS/SCCM)", "Toolbar stayed on previous tab's source.");
+            window.ToolbarCompact = true;
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            Require(label.Visibility == Visibility.Collapsed, "Source label bypassed compact toolbar layout.");
+            window.ToolbarCompact = false;
+            Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
+            Require(label.Visibility == Visibility.Visible, "Source label did not return in expanded layout.");
         }
         finally { window.Close(); }
-        return new { pass = true, isolatedSettings = true, newTabDefaults = true, actualScanScopes = scans.Select(o => o.Scope.ToString()).ToArray(), actualInstallSources = seen.Select(o => o.Source.ToString()).ToArray(), productionHeaderAndToolbar = true, scope = "Real workspaces and WPF bindings with inert install service; no live servers or production writes" };
+        return new { pass = true, isolatedSettings = true, newTabDefaults = true, actualScanScopes = scans.Select(o => o.Scope.ToString()).ToArray(), actualInstallSources = seen.Select(o => o.Source.ToString()).ToArray(), productionHeaderAndToolbar = true, scheduledInstallsAndUninstalls = true, compactToolbar = true, pendingScanSnapshot = true, scope = "Real workspaces and WPF bindings with inert install service; no live servers or production writes" };
+    }
+
+    private static void VerifyPendingScanSnapshot()
+    {
+        using var vm = WorkspaceProbe.CreateWorkspace();
+        vm.SelectedSource = UpdateSource.MicrosoftUpdate;
+        vm.IncludeDrivers = true;
+        vm.ExcludeText = "SQL";
+        vm.IsInstalledMode = true;
+        var patch = DispatchProxy.Create<IPatchService, DelayedScanProxy>();
+        var capture = (DelayedScanProxy)(object)patch;
+        typeof(WorkspaceViewModel).GetField("_patch", BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(vm, patch);
+        var scan = typeof(WorkspaceViewModel).GetMethod("ScanRowAsync", BindingFlags.Instance | BindingFlags.NonPublic)!;
+        Task pending = (Task)scan.Invoke(vm, [new Computer("DUMMY-DELAYED") { IsOnline = true }, CancellationToken.None])!;
+        bool stable;
+        try
+        {
+            Require(!pending.IsCompleted && capture.Received is not null, "Scan was not suspended at service boundary.");
+            vm.SelectedSource = UpdateSource.Managed;
+            vm.IncludeDrivers = false;
+            vm.ExcludeText = "Defender";
+            vm.IsInstalledMode = false;
+            var received = capture.Received!;
+            stable = received.Source == UpdateSource.MicrosoftUpdate && received.IncludeDrivers
+                && received.Scope == UpdateScope.Installed && received.ExcludeNameContains.SequenceEqual(new[] { "SQL" });
+        }
+        finally
+        {
+            capture.Release.TrySetResult(new HostPatchStatus(PatchPhase.Done, "Inert delayed scan complete"));
+            var frame = new DispatcherFrame();
+            var deadline = System.Diagnostics.Stopwatch.StartNew();
+            var timer = new DispatcherTimer(TimeSpan.FromMilliseconds(10), DispatcherPriority.Background,
+                (_, _) => { if (pending.IsCompleted || deadline.Elapsed > TimeSpan.FromSeconds(10)) frame.Continue = false; }, Dispatcher.CurrentDispatcher);
+            try { Dispatcher.PushFrame(frame); } finally { timer.Stop(); }
+            Require(pending.IsCompleted, "Delayed scan did not complete.");
+            pending.GetAwaiter().GetResult();
+        }
+        Require(stable, "In-flight scan options changed when this tab's settings changed.");
+    }
+
+    public class DelayedScanProxy : DispatchProxy
+    {
+        public PatchOptions? Received;
+        public TaskCompletionSource<HostPatchStatus> Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        protected override object? Invoke(MethodInfo? method, object?[]? args)
+        {
+            if (method?.Name != nameof(IPatchService.ScanAsync)) throw new NotSupportedException(method?.Name);
+            Received = (PatchOptions)args![1]!;
+            return Release.Task;
+        }
     }
 
     public class CapturingPatchProxy : DispatchProxy
@@ -86,7 +161,7 @@ internal static class TabOptionsProbe
         internal List<PatchOptions> Options { get; } = [];
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
-            if (method?.Name is not (nameof(IPatchService.InstallAsync) or nameof(IPatchService.ScanAsync)))
+            if (method?.Name is not (nameof(IPatchService.InstallAsync) or nameof(IPatchService.ScanAsync) or nameof(IPatchService.UninstallAsync)))
                 throw new NotSupportedException(method?.Name);
             Options.Add(((PatchOptions)args![1]!).Clone());
             return Task.FromResult(new HostPatchStatus(PatchPhase.Done, "Inert probe complete"));

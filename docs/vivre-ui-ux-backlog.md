@@ -24,6 +24,14 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
   - **Builds:** Debug and Release passed with a missing agent-signing-certificate warning; no signed package produced.
   - **Regression:** 1,543 passed, one skipped, one unrelated WUG timing failure that passed when rerun alone; the initial full run was not entirely green.
   - **Limits:** No live-server operations or visible-window/DPI testing; local probe: `tools/PerformanceAudit/TabOptionsProbe.cs`.
+  - **Independent red team (2026-10-19):** A separate `gpt-5.6-sol` reviewer found two issues, independently re-reviewed the fixes, and found no remaining concrete U-1 issue within the reviewed scope.
+  - **Finding 1 — existing scan consistency gap, fixed:** An in-flight scan could observe later changes to source/drivers/exclusions/scope; scan dispatch now clones one settings snapshot for all retries, fallback, and result handling.
+  - **Finding 2 — compact-toolbar regression, fixed:** The new source label omitted the existing compact-mode style; restoring that style collapses the toolbar text in compact mode while the tab-header source remains available.
+  - **Failure reproduction:** The delayed-scan test failed before the snapshot fix; with only that fix applied, the compact-mode test failed before the style was restored.
+  - **Follow-up validation:** Expanded real-workspace/WPF probe passed for delayed scans, compact/expanded labels, scheduled installs, and uninstalls; existing install-approval probe passed; 56 focused WUA/retry tests passed with no skips.
+  - **Follow-up builds:** Debug and Release passed with zero errors and one existing missing-signing-certificate warning each; no signed package produced.
+  - **Evidence limits:** Review and tests used local inert services, not live servers; retry/fallback snapshot reuse was code-reviewed rather than remotely exercised, and visible-window/DPI checks remain outside this validation.
+  - **Regression history:** The earlier full-suite result above remains the full-run evidence; this follow-up reran focused tests, not the entire suite.
 
 - [ ] **U-2 · High — Preserve existing results when pasting additional servers.**
   - **Why:** Paste rebuilds every row—even for unchanged lists—discarding results and selection.

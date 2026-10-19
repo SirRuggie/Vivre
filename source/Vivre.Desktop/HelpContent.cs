@@ -488,6 +488,7 @@ public static class HelpContent
             [
                 "Click the source button in the Patching command bar (Windows Update, Microsoft Update, or Managed) ▸ Source to change it for this tab only. The source also appears beside the tab name.",
                 "New tabs start with Windows Update, drivers off, no exclusions, and applicable updates; options stay in memory for this tab only.",
+                "A scan already dispatched keeps the settings it started with; changes apply to subsequent scans. In compact toolbar mode, read the source beside the tab name.",
                 "Source button ▸ Include drivers to also scan/install drivers (off by default).",
                 "Source button ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
             ],

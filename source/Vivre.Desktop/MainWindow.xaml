@@ -456,7 +456,7 @@
                                        Click="OnUpdateOptionsButtonClick">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />
-                                    <TextBlock Text="{Binding SelectedTab.UpdateSourceLabel}" />
+                                    <TextBlock Text="{Binding SelectedTab.UpdateSourceLabel}" Style="{StaticResource ToolbarLabelStyle}" />
                                 </StackPanel>
                                 <ui:Button.Style>
                                     <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">

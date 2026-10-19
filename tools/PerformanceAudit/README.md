@@ -67,4 +67,4 @@ Software display probe: `dotnet run --project tools/PerformanceAudit -c Release 
 dotnet run --project tools/PerformanceAudit -- --tab-options-only tab-options-local.json
 ```
 
-Exercises real workspaces sharing constructor defaults, checks bidirectional isolation of source/drivers/exclusions/scope and new-tab defaults, captures actual scan/install service arguments with inert services, and checks production Patching header and toolbar bindings across tab switches. No remote operations or production writes; this does not validate a visible window at every DPI or live update services.
+Exercises real workspaces sharing constructor defaults, checks bidirectional isolation of source/drivers/exclusions/scope and new-tab defaults, captures actual scan/install service arguments with inert services, and checks production Patching header and toolbar bindings across tab switches. Also checks scheduled installs, uninstall KB scope, settings changed during a suspended scan, and compact/expanded toolbar labels. No remote operations or production writes; this does not validate a visible window at every DPI or live update services.
