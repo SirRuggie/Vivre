@@ -152,3 +152,5 @@ Server 2016 **Install CU (no reboot)** copies and installs the full CU package u
 In Health and Patching, **Paste** offers **Add to this tab**, **Replace this tab's machine list**, or **Create a new tab with this list**. New-tab paste selects a fresh tab in the same section with default update settings and keeps the original results intact.
 
 Script saves ask before replacing an existing destination and reject stale approvals; declining preserves editor text. Custom-column names must be unique (case-insensitive); duplicate additions keep the existing script and values without executing a replacement.
+
+Column widths and order are remembered separately for Health, Patching, People results, and People review. Right-click a Fleet grid and choose **Reset column layout**; in People, use **Actions → Reset results column layout** or **Reset review column layout**. Names stay pinned first. Changing the product in Check software clears the previous product’s service and uses a remembered suggestion only for the new product.

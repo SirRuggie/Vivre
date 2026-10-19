@@ -300,7 +300,7 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - [x] **U-30 · Medium — Rename the misleading Staged badge.**
   - **Why:** The badge means a machine uses the CU lane, not that its update has been staged.
 
-- [ ] **U-31 · Medium — Reset stale service suggestions when changing products.**
+- [x] **U-31 · Medium — Reset stale service suggestions when changing products.**
   - **Why:** A new software query can keep and remember the previous product's service name.
 
 - [x] **U-32 · Medium — Protect custom columns from accidental replacement.**
@@ -318,7 +318,7 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - [x] **U-36 · Lower — Avoid false unsaved-result warnings in People.**
   - **Why:** Pasting only existing entries marks an exported session dirty without changing its results.
 
-- [ ] **U-37 · Lower — Remember grid widths and column order.**
+- [x] **U-37 · Lower — Remember grid widths and column order.**
   - **Why:** Visibility is saved, but operators must repeat manual sizing and rearranging after reopening.
 
 ## People flow follow-up — U-33–U-36, U-38/U-39
@@ -363,3 +363,13 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Independent red team: found legacy duplicate-load bypass, external-write race, and recovery cleanup failure reporting; addressed all three and re-reviewed with no remaining blocking findings.
 - Validation: Release build passed; 36 script/atomic-file tests passed; real-WPF editor/library and column regression probes passed using temporary libraries, dummy rows, and fake execution hosts. No live script execution or production file changes.
 - Scope limits: recovery protects contents displaced at the atomic swap; it cannot stop a separate editor from writing after the save. No deployment-host mouse/DPI verification or signed package produced; build account lacks the configured signing certificate.
+
+## U-31 / U-37 delivery ledger (2026-10-19)
+
+- Implemented and tested: a changed software product clears the previous service and checkbox; known products load only their own remembered suggestion. Case/whitespace-only edits preserve manual service text; quick-pick and manual opt-in remain available.
+- Implemented and tested: shared grid layout persistence uses the existing asynchronous settings store for Health, Patching, People results and People review independently. Widths and display order survive a fresh-store JSON reload; pinned identity stays first and existing visibility settings remain unchanged.
+- Reset: Fleet right-click/header/keyboard menus offer Reset column layout for that view; People Actions offers separate results/review resets. Defaults and automatic column sizing are restored. Existing sibling tabs use saved preferences on their next load; they are not forcibly rearranged while being used.
+- Performance/lifecycle: save only on user resize/reorder interactions when values actually differ; scan/layout churn performs no writes. Input/collection handlers detach on unload. New custom columns use distinct keys and unknown saved columns are ignored.
+- Independent red team: fixed missing keyboard/row reset access, combined People resets, and malformed-key handling. Added uncached disk round-trip proof after review; final re-review found no blocking issues.
+- Validation: Release build, seven AppSettingsStore tests, settings/grid/service probe, Fleet actions-menu probe and People probe passed. Checked service transitions, width/order restoration, reset, malformed preferences, identity pinning, redundant-write suppression and unload detachment using dummy data and temporary settings.
+- Limits: no live server checks, native mouse/high-DPI certification, or signed deployment package. U-21/U-22 and deployment-host U-39 validation remain separate; build account lacks the configured signing certificate.

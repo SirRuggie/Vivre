@@ -21,15 +21,17 @@ public partial class SoftwareCheckWindow : FluentWindow
 {
     private readonly WorkspaceViewModel _vm;
     private readonly IReadOnlyList<Computer> _computers;
-    private readonly AppSettingsStore _settings = new();
+    private readonly AppSettingsStore _settings;
+    private string _serviceProduct = string.Empty;
     private readonly Dictionary<string, string> _serviceMap;
 
-    public SoftwareCheckWindow(WorkspaceViewModel vm, IReadOnlyList<Computer> computers)
+    public SoftwareCheckWindow(WorkspaceViewModel vm, IReadOnlyList<Computer> computers, AppSettingsStore? settings = null)
     {
+        _settings = settings ?? new AppSettingsStore();
+        _serviceMap = LoadServiceMap();
         InitializeComponent();
         _vm = vm;
         _computers = computers;
-        _serviceMap = LoadServiceMap();
 
         Intro.Text = $"Check {computers.Count} machine(s) for an installed product. Type a product name "
             + "(or part of one) and Vivre fills each row's Software column with the match — handy to confirm "
@@ -57,6 +59,10 @@ public partial class SoftwareCheckWindow : FluentWindow
     private void OnQueryChanged(object sender, TextChangedEventArgs e)
     {
         string product = QueryBox.Text?.Trim() ?? string.Empty;
+        if (ServiceBox is null || ServiceCheck is null || string.Equals(product, _serviceProduct, StringComparison.OrdinalIgnoreCase)) return;
+        _serviceProduct = product;
+        ServiceCheck.IsChecked = false;
+        ServiceBox.Clear();
         if (product.Length > 0 && _serviceMap.TryGetValue(product, out string? remembered))
         {
             ServiceBox.Text = remembered;

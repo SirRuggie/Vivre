@@ -14,11 +14,14 @@ public partial class PeopleView : UserControl, IDisposable
 {
     public PeopleViewModel Model { get; }
     private bool _disposed;
+    private readonly GridLayoutPersistence _resultsLayout, _candidatesLayout;
     public PeopleView() : this(new PeopleViewModel()) { }
     public PeopleView(PeopleViewModel model)
     {
         InitializeComponent();
         DataContext = Model = model;
+        _resultsLayout = new(ResultsGrid, "People.Results");
+        _candidatesLayout = new(CandidatesGrid, "People.Candidates");
         // Cell text controls may supply their own copy menu. Always use the People row menu.
         ResultsGrid.AddHandler(ContextMenuService.ContextMenuOpeningEvent,
             new ContextMenuEventHandler(OnMenuOpening), handledEventsToo: true);
@@ -86,6 +89,9 @@ public partial class PeopleView : UserControl, IDisposable
         Add("Export all to CSV…", OnExport, Model.HasRows);
         menu.Items.Add(new Separator());
         Add("Clear results…", OnClear, Model.CanClear);
+        menu.Items.Add(new Separator());
+        Add("Reset results column layout", (_, _) => _resultsLayout.Reset(), true);
+        Add("Reset review column layout", (_, _) => _candidatesLayout.Reset(), true);
         menu.PlacementTarget = (UIElement)sender; menu.IsOpen = true;
     }
     private void OnOpenReview(object sender, RoutedEventArgs e)

@@ -11,6 +11,7 @@ it ships, then gets a dated heading.
 - Add a separate People section for read-only AD email lookup, uncertain-match review, selected-field copying, and CSV export; preserve results across navigation and warn before discarding session data.
 
 ### Fixed
+- Clear product-specific service suggestions when changing software queries; remember grid column widths/order separately for Health, Patching, People results and review, with reset options and pinned identity columns.
 - Require explicit, revision-checked script overwrite approval in both editors; preserve external edits displaced during the atomic save in a recovery file. Reject duplicate custom-column names without replacing scripts, clearing values, or running replacements.
 - Put People review/edit actions first in the row right-click menu, override cell copy menus, and remove the redundant footer Row actions button while retaining Open review.
 - Rename Server 2016 Stage to Install CU (no reboot), explain installation impact, and distinguish the CU lane configuration badge from actual installation progress; patching behavior is unchanged.

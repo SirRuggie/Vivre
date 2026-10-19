@@ -8,6 +8,8 @@ using Vivre.Core.Logging;
 
 namespace Vivre.Desktop;
 
+public sealed record GridColumnPreference(string Key, double Width, int Unit, int Order);
+
 /// <summary>Persisted app-level preferences (the first thing in Vivre that's saved to disk besides
 /// computer lists/scripts — credentials stay in-memory by design).</summary>
 public sealed class AppSettings
@@ -34,6 +36,8 @@ public sealed class AppSettings
     /// <summary>Built-in machine-grid column headers the user has hidden (the Name column is never
     /// hideable). Empty by default.</summary>
     public List<string> HiddenColumns { get; set; } = [];
+
+    public Dictionary<string, List<GridColumnPreference>> GridLayouts { get; set; } = [];
 
     /// <summary>When true (default), loading a list (or adding machines) auto-pings + checks vitals on
     /// those machines so the grid's data is "just there". Off = manual (a frozen snapshot until you

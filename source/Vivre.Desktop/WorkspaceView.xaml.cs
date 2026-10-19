@@ -46,9 +46,14 @@ public partial class WorkspaceView : UserControl
     /// <summary>Debounce timer for the post-settle corrective re-layout (see the constructor for the why).</summary>
     private readonly System.Windows.Threading.DispatcherTimer _settleRelayoutTimer;
 
+    private readonly GridLayoutPersistence _healthLayout, _patchingLayout;
+
     public WorkspaceView()
     {
         InitializeComponent();
+        _healthLayout = new(ComputerGrid, "Health", columnKey: c =>
+            (_customGridColumns.ContainsValue(c) ? "custom:" : "builtin:") + GetColumnKey(c));
+        _patchingLayout = new(UpdateGrid, "Patching", columnKey: c => "builtin:" + GetColumnKey(c));
         Loaded += OnViewLoaded;
         Unloaded += OnViewUnloaded;
 
@@ -231,8 +236,8 @@ public partial class WorkspaceView : UserControl
             if (!_customGridColumns.ContainsKey(spec.Name))
             {
                 DataGridColumn col = MakeCustomColumn(spec.Name);
-                ComputerGrid.Columns.Add(col);
                 _customGridColumns[spec.Name] = col;
+                ComputerGrid.Columns.Add(col);
             }
         }
         UpdateStagedColumnVisibility(vm);
@@ -656,6 +661,11 @@ public partial class WorkspaceView : UserControl
             columns.Click += OnManageColumns;
             _gridMenu.Items.Add(columns);
         }
+        var layout = ReferenceEquals(_contextMenuGrid, UpdateGrid) || (_contextMenuGrid is null && vm.IsUpdateMode)
+            ? _patchingLayout : _healthLayout;
+        var resetLayout = new MenuItem { Header = "Reset column layout — this view" };
+        resetLayout.Click += (_, _) => layout.Reset();
+        _gridMenu.Items.Add(resetLayout);
     }
 
     /// <summary>
@@ -671,6 +681,7 @@ public partial class WorkspaceView : UserControl
         }
 
         _contextRow = vm.FocusedComputer ?? vm.SelectedComputers.FirstOrDefault();
+        _contextMenuGrid = vm.IsUpdateMode ? UpdateGrid : ComputerGrid;
         BuildContextMenu(vm);
         _gridMenu.PlacementTarget = placementTarget;
         _gridMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
@@ -1267,11 +1278,8 @@ public partial class WorkspaceView : UserControl
         {
             // Header / empty area (e.g. an empty grid before any machines are loaded): no per-machine
             // actions, but still offer column customization so columns can be set up ahead of time.
-            if (vm.IsMachineMode)
-            {
-                ShowColumnsOnlyMenu(grid);
-                e.Handled = true;
-            }
+            ShowColumnsOnlyMenu(grid);
+            e.Handled = true;
 
             return;
         }
@@ -1300,9 +1308,15 @@ public partial class WorkspaceView : UserControl
     private void ShowColumnsOnlyMenu(DataGrid grid)
     {
         _gridMenu.Items.Clear();
-        var columns = new MenuItem { Header = "Columns…" };
-        columns.Click += OnManageColumns;
-        _gridMenu.Items.Add(columns);
+        if (ReferenceEquals(grid, ComputerGrid))
+        {
+            var columns = new MenuItem { Header = "Columns…" };
+            columns.Click += OnManageColumns;
+            _gridMenu.Items.Add(columns);
+        }
+        var reset = new MenuItem { Header = "Reset column layout" };
+        reset.Click += (_, _) => (ReferenceEquals(grid, ComputerGrid) ? _healthLayout : _patchingLayout).Reset();
+        _gridMenu.Items.Add(reset);
 
         grid.ContextMenu = _gridMenu;
         _gridMenu.PlacementTarget = grid;

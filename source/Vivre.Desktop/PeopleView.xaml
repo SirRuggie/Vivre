@@ -61,7 +61,7 @@
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="160"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Text="{Binding ReviewTitle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
      <TextBlock Grid.Row="1" Text="{Binding ReviewRow.Detail}" TextWrapping="Wrap" Margin="0,4,0,6"/>
-     <ui:DataGrid Grid.Row="2" ItemsSource="{Binding ReviewRow.Candidates}" SelectedItem="{Binding SelectedCandidate}"
+     <ui:DataGrid x:Name="CandidatesGrid" Grid.Row="2" ItemsSource="{Binding ReviewRow.Candidates}" SelectedItem="{Binding SelectedCandidate}"
        AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" FrozenColumnCount="1" HeadersVisibility="Column" GridLinesVisibility="Horizontal" SelectionMode="Single"
        AutomationProperties.Name="Candidate accounts">
       <DataGrid.Columns>
