@@ -50,7 +50,7 @@ public static class HelpContent
             [
                 "1. Open People. Use Add for one name, username, or email, or Paste list to open an editable list with one person per line, then Add people. Comma names such as Smith, John stay together; existing results are preserved.",
                 "2. Unique enabled exact matches resolve automatically. Choose Review matches for uncertain names, or select a row and use Open review at the bottom-right (double-click or Enter also opens it); compare username, email, department, office, and account state, then use the selected match or skip it.",
-                "3. Right-click rows or use Row actions at the bottom-right to copy selected fields or change a match. Actions > Copy all resolved emails copies a deduplicated list across all results, including filtered-out rows; unresolved entries and missing emails are excluded.",
+                "3. Right-click rows to copy selected fields or change a match. Actions > Copy all resolved emails copies a deduplicated list across all results, including filtered-out rows; unresolved entries and missing emails are excluded.",
                 "4. Use Stop or Look up again as needed; Look up again retries failed, stopped, and not-found entries. Edit entry and retry corrects a single input without resetting the rest. Directory failures are shown separately from Not found.",
                 "5. Actions > Export all to CSV keeps every row and its status. Results survive section switches but last only for this app session; Clear and Exit ask before discarding them.",
             ],

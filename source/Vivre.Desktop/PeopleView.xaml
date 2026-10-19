@@ -38,9 +38,9 @@
   <Grid Grid.Row="2">
    <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
    <ui:DataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
-     IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" FrozenColumnCount="1" HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="36" SelectionChanged="OnSelectionChanged" PreviewKeyDown="OnResultKeyDown" SelectionMode="Extended" SelectionUnit="FullRow"
+     IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" FrozenColumnCount="1" HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="36" PreviewKeyDown="OnResultKeyDown" SelectionMode="Extended" SelectionUnit="FullRow"
      EnableRowVirtualization="True" EnableColumnVirtualization="True" MinHeight="100"
-     PreviewMouseRightButtonDown="OnRowRightClick" ContextMenuOpening="OnMenuOpening"
+     PreviewMouseRightButtonDown="OnRowRightClick"
      MouseDoubleClick="OnDoubleClick" AutomationProperties.Name="People lookup results">
     <DataGrid.ContextMenu><ContextMenu/></DataGrid.ContextMenu>
     <DataGrid.Columns>
@@ -88,10 +88,9 @@
  <Border Grid.Row="1" BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="0,1,0,0" Padding="8,6">
   <DockPanel LastChildFill="True">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="12,0,0,0">
-    <ui:Button x:Name="RowMenuButton" Content="Row actions ▾" Click="OnRowActions" IsEnabled="False" ToolTip="Open the selected rows' right-click menu." Margin="0,0,8,0"/>
-    <ui:Button Content="Open review" Icon="{ui:SymbolIcon PanelRight24}" Click="OnOpenReview" IsEnabled="{Binding HasReviewable}" ToolTip="Review the selected person, or the next uncertain match."/>
+    <ui:Button x:Name="OpenReviewButton" Content="Open review" Icon="{ui:SymbolIcon PanelRight24}" Click="OnOpenReview" IsEnabled="{Binding HasReviewable}" ToolTip="Review the selected person, or the next uncertain match."/>
    </StackPanel>
-   <TextBlock Text="Double-click a person to review a match; right-click for copy and edit actions." TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+   <TextBlock Text="Double-click a person to review a match; right-click a row to review, edit, or copy." TextWrapping="Wrap" VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
   </DockPanel>
  </Border>
  </Grid>

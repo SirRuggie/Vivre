@@ -325,7 +325,7 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 
 - [x] **U-38 · Medium — Make People follow the Fleet entry and review flow.**
   - **Why:** A flat button row and hidden review interactions made People feel disconnected from the rest of Vivre.
-  - **Delivered:** Shared Fleet toolbar style; Quick Add; existing multiline paste dialog reused with People validation, no replacement/tabs/saved-list controls; fixed bottom-right Open review and Row actions, plus explicit double-click/right-click guidance.
+  - **Delivered:** Shared Fleet toolbar style; Quick Add; existing multiline paste dialog reused with People validation, no replacement/tabs/saved-list controls; fixed bottom-right Open review, plus explicit double-click/right-click guidance; the later row-menu correction below removes the redundant Row actions button.
 - [ ] **U-39 · Medium — Keep People additions and result updates responsive.**
   - **Why:** Synchronous clipboard access and repeated grid refreshes could interrupt the input flow.
   - **Delivered:** Paste opens without reading the clipboard automatically; validated additions yield every 100 rows, fast results every 25, and expensive aggregate/filter refreshes coalesce to 100ms. Stop during adding keeps submitted inputs as Stopped and prevents automatic lookup restart.
@@ -342,3 +342,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Independent red team: found the visibility override and remaining ambiguous wording; both fixed and re-reviewed with no remaining blocking findings.
 - Validation: Release build passed; 114 focused CU/lane/routing/planner tests passed; real-WPF PatchingClarity probe passed, including action wording, lane binding, hidden/show/no-eligible states and existing reboot-choice/scheduling checks. `git diff --check` passed.
 - Limits: local dummy-data validation only; no live patching, reboot, signed package, or native multi-DPI usability certification. Build warned that the configured signing certificate is absent on this build account. U-21/U-22 hands-on validation remains separate.
+
+## People row-menu correction (2026-10-19)
+
+- Requested: remove footer Row actions; expose review, edit, and copy directly on row right-click; retain Open review.
+- Implemented: one shared row menu overrides cell copy menus, with review/edit first; blank-space clicks do not act on stale selection.
+- Verified: Release build and full local People probe passed, including handled row-menu events, keyboard opening, blank-space suppression, review/edit ordering, and removed footer button. Synthetic data only; no live AD changes or deployment-host mouse testing.

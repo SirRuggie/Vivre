@@ -19,6 +19,9 @@ public partial class PeopleView : UserControl, IDisposable
     {
         InitializeComponent();
         DataContext = Model = model;
+        // Cell text controls may supply their own copy menu. Always use the People row menu.
+        ResultsGrid.AddHandler(ContextMenuService.ContextMenuOpeningEvent,
+            new ContextMenuEventHandler(OnMenuOpening), handledEventsToo: true);
     }
     private async void OnPaste(object sender, RoutedEventArgs e)
     {
@@ -84,14 +87,6 @@ public partial class PeopleView : UserControl, IDisposable
         menu.Items.Add(new Separator());
         Add("Clear results…", OnClear, Model.CanClear);
         menu.PlacementTarget = (UIElement)sender; menu.IsOpen = true;
-    }
-    private void OnSelectionChanged(object sender, SelectionChangedEventArgs e) => RowMenuButton.IsEnabled = ResultsGrid.SelectedItems.Count > 0;
-    private void OnRowActions(object sender, RoutedEventArgs e)
-    {
-        BuildRowMenu();
-        ResultsGrid.ContextMenu.PlacementTarget = (UIElement)sender;
-        ResultsGrid.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Top;
-        ResultsGrid.ContextMenu.IsOpen = true;
     }
     private void OnOpenReview(object sender, RoutedEventArgs e)
     {
@@ -177,8 +172,21 @@ public partial class PeopleView : UserControl, IDisposable
     }
     private void OnMenuOpening(object sender, ContextMenuEventArgs e)
     {
+        e.Handled = true;
+        var gridRow = RowFrom(e.OriginalSource as DependencyObject);
+        bool keyboard = e.CursorLeft < 0 && e.CursorTop < 0;
+        if (gridRow is null && !keyboard) return;
+        if (gridRow?.Item is PersonLookupRow row && !gridRow.IsSelected)
+        {
+            ResultsGrid.SelectedItems.Clear(); ResultsGrid.SelectedItem = row;
+        }
+        if (ResultsGrid.SelectedItems.Count == 0) return;
         BuildRowMenu();
-
+        var menu = ResultsGrid.ContextMenu;
+        menu.PlacementTarget = gridRow ?? (UIElement)ResultsGrid;
+        menu.Placement = keyboard ? System.Windows.Controls.Primitives.PlacementMode.Bottom
+            : System.Windows.Controls.Primitives.PlacementMode.MousePoint;
+        menu.IsOpen = true;
     }
     private void BuildRowMenu()
     {
@@ -190,14 +198,14 @@ public partial class PeopleView : UserControl, IDisposable
             var item = new MenuItem { Header = label, IsEnabled = enabled };
             item.Click += (_, _) => action(); menu.Items.Add(item);
         }
+        Add("Review/change match...", () => { Model.StartReview(rows[0]); RevealReview(); }, rows.Length == 1 && rows[0].Candidates.Count > 0);
+        Add("Edit entry and retry...", () => Edit(rows[0]), rows.Length == 1 && !Model.IsBusy && !Model.IsAdding);
+        menu.Items.Add(new Separator());
         string scope = $"selected ({rows.Length})";
         Add($"Copy names - {scope}", () => CopyField(rows, r => r.MatchedName), rows.Length > 0);
         Add($"Copy usernames - {scope}", () => CopyField(rows, r => r.Username), rows.Length > 0);
         Add($"Copy emails - {scope}", () => CopyEmails(rows), rows.Length > 0);
         Add($"Copy rows as CSV - {scope}", () => CopyText(Csv(rows)), rows.Length > 0);
-        menu.Items.Add(new Separator());
-        Add("Review/change match...", () => { Model.StartReview(rows[0]); RevealReview(); }, rows.Length == 1 && rows[0].Candidates.Count > 0);
-        Add("Edit entry and retry...", () => Edit(rows[0]), rows.Length == 1 && !Model.IsBusy && !Model.IsAdding);
     }
     private void CopyField(PersonLookupRow[] rows, Func<PersonLookupRow, string> field)
     {

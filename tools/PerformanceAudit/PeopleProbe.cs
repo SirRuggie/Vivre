@@ -95,7 +95,7 @@ internal static class PeopleProbe
             Wpf.Ui.Appearance.ApplicationThemeManager.Apply(dark ? Wpf.Ui.Appearance.ApplicationTheme.Dark : Wpf.Ui.Appearance.ApplicationTheme.Light);
             view.Measure(new Size(width, height)); view.Arrange(new Rect(0, 0, width, height)); view.UpdateLayout();
             var scroll = (ScrollViewer)view.FindName("PageScroll");
-            var footer = (FrameworkElement)view.FindName("RowMenuButton");
+            var footer = (FrameworkElement)view.FindName("OpenReviewButton");
             var footerPoint = footer.TransformToAncestor(view).Transform(new Point(0, 0));
             Require(footerPoint.Y >= 0 && footerPoint.Y + footer.ActualHeight <= height, "Footer actions not reachable.");
             Require(((DataGrid)view.FindName("ResultsGrid")).FrozenColumnCount == 1, "People identity not pinned.");
@@ -112,10 +112,32 @@ internal static class PeopleProbe
         Require(!string.IsNullOrEmpty(((TextBlock)pasteDialog.FindName("ErrorText")).Text), "Empty People paste has no inline error.");
         pasteDialog.Close();
         var results = (DataGrid)view.FindName("ResultsGrid"); results.SelectedItem = vm.Rows[0];
-        var footerButton = (Wpf.Ui.Controls.Button)view.FindName("RowMenuButton");
-        results.ContextMenu.PlacementTarget = footerButton;
+        Require(view.FindName("RowMenuButton") is null, "Unwanted footer row menu remains.");
         typeof(PeopleView).GetMethod("BuildRowMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(view, null);
-        Require(ReferenceEquals(results.ContextMenu.PlacementTarget, footerButton), "Menu rebuild discarded footer anchor.");
+        var rowItems = results.ContextMenu.Items.OfType<MenuItem>().ToArray();
+        Require(rowItems[0].Header.ToString() == "Review/change match..." && rowItems[1].Header.ToString() == "Edit entry and retry...", "Row actions are buried behind copying.");
+        Require(rowItems.Length == 6, "Row menu lost actions.");
+        results.ScrollIntoView(vm.Rows[0]); view.UpdateLayout();
+        var resultRow = (DataGridRow)results.ItemContainerGenerator.ContainerFromItem(vm.Rows[0]);
+        ContextMenuEventArgs MenuEvent(object source, double coordinate) => (ContextMenuEventArgs)Activator.CreateInstance(
+            typeof(ContextMenuEventArgs), BindingFlags.Instance | BindingFlags.NonPublic, null,
+            [source, true, coordinate, coordinate], null)!;
+        var rowEvent = MenuEvent(resultRow, 5);
+        rowEvent.RoutedEvent = ContextMenuService.ContextMenuOpeningEvent;
+        rowEvent.Handled = true; // Even a child control's handled copy menu must be replaced.
+        resultRow.RaiseEvent(rowEvent);
+        Require(results.ContextMenu.IsOpen && ReferenceEquals(results.ContextMenu.PlacementTarget, resultRow), "Row context event did not open People actions.");
+        results.ContextMenu.IsOpen = false;
+        var keyboardEvent = MenuEvent(results, -1);
+        keyboardEvent.RoutedEvent = ContextMenuService.ContextMenuOpeningEvent;
+        results.RaiseEvent(keyboardEvent);
+        Require(keyboardEvent.Handled && results.ContextMenu.IsOpen, "Keyboard row menu unavailable.");
+        results.ContextMenu.IsOpen = false;
+        var blankEvent = MenuEvent(results, 5);
+        blankEvent.RoutedEvent = ContextMenuService.ContextMenuOpeningEvent;
+        results.RaiseEvent(blankEvent);
+        Require(blankEvent.Handled && !results.ContextMenu.IsOpen, "Blank-space menu targeted stale selection.");
+
         var created = new List<WorkspaceViewModel>();
         WorkspaceViewModel Factory() { var workspace = WorkspaceProbe.CreateWorkspace(); created.Add(workspace); return workspace; }
         var shell = new ShellViewModel(Factory, null!, new CredentialStore(), new FakeLog());
