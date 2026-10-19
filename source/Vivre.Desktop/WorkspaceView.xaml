@@ -291,8 +291,8 @@
                     CornerRadius="4" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
                     BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
                 <Grid>
-                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-                    <TextBlock x:Name="ListStatusText" Text="{Binding ListStatus}" MaxWidth="300" TextTrimming="CharacterEllipsis"
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ListStatusText" Text="{Binding ListStatus}" TextTrimming="CharacterEllipsis"
                                Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"
                                ToolTip="{Binding ListStatus}" AutomationProperties.Name="Saved list status" />
                     <TextBlock x:Name="PatchOptionsSummary" Grid.Column="1" Text="{Binding UpdateOptionsDescription, StringFormat='· {0}'}"

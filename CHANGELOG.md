@@ -7,6 +7,7 @@ it ships, then gets a dated heading.
 ## Unreleased
 
 ### Fixed
+- Let saved-list banner text use the available window width instead of truncating at 300 pixels.
 - Offer Append, Replace, or New tab (default) when opening saved lists into populated tabs; empty tabs open directly.
 - Align People’s footer with the full-width Health/Patching status bar, including compact review action and themed spacing.
 - Make Health-to-Patching handoff use normal automatic checks and monitoring with distinct tab names; combine list status and per-tab update options into a neutral single-line banner.

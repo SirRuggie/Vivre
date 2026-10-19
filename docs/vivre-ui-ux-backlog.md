@@ -400,3 +400,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 
 - Implemented: populated tabs offer Append list, Replace list, or New tab (default); empty tabs open directly. Reuses the paste dialog and new-tab creation. Append preserves current identity/results; replacement records opened-list identity and retains active-work/stale-membership guards. New tabs stay in the originating Health/Patching section.
 - Verified: Release build, tab-handoff and workspace-safety probes passed with dummy data and temporary storage. Covered default choice, saved-list identity/section, empty saved-list creation, source preservation, and existing replacement safeguards. No live server checks or native user interaction certification; signing certificate warning remains.
+
+
+## Saved-list banner width (2026-10-19)
+
+- Removed the 300-pixel list-status cap. Health uses the full available banner width; Patching reserves only the space needed for its update-options summary. Ellipsis applies only when the available space is actually exhausted; full text remains in the tooltip.
+- Verified: Release build and existing patching-clarity/banner probe passed. This is a layout-only change; no live operations were run. Build retains the known missing-signing-certificate warning.
