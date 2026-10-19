@@ -23,6 +23,8 @@ internal static class TabHandoffProbe
             null, [Path.Combine(root, "settings.json"), null], null)!;
         var shared = new SharedSettingsStore(Path.Combine(root, "shared"));
         var created = new List<WorkspaceViewModel>();
+        var pinger = new OfflinePinger();
+        var probe = new OfflineProbe();
         bool failFactory = false;
         bool pasteTesting = false;
         WorkspaceViewModel Factory()
@@ -30,7 +32,9 @@ internal static class TabHandoffProbe
             if (failFactory) throw new IOException("Synthetic creation failure");
             var vm = WorkspaceProbe.CreateWorkspace();
             Set(vm, "_appSettings", settings); Set(vm, "_shared", shared);
-            vm.IsMonitoring = !pasteTesting; // production default; handoff must stop it before adding rows
+            Set(vm, "_pinger", pinger); Set(vm, "_hostProbe", probe);
+            vm.CustomColumns.Clear();
+            vm.IsMonitoring = !pasteTesting; // exercise normal monitoring with offline fake transports
             created.Add(vm);
             return vm;
         }
@@ -72,14 +76,16 @@ internal static class TabHandoffProbe
             var action = menu.Items.OfType<MenuItem>().Single(i => Equals(i.Header, "Open tab in Patching"));
             Require(ReferenceEquals(action.DataContext, source), "Tab menu did not bind to the clicked tab.");
             action.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-            Pump(); // drain deferred auto-check callbacks, if any were wrongly queued
+            Pump(); // drain normal deferred auto-check callbacks
             var target = shell.SelectedPatchingTab!;
-            Require(shell.PatchingTabs.Count == 2 && target != oldPatch && target.Title == source.Title, "Handoff did not create a same-title tab.");
+            Require(shell.PatchingTabs.Count == 2 && target != oldPatch && target.Title == source.Title + " · Patching", "Handoff did not create a distinct descriptive tab.");
             Require(target.Computers.Select(c => c.Name).SequenceEqual(new[] { "DUMMY-A", "DUMMY-B" }), "Handoff used selection/filter instead of all names.");
             Require(!ReferenceEquals(target.Computers[0], a) && target.Computers[0].CommandResult != a.CommandResult, "Handoff shared rows/results.");
             Require(target.SelectedSource == UpdateSource.WindowsUpdate && !target.IncludeDrivers && target.ExcludeText == "" && !target.IsInstalledMode,
                 "Handoff copied source patch options.");
-            Require(!target.IsMonitoring && !target.IsBusy && target.SavedListName is null, "Handoff started work or inherited saved-list identity.");
+            Require(target.IsMonitoring && target.SavedListName is null, "Handoff disabled monitoring or inherited saved-list identity.");
+            Require(target.Computers.All(c => c.VitalityBand == Vivre.Core.Vitals.VitalityBand.Offline), "Normal auto-vitals path did not classify fake offline hosts.");
+            Require(pinger.Calls >= 2 && probe.Calls >= 2, "Normal reachability checks did not run.");
             Require(source.IsBusy && source.SelectedComputers.Contains(a) && ReferenceEquals(source.FocusedComputer, a) && a.CommandResult == "Keep result", "Source state changed.");
             Require(oldPatch.Computers.Single().Name == "DUMMY-EXISTING" && oldPatch.SelectedSource == UpdateSource.Managed, "Existing Patching tab changed.");
             Require(shell.ActiveFleetSection == FleetSection.Patching && ReferenceEquals(shell.SelectedTab, target)
@@ -94,6 +100,7 @@ internal static class TabHandoffProbe
             Require(ReferenceEquals(resolver.Invoke(window, new object[] { patchSave }), oldPatch), "Save resolved active tab instead of clicked inactive Patching tab.");
             Require(!patchHeader.ContextMenu!.Items.OfType<MenuItem>().Any(i => Equals(i.Header, "Open tab in Patching")), "Action exposed in Patching.");
             Require(shell.OpenTabInPatching(source) && shell.PatchingTabs.Count == 3, "Repeated handoff reused an existing tab.");
+            Require(shell.SelectedPatchingTab!.Title == source.Title + " · Patching (2)", "Repeated handoff duplicated title.");
             Require(shell.OpenTabInPatching(selectedHealth) && shell.SelectedPatchingTab!.Computers.Count == 0, "Empty tab handoff failed.");
             int count = shell.PatchingTabs.Count;
             var beforeFailure = shell.SelectedPatchingTab;
@@ -106,6 +113,14 @@ internal static class TabHandoffProbe
             Require(resolver.Invoke(window, new object[] { save }) is null, "Removed tab accepted for saving.");
             Require(!shell.OpenTabInPatching(source) && shell.PatchingTabs.Count == count, "Stale source created a tab.");
             pasteTesting = true;
+            settings.Load().AutoCheckOnLoad = false;
+            Require(shell.OpenTabInPatching(selectedHealth), "Auto-check-off handoff failed.");
+            // Use a nonempty source with factory monitoring disabled to isolate the auto-check setting.
+            selectedHealth.Computers.Add(new Computer("DUMMY-DISABLED"));
+            Pump();
+            Require(shell.OpenTabInPatching(selectedHealth), "Disabled setting handoff failed.");
+            Pump();
+            Require(shell.SelectedPatchingTab!.Computers.All(c => c.LastStatus == "Not checked"), "Disabled automatic checks still ran on the new tab.");
             File.WriteAllText(Path.Combine(root, "settings.json"), "{\"AutoCheckOnLoad\":false}");
             foreach (var origin in new[] { selectedHealth, oldPatch })
             {
@@ -127,8 +142,8 @@ internal static class TabHandoffProbe
             Require(((TextBlock)paste.FindName("ErrorText")).Text.Length > 0, "Blank new-tab input lacks feedback.");
             paste.Close();
             return new { pass = true, inactiveTabMenu = true, allNames = true, independentRowsAndDefaults = true,
-                sourcePreserved = true, noAutomaticChecks = true, navigation = true, emptyRepeatedStaleAndFailure = true,
-                scope = "Production XAML/handler/shell with dummy workspaces, remote-service null sentinels and temporary settings; no live hosts or visible UI" };
+                sourcePreserved = true, normalAutoChecks = true, navigation = true, emptyRepeatedStaleAndFailure = true,
+                scope = "Production XAML/handler/shell with dummy workspaces, fake offline transports, remote-service null sentinels and temporary settings; no live hosts or visible UI" };
         }
         finally
         {
@@ -140,6 +155,18 @@ internal static class TabHandoffProbe
     private static void Set(object obj, string name, object value) => obj.GetType().GetField(name, BindingFlags.Instance | BindingFlags.NonPublic)!.SetValue(obj, value);
     private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
     private static void Require(bool condition, string message) { if (!condition) throw new InvalidOperationException(message); }
+    private sealed class OfflinePinger : Vivre.Core.Net.IHostPinger
+    {
+        public int Calls;
+        public Task<Vivre.Core.Net.PingResult> PingAsync(string host, int timeoutMs, CancellationToken cancellationToken = default)
+        { Calls++; return Task.FromResult(Vivre.Core.Net.PingResult.Offline("dummy offline")); }
+    }
+    private sealed class OfflineProbe : Vivre.Core.Remoting.IHostProbe
+    {
+        public int Calls;
+        public Task<Vivre.Core.Remoting.ProbeResult> CanReachAsync(string host, ConnectionCredential? credential = null, CancellationToken cancellationToken = default)
+        { Calls++; return Task.FromResult(Vivre.Core.Remoting.ProbeResult.Unreachable("dummy offline")); }
+    }
     private sealed class FakeLog : IActivityLog
     {
         public ObservableCollection<LogEntry> Entries { get; } = [];

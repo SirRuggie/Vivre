@@ -132,7 +132,7 @@ public static class HelpContent
             Lines =
             [
                 "Right-click a Health tab ▸ Open tab in Patching to copy all its machine names into a new Patching tab with the same title, including machines hidden by filters or not selected.",
-                "The Health tab and existing Patching tabs stay unchanged. The new tab starts with normal update defaults, monitoring off, and no automatic checks, installs, or reboots; review its settings before running an action.",
+                "The Health tab and existing Patching tabs stay unchanged. The new tab gets a distinct Patching name and normal update defaults. Normal monitoring and Auto-check on load apply; update scans, installs, and reboots still require your action.",
                 "Each tab is independent — its own machine list, selection, and running operations.",
                 "Machine names stay fixed at the left when horizontally scrolling either fleet grid; other columns can still be resized and reordered.",
                 "• New tab: the \"+\" by the tabs, or Ctrl+T.",

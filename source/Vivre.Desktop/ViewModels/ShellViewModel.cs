@@ -140,17 +140,20 @@ public partial class ShellViewModel : ObservableObject
         SelectedPatchingTab = workspace;
     }
 
-    /// <summary>Copies names from a live Health tab into a fresh, idle Patching workspace.</summary>
+    /// <summary>Copies names from a live Health tab using the normal new-list checks.</summary>
     public bool OpenTabInPatching(WorkspaceViewModel source)
     {
         if (!HealthTabs.Contains(source)) return false;
         string[] names = source.Computers.Select(computer => computer.Name).ToArray();
-        WorkspaceViewModel target = CreateWorkspace(true, source.Title);
+        string baseTitle = $"{source.Title} · Patching";
+        string title = baseTitle;
+        for (int suffix = 2; PatchingTabs.Any(t => string.Equals(t.Title, title, StringComparison.OrdinalIgnoreCase)); suffix++)
+            title = $"{baseTitle} ({suffix})";
+        WorkspaceViewModel target = CreateWorkspace(true, title);
         try
         {
-            // This is a handoff, not approval to contact the copied machines.
-            target.IsMonitoring = false;
-            target.AddComputers(names, autoCheck: false);
+            // Reuse normal list loading: configured auto-check plus the new workspace's monitoring.
+            target.AddComputers(names);
         }
         catch
         {

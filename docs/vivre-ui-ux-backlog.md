@@ -381,3 +381,10 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Requested: roll accumulated feature/fix work into the app version and synchronize current documentation.
 - Updated: VersionPrefix single source, dated changelog, README, documentation index, repository guidance and living validation ledgers. Stable publish output remains `publish/Vivre.zip`; About/build metadata derive from VersionPrefix.
 - Verified: Release build passed; generated assembly/file version is 1.19.0.0 and product/About informational version begins 1.19.0 with build/commit identity. Current patching references and README operation sections reconciled. No signed ZIP or deployment is claimed; the build account still lacks the configured signing certificate.
+
+## Patching handoff and status banner correction (2026-10-19)
+
+- Requested: normal vitals/checks when opening Health machines in Patching, distinguish the copied tab, and replace stacked status lines with a neutral one-line banner.
+- Implemented: normal AddComputers path respects Auto-check on load and fresh-workspace monitoring; title uses source name plus Patching and a collision suffix. No automatic update scan/install/reboot is added.
+- Implemented: themed banner combines Temporary list/saved-list state with per-tab update source, drivers and exclusions; long text truncates with full tooltips.
+- Verified: Release build and focused tab-handoff, patching-clarity/banner, and workspace-safety probes passed using real WPF controls with dummy hosts and temporary settings. Auto-check enabled/disabled, duplicate titles, source preservation, and list protection were exercised. No live-host or deployment visual validation is claimed; configured signing certificate remains unavailable.

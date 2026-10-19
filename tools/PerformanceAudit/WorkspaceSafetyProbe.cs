@@ -23,7 +23,7 @@ internal static class WorkspaceSafetyProbe
         Set(vm, "_shared", new SharedSettingsStore(Path.Combine(root, "shared")));
         var store = new ComputerListStore(Path.Combine(root, "lists"));
         Set(vm, "_lists", store);
-        Require(vm.ListStatus == "List not saved", "New workspace claims a saved list.");
+        Require(vm.ListStatus == "Temporary list", "New workspace claims a saved list.");
         var first = new Computer("DUMMY-A") { CommandResult = "Existing result", UpdateMessage = "Existing scan" };
         var second = new Computer("DUMMY-B") { CommandResult = "Keep this too" };
         vm.Computers.Add(first); vm.Computers.Add(second);
@@ -57,7 +57,7 @@ internal static class WorkspaceSafetyProbe
         vm.RecordListDeleted("unrelated");
         Require(vm.SavedListName == "Identity", "Unrelated delete detached list.");
         vm.RecordListDeleted("IDENTITY");
-        Require(vm.SavedListName is null && vm.ListStatus == "List not saved", "Deleted list still claims saved identity.");
+        Require(vm.SavedListName is null && vm.ListStatus == "Temporary list", "Deleted list still claims saved identity.");
         int prompts = 0;
         bool Deny(string _) { prompts++; return false; }
         Require(!Replace(vm, ["DUMMY-A"], Deny) && vm.Computers.Count == 3, "Cancelled replacement changed membership.");

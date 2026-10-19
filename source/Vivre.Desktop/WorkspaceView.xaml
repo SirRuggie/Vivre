@@ -287,13 +287,21 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0">
-                <TextBlock x:Name="ListStatusText" Text="{Binding ListStatus}" TextTrimming="CharacterEllipsis" Margin="0,0,0,4"
-                           ToolTip="{Binding ListStatus}" AutomationProperties.Name="Saved list status" />
-                <TextBlock x:Name="PatchOptionsSummary" Text="{Binding UpdateOptionsDescription}" TextWrapping="Wrap" Margin="0,0,0,4"
-                           Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}"
-                           ToolTip="Options for this tab. Change drivers or exclusions in Update options." />
-            </StackPanel>
+            <Border Grid.Row="0" x:Name="WorkspaceInfoBanner" Margin="0,0,0,8" Padding="10,6"
+                    CornerRadius="4" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                    <TextBlock x:Name="ListStatusText" Text="{Binding ListStatus}" MaxWidth="300" TextTrimming="CharacterEllipsis"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"
+                               ToolTip="{Binding ListStatus}" AutomationProperties.Name="Saved list status" />
+                    <TextBlock x:Name="PatchOptionsSummary" Grid.Column="1" Text="{Binding UpdateOptionsDescription, StringFormat='· {0}'}"
+                               TextTrimming="CharacterEllipsis" Margin="16,0,0,0" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                               Visibility="{Binding IsUpdateMode, Converter={StaticResource BoolToVis}}"
+                               ToolTip="{Binding UpdateOptionsDescription}" />
+                </Grid>
+            </Border>
 
             <!-- Mode chips removed: tab mode is now fixed by the Fleet section (Health = Machines view,
                  Patching = Windows Update view). Navigate to Fleet ▸ Health or Fleet ▸ Patching

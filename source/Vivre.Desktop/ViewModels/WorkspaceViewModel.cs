@@ -1627,7 +1627,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private HashSet<string>? _savedListMembers;
     private bool _listStatusDirty;
     public string? SavedListName { get; private set; }
-    public string ListStatus { get; private set; } = "List not saved";
+    public string ListStatus { get; private set; } = "Temporary list";
 
     // Membership only: scans, selection, sorting, and tab renames never make a list dirty.
     public void RecordSavedList(string name, IEnumerable<string> names, bool justSaved = false)
@@ -1651,7 +1651,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         if (!_listStatusDirty) return;
         _listStatusDirty = false;
-        ListStatus = SavedListName is null ? "List not saved"
+        ListStatus = SavedListName is null ? "Temporary list"
             : !_savedListMembers!.SetEquals(Computers.Select(c => c.Name)) ? $"List: {SavedListName} · Unsaved changes"
             : $"List: {SavedListName} · {(justSaved ? "Saved" : "Unchanged since open/save")}";
         OnPropertyChanged(nameof(ListStatus));

@@ -39,6 +39,14 @@ internal static class PatchingClarityProbe
         SyncLaneColumn();
         Require(laneColumn.Visibility == Visibility.Collapsed, "CU lane shown without eligible machines.");
         var summary = (TextBlock)view.FindName("PatchOptionsSummary");
+        var listStatus = (TextBlock)view.FindName("ListStatusText");
+        Require(listStatus.Text == "Temporary list", "Unsaved-list wording still reads as an error.");
+        Require(summary.TextWrapping == TextWrapping.NoWrap && summary.TextTrimming == TextTrimming.CharacterEllipsis,
+            "Update summary can break the one-line banner.");
+        Require(Grid.GetRow(listStatus) == Grid.GetRow(summary) && Grid.GetColumn(summary) == 1,
+            "List state and options are not on the same line.");
+        Require(listStatus.Foreground is System.Windows.Media.SolidColorBrush brush && brush.Color != System.Windows.Media.Colors.Black,
+            "Banner uses unreadable default black text in dark theme.");
         Require(summary.Text.Contains("Drivers: included") && summary.Text.Contains("Exclusions: 2"), "Options summary doesn't reflect parsed options.");
         second.IsUpdateMode = true;
         view.DataContext = second;

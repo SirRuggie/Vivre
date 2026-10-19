@@ -331,7 +331,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 
 ## Health-to-Patching handoff
 
-`ShellViewModel.OpenTabInPatching` accepts only a live Health tab, copies all underlying names into a fresh same-title workspace, and never shares Computer objects or saved-list identity. Stop the new workspace monitor before adding rows and use `AddComputers(autoCheck: false)`; normal loads retain their existing automatic behavior. The tab-header handler uses the clicked tab, not SelectedTab, and reuses ShowNavSection for navigation.
+`ShellViewModel.OpenTabInPatching` accepts only a live Health tab, copies all underlying names into a fresh workspace named from the source plus Patching (with a collision suffix), and never shares Computer objects or saved-list identity. Use normal `AddComputers` so the auto-check preference and fresh-workspace monitoring apply. This handoff never triggers update scans, installs, or reboots. The tab-header handler uses the clicked tab, not SelectedTab, and reuses ShowNavSection for navigation.
 
 ## Layout and accessibility checks
 

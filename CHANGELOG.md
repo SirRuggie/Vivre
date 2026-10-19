@@ -6,7 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
-No changes yet.
+### Fixed
+- Make Health-to-Patching handoff use normal automatic checks and monitoring with distinct tab names; combine list status and per-tab update options into a neutral single-line banner.
 
 ## 1.19.0 — 2026-10-19
 
