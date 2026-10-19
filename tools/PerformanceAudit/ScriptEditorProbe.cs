@@ -46,6 +46,7 @@ internal static class ScriptEditorProbe
             Require(window.ConfirmCanClose(), "A newly opened editor was falsely dirty.");
             Require(prompts == 0, "A newly opened editor prompted to save.");
 
+            VerifySearch(window, editor, scriptList);
             editor.Text = "a-edited";
             window.UnsavedChangesPromptOverride = () => ScriptEditChoice.Save;
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "B");
@@ -100,7 +101,7 @@ internal static class ScriptEditorProbe
             Require(errors.Any(e => e.Contains("still running", StringComparison.OrdinalIgnoreCase)),
                 "Active-run close refusal was not surfaced.");
 
-            return new { initialClean = true, saveThenSwitchConsistent = true, cancelRestoresSelection = true,
+            return new { librarySearchPreservesEditsAndRenames = true, initialClean = true, saveThenSwitchConsistent = true, cancelRestoresSelection = true,
                 dirtyRefreshPreserved = true, discardRequiresReplacement = true, cleanRefreshApplied = true, saveFailureVetoed = true,
                 busyCloseVetoed = true, builtInNotices = true, scriptsPageWiring = true,
                 ownerCloseTransactional = true, directCloseRechecked = true,
@@ -132,6 +133,7 @@ internal static class ScriptEditorProbe
             Require(page.ConfirmCanClose() && prompts == 0, "A newly initialized Scripts page was falsely dirty.");
 
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "A");
+            VerifySearch(page, editor, scriptList);
             editor.Text = "page-a-edited";
             page.UnsavedChangesPromptOverride = () => ScriptEditChoice.Save;
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "B");
@@ -163,6 +165,55 @@ internal static class ScriptEditorProbe
         {
             page.Dispose();
         }
+    }
+
+    private static void VerifySearch(FrameworkElement owner, TextEditor editor, ListView list)
+    {
+        var search = RequireControl<Wpf.Ui.Controls.TextBox>(owner, "ScriptSearchBox");
+        ScriptFile selected = (ScriptFile)list.SelectedItem;
+        string text = editor.Text;
+        editor.Text += " # dirty search";
+        search.Text = "built";
+        PumpBindings(owner);
+        Require(list.Items.Cast<ScriptFile>().Any(s => s.Name == "Built"), "Search failed case-insensitive name match.");
+        Require(!list.Items.Cast<ScriptFile>().Any(s => s.Name == "B"), "Search retained unrelated script.");
+        // Cancel a switch to another visible result without discarding the active query or edits.
+        list.SelectedItem = list.Items.Cast<ScriptFile>().Single(s => s.Name == "Built");
+        Require(((ScriptFile)list.SelectedItem).FullPath == selected.FullPath && editor.Text == text + " # dirty search",
+            "Cancel during filtered selection failed to preserve the editor and selection.");
+        search.Text = "no-match-xyz";
+        Require(list.Items.Count == 1 && ((ScriptFile)list.SelectedItem).FullPath == selected.FullPath,
+            "Search lost the current script selection.");
+        Require(editor.Text == text + " # dirty search", "Search changed dirty editor text.");
+        search.Text = "pRoBe";
+        Require(list.Items.Cast<ScriptFile>().Any(s => s.Name == "B"), "Search failed category match.");
+        search.Clear();
+        foreach (var choice in new[] { ScriptEditChoice.Discard, ScriptEditChoice.Save })
+        {
+            if (owner is ScriptRunnerWindow runnerWindow) runnerWindow.UnsavedChangesPromptOverride = () => choice;
+            else ((ScriptsPage)owner).UnsavedChangesPromptOverride = () => choice;
+            editor.Text = text + " # switch " + choice;
+            search.Text = "built";
+            list.SelectedItem = list.Items.Cast<ScriptFile>().Single(s => s.Name == "Built");
+            Require(((ScriptFile)list.SelectedItem).Name == "Built" && editor.Text.StartsWith("built-"), "Filtered switch failed for " + choice);
+            Require(list.Items.Count == 1, "Previously open nonmatching script remained pinned after switch.");
+            search.Clear();
+            list.SelectedItem = list.Items.Cast<ScriptFile>().Single(s => s.FullPath == selected.FullPath);
+        }
+        if (owner is ScriptRunnerWindow restoredRunner) restoredRunner.UnsavedChangesPromptOverride = () => ScriptEditChoice.Cancel;
+        else ((ScriptsPage)owner).UnsavedChangesPromptOverride = () => ScriptEditChoice.Cancel;
+        editor.Text = text;
+        // Save under a new name/category while the query excludes both identities.
+        search.Text = "no-match-xyz";
+        if (owner.DataContext is ScriptRunnerViewModel runner) { runner.ScriptName = "Search moved runner"; runner.SaveCategory = "Moved"; }
+        else if (owner.DataContext is ScriptsViewModel page) { page.ScriptName = "Search moved page"; page.SaveCategory = "Moved"; }
+        owner.GetType().GetMethod("OnSave", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [owner, new RoutedEventArgs()]);
+        PumpBindings(owner);
+        Require(list.Items.Count == 1 && ((ScriptFile)list.SelectedItem).Category == "Moved", "Search failed to follow renamed saved script.");
+        Require(editor.Text == text, "Save during search changed editor text.");
+        search.Clear();
+        list.SelectedItem = list.Items.Cast<ScriptFile>().Single(s => s.FullPath == selected.FullPath);
+        Require(((ScriptFile)list.SelectedItem).FullPath == selected.FullPath, "Clearing search failed to restore library navigation.");
     }
 
     private static void VerifyDirectCloseRechecks(ScriptRunnerWindow window, TextEditor editor)

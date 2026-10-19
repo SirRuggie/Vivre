@@ -318,3 +318,9 @@ Keep free-text filtering debounced and visible counts cached; state-chip changes
 Staging preparation checks cancellation between hash reads; publication/recovery remains non-cancellable once replacement starts. Large manifests reuse the owned chunk-transfer lane and require SHA256 validation before parsing/publication. Protected staging registry updates are batched, unchanged writes skipped, and exact unique temporary entries retired only after cleanup is confirmed; never age out uncertain backups. Publication gates count both holders and waiters before retiring idle keys. Preserve SplitThrottle reserved capacity and return any second acquired permit when cancelling the losing wait.
 
 Current acceptance evidence and remaining operational gaps: docs/vivre-review-decisions.md, performance implementation ledger. The original performance report remains a frozen baseline.
+
+## Library search and list recovery
+
+- Search reuses existing menu entries and grouped script collection views; never read files per keystroke or execute a script on search. Keep the open script pinned and editor/selection guards intact, including rename/category saves.
+- List deletion moves the approved revision into `Lists/Deleted/<GUID>` on the same volume. Restore is explicit, never overwrites, and does not replace a workspace. Reject linked recovery folders/payloads; retain existing save/delete leases and revision checks.
+- Version stays 1.18.0 with subsequent work under Unreleased; historical validation documents remain historical.

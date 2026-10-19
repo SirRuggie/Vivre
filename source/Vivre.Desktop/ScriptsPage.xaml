@@ -4,11 +4,13 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+             xmlns:local="clr-namespace:Vivre.Desktop"
              xmlns:avalon="http://icsharpcode.net/sharpdevelop/avalonedit"
              mc:Ignorable="d">
 
     <UserControl.Resources>
         <!-- Group the script list by category folder, same as ScriptRunnerWindow. -->
+        <local:SearchActiveConverter x:Key="SearchActive" />
         <CollectionViewSource x:Key="GroupedScripts" Source="{Binding Scripts}">
             <CollectionViewSource.GroupDescriptions>
                 <PropertyGroupDescription PropertyName="Category" />
@@ -38,8 +40,13 @@
             </Grid.ColumnDefinitions>
 
             <!-- ── Script list with category Expanders ───────────────────── -->
+            <Grid Grid.Column="0">
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <ui:TextBox x:Name="ScriptSearchBox" PlaceholderText="Search scripts…" ClearButtonEnabled="True" Margin="0,0,0,6"
+                            AutomationProperties.Name="Search scripts by name or category" TextChanged="OnScriptSearchChanged"
+                            ToolTip="Search names or categories. The script currently open stays visible to protect your edits." />
             <ui:ListView x:Name="ScriptList"
-                         Grid.Column="0"
+                         Grid.Row="1" Tag="{Binding Text, ElementName=ScriptSearchBox}"
                          ItemsSource="{Binding Source={StaticResource GroupedScripts}}"
                          SelectedItem="{Binding SelectedScript, Mode=TwoWay}"
                          SelectionChanged="OnScriptSelected"
@@ -52,7 +59,7 @@
                                 <Setter Property="Template">
                                     <Setter.Value>
                                         <ControlTemplate TargetType="{x:Type GroupItem}">
-                                            <Expander IsExpanded="False">
+                                            <Expander IsExpanded="{Binding Tag, RelativeSource={RelativeSource AncestorType=ListView}, Converter={StaticResource SearchActive}}">
                                                 <Expander.Template>
                                                     <ControlTemplate TargetType="Expander">
                                                         <StackPanel>
@@ -155,6 +162,7 @@
                     </GroupStyle>
                 </ui:ListView.GroupStyle>
             </ui:ListView>
+            </Grid>
 
             <!-- Resize grip -->
             <GridSplitter Grid.Column="1"

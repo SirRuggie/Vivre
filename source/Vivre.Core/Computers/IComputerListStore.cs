@@ -26,9 +26,17 @@ public interface IComputerListStore
     /// <summary>Writes machines to the named list; replacing an existing list requires explicit overwrite approval.</summary>
     void Save(string name, IEnumerable<string> machines, bool overwrite = false, string? expectedRevision = null);
 
-    /// <summary>Deletes the named list if present.</summary>
+    /// <summary>Moves the named list to local recovery storage if present.</summary>
     void Delete(string name, string? expectedRevision);
+
+    /// <summary>Recoverable deletions, newest first.</summary>
+    IReadOnlyList<DeletedComputerList> DeletedLists();
+
+    /// <summary>Restores a deletion under a valid unused name; never overwrites.</summary>
+    void Restore(string id, string name);
 
     /// <summary>True if a list with that name exists.</summary>
     bool Exists(string name);
 }
+
+public sealed record DeletedComputerList(string Id, string Name, DateTime DeletedAtUtc);

@@ -1621,6 +1621,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Names of the saved machine lists.</summary>
     public IReadOnlyList<string> SavedLists() => _lists.List();
+    public IReadOnlyList<DeletedComputerList> DeletedLists() => _lists.DeletedLists();
+    public void RestoreList(string id, string name) => _lists.Restore(id, name);
 
     private HashSet<string>? _savedListMembers;
     private bool _listStatusDirty;

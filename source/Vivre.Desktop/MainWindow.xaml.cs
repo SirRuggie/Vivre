@@ -1503,14 +1503,29 @@ public partial class MainWindow : FluentWindow
         if (openMenu is not null)
         {
             openMenu.Items.Clear();
-            AddListItems(openMenu, lists, name => { if (vm is not null) OpenSavedList(vm, name); });
+            AddListItems(openMenu, lists, (_, name) => { if (vm is not null) OpenSavedList(vm, name); });
             openMenu.IsEnabled = vm is not null;
         }
 
         if (deleteMenu is not null)
         {
             deleteMenu.Items.Clear();
-            AddListItems(deleteMenu, lists, name => { if (vm is not null) ConfirmDeleteList(vm, name); });
+            AddListItems(deleteMenu, lists, (_, name) => { if (vm is not null) ConfirmDeleteList(vm, name); });
+        }
+        if (cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "RestoreList") is { } restoreMenu)
+        {
+            restoreMenu.Items.Clear();
+            try
+            {
+                var deleted = vm?.DeletedLists() ?? [];
+                var labels = deleted.Select(item => $"{item.Name} — {item.DeletedAtUtc.ToLocalTime():g} [{item.Id[..8]}]").ToArray();
+                AddListItems(restoreMenu, labels, (index, label) =>
+                {
+                    if (vm is not null) RestoreDeletedList(vm, deleted[index]);
+                });
+                restoreMenu.IsEnabled = vm is not null;
+            }
+            catch (Exception ex) { restoreMenu.Items.Add(new MenuItem { Header = "Could not read deleted lists", ToolTip = ex.Message, IsEnabled = false }); }
         }
     }
 
@@ -1565,21 +1580,41 @@ public partial class MainWindow : FluentWindow
         return string.IsNullOrWhiteSpace(name) ? "tab" : name;
     }
 
-    private static void AddListItems(MenuItem parent, IReadOnlyList<string> lists, Action<string> onClick)
+    private static void AddListItems(MenuItem parent, IReadOnlyList<string> lists, Action<int, string> onClick)
     {
-        if (lists.Count == 0)
+        var search = new Wpf.Ui.Controls.TextBox { Width = 260, PlaceholderText = "Search lists…", ClearButtonEnabled = true };
+        System.Windows.Automation.AutomationProperties.SetName(search, "Search lists");
+        parent.Items.Add(new MenuItem { Header = search, StaysOpenOnClick = true });
+        var entries = new List<MenuItem>();
+        for (int index = 0; index < lists.Count; index++)
         {
-            parent.Items.Add(new MenuItem { Header = "(no saved lists)", IsEnabled = false });
-            return;
-        }
-
-        foreach (string name in lists)
-        {
-            string captured = name;
+            string captured = lists[index];
+            int capturedIndex = index;
             var item = new MenuItem { Header = captured };
-            item.Click += (_, _) => onClick(captured);
+            item.Click += (_, _) => onClick(capturedIndex, captured);
             parent.Items.Add(item);
+            entries.Add(item);
         }
+        var empty = new MenuItem { Header = lists.Count == 0 ? "(no lists)" : "(no matches)", IsEnabled = false, Visibility = lists.Count == 0 ? Visibility.Visible : Visibility.Collapsed };
+        parent.Items.Add(empty);
+        search.TextChanged += (_, _) =>
+        {
+            string query = search.Text.Trim();
+            foreach (var item in entries) item.Visibility = item.Header.ToString()!.Contains(query, StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed;
+            empty.Visibility = entries.Any(item => item.Visibility == Visibility.Visible) ? Visibility.Collapsed : Visibility.Visible;
+        };
+    }
+
+    private void RestoreDeletedList(WorkspaceViewModel vm, Vivre.Core.Computers.DeletedComputerList item)
+    {
+        var dialog = new TextPromptWindow("Restore deleted list", "Restore this list under the following name:", item.Name)
+        { Owner = this, AcceptText = "Restore" };
+        dialog.ValidateAndAccept = name =>
+        {
+            vm.RestoreList(item.Id, name);
+            return null; // prompt retains input and displays failures inline
+        };
+        dialog.ShowDialog();
     }
 
     private bool ReplaceTabMachines(WorkspaceViewModel vm, IEnumerable<string> names, string title)
@@ -1652,7 +1687,7 @@ public partial class MainWindow : FluentWindow
             var confirm = new MessageBox
             {
                 Title = "Delete list",
-                Content = $"Delete the saved list '{name}'? (Loaded machines stay in the tab.)",
+                Content = $"Delete the saved list '{name}'? Loaded machines stay in the tab. You can recover it from Lists ▾ → Restore deleted list.",
                 PrimaryButtonText = "Delete",
                 CloseButtonText = "Cancel",
             };

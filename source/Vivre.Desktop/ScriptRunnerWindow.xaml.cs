@@ -59,6 +59,23 @@ public partial class ScriptRunnerWindow : FluentWindow
         MarkClean();
     }
 
+    private void OnScriptSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        if (ScriptList is null || Resources["GroupedScripts"] is not System.Windows.Data.CollectionViewSource { View: { } view }) return;
+        string query = ScriptSearchBox.Text;
+        string? currentPath = _loadedScript?.FullPath;
+        bool wasChanging = _changingSelection;
+        _changingSelection = true;
+        try
+        {
+            view.Filter = item => item is ScriptFile script && (LibrarySearch.Matches(script, query)
+                || string.Equals(script.FullPath, _loadedScript?.FullPath, StringComparison.OrdinalIgnoreCase));
+            if (currentPath is not null)
+                ScriptList.SelectedItem = view.Cast<ScriptFile>().FirstOrDefault(script => string.Equals(script.FullPath, currentPath, StringComparison.OrdinalIgnoreCase));
+        }
+        finally { _changingSelection = wasChanging; }
+    }
+
     private void OnScriptSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_changingSelection) return;
@@ -236,7 +253,11 @@ public partial class ScriptRunnerWindow : FluentWindow
 
     private bool IsDirty() => _dirty.IsDirty(Editor.Text, _viewModel.ScriptName, _viewModel.SaveCategory);
 
-    private void MarkClean() => _dirty.MarkClean(Editor.Text, _viewModel.ScriptName, _viewModel.SaveCategory);
+    private void MarkClean()
+    {
+        _dirty.MarkClean(Editor.Text, _viewModel.ScriptName, _viewModel.SaveCategory);
+        if (!string.IsNullOrWhiteSpace(ScriptSearchBox.Text)) OnScriptSearchChanged(this, null!);
+    }
 
     private ScriptEditChoice PromptUnsavedChanges()
     {

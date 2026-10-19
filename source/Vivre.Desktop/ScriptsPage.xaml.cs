@@ -44,6 +44,23 @@ public partial class ScriptsPage : UserControl
 
     // ── List selection ─────────────────────────────────────────────────────
 
+    private void OnScriptSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        if (ScriptList is null || Resources["GroupedScripts"] is not System.Windows.Data.CollectionViewSource { View: { } view }) return;
+        string query = ScriptSearchBox.Text;
+        string? currentPath = _loadedScript?.FullPath;
+        bool wasChanging = _changingSelection;
+        _changingSelection = true;
+        try
+        {
+            view.Filter = item => item is ScriptFile script && (LibrarySearch.Matches(script, query)
+                || string.Equals(script.FullPath, _loadedScript?.FullPath, StringComparison.OrdinalIgnoreCase));
+            if (currentPath is not null)
+                ScriptList.SelectedItem = view.Cast<ScriptFile>().FirstOrDefault(script => string.Equals(script.FullPath, currentPath, StringComparison.OrdinalIgnoreCase));
+        }
+        finally { _changingSelection = wasChanging; }
+    }
+
     private void OnScriptSelected(object sender, SelectionChangedEventArgs e)
     {
         if (_vm is null || _changingSelection) return;
@@ -227,6 +244,7 @@ public partial class ScriptsPage : UserControl
     {
         if (_vm is null) return;
         _dirty.MarkClean(Editor.Text, _vm.ScriptName, _vm.SaveCategory);
+        if (!string.IsNullOrWhiteSpace(ScriptSearchBox.Text)) OnScriptSearchChanged(this, null!);
     }
 
     private ScriptEditChoice PromptUnsavedChanges()

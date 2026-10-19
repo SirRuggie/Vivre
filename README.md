@@ -12,6 +12,8 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Features
 
+- **Search and recovery** — filter saved-list menus and script libraries; restore deleted lists without overwriting existing lists.
+
 - **Clear activity and settings** — Activity identifies its originating tab, including search/copy; CU KB/build/month save together, and invalid numeric settings explain the correction inline.
 
 - **Per-tab update options** — each Patching tab owns its update source, driver setting, exclusions, and applicable/installed scope; its source appears in the tab header and toolbar, and new tabs start with Windows Update.

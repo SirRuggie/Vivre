@@ -78,8 +78,56 @@ public sealed class ComputerListStore : IComputerListStore
             throw new IOException("The saved list changed since delete approval. Review it before deleting.");
         if (File.Exists(path))
         {
-            File.Delete(path);
+            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cannot delete a linked list file.");
+            string root = RecoveryRoot();
+            System.IO.Directory.CreateDirectory(root);
+            string folder = Path.Combine(root, Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(folder);
+            File.Move(path, Path.Combine(folder, Path.GetFileName(path))); // same-volume, no overwrite
+
         }
+    }
+
+    public IReadOnlyList<DeletedComputerList> DeletedLists()
+    {
+        string root = RecoveryRoot();
+        if (!System.IO.Directory.Exists(root)) return [];
+        var result = new List<DeletedComputerList>();
+        foreach (string folder in System.IO.Directory.EnumerateDirectories(root))
+        {
+            string id = Path.GetFileName(folder);
+            if (!Guid.TryParseExact(id, "N", out _) || (File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0) continue;
+            string[] files = System.IO.Directory.GetFiles(folder, "*.txt");
+            if (files.Length == 1 && (File.GetAttributes(files[0]) & FileAttributes.ReparsePoint) == 0) result.Add(new(id, Path.GetFileNameWithoutExtension(files[0]), System.IO.Directory.GetCreationTimeUtc(folder)));
+        }
+        return result.OrderByDescending(item => item.DeletedAtUtc).ToArray();
+    }
+
+    public void Restore(string id, string name)
+    {
+        if (!Guid.TryParseExact(id, "N", out _)) throw new ArgumentException("Invalid deleted-list identifier.", nameof(id));
+        string? error = NameError(name);
+        if (error is not null) throw new ArgumentException(error, nameof(name));
+        string root = RecoveryRoot();
+        using FileStream archiveLease = ExclusiveFileLease.Acquire(Path.Combine(root, id + ".lock"), TimeSpan.Zero);
+        string folder = Path.Combine(root, id);
+        if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cannot restore a linked recovery folder.");
+        string[] files = System.IO.Directory.GetFiles(folder, "*.txt");
+        if (files.Length != 1) throw new IOException("That deleted list is no longer available.");
+        if ((File.GetAttributes(files[0]) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cannot restore a linked list file.");
+        string destination = PathFor(name);
+        using FileStream targetLease = ExclusiveFileLease.Acquire(destination + ".lock", TimeSpan.Zero);
+        if (File.Exists(destination)) throw new IOException("A saved list already uses that name. Choose a different name to restore; nothing was overwritten.");
+        File.Move(files[0], destination); // fail if another writer created the destination
+        try { System.IO.Directory.Delete(folder); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+    }
+
+    private string RecoveryRoot()
+    {
+        string root = Path.Combine(Directory, "Deleted");
+        if (System.IO.Directory.Exists(root) && (File.GetAttributes(root) & FileAttributes.ReparsePoint) != 0)
+            throw new IOException("The list recovery folder cannot be a linked folder.");
+        return root;
     }
 
     public bool Exists(string name) => File.Exists(PathFor(name));

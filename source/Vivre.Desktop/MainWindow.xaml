@@ -728,6 +728,7 @@
                                         <MenuItem Header="Save tab as list…" Click="OnSaveTabAsList" />
                                         <Separator />
                                         <MenuItem Header="Delete list" Tag="DeleteList" />
+                                        <MenuItem Header="Restore deleted list" Tag="RestoreList" />
                                     </ContextMenu>
                                 </ui:Button.ContextMenu>
                             </ui:Button>

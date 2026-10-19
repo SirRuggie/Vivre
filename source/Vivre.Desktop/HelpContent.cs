@@ -95,7 +95,7 @@ public static class HelpContent
         new HelpTopic
         {
             Category = GettingStarted, Icon = SymbolRegular.Save24, Title = "How do I save and reuse a machine list?",
-            Keywords = "named lists save open delete rename tab title",
+            Keywords = "named lists save open delete restore recover search rename tab title",
             Lines =
             [
                 "1. Load the machines you want in the tab.",
@@ -105,7 +105,9 @@ public static class HelpContent
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
                 "The line above the filters shows the associated list and unsaved membership changes; Saved confirms a successful save. Status compares with the last open/save, not continuous disk monitoring.",
                 "Scans, selection, sorting, and tab renaming do not change saved-list membership; returning to the saved membership clears the changed state.",
-                "Lists ▾ ▸ Delete list to remove a saved one.",
+                "Lists ▾ ▸ Delete list removes a saved list; Restore deleted list brings it back, even after restarting Vivre. Choose another name if the original is in use; restore never overwrites.",
+                "Open, Delete, and Restore list menus have search boxes. Restored lists do not replace the machines in your current tab.",
+                "Recovery keeps deletions made by this version under %APPDATA%\\Vivre\\Lists\\Deleted until restored; older permanent deletions cannot be recovered.",
             ],
             Tip = "Lists are plain .txt files under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
         },
@@ -310,6 +312,7 @@ public static class HelpContent
                 "1. Select the machines.",
                 "2. Right-click ▸ Run script ▸ Selected machines… (or All machines…) — opens the Run Script window.",
                 "3. Pick a saved script (grouped by category) or paste your own, review it, then click Run.",
+                "Search scripts by name or category in Run Script or the Scripts page. The script currently open stays visible while searching so edits and selection are protected.",
                 "Mutating and custom scripts ask you to approve the captured script and target count. Verified read-only built-ins stay one-click. Conflicting patching, staging or cleanup blocks a mutating script on that host.",
                 "If a mutating script stops with errors or is cancelled, verify the host and service recovery before retrying conflicting work. A cancelled client request is not proof that remote work stopped.",
                 "Output lands per-machine in the Command result column and in the window's log. Captured streams and displayed text have limits; a truncation notice means some output was omitted, not that execution stopped.",

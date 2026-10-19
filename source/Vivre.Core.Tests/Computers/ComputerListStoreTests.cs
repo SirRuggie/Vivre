@@ -128,6 +128,96 @@ public class ComputerListStoreTests : IDisposable
         Assert.False(store.Exists("Legacy."));
     }
 
+    [Fact]
+    public void Deleted_list_can_be_restored_after_restart_without_overwriting_newer_list()
+    {
+        var store = new ComputerListStore(_dir);
+        store.Save("Saved", ["DUMMY-OLD"]);
+        store.Delete("Saved", store.GetRevision("Saved"));
+        Assert.False(store.Exists("Saved"));
+        var restarted = new ComputerListStore(_dir);
+        var item = Assert.Single(restarted.DeletedLists());
+        Assert.Equal("Saved", item.Name);
+        restarted.Save("Saved", ["DUMMY-NEW"]);
+        Assert.Throws<IOException>(() => restarted.Restore(item.Id, "Saved"));
+        Assert.Equal(["DUMMY-NEW"], restarted.LoadRequired("Saved"));
+        Assert.Single(restarted.DeletedLists());
+        restarted.Restore(item.Id, "Recovered");
+        Assert.Equal(["DUMMY-OLD"], restarted.LoadRequired("Recovered"));
+        Assert.Empty(restarted.DeletedLists());
+        Assert.ThrowsAny<IOException>(() => restarted.Restore(item.Id, "Again"));
+    }
+
+    [Fact]
+    public void Repeated_deletions_keep_distinct_versions_and_reject_invalid_restore_paths()
+    {
+        var store = new ComputerListStore(_dir);
+        store.Save("Saved", ["DUMMY-A"]);
+        store.Delete("Saved", store.GetRevision("Saved"));
+        store.Save("Saved", ["DUMMY-B"]);
+        store.Delete("Saved", store.GetRevision("Saved"));
+        Assert.Equal(2, store.DeletedLists().Count);
+        Assert.Throws<ArgumentException>(() => store.Restore("../outside", "Restored"));
+        Assert.Throws<ArgumentException>(() => store.Restore(store.DeletedLists()[0].Id, "../outside"));
+        Assert.Equal(2, store.DeletedLists().Count);
+        int index = 0;
+        foreach (var item in store.DeletedLists()) store.Restore(item.Id, "Copy" + ++index);
+        Assert.Equal(new[] { "DUMMY-A", "DUMMY-B" }, store.List().SelectMany(store.LoadRequired).OrderBy(x => x).ToArray());
+    }
+
+    [Fact]
+    public void Failed_recovery_creation_preserves_original_list()
+    {
+        var store = new ComputerListStore(_dir);
+        store.Save("Saved", ["DUMMY"]);
+        File.WriteAllText(Path.Combine(_dir, "Deleted"), "Block directory creation");
+        Assert.ThrowsAny<IOException>(() => store.Delete("Saved", store.GetRevision("Saved")));
+        Assert.Equal(["DUMMY"], store.LoadRequired("Saved"));
+    }
+
+    [Fact]
+    public void Recovery_rejects_linked_archive_folder()
+    {
+        var store = new ComputerListStore(_dir);
+        string external = Path.Combine(_dir, "Other");
+        Directory.CreateDirectory(external);
+        File.WriteAllText(Path.Combine(external, "Saved.txt"), "DUMMY-UNCHANGED");
+        string id = Guid.NewGuid().ToString("N");
+        Directory.CreateDirectory(Path.Combine(_dir, "Deleted"));
+        string link = Path.Combine(_dir, "Deleted", id);
+        Vivre.Core.Tests.IO.ReparsePointFixture.CreateDirectoryLink(link, external);
+        try
+        {
+            Assert.Empty(store.DeletedLists());
+            Assert.Throws<IOException>(() => store.Restore(id, "Restored"));
+            Assert.False(store.Exists("Restored"));
+            Assert.Equal("DUMMY-UNCHANGED", File.ReadAllText(Path.Combine(external, "Saved.txt")));
+        }
+        finally { Directory.Delete(link); }
+    }
+
+    [Vivre.Core.Tests.IO.FileSymlinkTheory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void Recovery_rejects_linked_payload_without_changing_target(bool archived)
+    {
+        var store = new ComputerListStore(_dir);
+        string target = Path.Combine(_dir, "target.data");
+        File.WriteAllText(target, "DUMMY-UNCHANGED");
+        string id = Guid.NewGuid().ToString("N");
+        string folder = archived ? Path.Combine(_dir, "Deleted", id) : _dir;
+        Directory.CreateDirectory(folder);
+        File.CreateSymbolicLink(Path.Combine(folder, "Linked.txt"), target);
+        if (archived)
+        {
+            Assert.Empty(store.DeletedLists());
+            Assert.Throws<IOException>(() => store.Restore(id, "Restored"));
+            Assert.False(store.Exists("Restored"));
+        }
+        else Assert.Throws<IOException>(() => store.Delete("Linked", store.GetRevision("Linked")));
+        Assert.Equal("DUMMY-UNCHANGED", File.ReadAllText(target));
+    }
+
     public void Dispose()
     {
         if (Directory.Exists(_dir))

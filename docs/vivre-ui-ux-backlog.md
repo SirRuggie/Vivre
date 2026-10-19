@@ -105,6 +105,19 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - **Limits:** Offscreen WPF, dummy log entries, and temporary files; no live targets, production settings writes, visible-window/high-DPI sweep, or screen-reader run. Package-save integration was exercised without reading a live MSU; independent reviewer did not rerun parent-owned tests.
 - **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
 
+## Completed batch acceptance — U-16, U-17, U-20 (2026-10-19)
+
+- **U-16 — implemented and locally tested:** Search Open/Delete/Restore menus and both script libraries; preserve open scripts, dirty edits, and selection, including saves under a new name/category.
+- **U-17 — implemented and locally tested:** Same-volume recovery of approved deletions survives restarts; restore requires an unused valid name and leaves current workspace membership unchanged.
+- **U-20 — implemented and verified:** Index points to actual 1.18.0 plus Unreleased; historical release validation files remain unchanged.
+- **Independent red team:** Separate `gpt-5.6-sol` reviewer found stale script-path pinning and linked recovery-payload gaps; fixes and expanded tests were re-reviewed with no remaining concrete defect found within this scope. Reviewer inspected code/evidence and did not rerun parent-owned tests.
+- **Core tests:** 22 passed, zero failed, one explicit file-symlink-privilege skip; restart/collision/repeated deletion/invalid path/failed archive and actual folder-junction cases passed. Linked source/payload guards were reviewed; their file-symlink runtime cases were not executed on this host.
+- **UI probes:** Production native menu helper passed offscreen focus, routed typing, clear-button automation, no-match feedback, submenu persistence, and duplicate recovery-record selection. Both production editors passed dirty filtering, active-query Cancel/Discard/Save, previous-pin removal, renamed/category saves, and existing editor guards.
+- **Regression:** Existing workspace safety probe and audit-fixes/script execution/editor probes passed with temporary data and inert services.
+- **Builds:** Debug and Release passed; existing missing agent-signing-certificate warning remains, and no signed package was produced.
+- **Limits:** No live hosts, production data changes, physical visible-window input, high-DPI sweep, or screen-reader testing. Only deletions made by this version can be restored; recovery entries remain locally until restored, with no automatic purge.
+- **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
+
 ## Workflow improvements
 
 - [x] **U-6 · Medium — Make saved-list identity and changes visible.**
@@ -142,11 +155,11 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 
 ## Discoverability and polish
 
-- [ ] **U-16 · Lower — Add search to growing list and script libraries.**
-  - **Why:** Flat list menus and browsing-only script navigation become cumbersome as collections grow.
+- [x] **U-16 · Lower — Add search to growing list and script libraries.**
+  - **Delivered:** Search existing saved-list menus and grouped script libraries; keep the current script visible and edits protected.
 
-- [ ] **U-17 · Lower — Offer recovery for deleted saved lists.**
-  - **Why:** Confirmation exists, but deletion has no Undo or recovery path.
+- [x] **U-17 · Lower — Offer recovery for deleted saved lists.**
+  - **Delivered:** Restore deleted list offers recoveries across restarts and refuses name collisions without overwriting.
 
 - [ ] **U-18 · Lower — Make frequent secondary actions easier to discover.**
   - **Why:** Software, scheduling, deployment, and maintenance actions compete inside a large right-click menu.
@@ -155,8 +168,8 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
   - **Delivered:** Paste machines uses Add machines or Replace machines according to mode; Rename says Rename, and Save list retains its specific action label.
   - **Scope:** Existing operational and native confirmation dialogs remain unchanged; no additional confirmation step or dialog framework was introduced.
 
-- [ ] **U-20 · Lower — Update the documentation index's release pointer.**
-  - **Why:** It still calls 1.17.3 the latest candidate despite the current 1.18.0 release.
+- [x] **U-20 · Lower — Update the documentation index's release pointer.**
+  - **Delivered:** Index identifies 1.18.0 and Unreleased; 1.17.3 validation is explicitly historical.
 
 ## Validation gaps — not confirmed visual failures
 
