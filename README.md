@@ -59,7 +59,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
   runs, so EDR agents that disrupt WinRM mid-install can't break it.
 - **Windows Update lane** — scan, install, uninstall, and schedule updates per machine with live
   progress (a built-in BatchPatch-style patcher), with operator-tunable install concurrency
-  (**Settings ▸ Max simultaneous installs**) and a separate **Server 2016 staged DISM lane** (opt-in
+  (**Settings ▸ Max simultaneous installs**) and a separate **Server 2016 CU lane** (opt-in
   per box, for the boxes whose Express-delta CUs break under normal Windows Update). See `docs/windows-patching-lane.md`.
 - **Reboot & verify** — after an operator-confirmed reboot, Vivre watches each box offline → back →
   ready, then auto-rescans and reports a plain outcome (Server 2016 boxes are build-verified first).
@@ -146,3 +146,5 @@ git-ignored.)
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 Linux identification: Health and Patching show a small Linux label beside hostnames when the current AD domain advertises a recognized Linux OS. Background batched LDAP reads use the current Windows login without RSAT or target login. Hover the label for the AD value; directory metadata can be stale. This display-only label does not change scans or enable Linux operations. Missing/unreachable AD and other-domain records remain unlabeled.
+
+Server 2016 **Install CU (no reboot)** copies and installs the full CU package using DISM; it can affect performance and requires a later reboot to complete. The **CU lane** badge only identifies the configured patching route, not completed installation. Use the row menu **Use CU lane** / **Remove CU lane flag** to change that route.

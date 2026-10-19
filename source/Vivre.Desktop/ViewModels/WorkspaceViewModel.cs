@@ -1856,7 +1856,8 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
             foreach (string header in s.HiddenColumns)
             {
-                HiddenColumns.Add(header);
+                // Preserve saved visibility after the configuration column was renamed.
+                HiddenColumns.Add(header == "Staged" ? "CU lane" : header);
             }
         }
         catch (Exception ex)
@@ -3675,7 +3676,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 computer.UpdateProgress = null;
                 computer.UpdatePhase = PatchPhase.Idle.ToString();
                 computer.UpdateMessage = minorOnly
-                    ? "No minor updates to install — only the cumulative update is pending. Use Stage CU first."
+                    ? "No minor updates to install — only the cumulative update is pending. Use Install CU (no reboot) first."
                     : "Selected updates have no KB id to target";
                 return;
             }
@@ -4144,7 +4145,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (LcuRouting.Is2016(computer.OsBuild) && !computer.RequiresStagedPatching)
         {
             computer.UpdatePhase = PatchPhase.Idle.ToString();
-            computer.UpdateMessage = "Not a staged box — patches via Windows Update. Mark it for staged patching first.";
+            computer.UpdateMessage = "Not configured for the CU lane — patches via Windows Update. Choose Use CU lane first.";
             return;
         }
 
@@ -4168,7 +4169,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         if (string.IsNullOrWhiteSpace(settings.MonthlyCu?.Kb))
         {
             computer.UpdatePhase = PatchPhase.Idle.ToString();
-            computer.UpdateMessage = "Set this month's CU (KB + build number) in Settings before staging 2016 boxes.";
+            computer.UpdateMessage = "Set this month's CU (KB + build number) in Settings before installing the CU on 2016 boxes.";
             return;
         }
 

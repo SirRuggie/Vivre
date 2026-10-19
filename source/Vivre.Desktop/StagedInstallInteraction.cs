@@ -144,9 +144,9 @@ internal static class StagedInstallInteraction
                 + (unscanned.Count > 10 ? $"\n+{unscanned.Count - 10} more" : string.Empty);
             var gate = new Wpf.Ui.Controls.MessageBox
             {
-                Title = "Scan before staging",
+                Title = "Scan before installing CU",
                 Content = $"These Server 2016 machine(s) haven't been scanned this session:\n\n{names}\n\n"
-                        + "Run Check for updates (Scan) on them first — Stage uses the scan to confirm the "
+                        + "Run Check for updates (Scan) on them first — Install CU uses the scan to confirm the "
                         + "box's current state before patching. No machine was touched.",
                 CloseButtonText = "OK",
             };

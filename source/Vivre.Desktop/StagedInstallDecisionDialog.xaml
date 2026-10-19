@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         mc:Ignorable="d"
-        Title="Server 2016 staged update required"
+        Title="Server 2016 CU installation"
         Height="520" Width="600"
         MinHeight="440" MinWidth="520"
         ExtendsContentIntoTitleBar="True"
@@ -21,7 +21,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="Server 2016 staged update required">
+        <ui:TitleBar Grid.Row="0" Title="Server 2016 CU installation">
             <ui:TitleBar.Icon>
                 <ui:SymbolIcon Symbol="Box24" />
             </ui:TitleBar.Icon>
@@ -34,7 +34,7 @@
                             Title="Settings may have the wrong CU" Margin="0,0,0,14" />
 
                 <TextBlock TextWrapping="Wrap" FontSize="13"
-                           Text="These Server 2016 machine(s) are marked for staged patching, and this month's cumulative update (CU) hasn't been staged on them yet. The CU is delivered to 2016 boxes in a form that normal Windows Update can't apply reliably — it must be staged with the full package first." />
+                           Text="These Server 2016 machines use the CU lane and still need this month's cumulative update. Install CU copies and installs the full package using DISM without rebooting. Installation can affect performance; reboot later to complete." />
 
                 <TextBlock Text="Machines waiting for the CU:" FontWeight="SemiBold" Margin="0,14,0,4" />
                 <Border Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
@@ -51,7 +51,7 @@
                 <ui:InfoBar x:Name="MinorRebootBar" Severity="Warning" IsOpen="False" IsClosable="False"
                             Margin="0,16,0,0"
                             Title="Minor updates may require a reboot"
-                            Message="One or more minor updates may require a reboot. You'll need to reboot before staging the CU afterward. Proceed with minor updates first?" />
+                            Message="One or more minor updates may require a reboot. You'll need to reboot before installing the CU afterward. Proceed with minor updates first?" />
             </StackPanel>
         </ScrollViewer>
 
@@ -63,14 +63,14 @@
                     <!-- Primary recommended action: Stage the CU first. -->
                     <ui:Button HorizontalAlignment="Stretch" HorizontalContentAlignment="Left"
                                Appearance="Primary" IsDefault="True" Click="OnStageCu" Margin="0,0,0,4"
-                               Icon="{ui:SymbolIcon Box24}" Content="Stage CU first" />
+                               Icon="{ui:SymbolIcon Box24}" Content="Install CU (no reboot)" />
                     <TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12"
                                Margin="2,0,0,12" TextWrapping="Wrap"
-                               Text="Large update (~1.7 GB, 30–60 min to stage). Recommended — stage before installing other updates." />
+                               Text="Recommended before other updates. Package size and installation time vary; this starts installation, not just a file copy." />
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <ui:Button Content="Install minor updates only" Click="OnMinorOnly" Margin="0,0,8,0"
-                                   ToolTip="Install the non-cumulative updates now via Windows Update; the CU is staged separately." />
+                                   ToolTip="Install the non-cumulative updates now via Windows Update; the CU is installed separately." />
                         <ui:Button Content="Cancel" IsCancel="True" Click="OnCancel"
                                    ToolTip="Skip these machines for now — the rest of this run still installs." />
                     </StackPanel>

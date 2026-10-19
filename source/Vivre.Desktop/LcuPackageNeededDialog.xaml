@@ -63,7 +63,7 @@
                 </Grid>
 
                 <!-- 4. WHAT next -->
-                <TextBlock Text="4.  Then drop the .msu there and click &quot;Stage now&quot; below."
+                <TextBlock Text="4.  Then drop the .msu there and click &quot;Install CU (no reboot)&quot; below."
                            FontWeight="SemiBold" Margin="0,14,0,0" TextWrapping="Wrap" />
                 <TextBlock Text="Vivre never downloads the file for you — it only reads it from this folder."
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12"
@@ -74,9 +74,9 @@
         <Border Grid.Row="2" Padding="20,12" BorderThickness="0,1,0,0"
                 BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <ui:Button Content="Stage now" Appearance="Primary" IsDefault="True"
+                <ui:Button Content="Install CU (no reboot)" Appearance="Primary" IsDefault="True"
                            Click="OnStageNow" Margin="0,0,8,0"
-                           ToolTip="Re-check the folder and start staging if the file is now there." />
+                           ToolTip="Re-check the folder and install the CU without rebooting if the correct package is ready." />
                 <ui:Button Content="Cancel" IsCancel="True" />
             </StackPanel>
         </Border>

@@ -359,11 +359,11 @@
             <!-- ── Staged patching machines (collapsed expander) ──────────── -->
             <ui:CardExpander Margin="0,0,0,8" IsExpanded="False"
                              Icon="{ui:SymbolIcon Box24}"
-                             Header="Staged patching machines"
+                             Header="CU lane machines"
                              Expanded="OnStagedHostsExpanded">
                 <StackPanel Margin="0,8,0,0">
                     <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,12"
-                                  Text="Server 2016 machines you've flagged to patch through the DISM staging lane instead of normal Windows Update. Flag one by right-clicking its row in a Patching tab ▸ Mark as Staged patching. Remove a machine here to send it back to normal Windows Update." />
+                                  Text="Server 2016 machines you've flagged to patch through the full-package DISM lane instead of normal Windows Update. Flag one by right-clicking its row in a Patching tab ▸ Use CU lane. Remove a machine here to send it back to normal Windows Update." />
 
                     <ListBox x:Name="StagedHostsList" MaxHeight="220" Margin="0,0,0,8"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
@@ -389,10 +389,10 @@
 
                     <ui:TextBlock x:Name="StagedHostsEmpty" Foreground="{DynamicResource TextFillColorSecondaryBrush}" FontSize="12"
                                   Margin="0,0,0,8" Visibility="Collapsed"
-                                  Text="No machines flagged for staged patching yet." />
+                                  Text="No machines configured for the CU lane yet." />
 
                     <ui:Button Content="Clear all" Click="OnClearStagedHosts"
-                               ToolTip="Remove every machine from the staged-patching list." />
+                               ToolTip="Remove every machine from the CU lane list." />
                 </StackPanel>
             </ui:CardExpander>
 

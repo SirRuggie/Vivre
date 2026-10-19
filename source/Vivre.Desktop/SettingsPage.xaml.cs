@@ -498,8 +498,8 @@ public partial class SettingsPage : UserControl
 
         var confirm = new MessageBox
         {
-            Title = "Clear staged patching list",
-            Content = $"Remove all {_stagedHosts.Count} machine(s) from the staged-patching list? "
+            Title = "Clear CU lane list",
+            Content = $"Remove all {_stagedHosts.Count} machine(s) from the CU lane list? "
                       + "They'll patch via normal Windows Update.",
             PrimaryButtonText = "Clear all",
             CloseButtonText = "Cancel",

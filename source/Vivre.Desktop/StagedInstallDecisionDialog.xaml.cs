@@ -14,12 +14,12 @@ public enum StagedInstallChoice
     /// <summary>Stage this month's CU on the flagged boxes first (the recommended path).</summary>
     StageCu,
 
-    /// <summary>Install the non-cumulative updates now via Windows Update; the CU is staged separately.</summary>
+    /// <summary>Install the non-cumulative updates now via Windows Update; the CU is installed separately.</summary>
     MinorOnly,
 }
 
 /// <summary>
-/// Shown when an Install / Install-all run includes Server 2016 boxes that are marked for staged patching but
+/// Shown when an Install / Install-all run includes Server 2016 boxes that are configured for the CU lane but
 /// whose monthly CU hasn't been staged yet. It forces a real choice — never silent, never automatic: stage the
 /// CU first (recommended), install only the minor (non-CU) updates now, or cancel. If Settings' CU KB disagrees
 /// with what the boxes actually scanned, a warning is shown at the top. The minor-only path first reveals an
@@ -56,7 +56,7 @@ public partial class StagedInstallDecisionDialog : FluentWindow
         return names.Count > MaxNamesShown ? $"{shown}\n+{names.Count - MaxNamesShown} more" : shown;
     }
 
-    /// <summary>"Settings show KBx but the scan found a different CU on: BOX (KBy), … — update Settings before staging."</summary>
+    /// <summary>"Settings show KBx but the scan found a different CU on: BOX (KBy), … — update Settings before installing the CU."</summary>
     private static string FormatMismatch(System.Collections.Generic.IReadOnlyList<StagedCuKbMismatch> mismatches)
     {
         string settingsKb = mismatches[0].SettingsKb; // a single Settings value drives every comparison
@@ -68,7 +68,7 @@ public partial class StagedInstallDecisionDialog : FluentWindow
         }
 
         return $"Settings show KB{settingsKb}, but a different cumulative update was found on: {boxes}. "
-             + "Update Settings ▸ Server 2016 cumulative update before staging.";
+             + "Update Settings ▸ Server 2016 cumulative update before installing the CU.";
     }
 
     private void OnStageCu(object sender, RoutedEventArgs e)

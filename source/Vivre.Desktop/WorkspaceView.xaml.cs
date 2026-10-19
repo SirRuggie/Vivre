@@ -183,7 +183,8 @@ public partial class WorkspaceView : UserControl
     }
 
     private void UpdateStagedColumnVisibility(WorkspaceViewModel vm) =>
-        StagedColumn.Visibility = vm.HasStagedServer2016 ? Visibility.Visible : Visibility.Collapsed;
+        StagedColumn.Visibility = vm.HasStagedServer2016 && !vm.HiddenColumns.Contains("CU lane")
+            ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>Brings the machine grid in line with the view-model's saved layout: hides/shows the
     /// built-in columns and creates/removes a text column per custom-column spec (bound to the row's
@@ -234,6 +235,7 @@ public partial class WorkspaceView : UserControl
                 _customGridColumns[spec.Name] = col;
             }
         }
+        UpdateStagedColumnVisibility(vm);
     }
 
     private static DataGridTextColumn MakeCustomColumn(string name) => new()
@@ -518,13 +520,13 @@ public partial class WorkspaceView : UserControl
                 Computer row2016 = ctx!;
                 if (row2016.RequiresStagedPatching)
                 {
-                    var unmark = WithIcon(GuardItem(new MenuItem { Header = Scoped("Remove Staged flag", "this machine") }), SymbolRegular.Dismiss24);
+                    var unmark = WithIcon(GuardItem(new MenuItem { Header = Scoped("Remove CU lane flag", "this machine") }), SymbolRegular.Dismiss24);
                     unmark.Click += (_, _) => vm.SetStagedPatching(row2016, false);
                     _gridMenu.Items.Add(unmark);
                 }
                 else
                 {
-                    var mark = WithIcon(GuardItem(new MenuItem { Header = Scoped("Mark as Staged patching", "this machine") }), SymbolRegular.Box24);
+                    var mark = WithIcon(GuardItem(new MenuItem { Header = Scoped("Use CU lane", "this machine") }), SymbolRegular.Box24);
                     mark.Click += (_, _) => vm.SetStagedPatching(row2016, true);
                     _gridMenu.Items.Add(mark);
                 }

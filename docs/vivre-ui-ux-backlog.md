@@ -294,10 +294,10 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - [ ] **U-28 · High — Protect saved scripts from silent replacement.**
   - **Why:** A new name or sanitized filename collision can overwrite another script without warning.
 
-- [ ] **U-29 · High — Make Server 2016 Stage clearly say it installs.**
+- [x] **U-29 · High — Make Server 2016 Stage clearly say it installs.**
   - **Why:** Stage software only copies files, but the similarly named CU action starts installation.
 
-- [ ] **U-30 · Medium — Rename the misleading Staged badge.**
+- [x] **U-30 · Medium — Rename the misleading Staged badge.**
   - **Why:** The badge means a machine uses the CU lane, not that its update has been staged.
 
 - [ ] **U-31 · Medium — Reset stale service suggestions when changing products.**
@@ -332,3 +332,13 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - **U-33–U-36 delivered within this flow change:** identity columns pinned; Actions explicitly says Copy all resolved emails; Look up again is enabled only for eligible retry states; duplicate-only paste no longer dirties exported results.
 - **Evidence:** Release build, People/dispatcher probes and Fleet workspace/menu/tab regressions passed; independent read-only reviewer caught the footer-menu anchor issue, corrected before final re-review. See [People validation](people-lookup-validation.md) for measurements and remaining host-specific validation.
 - **Limits:** The reported five-person remote clipboard/host pause is not reproduced; native/RDP/DPI/physical-input checks remain open under U-21/U-22. U-39 remains open for deployment-host confirmation despite the delivered local mitigation and passing tests.
+
+## U-29 / U-30 delivery ledger (2026-10-19)
+
+- Implemented and tested: **Install CU (no reboot)** in the Server 2016 toolbar and decision/package dialogs; copy explicitly says installation can affect performance and reboot is later.
+- Implemented and tested: **CU lane** configuration badge/header, row-menu labels, Settings labels, README and in-app how-to help; genuine post-install state messages are retained.
+- Implemented and reviewed: legacy hidden-column key `Staged` maps to `CU lane`; eligibility updates now honor the hidden preference rather than re-showing the column.
+- Preserved: patch routing, target selection, stored host flags, handlers, execution, guards, and reboot behavior; no Core or agent implementation changes.
+- Independent red team: found the visibility override and remaining ambiguous wording; both fixed and re-reviewed with no remaining blocking findings.
+- Validation: Release build passed; 114 focused CU/lane/routing/planner tests passed; real-WPF PatchingClarity probe passed, including action wording, lane binding, hidden/show/no-eligible states and existing reboot-choice/scheduling checks. `git diff --check` passed.
+- Limits: local dummy-data validation only; no live patching, reboot, signed package, or native multi-DPI usability certification. Build warned that the configured signing certificate is absent on this build account. U-21/U-22 hands-on validation remains separate.
