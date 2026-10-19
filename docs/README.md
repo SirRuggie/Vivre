@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-22 checklist, decisions, completion evidence, and strengths to preserve. *Read when: choosing or updating UI/UX work.*
+
 - **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F45 acceptance ledger, independent review corrections and exact local/live validation limits.
 
 - **[release-1.17.3-validation.md](release-1.17.3-validation.md)** — latest candidate, multiple-schedule fix and expanded banner checks; supersedes 1.17.2.
