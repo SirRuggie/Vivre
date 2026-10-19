@@ -1199,40 +1199,35 @@ public partial class MainWindow : FluentWindow
 
         if (rebootApproval.Count > 0)
         {
-            // DISCLOSURE ONLY — appended when the PENDING set (what this dialog's primary button reboots)
-            // includes the box Vivre is running on. Same razor and same wording as the other three reboot
-            // confirms; it does not gate, filter, or reorder anything — the captured pending subset is passed on untouched.
-            // This is the highest-exposure path: it needs no selection, is reachable by Ctrl+Enter, and
-            // scopes to every reboot-pending box in the tab.
-            string? localWarning = rebootApproval.LocalWarning;
-
-            var nudge = new MessageBox
-            {
-                Title = "Reboot pending",
-                Content = rebootApproval.ForcePrompt + "\n\nA pending reboot can prevent installation. "
-                          + "After rebooting, wait for the machines to return before installing, or choose Install anyway. "
-                          + "Install anyway overrides reboot-pending flags for this install only; active or staged Windows servicing still defers."
-                          + (localWarning is null ? string.Empty : $"\n\n{localWarning}"),
-                PrimaryButtonText = $"Force-reboot {rebootApproval.Count} first",
-                SecondaryButtonText = "Install anyway",
-                CloseButtonText = "Cancel",
-            };
+            var nudge = CreatePendingRebootDialog(rebootApproval, count);
 
             MessageBoxResult choice = await nudge.ShowDialogAsync();
-            if (choice == MessageBoxResult.Primary)
-            {
-                await rebootApproval.ExecuteAsync(true, rows => vm.RebootForceSelectedAsync(rows), vm.ReportRebootApprovalChanged);
-                return;
-            }
-
-            if (choice != MessageBoxResult.Secondary) return;
-
-            await GatedProceedAsync(showConfirm: false, allowPendingRebootInstall: true);
+            await ExecutePendingRebootChoiceAsync(choice,
+                () => GatedProceedAsync(showConfirm: false, allowPendingRebootInstall: true),
+                () => rebootApproval.ExecuteAsync(true, rows => vm.RebootForceSelectedAsync(rows), vm.ReportRebootApprovalChanged));
             return;
         }
 
         await GatedProceedAsync(showConfirm: true);
     }
+
+    internal static Task ExecutePendingRebootChoiceAsync(MessageBoxResult choice, Func<Task> install, Func<Task> reboot) => choice switch
+    {
+        MessageBoxResult.Primary => install(),
+        MessageBoxResult.Secondary => reboot(),
+        _ => Task.CompletedTask,
+    };
+
+    internal static MessageBox CreatePendingRebootDialog(RebootApproval approval, int installCount) => new()
+    {
+        Title = "Install updates — reboot pending",
+        Content = $"Install anyway: install on {installCount} machine(s) without rebooting. Pending-reboot flags are overridden for this install only; active or staged Windows servicing still defers."
+            + $"\n\nReboot first: {approval.ForcePrompt}\nThis only reboots the pending machines; wait for them to return, then start installation again."
+            + (approval.LocalWarning is { } warning ? $"\n\n{warning}" : string.Empty),
+        PrimaryButtonText = $"Install anyway ({installCount})",
+        SecondaryButtonText = $"Force-reboot first ({approval.Count})",
+        CloseButtonText = "Cancel",
+    };
 
     private async Task ShowInstallTargetsChangedAsync()
     {

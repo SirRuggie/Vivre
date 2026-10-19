@@ -80,6 +80,18 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - **Limits:** Offscreen production controls and dummy services/storage; no live targets, visible-window/high-DPI sweep, screen-reader run, or full-application soak; the reviewer did not independently rerun parent-owned tests.
 - **Delivery:** Included in the commit containing this checklist update; see Git history for the identifier.
 
+## U-10, U-11, U-15 acceptance and independent review — 2026-10-19
+
+- **Acceptance ledger:** All three requested capabilities are implemented and locally tested; nothing in this batch is deferred or blocked.
+- **Simplicity:** Existing options, dialogs, and approval gates reused; no extra normal confirmation step, background polling, or live operation.
+- **Independent review:** A separate `gpt-5.6-sol` reviewer found a high-severity existing target-name race in scheduling; both handlers now reuse InstallTargetScope and reject renamed targets or closed tabs before dispatch, and the reviewer accepted the correction.
+- **Focused tests:** 19 timezone-formatting, reboot-approval, and target-snapshot tests passed with zero skips; the full suite was not rerun for this UI batch.
+- **Production-control probe:** Per-tab summary bindings, Health hiding, install/reboot/cancel callback routing, schedule counts/host zone, summer/winter offsets, repeated-hour disclosure, invalid-time rejection, and captured-name protection passed with dummy targets.
+- **Regression probes:** Existing per-tab options and install-anyway approval probes passed, including delayed scan snapshots, compact toolbar, scheduled installs, and uninstalls.
+- **Builds:** Debug and Release passed with zero errors and the existing missing agent-signing-certificate warning; no signed package produced.
+- **Limits:** Offscreen WPF and inert callbacks/services; no live install, reboot, task registration, visible-window/high-DPI sweep, or screen-reader run; independent reviewer did not rerun parent-owned tests.
+- **Delivery:** Included in the commit containing this checklist update; see Git history for its identifier.
+
 ## Workflow improvements
 
 - [x] **U-6 · Medium — Make saved-list identity and changes visible.**
@@ -95,12 +107,12 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - [x] **U-9 · Medium — Keep machine names visible during horizontal scrolling.**
   - **Delivered:** Name stays fixed at the left of both grids; its width is bounded, long names have ellipsis/full-name hover text, and other columns retain resizing/reordering.
 
-- [ ] **U-10 · Medium — Show active update options beside patching actions.**
-  - **Why:** Driver inclusion and exclusions still require opening menus despite affecting results.
-  - **Progress:** U-1 completed the visible-source portion; visibility of drivers/exclusions remains undecided and unimplemented.
+- [x] **U-10 · Medium — Show active update options beside patching actions.**
+  - **Delivered:** A short summary above each Patching grid shows source, drivers, and parsed exclusion count; it stays visible in compact mode, and the existing options button exposes the same summary on hover.
 
-- [ ] **U-11 · Medium — Make forced reboot a clearly separate choice.**
-  - **Why:** The pending-reboot dialog presents “Force-reboot first” as its primary action after the user chose Install.
+- [x] **U-11 · Medium — Make forced reboot a clearly separate choice.**
+  - **Delivered:** Install anyway is primary; forced reboot is a separate secondary choice with its pending-target count and lost-work warning.
+  - **Behavior:** Install does not reboot; reboot-first only reboots and requires starting installation again afterward; Cancel does neither.
 
 - [ ] **U-12 · Medium — Show the originating tab in Activity.**
   - **Why:** Tab attribution exists in file logs but is absent from the shared Activity display.
@@ -111,8 +123,9 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 - [ ] **U-14 · Medium — Explain invalid settings beside their fields.**
   - **Why:** Some invalid numeric values silently revert, leaving users uncertain why their edit disappeared.
 
-- [ ] **U-15 · Medium — Show timezone and target count when scheduling.**
-  - **Why:** The scheduling flow should make both execution time and affected scope immediately unambiguous.
+- [x] **U-15 · Medium — Show timezone and target count when scheduling.**
+  - **Delivered:** Both schedule dialogs show captured target counts and the Vivre host timezone with the chosen date's UTC offset; invalid clock-change times are refused and repeated times disclose the chosen offset.
+  - **Safeguard:** Changing selection does not retarget approval; target-name changes or a closed tab cancel before scheduling.
 
 ## Discoverability and polish
 

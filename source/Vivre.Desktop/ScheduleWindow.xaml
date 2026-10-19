@@ -29,18 +29,20 @@
 
             <StackPanel Orientation="Horizontal">
                 <ui:TextBlock Text="Date" Width="50" VerticalAlignment="Center" />
-                <DatePicker x:Name="DatePick" AutomationProperties.Name="Schedule date" Width="170" />
+                <DatePicker x:Name="DatePick" SelectedDateChanged="OnTimeChanged" AutomationProperties.Name="Schedule date" Width="170" />
             </StackPanel>
 
             <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                 <ui:TextBlock Text="Time" Width="50" VerticalAlignment="Center" />
-                <ComboBox x:Name="HourBox" AutomationProperties.Name="Schedule hour (24-hour)" Width="70" />
+                <ComboBox x:Name="HourBox" SelectionChanged="OnTimeChanged" AutomationProperties.Name="Schedule hour (24-hour)" Width="70" />
                 <ui:TextBlock Text=":" Margin="8,0" VerticalAlignment="Center" FontWeight="Bold" />
-                <ComboBox x:Name="MinuteBox" AutomationProperties.Name="Schedule minute" Width="70" />
+                <ComboBox x:Name="MinuteBox" SelectionChanged="OnTimeChanged" AutomationProperties.Name="Schedule minute" Width="70" />
                 <ui:TextBlock Text="(24-hour)" Margin="12,0,0,0" VerticalAlignment="Center" Appearance="Secondary" />
             </StackPanel>
 
-            <ui:TextBlock x:Name="Hint" local:AccessibleStatus.Enabled="True" Margin="0,12,0,0" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
+            <ui:TextBlock x:Name="TimeZoneSummary" Margin="0,12,0,0" TextWrapping="Wrap" />
+
+            <ui:TextBlock x:Name="Hint" TextWrapping="Wrap" local:AccessibleStatus.Enabled="True" Margin="0,12,0,0" Foreground="{DynamicResource SystemFillColorCautionBrush}" />
         </StackPanel>
 
         <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,8,24,16">

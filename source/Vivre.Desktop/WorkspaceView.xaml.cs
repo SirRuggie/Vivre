@@ -1042,15 +1042,17 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        var targets = vm.SelectedComputers.ToList();
+        var scope = InstallTargetScope.Capture(vm.SelectedComputers);
+        var targets = scope.Targets;
         if (targets.Count == 0)
         {
             return;
         }
 
-        var dialog = new ScheduleWindow("install") { Owner = OwnerWindow };
+        var dialog = new ScheduleWindow("install", targets.Select(c => c.Name)) { Owner = OwnerWindow };
         if (dialog.ShowDialog() == true && dialog.Value is { } at)
         {
+            if (!ScheduleTargetsUnchanged(vm, scope)) return;
             await vm.ScheduleInstallSelectedAsync(targets, at);
         }
     }
@@ -1063,7 +1065,8 @@ public partial class WorkspaceView : UserControl
             return;
         }
 
-        var targets = vm.SelectedComputers.ToList();
+        var scope = InstallTargetScope.Capture(vm.SelectedComputers);
+        var targets = scope.Targets;
         if (targets.Count == 0)
         {
             return;
@@ -1074,8 +1077,17 @@ public partial class WorkspaceView : UserControl
         var dialog = new ScheduleWindow("reboot", targets.Select(c => c.Name)) { Owner = OwnerWindow };
         if (dialog.ShowDialog() == true && dialog.Value is { } at)
         {
+            if (!ScheduleTargetsUnchanged(vm, scope)) return;
             await vm.ScheduleRebootSelectedAsync(targets, at);
         }
+    }
+
+    private bool ScheduleTargetsUnchanged(WorkspaceViewModel vm, InstallTargetScope scope)
+    {
+        if (!vm.IsClosed && scope.IsUnchanged()) return true;
+        System.Windows.MessageBox.Show(OwnerWindow, "The tab closed or a target name changed while scheduling was open. Review the targets and try again.",
+            "Schedule cancelled", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+        return false;
     }
 
     /// <summary>Cancel any pending Vivre scheduled task (install or reboot) on the selected machines.</summary>

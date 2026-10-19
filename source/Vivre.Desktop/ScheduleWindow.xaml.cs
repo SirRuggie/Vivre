@@ -9,10 +9,7 @@ namespace Vivre.Desktop;
 public partial class ScheduleWindow : FluentWindow
 {
     /// <param name="action">What's being scheduled ("install" or "reboot") — tunes the title + blurb.</param>
-    /// <param name="targetNames">The machines being scheduled. Used for ONE thing: when the action is a reboot
-    /// and this machine is in the list, the intro discloses that by name. Schedule ▸ Reboot has no
-    /// MessageBox confirm — this window IS the gate — so the intro is the only honest place for it, and adding
-    /// a new confirm dialog would change the action's shape. Nothing here filters or blocks a target.</param>
+    /// <param name="targetNames">Captured targets for count and local-host reboot disclosure.</param>
     public ScheduleWindow(string action = "install", IEnumerable<string?>? targetNames = null)
     {
         InitializeComponent();
@@ -27,9 +24,9 @@ public partial class ScheduleWindow : FluentWindow
             : "Pick when the install should run on the selected machine(s). A one-time task runs as "
               + "SYSTEM at that time; reboot is reported, not forced.";
 
-        ScheduleButton.Content = reboot ? $"Schedule forced reboot ({targets.Length})" : "Schedule install";
+        ScheduleButton.Content = reboot ? $"Schedule forced reboot ({targets.Length})" : $"Schedule install ({targets.Length})";
         ScheduleButton.IsDefault = !reboot;
-        if (reboot) Intro.Text = $"Targets: {targets.Length} selected machine(s).\n\n" + Intro.Text;
+        Intro.Text = $"Targets: {targets.Length} selected machine(s).\n\n" + Intro.Text;
 
         // DISCLOSURE ONLY, and only on the reboot branch (a scheduled INSTALL never restarts this box —
         // "reboot is reported, not forced"). Every scheduled machine is still scheduled exactly as before.
@@ -67,15 +64,38 @@ public partial class ScheduleWindow : FluentWindow
         }
 
         DateTime at = date.Date.AddHours(int.Parse(h)).AddMinutes(int.Parse(m));
-        if (at <= DateTime.Now)
+        if (ScheduleTimeError(at, DateTime.Now, TimeZoneInfo.Local) is { } error)
         {
-            Hint.Text = "Pick a time in the future.";
+            Hint.Text = error;
             return;
         }
-
         Value = at;
         DialogResult = true;
         Close();
+    }
+
+    internal static string? ScheduleTimeError(DateTime at, DateTime now, TimeZoneInfo zone) =>
+        at <= now ? "Pick a time in the future."
+        : zone.IsInvalidTime(at) ? "That local time does not exist because the clock moves forward. Choose another time."
+        : null;
+
+    internal static string DescribeTimeZone(DateTime at, TimeZoneInfo zone)
+    {
+        var offset = zone.GetUtcOffset(at);
+        string sign = offset < TimeSpan.Zero ? "−" : "+";
+        return $"Vivre host time: {zone.Id} (UTC{sign}{offset.Duration().Hours:00}:{offset.Duration().Minutes:00}). All targets run at the same instant."
+            + (zone.IsAmbiguousTime(at) ? " This time occurs twice; the displayed offset is used." : string.Empty);
+    }
+
+    private void OnTimeChanged(object? sender, RoutedEventArgs e)
+    {
+        if (TimeZoneSummary is null) return;
+        DateTime at = (DatePick.SelectedDate ?? DateTime.Today).Date;
+        if (HourBox.SelectedItem is string h) at = at.AddHours(int.Parse(h));
+        if (MinuteBox.SelectedItem is string m) at = at.AddMinutes(int.Parse(m));
+        var zone = TimeZoneInfo.Local;
+        TimeZoneSummary.Text = DescribeTimeZone(at, zone);
+        Hint.Text = zone.IsInvalidTime(at) ? "That local time does not exist because the clock moves forward." : string.Empty;
     }
 
     private void OnCancel(object sender, RoutedEventArgs e) => DialogResult = false;

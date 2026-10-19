@@ -496,7 +496,7 @@ public static class HelpContent
                 "Click the source button in the Patching command bar (Windows Update, Microsoft Update, or Managed) ▸ Source to change it for this tab only. The source also appears beside the tab name.",
                 "New tabs start with Windows Update, drivers off, no exclusions, and applicable updates; options stay in memory for this tab only.",
                 "A scan already dispatched keeps the settings it started with; changes apply to subsequent scans. In compact toolbar mode, read the source beside the tab name.",
-                "Source button ▸ Include drivers to also scan/install drivers (off by default).",
+                "Source button ▸ Include drivers to also scan/install drivers (off by default). The summary above the Patching filters shows this tab's source, driver setting, and exclusion count, including in compact mode.",
                 "Source button ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
             ],
         },
@@ -530,7 +530,7 @@ public static class HelpContent
             Lines =
             [
                 "Select machines, then click Install all — or Install (N) with a selection (the confirm reads \"Install on N\"). Or Ctrl+Enter.",
-                "If any target already has a reboot pending, Install shows the pending count and original target scope. Force-reboot first closes applications and loses unsaved work; it acts on exactly the pending subset shown. Wait for those machines to return before installing, or choose Install anyway. That approval applies only to this immediate Windows Update install: pending-reboot flags may be bypassed, but active or staged servicing transactions still defer. Stage CU, cleanup and uninstall keep their reboot guards.",
+                "If any target already has a reboot pending, Install shows the pending count and original target scope. Install anyway is the main action and does not reboot; Force-reboot first is a separate choice that only reboots, so installation must be started again afterward. Force-reboot first closes applications and loses unsaved work; it acts on exactly the pending subset shown. Wait for those machines to return before installing, or choose Install anyway. That approval applies only to this immediate Windows Update install: pending-reboot flags may be bypassed, but active or staged servicing transactions still defer. Stage CU, cleanup and uninstall keep their reboot guards.",
                 "Progress shows live download then install percent; the chip turns green (Done) or amber (reboot pending).",
                 "A required reboot is reported, not forced — reboot when you're ready.",
                 "A box whose OS build is unknown is skipped with \"Unknown OS build — run Check Vitals first so Vivre can pick the right update lane.\"",
@@ -556,6 +556,8 @@ public static class HelpContent
             Lines =
             [
                 "Select machines, right-click ▸ Schedule ▸, then:",
+                "Both schedule dialogs show the captured target count and Vivre host timezone with the offset for the chosen date. All targets use the same instant; a repeated daylight-saving hour states the offset used, and nonexistent spring-forward times are refused.",
+                "Changing selection while the dialog is open does not change its targets; a renamed target or closed tab cancels approval so you can review it again.",
                 "• Install updates… — pick a date/time to install.",
                 "• Reboot… — pick a date/time, review the target count and lost-work warning, then explicitly click Schedule forced reboot. Pressing Enter in a date/time field does not approve it.",
                 "• Cancel scheduled task — clears a pending one; the row then reads 'Scheduled task cancelled' until its next action ('Cancel had errors' if the target reported problems removing it). If the machine couldn't actually remove the task, the row KEEPS its Scheduled marker and reads 'Cancel failed — task may still fire', so you never mistake a failed cancel for a cancelled task.",

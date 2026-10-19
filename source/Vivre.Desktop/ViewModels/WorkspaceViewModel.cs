@@ -870,6 +870,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         _ => "Windows Update",
     };
 
+    public string UpdateOptionsSummary => $"Drivers: {(IncludeDrivers ? "included" : "excluded")} · Exclusions: {_patchOptions.ExcludeNameContains.Count}";
+    public string UpdateOptionsDescription => $"{UpdateSourceLabel} · {UpdateOptionsSummary}";
+
     /// <summary>Comma/newline-separated exclude terms (bound to the Exclude box); parsed into <see cref="PatchOptions"/>.</summary>
     [ObservableProperty]
     public partial string ExcludeText { get; set; } = string.Empty;
@@ -1365,16 +1368,26 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         _patchOptions.Source = value;
         OnPropertyChanged(nameof(UpdateSourceLabel));
+        OnPropertyChanged(nameof(UpdateOptionsDescription));
     }
 
     /// <summary>Parse the Exclude box into this tab's patch options (split on comma/newline, trim, drop blanks).</summary>
-    partial void OnExcludeTextChanged(string value) =>
+    partial void OnExcludeTextChanged(string value)
+    {
         _patchOptions.ExcludeNameContains =
             [.. (value ?? string.Empty)
                 .Split([',', '\n', '\r'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
+        OnPropertyChanged(nameof(UpdateOptionsSummary));
+        OnPropertyChanged(nameof(UpdateOptionsDescription));
+    }
 
     /// <summary>Push the "Include drivers" checkbox into this tab's patch options.</summary>
-    partial void OnIncludeDriversChanged(bool value) => _patchOptions.IncludeDrivers = value;
+    partial void OnIncludeDriversChanged(bool value)
+    {
+        _patchOptions.IncludeDrivers = value;
+        OnPropertyChanged(nameof(UpdateOptionsSummary));
+        OnPropertyChanged(nameof(UpdateOptionsDescription));
+    }
 
     /// <summary>
     /// Push the side-panel scope toggle into this tab's patch options and restore each row's

@@ -451,8 +451,8 @@
 
                             <!-- Update options button — visible only in Patching mode. -->
                             <ui:Button x:Name="UpdateOptionsButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       AutomationProperties.Name="{Binding SelectedTab.UpdateSourceLabel, StringFormat=Update options for this tab: {0}}"
-                                       ToolTip="Update options for this tab — configure source, drivers, and exclusions"
+                                       AutomationProperties.Name="{Binding SelectedTab.UpdateOptionsDescription, StringFormat=Update options for this tab: {0}}"
+                                       ToolTip="{Binding SelectedTab.UpdateOptionsDescription}"
                                        Click="OnUpdateOptionsButtonClick">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />

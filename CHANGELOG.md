@@ -13,6 +13,8 @@ it ships, then gets a dated heading.
 - Freeze each dispatched scan's update options through retries and result processing; preserve compact toolbar behavior for the per-tab source label.
 
 ### Changed
+- Show patch options without opening a menu; make Install anyway primary and forced reboot a separate choice.
+- Show schedule target counts and host timezone/selected-date offset; refuse nonexistent daylight-saving times and stale target-name approvals.
 - Show saved-list identity, membership changes, and successful save status without additional prompts or automatic saving.
 - Share Paste/Quick Add separators, keep Name fixed in both fleet grids, and label Paste and Rename actions explicitly.
 - Update options are independent per tab; Patching tab headers and the source/options toolbar button show Windows Update, Microsoft Update, or Managed (WSUS/SCCM). New tabs start with Windows Update.
