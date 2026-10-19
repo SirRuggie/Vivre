@@ -56,3 +56,7 @@ The CU-only run also exercises the actual WorkspaceViewModel with a blocked dumm
 Run `dotnet run --project tools/PerformanceAudit -c Release -- --install-override-only "$env:TEMP\vivre-install-override.json"` from the repository in PowerShell. This invokes the real WorkspaceViewModel against an inert patch service and verifies approval is true for the approved immediate install, false for the next default install, and false for a scheduled install. It does not contact any target, show a window, or install updates.
 
 Software display probe: `dotnet run --project tools/PerformanceAudit -c Release -- --software-display-only "$env:TEMP\vivre-software-display.json"`. Exercises the real grid at 720 pixels and live Details diagnostics using dummy data, without remote operations.
+
+### AD Linux label probe
+
+`dotnet tools/PerformanceAudit/bin/Release/net10.0-windows/PerformanceAudit.dll --ad-linux-only <output.json>` runs the production workspace and Name template with 1,000 dummy rows and delayed fake AD. It checks batching, UI heartbeat while waiting, Linux rendering, unchanged operational OS facts, and stale-result protection after rename/remove/reset/dispose or directory outage. No live AD, target operations, or production writes. Core `AdLinuxLabelLookupTests` additionally exercise the actual cache/serialization/background service with a fake transport.

@@ -319,7 +319,7 @@ internal static class WorkspaceProbe
         void Stop(object? sender, EventArgs e) => frame.Continue = false;
     }
 
-    internal static WorkspaceViewModel CreateWorkspace()
+    internal static WorkspaceViewModel CreateWorkspace(Vivre.Core.Computers.IAdLinuxLabelLookup? adLinuxLabels = null)
     {
         var workspace = new WorkspaceViewModel(
             pinger: null!,
@@ -342,7 +342,8 @@ internal static class WorkspaceProbe
             catalogSize: null!,
             reaper: null!,
             forceReboot: null!,
-            bootTime: null!);
+            bootTime: null!,
+            adLinuxLabels: adLinuxLabels);
 
         // Construction starts an empty monitor loop. Cancel it before adding any row so none of the
         // null remote sentinels can be reached, even if a host pumps the dispatcher concurrently.

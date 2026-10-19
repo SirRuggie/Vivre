@@ -136,7 +136,8 @@ public partial class App : Application
         // Fresh "Last reboot" reads on the monitor's offline→online transition. Ambient DCOM, stateless
         // and shareable across tabs (each ReadAsync builds and disposes its own CimSession).
         var bootTime = new DcomBootTimeReader();
-        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper, forceReboot, bootTime, operations);
+        var adLinuxLabels = new Vivre.Core.Computers.AdLinuxLabelLookup();
+        WorkspaceViewModel NewWorkspace() => new(pinger, hostProbe, configMgr, winRm, credentials, lists, activity, scripts, patch, patchOptions, rebootProbe, powerShell, vitals, remediation, deployment, software, customColumns, catalogSize, reaper, forceReboot, bootTime, operations, adLinuxLabels);
 
         // Singleton Cross-Domain RDP view model — created once here and kept for the app lifetime.
         // The nav section's DataContext binds to ShellViewModel.RdpViewModel.

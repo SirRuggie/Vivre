@@ -6,6 +6,9 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+- Display a Linux label beside hostnames when the current AD domain reports a recognized Linux OS. Cached background batches use the current Windows login; existing checks and operations are unchanged.
+
 ### Fixed
 - Harden Save list against overlapping prompts and menu focus/rendering issues by closing the menu first and using a guarded, solid-background dialog; verification of the reported behavior on the affected machine remains pending.
 

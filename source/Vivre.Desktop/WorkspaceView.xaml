@@ -19,6 +19,16 @@
         <local:StringToVisibilityConverter x:Key="StringToVis" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+        <DataTemplate x:Key="ComputerNameWithOsLabel">
+            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                <TextBlock Text="{Binding DirectoryOsLabel}" Margin="8,0,0,0" FontSize="11"
+                           VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+                           Visibility="{Binding DirectoryOsLabel, Converter={StaticResource StringToVis}}"
+                           ToolTip="{Binding DirectoryOperatingSystem, StringFormat='AD operatingSystem: {0} (directory information)'}" />
+            </StackPanel>
+        </DataTemplate>
+
         <!-- GridRowStyle: BasedOn Wpf.Ui's KEYED DefaultDataGridRowStyle (not {x:Type DataGridRow}
              which falls through to WPF Aero2 — theme-blind SystemColors near-black text invisible on
              dark background). Adds 36px min-height only; all theme-aware colours come from the base.
@@ -631,7 +641,8 @@
                      PreviewMouseRightButtonDown="OnGridRightClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
-                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
+                <DataGridTemplateColumn Header="Name" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
+                                        Width="Auto" MinWidth="120" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
                 <DataGridTemplateColumn Header="Online" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>
@@ -816,7 +827,8 @@
                      PreviewMouseLeftButtonUp="OnUpdateGridLeftClick"
                      PreviewKeyDown="OnGridKeyDown">
             <ui:DataGrid.Columns>
-                <DataGridTextColumn Header="Name" Binding="{Binding Name}" Width="Auto" MinWidth="120" />
+                <DataGridTemplateColumn Header="Name" SortMemberPath="Name" ClipboardContentBinding="{Binding Name}"
+                                        Width="Auto" MinWidth="120" CellTemplate="{StaticResource ComputerNameWithOsLabel}" />
                 <DataGridTemplateColumn Header="Ping" Width="Auto" SortMemberPath="IsOnline">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>

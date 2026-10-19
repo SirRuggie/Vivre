@@ -951,8 +951,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime, Vivre.Core.Operations.HostOperationCoordinator? operations = null)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime, Vivre.Core.Operations.HostOperationCoordinator? operations = null, IAdLinuxLabelLookup? adLinuxLabels = null)
     {
+        _adLinuxLabels = adLinuxLabels;
         Operations = operations ?? new Vivre.Core.Operations.HostOperationCoordinator();
         _pinger = pinger;
         _hostProbe = hostProbe;
@@ -1034,6 +1035,51 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         MarkFleetDirty();
     }
 
+    private readonly IAdLinuxLabelLookup? _adLinuxLabels;
+    private readonly CancellationTokenSource _directoryLabelCts = new();
+    private readonly HashSet<Computer> _directoryLabelPending = [];
+    private bool _directoryLabelsRunning;
+
+    private void QueueDirectoryLabel(Computer computer)
+    {
+        if (_disposed || _adLinuxLabels is null || System.Windows.Application.Current?.Dispatcher is null) return;
+        _directoryLabelPending.Add(computer);
+        if (_directoryLabelsRunning) return;
+        _directoryLabelsRunning = true;
+        _ = RefreshDirectoryLabelsAsync();
+    }
+
+    private async Task RefreshDirectoryLabelsAsync()
+    {
+        CancellationToken token = _directoryLabelCts.Token;
+        try
+        {
+            // Coalesce a whole list load, let the grid paint, and never join the scan pipeline.
+            await Dispatcher.Yield(DispatcherPriority.Background);
+            while (!_disposed && _directoryLabelPending.Count > 0)
+            {
+                var batch = _directoryLabelPending.Take(AdLinuxLabelLookup.BatchSize)
+                    .Select(c => (Row: c, Name: c.Name)).ToArray();
+                foreach (var item in batch) _directoryLabelPending.Remove(item.Row);
+                var result = await _adLinuxLabels!.LookupAsync(batch.Select(x => x.Name).ToArray(), token);
+                if (_disposed) return;
+                if (result.Error is { } error) _activity.Trace(null, error);
+                foreach (var item in batch)
+                {
+                    if (!_subscribedComputers.Contains(item.Row) || item.Row.Name != item.Name) continue;
+                    if (result.Values.TryGetValue(item.Name.Trim().TrimEnd('.'), out string? os))
+                        item.Row.DirectoryOperatingSystem = os;
+                    else if (result.Available)
+                        item.Row.DirectoryOperatingSystem = null;
+                }
+                await Dispatcher.Yield(DispatcherPriority.Background);
+            }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) { _activity.Trace(null, $"AD Linux labels unavailable: {ex.Message}"); }
+        finally { _directoryLabelsRunning = false; }
+    }
+
     /// <summary>Subscribe/unsubscribe row state changes and refresh the online/total summary.</summary>
     private void OnComputersChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
@@ -1045,6 +1091,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             }
 
             _subscribedComputers.Clear();
+            _directoryLabelPending.Clear();
         }
 
         if (e.OldItems is not null)
@@ -1054,6 +1101,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 if (_subscribedComputers.Remove(c))
                 {
                     c.PropertyChanged -= OnComputerStateChanged;
+                    _directoryLabelPending.Remove(c);
                 }
             }
         }
@@ -1066,6 +1114,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             if (_subscribedComputers.Add(c))
             {
                 c.PropertyChanged += OnComputerStateChanged;
+                QueueDirectoryLabel(c);
             }
         }
 
@@ -1080,6 +1129,13 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     {
         switch (e.PropertyName)
         {
+            case nameof(Computer.Name):
+                if (sender is Computer renamed)
+                {
+                    renamed.DirectoryOperatingSystem = null;
+                    QueueDirectoryLabel(renamed);
+                }
+                break;
             // IsOnline drives OnlineSummary (a whole-list count). Every box's online result fires this during
             // an auto-check sweep, so COALESCE the recompute instead of re-counting the whole list per result
             // (this per-result whole-fleet recompute was the measured O(N^2) freeze). The row's own online dot
@@ -2649,6 +2705,9 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
 
         _disposed = true;
+        _directoryLabelCts.Cancel();
+        _directoryLabelCts.Dispose();
+        _directoryLabelPending.Clear();
         Stop();                 // cancels every active operation and flips IsMonitoring off (disposing _monitorCts)
         _monitorCts?.Dispose(); // belt-and-suspenders: covers the case where monitoring was already off
         _monitorCts = null;

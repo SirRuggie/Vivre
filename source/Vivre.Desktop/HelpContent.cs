@@ -69,6 +69,18 @@ public static class HelpContent
         },
         new HelpTopic
         {
+            Category = GettingStarted, Icon = SymbolRegular.Info24, Title = "What does the Linux label mean?",
+            Keywords = "AD operating system Linux Ubuntu RedHat CentOS Amazon directory",
+            Lines =
+            [
+                "Linux beside a hostname means the current AD domain reports a recognized Linux operating system. Hover the label to see the original AD value.",
+                "Labels load in the background using your Windows login, separately from scans. No Linux login or RSAT module is needed.",
+                "AD information can be outdated. Missing or unavailable AD data leaves machines unlabeled; it does not mean Windows. Other domains are not searched.",
+                "This label does not change any checks or actions, or add Linux software or service checks.",
+            ],
+        },
+        new HelpTopic
+        {
             Category = GettingStarted, Icon = SymbolRegular.Save24, Title = "How do I save and reuse a machine list?",
             Keywords = "named lists save open delete rename tab title",
             Lines =

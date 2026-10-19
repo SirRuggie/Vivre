@@ -926,3 +926,22 @@ Shaun asked to finish the outstanding work. F25 multiple-task schedule display i
 - Verified: Release Desktop build succeeds (zero errors, one missing agent-signing certificate warning); five ComputerListStore tests pass. Source review confirms the guard resets on all exits and the existing help workflow remains accurate.
 - Not verified: reproduction of the operator's duplicate-prompt/white-margin symptom, mouse interaction or DPI/RDP rendering on the affected machine. This is a targeted mitigation, not a proven root-cause resolution. No deployment or release package produced.
 - Independent review: no blocking code regression found; changelog softened to reflect the unverified UI outcome.
+
+## AD Linux label acceptance — 2026-10-19
+
+Scope: label Linux from AD only; no Linux operations, appliance detection, changes to scans, credentials, update routing or existing OS facts.
+
+| Capability | Status |
+| --- | --- |
+| Recognize Linux from AD operatingSystem; expose original value on hover | Implemented; 22 classification/identity/cache/concurrency tests and actual name-template probe passed |
+| Background bounded batches/cache shared across tabs; scans never await AD | Implemented; shared one-request gate, 64-host batches, 4096-entry/10-minute cache; delayed-directory UI probe passed |
+| Missing/unreachable AD leaves label blank; no Windows/absence inference | Implemented/tested; outages retain existing labels and back off one minute |
+| Removed/renamed rows and closed tabs cannot receive stale labels | Implemented; production workspace probe passed, including list reset |
+| Focused tests, delayed-directory responsiveness probe, independent red team | 27 focused tests and WPF probe passed; independent red-team review found no blocking defect and reran 22 AD tests plus the expanded probe |
+| Real domain lookup against Shaun's AD | Not validated locally; needs domain access |
+
+Validation checkpoint: Release Desktop + PerformanceAudit build passed (0 errors, existing missing agent-signing certificate warning). 27 tests passed: 22 new AD-label tests plus 5 existing list-store tests. Final 1,000-row production workspace/name-template probe: 55.9941 ms row enqueue, 12 dispatcher heartbeats during 200 ms held directory response, 16 batches, maximum 64 names/batch and one active request per workspace. Core tests separately verify that the actual service offloads blocking reads, serializes callers and caches positive/negative results. Probe uses fake AD and no remote scan; these timings are not a live scan benchmark.
+
+Scope/limits: default/current joined AD domain using ambient Windows login, matching the user's default-domain example; no RSAT dependency, no trusted-domain discovery, no credentials UI, no LDAP writes. Unknown OS strings are left unlabeled; recognized distro prefixes include the user's Ubuntu/RedHat/CentOS/Amazon values. AD metadata can be stale and is displayed separately from operational OS/build data. Lookup runs when rows load/rename; reload a list to retry unavailable AD. Native in-flight calls finish under configured LDAP timeouts rather than being forcibly aborted; only one shared worker holds the directory lane. No live AD transport or production scan was exercised. No package or deployment in this change.
+
+Independent final red-team validation: 22/22 AD tests passed; Release probe build passed with the existing signing warning; 1,000-row WPF probe passed again (99.7 ms enqueue, 14 dispatcher ticks during 200 ms delay). No live AD or concurrent remote-scan latency claim. The label capability is implemented and locally validated; operational domain validation remains outstanding.

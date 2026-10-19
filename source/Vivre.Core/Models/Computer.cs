@@ -47,6 +47,13 @@ public partial class Computer : ObservableObject
     [ObservableProperty]
     public partial string? OperatingSystem { get; set; }
 
+    /// <summary>Linux OS advertised by AD; cosmetic metadata, never an operation-routing decision.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DirectoryOsLabel))]
+    public partial string? DirectoryOperatingSystem { get; set; }
+
+    public string DirectoryOsLabel => DirectoryOperatingSystem is null ? "" : "Linux";
+
     /// <summary>Most recent status message from an action or health check.</summary>
     [ObservableProperty]
     public partial string? LastStatus { get; set; }

@@ -126,3 +126,5 @@ git-ignored.)
 - `docs/windows-patching-lane.md` — the Windows patching (WUA) lane: how it works and its reliability constraints.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
+
+Linux identification: Health and Patching show a small Linux label beside hostnames when the current AD domain advertises a recognized Linux OS. Background batched LDAP reads use the current Windows login without RSAT or target login. Hover the label for the AD value; directory metadata can be stale. This display-only label does not change scans or enable Linux operations. Missing/unreachable AD and other-domain records remain unlabeled.

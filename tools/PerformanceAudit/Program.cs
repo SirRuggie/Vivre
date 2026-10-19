@@ -17,13 +17,14 @@ internal static class Program
             File.WriteAllText(args[2], JsonSerializer.Serialize(SharedDriveProbe.Run(args[1]), new JsonSerializerOptions { WriteIndented = true }));
             return;
         }
+        bool adLinuxOnly = args.Length == 2 && args[0] == "--ad-linux-only";
         bool softwareDisplayOnly = args.Length == 2 && args[0] == "--software-display-only";
         bool cuStageOnly = args.Length == 2 && args[0] == "--cu-stage-only";
         bool auditFixesOnly = args.Length == 2 && args[0] == "--audit-fixes-only";
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -32,6 +33,11 @@ internal static class Program
         Directory.CreateDirectory(root);
         try
         {
+            if (adLinuxOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(AdLinuxLabelProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (softwareDisplayOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(SoftwareDisplayProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
@@ -94,7 +100,7 @@ internal static class Program
     private static object FilterExperiment()
     {
         var factory = typeof(WorkspaceProbe).GetMethod("CreateWorkspace", BindingFlags.Static | BindingFlags.NonPublic)!;
-        using var workspace = (Vivre.Desktop.ViewModels.WorkspaceViewModel)factory.Invoke(null, null)!;
+        using var workspace = (Vivre.Desktop.ViewModels.WorkspaceViewModel)factory.Invoke(null, [null])!;
         for (int i = 0; i < 3190; i++) workspace.Computers.Add(new Vivre.Core.Models.Computer($"MACHINE-{i:D5}"));
         var view = System.Windows.Data.CollectionViewSource.GetDefaultView(workspace.Computers);
         var live = (System.ComponentModel.ICollectionViewLiveShaping)view;
