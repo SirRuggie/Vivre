@@ -114,6 +114,8 @@ public partial class ScriptsPage : UserControl
 
     // ── Save ───────────────────────────────────────────────────────────────
 
+    public Func<string, bool>? OverwritePromptOverride { get; set; }
+
     private void OnSave(object sender, RoutedEventArgs e)
     {
         if (_vm is null) return;
@@ -127,13 +129,15 @@ public partial class ScriptsPage : UserControl
         try
         {
             _changingSelection = true;
-            ScriptFile saved = _vm.SaveScript(_vm.ScriptName, Editor.Text);
+            ScriptFile? saved = null;
+            string saveName = _vm.ScriptName, saveContent = Editor.Text, saveCategory = _vm.SaveCategory;
+            if (!ScriptSaveInteraction.TrySave(Window.GetWindow(this), revision => saved = _vm.SaveScript(saveName, saveContent, revision, saveCategory), OverwritePromptOverride)) return;
             _loadedScript = saved;
             MarkClean();
         }
         catch (Exception ex)
         {
-            ShowError("Script was not saved", ex.Message);
+            ShowError("Could not complete script save", ex.Message);
         }
         finally { _changingSelection = false; }
     }
@@ -225,14 +229,16 @@ public partial class ScriptsPage : UserControl
         try
         {
             _changingSelection = true;
-            ScriptFile saved = _vm.SaveScript(_vm.ScriptName, Editor.Text);
+            ScriptFile? saved = null;
+            string saveName = _vm.ScriptName, saveContent = Editor.Text, saveCategory = _vm.SaveCategory;
+            if (!ScriptSaveInteraction.TrySave(Window.GetWindow(this), revision => saved = _vm.SaveScript(saveName, saveContent, revision, saveCategory), OverwritePromptOverride)) return false;
             _loadedScript = saved;
             MarkClean();
             return true;
         }
         catch (Exception ex)
         {
-            ShowError("Script was not saved", ex.Message);
+            ShowError("Could not complete script save", ex.Message);
             return false;
         }
         finally { _changingSelection = false; }

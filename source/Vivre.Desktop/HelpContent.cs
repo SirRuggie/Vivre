@@ -324,7 +324,7 @@ public static class HelpContent
             Keywords = "run script powershell saved library command right-click",
             Lines =
             [
-                "Changing scripts or closing an editor with unsaved changes offers Save, Discard or Cancel. A failed save keeps the editor open. Stop an active script run before closing its runner.",
+                "Changing scripts or closing an editor with unsaved changes offers Save, Discard or Cancel. Saving over an existing script shows its destination and asks before replacing it. Declining or a changed file keeps your edits open. Stop an active script run before closing its runner.",
                 "Untouched built-in scripts update automatically. Your edited copies are preserved; their notice offers Reset to the shipped version, with a separate replacement confirmation. Library refreshes preserve unsaved editor text.",
                 "1. Select the machines.",
                 "2. Right-click ▸ Run script ▸ Selected machines… (or All machines…) — opens the Run Script window.",

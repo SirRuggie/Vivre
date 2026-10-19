@@ -74,10 +74,11 @@ public partial class ScriptsViewModel : ObservableObject, IDisposable
     /// Saves the editor content into the library under the given name/category.
     /// Returns the saved <see cref="ScriptFile"/> so the caller can re-select it.
     /// </summary>
-    public ScriptFile SaveScript(string name, string content)
+    public ScriptFile SaveScript(string name, string content, string? expectedRevision = null, string? categoryOverride = null)
     {
-        string? category = string.IsNullOrWhiteSpace(SaveCategory) ? null : SaveCategory;
-        ScriptFile saved = _library.Save(name, content, category);
+        string? category = categoryOverride ?? SaveCategory;
+        if (string.IsNullOrWhiteSpace(category)) category = null;
+        ScriptFile saved = _library.Save(name, content, category, expectedRevision);
         ReloadScripts();
         SelectedScript = Scripts.FirstOrDefault(s => s.FullPath == saved.FullPath);
         return saved;

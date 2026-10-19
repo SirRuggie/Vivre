@@ -1,3 +1,6 @@
+using Vivre.Core.IO;
+using System.Security.Cryptography;
+
 namespace Vivre.Core.Scripts;
 
 /// <summary>
@@ -72,7 +75,7 @@ public sealed class ScriptLibrary : IScriptLibrary
 
     public ScriptFile Save(string name, string content) => Save(name, content, null);
 
-    public ScriptFile Save(string name, string content, string? category)
+    public ScriptFile Save(string name, string content, string? category, string? expectedRevision = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
 
@@ -82,7 +85,27 @@ public sealed class ScriptLibrary : IScriptLibrary
         System.IO.Directory.CreateDirectory(folder);
 
         string path = Path.Combine(folder, safeName + ".ps1");
-        WriteTextAtomically(path, content ?? string.Empty);
+        using (ExclusiveFileLease.Acquire(path + ".lock", TimeSpan.Zero))
+        {
+            string? revision = File.Exists(path) ? Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(path))) : null;
+            if (expectedRevision is null && revision is not null) throw new ScriptOverwriteRequiredException(path, revision);
+            if (expectedRevision is not null && revision != expectedRevision)
+                throw new IOException("The script changed or was removed since overwrite approval. Review it and save again.");
+            string? recovery = expectedRevision is null ? null : path + "." + Guid.NewGuid().ToString("N") + ".previous";
+            AtomicFileWriter.Write(path, content ?? string.Empty, overwrite: expectedRevision is not null, backupPath: recovery);
+            if (recovery is not null && File.Exists(recovery))
+            {
+                // External editors do not honor our lease. Preserve the exact displaced file if they
+                // changed it between the revision check and atomic replacement; never lose that edit.
+                string displacedRevision = Convert.ToHexString(SHA256.HashData(File.ReadAllBytes(recovery)));
+                if (displacedRevision != expectedRevision)
+                    throw new IOException($"Your script was saved, but another program changed the file during saving. Its displaced contents are preserved at {recovery}. Review both files before saving again.");
+                // A leftover recovery copy is harmless; cleanup must not turn a completed save into failure.
+                try { File.Delete(recovery); }
+                catch (IOException) { }
+                catch (UnauthorizedAccessException) { }
+            }
+        }
         RefreshConflicts();
         LibraryChanged?.Invoke(this, EventArgs.Empty);
         return new ScriptFile(Path.GetFileNameWithoutExtension(path), path, CategoryOf(path));

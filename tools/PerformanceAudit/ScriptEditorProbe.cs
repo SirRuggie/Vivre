@@ -26,11 +26,12 @@ internal static class ScriptEditorProbe
         Directory.CreateDirectory(Path.Combine(bundle, "Info"));
         File.WriteAllText(Path.Combine(bundle, "Info", "Built.ps1"), "built-pristine");
         var library = new ScriptLibrary(live, bundle);
-        ScriptFile a = library.Save("A", "a-one", "Probe");
-        ScriptFile b = library.Save("B", "b-one", "Probe");
+        ScriptFile a = SaveFixture(library, "A", "a-one", "Probe");
+        ScriptFile b = SaveFixture(library, "B", "b-one", "Probe");
         var errors = new List<string>();
         var window = new ScriptRunnerWindow([], new FakeHost(), new CredentialStore(), new FakeLog(), library, a)
         {
+            OverwritePromptOverride = _ => true,
             ErrorPresenterOverride = (title, message) => errors.Add(title + ": " + message)
         };
         try
@@ -46,6 +47,7 @@ internal static class ScriptEditorProbe
             Require(window.ConfirmCanClose(), "A newly opened editor was falsely dirty.");
             Require(prompts == 0, "A newly opened editor prompted to save.");
 
+            VerifyOverwriteCancel(window, editor, library, vm.SelectedScript!);
             VerifySearch(window, editor, scriptList);
             editor.Text = "a-edited";
             window.UnsavedChangesPromptOverride = () => ScriptEditChoice.Save;
@@ -61,7 +63,7 @@ internal static class ScriptEditorProbe
             Require(vm.SelectedScript?.Name == "B" && editor.Text == "b-dirty",
                 "Cancel did not restore the captured selection and dirty editor.");
 
-            library.Save("B", "b-external", "Probe");
+            SaveFixture(library, "B", "b-external", "Probe");
             Require(editor.Text == "b-dirty", "External refresh overwrote dirty editor content.");
             window.UnsavedChangesPromptOverride = () => ScriptEditChoice.Discard;
             Require(window.ConfirmCanClose(), "Discard did not clear dirty state.");
@@ -71,17 +73,17 @@ internal static class ScriptEditorProbe
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "A");
             Require(vm.SelectedScript?.Name == "A" && editor.Text == "a-edited",
                 "Discard did not proceed to the selected replacement.");
-            library.Save("A", "a-clean-refresh", "Probe");
+            SaveFixture(library, "A", "a-clean-refresh", "Probe");
             Require(editor.Text == "a-clean-refresh", "Clean editor did not accept external refresh.");
             vm.SaveCategory = "Typed Runner Folder";
-            library.Save("Runner category trigger", "trigger", "Probe");
+            SaveFixture(library, "Runner category trigger", "trigger", "Probe");
             Require(vm.SaveCategory == "Typed Runner Folder", "Runner refresh replaced a typed save category.");
             vm.SaveCategory = "Probe";
 
             ScriptFile built = library.List().Single(s => s.Name == "Built");
             scriptList.SelectedItem = vm.Scripts.Single(s => s.FullPath == built.FullPath);
             Require(string.IsNullOrEmpty(vm.SelectedScriptNotice), "A pristine built-in showed the edited-copy notice.");
-            library.Save("Built", "built-edited", "Info");
+            SaveFixture(library, "Built", "built-edited", "Info");
             Require(!string.IsNullOrEmpty(vm.SelectedScriptNotice), "An edited built-in copy did not show its reset notice.");
 
             VerifyScriptsPage(library);
@@ -93,7 +95,7 @@ internal static class ScriptEditorProbe
             Directory.Delete(live, recursive: true);
             File.WriteAllText(live, "blocks directory recreation");
             Require(!window.ConfirmCanClose(), "A save failure allowed editor close.");
-            Require(errors.Any(e => e.Contains("not saved", StringComparison.OrdinalIgnoreCase)),
+            Require(errors.Any(e => e.Contains("Could not complete script save", StringComparison.OrdinalIgnoreCase)),
                 "A save failure was not surfaced through the isolated error seam.");
 
             vm.IsBusy = true;
@@ -117,9 +119,31 @@ internal static class ScriptEditorProbe
         }
     }
 
+    private static void VerifyOverwriteCancel(FrameworkElement owner, TextEditor editor, IScriptLibrary library, ScriptFile script)
+    {
+        string original = editor.Text, saved = library.Load(script);
+        editor.Text = original + " # unsaved collision";
+        int prompts = 0;
+        Func<string, bool> cancel = message => { prompts++; Require(message.Contains(script.FullPath), "Overwrite prompt hides destination."); return false; };
+        if (owner is ScriptRunnerWindow runner) { runner.OverwritePromptOverride = cancel; runner.UnsavedChangesPromptOverride = () => ScriptEditChoice.Save; }
+        else { ((ScriptsPage)owner).OverwritePromptOverride = cancel; ((ScriptsPage)owner).UnsavedChangesPromptOverride = () => ScriptEditChoice.Save; }
+        owner.GetType().GetMethod("OnSave", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(owner, [owner, new RoutedEventArgs()]);
+        bool canClose = owner is ScriptRunnerWindow r ? r.ConfirmCanClose() : ((ScriptsPage)owner).ConfirmCanClose();
+        Require(!canClose && prompts == 2 && library.Load(script) == saved && editor.Text == original + " # unsaved collision", "Rejected overwrite discarded dirty input, saved, or allowed close.");
+        if (owner is ScriptRunnerWindow runner2) { runner2.OverwritePromptOverride = _ => true; runner2.UnsavedChangesPromptOverride = () => ScriptEditChoice.Cancel; }
+        else { ((ScriptsPage)owner).OverwritePromptOverride = _ => true; ((ScriptsPage)owner).UnsavedChangesPromptOverride = () => ScriptEditChoice.Cancel; }
+        editor.Text = original;
+    }
+
+    private static ScriptFile SaveFixture(IScriptLibrary library, string name, string content, string category)
+    {
+        try { return library.Save(name, content, category); }
+        catch (ScriptOverwriteRequiredException conflict) { return library.Save(name, content, category, conflict.Revision); }
+    }
+
     private static void VerifyScriptsPage(IScriptLibrary library)
     {
-        var page = new ScriptsPage();
+        var page = new ScriptsPage { OverwritePromptOverride = _ => true };
         page.Initialize(library);
         var editor = RequireControl<TextEditor>(page, "Editor");
         var scriptList = RequireControl<ListView>(page, "ScriptList");
@@ -133,6 +157,7 @@ internal static class ScriptEditorProbe
             Require(page.ConfirmCanClose() && prompts == 0, "A newly initialized Scripts page was falsely dirty.");
 
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "A");
+            VerifyOverwriteCancel(page, editor, library, vm.SelectedScript!);
             VerifySearch(page, editor, scriptList);
             editor.Text = "page-a-edited";
             page.UnsavedChangesPromptOverride = () => ScriptEditChoice.Save;
@@ -147,17 +172,17 @@ internal static class ScriptEditorProbe
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "A");
             Require(vm.SelectedScript?.Name == "B" && editor.Text == "page-b-dirty",
                 "Scripts page cancel did not restore selection and dirty editor.");
-            library.Save("B", "page-b-external", "Probe");
+            SaveFixture(library, "B", "page-b-external", "Probe");
             Require(editor.Text == "page-b-dirty", "Scripts page external refresh overwrote dirty text.");
 
             page.UnsavedChangesPromptOverride = () => ScriptEditChoice.Discard;
             scriptList.SelectedItem = vm.Scripts.Single(s => s.Name == "A");
             Require(vm.SelectedScript?.Name == "A" && editor.Text == "page-a-edited",
                 "Scripts page discard did not apply the selected replacement.");
-            library.Save("A", "page-a-clean-refresh", "Probe");
+            SaveFixture(library, "A", "page-a-clean-refresh", "Probe");
             Require(editor.Text == "page-a-clean-refresh", "Scripts page clean editor did not accept external refresh.");
             vm.SaveCategory = "Typed Page Folder";
-            library.Save("Page category trigger", "trigger", "Probe");
+            SaveFixture(library, "Page category trigger", "trigger", "Probe");
             Require(vm.SaveCategory == "Typed Page Folder", "Scripts page refresh replaced a typed save category.");
             vm.SaveCategory = "Probe";
         }

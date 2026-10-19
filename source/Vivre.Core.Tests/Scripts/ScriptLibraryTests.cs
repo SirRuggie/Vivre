@@ -9,6 +9,38 @@ public class ScriptLibraryTests : IDisposable
     private readonly List<string> _extraDirs = [];
 
     [Fact]
+    public void Atomic_backup_preserves_exact_displaced_contents_and_requires_existing_target()
+    {
+        System.IO.Directory.CreateDirectory(_dir);
+        string target = Path.Combine(_dir, "target.ps1"), backup = Path.Combine(_dir, "recovery.previous");
+        File.WriteAllText(target, "external edit");
+        Vivre.Core.IO.AtomicFileWriter.Write(target, "my edit", true, backup);
+        Assert.Equal("external edit", File.ReadAllText(backup));
+        Assert.Equal("my edit", File.ReadAllText(target));
+        File.Delete(target);
+        Assert.ThrowsAny<IOException>(() => Vivre.Core.IO.AtomicFileWriter.Write(target, "resurrect", true, backup + "2"));
+        Assert.False(File.Exists(target));
+    }
+
+    [Fact]
+    public void Colliding_names_require_approval_and_stale_revision_is_rejected()
+    {
+        var library = new ScriptLibrary(_dir);
+        var saved = library.Save("a:b", "original", "Custom");
+        var conflict = Assert.Throws<ScriptOverwriteRequiredException>(() => library.Save("a?b", "replacement", "Custom"));
+        Assert.Equal(saved.FullPath, conflict.Destination);
+        Assert.Equal("original", library.Load(saved));
+        library.Save("a?b", "approved", "Custom", conflict.Revision);
+        Assert.Equal("approved", library.Load(saved));
+        Assert.Throws<IOException>(() => library.Save("a?b", "stale", "Custom", conflict.Revision));
+        Assert.Equal("approved", library.Load(saved));
+        var second = Assert.Throws<ScriptOverwriteRequiredException>(() => library.Save("a?b", "new", "Custom"));
+        File.Delete(saved.FullPath);
+        Assert.Throws<IOException>(() => library.Save("a?b", "resurrect", "Custom", second.Revision));
+        Assert.False(File.Exists(saved.FullPath));
+    }
+
+    [Fact]
     public void New_directory_is_seeded_with_examples()
     {
         var library = new ScriptLibrary(_dir);

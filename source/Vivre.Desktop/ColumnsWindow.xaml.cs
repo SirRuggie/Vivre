@@ -94,7 +94,7 @@ public partial class ColumnsWindow : FluentWindow
             return;
         }
 
-        AddAndRun(new CustomColumnSpec(name, script));
+        if (!AddAndRun(new CustomColumnSpec(name, script))) return;
         NameBox.Text = string.Empty;
         ScriptBox.Text = string.Empty;
     }
@@ -110,13 +110,15 @@ public partial class ColumnsWindow : FluentWindow
     private void OnRefresh(object sender, RoutedEventArgs e) =>
         _ = _vm.RunCustomColumnsSelectedAsync([.. _vm.Computers]);
 
-    private void AddAndRun(CustomColumnSpec spec)
+    private bool AddAndRun(CustomColumnSpec spec)
     {
         StatusText.Visibility = Visibility.Collapsed;
-        _vm.AddCustomColumn(spec);
+        try { _vm.AddCustomColumn(spec); }
+        catch (InvalidOperationException ex) { ShowStatus(ex.Message); return false; }
         // Fill ONLY the new column across the loaded machines — existing columns keep their values
         // (use "Refresh values" to deliberately re-run everything).
         _ = _vm.RunCustomColumnAsync([.. _vm.Computers], spec);
+        return true;
     }
 
     private void ShowStatus(string message)

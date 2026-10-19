@@ -137,6 +137,8 @@ public partial class ScriptRunnerWindow : FluentWindow
 
     private void OnOutputChanged(object sender, TextChangedEventArgs e) => OutputBox.ScrollToEnd();
 
+    public Func<string, bool>? OverwritePromptOverride { get; set; }
+
     private void OnSave(object sender, RoutedEventArgs e)
     {
         if (!string.IsNullOrWhiteSpace(_viewModel.ScriptName))
@@ -144,13 +146,14 @@ public partial class ScriptRunnerWindow : FluentWindow
             try
             {
                 _changingSelection = true;
-                _viewModel.SaveScript(_viewModel.ScriptName, Editor.Text);
+                string saveName = _viewModel.ScriptName, saveContent = Editor.Text, saveCategory = _viewModel.SaveCategory;
+                if (!ScriptSaveInteraction.TrySave(this, revision => _viewModel.SaveScript(saveName, saveContent, revision, saveCategory), OverwritePromptOverride)) return;
                 _loadedScript = _viewModel.SelectedScript;
                 MarkClean();
             }
             catch (Exception ex)
             {
-                ShowError("Script was not saved", ex.Message);
+                ShowError("Could not complete script save", ex.Message);
             }
             finally { _changingSelection = false; }
         }
@@ -238,14 +241,15 @@ public partial class ScriptRunnerWindow : FluentWindow
         try
         {
             _changingSelection = true;
-            _viewModel.SaveScript(_viewModel.ScriptName, Editor.Text);
+            string saveName = _viewModel.ScriptName, saveContent = Editor.Text, saveCategory = _viewModel.SaveCategory;
+            if (!ScriptSaveInteraction.TrySave(this, revision => _viewModel.SaveScript(saveName, saveContent, revision, saveCategory), OverwritePromptOverride)) return false;
             _loadedScript = _viewModel.SelectedScript;
             MarkClean();
             return true;
         }
         catch (Exception ex)
         {
-            ShowError("Script was not saved", ex.Message);
+            ShowError("Could not complete script save", ex.Message);
             return false;
         }
         finally { _changingSelection = false; }

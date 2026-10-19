@@ -1851,6 +1851,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             AppSettings s = _appSettings.Load();
             foreach (CustomColumnSpec spec in s.CustomColumns)
             {
+                if (CustomColumns.Any(c => string.Equals(c.Name, spec.Name, StringComparison.OrdinalIgnoreCase)))
+                {
+                    _activity.Warn(null, $"Ignored duplicate saved custom column '{spec.Name}'; the first definition is kept.");
+                    continue;
+                }
                 CustomColumns.Add(spec);
             }
 
@@ -1882,15 +1887,14 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
     }
 
-    /// <summary>Adds (or replaces by name) a custom column and persists. The view picks up the collection
+    /// <summary>Adds a uniquely named custom column and persists. The view picks up the collection
     /// change to build the grid column; the caller typically runs it afterwards to fill values.</summary>
     public void AddCustomColumn(CustomColumnSpec spec)
     {
         CustomColumnSpec? existing = CustomColumns.FirstOrDefault(c => string.Equals(c.Name, spec.Name, StringComparison.OrdinalIgnoreCase));
         if (existing is not null)
         {
-            CustomColumns.Remove(existing);
-            foreach (Computer computer in Computers) computer.CustomValues.Remove(existing.Name);
+            throw new InvalidOperationException($"A custom column named '{existing.Name}' already exists. Choose another name, or remove the existing column first.");
         }
 
         CustomColumns.Add(spec);

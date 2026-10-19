@@ -26,9 +26,10 @@ public interface IScriptLibrary
 
     /// <summary>
     /// Writes <paramref name="content"/> to <c>&lt;category&gt;\&lt;name&gt;.ps1</c>, creating the
-    /// category folder if needed (null/blank category = the library root). Returns the saved file.
+    /// category folder if needed (null/blank category = the library root). Existing destinations require
+    /// the revision returned by ScriptOverwriteRequiredException after explicit user approval. Returns the saved file.
     /// </summary>
-    ScriptFile Save(string name, string content, string? category);
+    ScriptFile Save(string name, string content, string? category, string? expectedRevision = null);
 
     /// <summary>True if the script is one of the built-in defaults shipped with the app (not user-created).</summary>
     bool IsDefault(ScriptFile script);
@@ -64,3 +65,10 @@ public sealed record ScriptLibrarySnapshot(
     IReadOnlyList<ScriptFile> Scripts,
     IReadOnlyList<string> Categories,
     IReadOnlyList<ScriptUpdateConflict> Conflicts);
+
+/// <summary>A save needs explicit approval for this exact existing destination revision.</summary>
+public sealed class ScriptOverwriteRequiredException(string path, string revision) : IOException("A script already exists at " + path)
+{
+    public string Destination { get; } = path;
+    public string Revision { get; } = revision;
+}

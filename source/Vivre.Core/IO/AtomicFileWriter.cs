@@ -9,7 +9,7 @@ public static class AtomicFileWriter
 {
     public static void Write(string path, string contents) => Write(path, contents, overwrite: true);
 
-    public static void Write(string path, string contents, bool overwrite)
+    public static void Write(string path, string contents, bool overwrite, string? backupPath = null)
     {
         if (!overwrite)
         {
@@ -25,9 +25,9 @@ public static class AtomicFileWriter
         }
         string tmp = path + ".tmp";
         File.WriteAllText(tmp, contents); // truncates any stale .tmp a prior crash left behind
-        if (File.Exists(path))
+        if (backupPath is not null || File.Exists(path))
         {
-            File.Replace(tmp, path, destinationBackupFileName: null);
+            File.Replace(tmp, path, destinationBackupFileName: backupPath);
         }
         else
         {

@@ -120,10 +120,11 @@ public partial class ScriptRunnerViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Saves the editor content into <see cref="SaveCategory"/> (creating the folder if new).</summary>
-    public void SaveScript(string name, string content)
+    public void SaveScript(string name, string content, string? expectedRevision = null, string? categoryOverride = null)
     {
-        string? category = string.IsNullOrWhiteSpace(SaveCategory) ? null : SaveCategory;
-        ScriptFile saved = _library.Save(name, content, category);
+        string? category = categoryOverride ?? SaveCategory;
+        if (string.IsNullOrWhiteSpace(category)) category = null;
+        ScriptFile saved = _library.Save(name, content, category, expectedRevision);
         ReloadScripts();
         SelectedScript = Scripts.FirstOrDefault(s => s.FullPath == saved.FullPath);
     }

@@ -291,7 +291,7 @@ These findings came from source/workflow inspection after Windows UI automation 
 
 Review baseline: `fb46160`. Findings only; no implementation approved by this review. See [evidence, coverage and limitations](ui-ux-follow-up-2026-10-19.md).
 
-- [ ] **U-28 · High — Protect saved scripts from silent replacement.**
+- [x] **U-28 · High — Protect saved scripts from silent replacement.**
   - **Why:** A new name or sanitized filename collision can overwrite another script without warning.
 
 - [x] **U-29 · High — Make Server 2016 Stage clearly say it installs.**
@@ -303,7 +303,7 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - [ ] **U-31 · Medium — Reset stale service suggestions when changing products.**
   - **Why:** A new software query can keep and remember the previous product's service name.
 
-- [ ] **U-32 · Medium — Protect custom columns from accidental replacement.**
+- [x] **U-32 · Medium — Protect custom columns from accidental replacement.**
   - **Why:** Adding an existing column name replaces its script and immediately runs the replacement.
 
 - [x] **U-33 · Medium — Keep identity columns visible in People.**
@@ -354,3 +354,12 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Requested: three choices in Health/Patching Paste: Add, Replace, Create new tab; no tabs in People.
 - Implemented: existing workspace factory and AddComputers reused; fresh default settings, original rows/results untouched, same section selected; blank input creates no tab.
 - Verified: Release build, tab-handoff/new-tab probe, workspace-safety probe, and People probe passed with dummy data. Includes both sections, preserved source rows, deduplication, empty-input rejection, default Add selection, and hidden tab options in People. No live server operations or deployment-host UI testing.
+
+## U-28 / U-32 delivery ledger (2026-10-19)
+
+- Implemented and tested: both script editors and dirty-close/selection saves confirm the exact destination before replacing; cancellation keeps dirty text, while stale or deleted revisions refuse the save. Name/content/category are captured before confirmation.
+- Implemented and tested: reuse the existing cross-process file lease and atomic writer; filename sanitization collisions require approval. If an external editor changes the file between validation and replacement, preserve the exact displaced contents in a unique `.previous` recovery file and report its path. Uncontended recovery cleanup is best-effort.
+- Implemented and tested: duplicate custom-column names (case-insensitive) are rejected before mutation or execution; existing script/values and entered fields stay intact. Remove deliberately or choose another name. Loading legacy duplicate definitions keeps the first and logs a warning.
+- Independent red team: found legacy duplicate-load bypass, external-write race, and recovery cleanup failure reporting; addressed all three and re-reviewed with no remaining blocking findings.
+- Validation: Release build passed; 36 script/atomic-file tests passed; real-WPF editor/library and column regression probes passed using temporary libraries, dummy rows, and fake execution hosts. No live script execution or production file changes.
+- Scope limits: recovery protects contents displaced at the atomic swap; it cannot stop a separate editor from writing after the save. No deployment-host mouse/DPI verification or signed package produced; build account lacks the configured signing certificate.

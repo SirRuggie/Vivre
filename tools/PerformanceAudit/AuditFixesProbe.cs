@@ -82,6 +82,21 @@ internal static class AuditFixesProbe
         workspace.CustomColumns.Clear();
         var originalSpec = new Vivre.Core.Columns.CustomColumnSpec("obsolete", "old dummy");
         workspace.CustomColumns.Add(originalSpec);
+        try { workspace.AddCustomColumn(new Vivre.Core.Columns.CustomColumnSpec("OBSOLETE", "replacement dummy")); throw new Exception("Duplicate column accepted."); }
+        catch (InvalidOperationException) { }
+        Require(ReferenceEquals(workspace.CustomColumns.Single(c => c.Name == "obsolete"), originalSpec), "Duplicate column replaced original.");
+        Require(row.CustomValues["obsolete"]?.Length == 10000, "Duplicate erased existing values.");
+        var columns = new ColumnsWindow(workspace, []);
+        try
+        {
+            ((Wpf.Ui.Controls.TextBox)columns.FindName("NameBox")).Text = "obsolete";
+            ((Wpf.Ui.Controls.TextBox)columns.FindName("ScriptBox")).Text = "replacement dummy";
+            typeof(ColumnsWindow).GetMethod("OnAddCustom", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(columns, [columns, new RoutedEventArgs()]);
+            Require(((Wpf.Ui.Controls.TextBox)columns.FindName("ScriptBox")).Text == "replacement dummy", "Duplicate lost editor input.");
+            Require(((Wpf.Ui.Controls.TextBlock)columns.FindName("StatusText")).Text.Contains("already exists"), "Duplicate lacks feedback.");
+        }
+        finally { columns.Close(); }
+        workspace.RemoveCustomColumn("obsolete");
         workspace.AddCustomColumn(new Vivre.Core.Columns.CustomColumnSpec("obsolete", "replacement dummy"));
         var liveSpec = typeof(Vivre.Desktop.ViewModels.WorkspaceViewModel).GetMethod("IsLiveCustomColumn", BindingFlags.Instance | BindingFlags.NonPublic)!;
         Require(!(bool)liveSpec.Invoke(workspace, [originalSpec])!, "Old captured column spec survived replacement.");
