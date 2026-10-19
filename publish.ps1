@@ -12,7 +12,9 @@
     Use -FrameworkDependent for a small (~5 MB) build that instead requires the
     .NET 10 Desktop Runtime (x64) to be installed on the target.
 
-    Output goes to .\publish\Vivre-<runtime>[ -fxdep ] (the publish\ folder is git-ignored).
+    Default self-contained win-x64 output goes to .\publish\Vivre.
+    Other runtimes/framework-dependent builds use .\publish\Vivre-<runtime>[ -fxdep ].
+    The publish\ folder is git-ignored.
 
 .PARAMETER Runtime
     Target runtime identifier. Default win-x64 (use win-arm64 for ARM).
@@ -32,11 +34,11 @@
 
 .EXAMPLE
     .\publish.ps1
-    Self-contained win-x64 into .\publish\Vivre-win-x64.
+    Self-contained win-x64 into .\publish\Vivre.
 
 .EXAMPLE
     .\publish.ps1 -Zip
-    Self-contained win-x64, plus .\publish\Vivre-win-x64.zip.
+    Self-contained win-x64, plus .\publish\Vivre.zip.
 
 .EXAMPLE
     .\publish.ps1 -FrameworkDependent
@@ -66,7 +68,10 @@ if (-not $certificate.HasPrivateKey) { throw 'Agent signing certificate has no p
 $selfContained = -not $FrameworkDependent
 $selfContainedArg = if ($selfContained) { 'true' } else { 'false' }
 $suffix = if ($FrameworkDependent) { "$Runtime-fxdep" } else { $Runtime }
-if (-not $OutputDir) { $OutputDir = Join-Path $PSScriptRoot "publish\Vivre-$suffix" }
+if (-not $OutputDir) {
+    $folderName = if ($selfContained -and $Runtime -eq 'win-x64') { 'Vivre' } else { "Vivre-$suffix" }
+    $OutputDir = Join-Path $PSScriptRoot "publish\$folderName"
+}
 $OutputDir = Assert-VivrePublishTarget -Path $OutputDir -RepositoryRoot $PSScriptRoot
 $outputParent = [IO.Directory]::GetParent($OutputDir).FullName
 if (-not (Test-Path -LiteralPath $outputParent)) { New-Item -ItemType Directory -Path $outputParent -Force | Out-Null }

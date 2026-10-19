@@ -6,6 +6,9 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+- `publish.ps1 -Zip` now defaults to `publish\Vivre.zip` for self-contained Windows x64 builds; other build variants and explicit output paths keep separate destinations.
+
 ## 1.18.0 — 2026-10-19
 
 ### Added

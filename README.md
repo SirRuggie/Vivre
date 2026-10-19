@@ -98,16 +98,18 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.18.0** on the default branch **master**. Build the stable-name package with `powershell -NoProfile -ExecutionPolicy Bypass -File .\publish.ps1 -Zip -OutputDir C:\src\Vivre\publish\Vivre`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
+Current release: **1.18.0** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 
 ```
-.\publish.ps1            # self-contained win-x64 -> publish\Vivre-win-x64\ (no .NET needed on target)
-.\publish.ps1 -Zip       # same, plus publish\Vivre-win-x64.zip to copy over
+.\publish.ps1            # self-contained win-x64 -> publish\Vivre\ (no .NET needed on target)
+.\publish.ps1 -Zip       # same, plus publish\Vivre.zip to copy over
 .\publish.ps1 -FrameworkDependent   # small build; target needs the .NET 10 Desktop Runtime (x64)
 .\publish.ps1 -Runtime win-arm64
 ```
+
+The default self-contained x64 build uses `publish\Vivre` and `publish\Vivre.zip`. Other runtimes and framework-dependent builds retain distinct output names; `-OutputDir` still overrides the destination. A shortcut targets the extracted `Vivre.exe`, not the ZIP: keep extracting into the same deployment folder to preserve existing shortcuts. Shortcuts pointing directly to the old `publish\Vivre-win-x64\Vivre.exe` need a one-time update to `publish\Vivre\Vivre.exe`.
 
 Publish requires the configured agent code-signing certificate and private key in `CurrentUser\My`; it fails if the final agent signature is not valid. ZIP builds also write a `.zip.sha256` checksum file and verify every archived file against the candidate folder before replacing the last-good artifacts. Output folders must be new/empty or carry the Vivre publish ownership marker. For an older nonempty output without a marker, choose a fresh `-OutputDir` under `publish` instead of deleting or force-adopting it. Competing publishes to the same target are refused. The self-contained release bundles .NET 10.0.13.
 
