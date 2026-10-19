@@ -6,11 +6,11 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 
 ## How to use
 
-- Keep U-1–U-22 identifiers stable; record decisions, commits, and validation under the matching item.
+- Keep all U identifiers stable; record decisions, commits, and validation under the matching item.
 - An unchecked item is a finding or recommendation, not authorization to implement it.
 - Mark complete only after its agreed behavior is implemented and validated; state remaining live-validation limits.
 - Preserve existing operational behavior and reuse current components where practical.
-- **U-21/U-22:** local fixes/tests delivered; native DPI/physical keyboard/spoken screen-reader validation remains open. U-18 is implemented and locally validated; the follow-up usability study waits for explicit continuation.
+- **U-21/U-22:** local fixes/tests delivered; native DPI/physical keyboard/spoken screen-reader validation remains open. U-18 is implemented and locally validated; follow-up reviews are recorded below, with native interaction still unverified.
 
 ## Completed batch acceptance — U-8 (2026-10-19)
 
@@ -286,3 +286,37 @@ These findings came from source/workflow inspection after Windows UI automation 
 - **Independent red team:** found stale-menu dispatch and Enable WinRM post-confirmation drift; both fixed. Final separate gpt-5.6-sol read-only review found no remaining concrete defect in the scoped diff.
 - **Limits:** local dummy workspaces and intercepted dispatch only; no live task removal, visible confirmation/physical keyboard study, or signed package. Existing signing-certificate warning remains.
 - **Delivery:** included in the commit containing this checklist update; version remains 1.18.0 plus Unreleased.
+
+## Follow-up usability review — U-28–U-37 (2026-10-19)
+
+Review baseline: `fb46160`. Findings only; no implementation approved by this review. See [evidence, coverage and limitations](ui-ux-follow-up-2026-10-19.md).
+
+- [ ] **U-28 · High — Protect saved scripts from silent replacement.**
+  - **Why:** A new name or sanitized filename collision can overwrite another script without warning.
+
+- [ ] **U-29 · High — Make Server 2016 Stage clearly say it installs.**
+  - **Why:** Stage software only copies files, but the similarly named CU action starts installation.
+
+- [ ] **U-30 · Medium — Rename the misleading Staged badge.**
+  - **Why:** The badge means a machine uses the CU lane, not that its update has been staged.
+
+- [ ] **U-31 · Medium — Reset stale service suggestions when changing products.**
+  - **Why:** A new software query can keep and remember the previous product's service name.
+
+- [ ] **U-32 · Medium — Protect custom columns from accidental replacement.**
+  - **Why:** Adding an existing column name replaces its script and immediately runs the replacement.
+
+- [ ] **U-33 · Medium — Keep identity columns visible in People.**
+  - **Why:** Horizontal scrolling hides the person or candidate name while comparing other details.
+
+- [ ] **U-34 · Medium — Make People copy scope explicit.**
+  - **Why:** Copy resolved emails includes hidden rows even when the grid is filtered.
+
+- [ ] **U-35 · Lower — Show which People entries can be retried.**
+  - **Why:** Retry unresolved stays enabled with nothing eligible and does not retry No email or Needs review.
+
+- [ ] **U-36 · Lower — Avoid false unsaved-result warnings in People.**
+  - **Why:** Pasting only existing entries marks an exported session dirty without changing its results.
+
+- [ ] **U-37 · Lower — Remember grid widths and column order.**
+  - **Why:** Visibility is saved, but operators must repeat manual sizing and rearranging after reopening.

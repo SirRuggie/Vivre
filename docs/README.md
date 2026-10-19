@@ -10,7 +10,7 @@ live status of anything they raise is tracked in the backlog.
 
 - **[ui-ux-u21-u22-validation.md](ui-ux-u21-u22-validation.md)** — layout/accessibility fixes, local test evidence, and remaining native Windows validation.
 
-- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-22 checklist, decisions, completion evidence, and strengths to preserve. *Read when: choosing or updating UI/UX work.*
+- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-37 checklist, decisions, completion evidence, and strengths to preserve. *Read when: choosing or updating UI/UX work.*
 
 - **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F45 acceptance ledger, independent review corrections and exact local/live validation limits.
 
@@ -45,6 +45,8 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
   slow" report — BEFORE theorizing.*
 
 ## Case files / findings (point-in-time, never edited)
+
+- **[ui-ux-follow-up-2026-10-19.md](ui-ux-follow-up-2026-10-19.md)** — U-28–U-37 source-backed usability findings, isolated reproductions, strengths and native-UI limitations.
 
 - **[vivre-comprehensive-audit-2026-10-14.md](vivre-comprehensive-audit-2026-10-14.md)** — F26–F45 ranked operations, resource, UX, reuse and release findings; source evidence, refutations and validation limits. Frozen review; current implementation status is in the acceptance ledger.
 
