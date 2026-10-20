@@ -412,3 +412,11 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 
 - U-39 closed: Shaun explicitly confirmed the People responsiveness issue resolved.
 - U-21/U-22: Shaun reports other UI behavior seems fine so far in normal use; retain the specific Windows scaling, physical keyboard, and spoken screen-reader checks as unverified rather than treating them as reported defects.
+
+
+## Saved-list display-name correction (2026-10-20)
+
+- Requested: accept date/time punctuation without replacing it in the displayed list name.
+- Implemented: preserve /, :, | and other filename punctuation through reversible encoding in .vlist filenames; contents remain one machine per line. Legacy .txt names and files are unchanged. Listing, loading, revisions, overwrite approval, delete and restore use the same mapping; literal percent sequences cannot alias separators.
+- Existing sanitized names cannot be safely reconstructed; no guessing or automatic renaming is performed.
+- Verified: 20 storage tests passed, one privileged file-symlink case skipped; Release build and workspace-safety probe passed. Tests cover the reported date/time name, collisions, reload, revision checks, delete/restore and safe separator encoding with dummy data. Existing missing-signing-certificate warning remains; no deployed package or live data changed.

@@ -5,7 +5,7 @@ namespace Vivre.Core.Computers;
 
 /// <summary>
 /// File-system implementation of <see cref="IComputerListStore"/>: each named list is
-/// a <c>.ps1</c>-free plain <c>&lt;name&gt;.txt</c> in a folder (default
+/// a plain <c>&lt;name&gt;.txt</c> (or reversibly escaped <c>.vlist</c>) in a folder (default
 /// <c>%APPDATA%\Vivre\Lists</c>), one machine per line. The folder is created on
 /// first use; it is NOT seeded — machine lists are the user's own.
 /// </summary>
@@ -24,9 +24,8 @@ public sealed class ComputerListStore : IComputerListStore
     public string Directory { get; }
 
     public IReadOnlyList<string> List() =>
-        [.. System.IO.Directory
-            .EnumerateFiles(Directory, "*.txt")
-            .Select(Path.GetFileNameWithoutExtension)
+        [.. ListFiles(Directory)
+            .Select(DisplayName)
             .OfType<string>()
             .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)];
 
@@ -97,8 +96,8 @@ public sealed class ComputerListStore : IComputerListStore
         {
             string id = Path.GetFileName(folder);
             if (!Guid.TryParseExact(id, "N", out _) || (File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0) continue;
-            string[] files = System.IO.Directory.GetFiles(folder, "*.txt");
-            if (files.Length == 1 && (File.GetAttributes(files[0]) & FileAttributes.ReparsePoint) == 0) result.Add(new(id, Path.GetFileNameWithoutExtension(files[0]), System.IO.Directory.GetCreationTimeUtc(folder)));
+            string[] files = ListFiles(folder).ToArray();
+            if (files.Length == 1 && (File.GetAttributes(files[0]) & FileAttributes.ReparsePoint) == 0) result.Add(new(id, DisplayName(files[0]), System.IO.Directory.GetCreationTimeUtc(folder)));
         }
         return result.OrderByDescending(item => item.DeletedAtUtc).ToArray();
     }
@@ -112,7 +111,7 @@ public sealed class ComputerListStore : IComputerListStore
         using FileStream archiveLease = ExclusiveFileLease.Acquire(Path.Combine(root, id + ".lock"), TimeSpan.Zero);
         string folder = Path.Combine(root, id);
         if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cannot restore a linked recovery folder.");
-        string[] files = System.IO.Directory.GetFiles(folder, "*.txt");
+        string[] files = ListFiles(folder).ToArray();
         if (files.Length != 1) throw new IOException("That deleted list is no longer available.");
         if ((File.GetAttributes(files[0]) & FileAttributes.ReparsePoint) != 0) throw new IOException("Cannot restore a linked list file.");
         string destination = PathFor(name);
@@ -135,19 +134,39 @@ public sealed class ComputerListStore : IComputerListStore
     private string PathFor(string name)
     {
         // Legacy enumerated stems (including trailing dots) remain readable/deletable;
-        // strict new-name rules apply only when saving. Never accept a path or traversal.
+        // strict new-name rules apply only when saving. Separators are encoded, never treated as paths.
         ArgumentException.ThrowIfNullOrWhiteSpace(name);
-        if (name.Any(c => c < 32 || "<>:\"/\\|?*".Contains(c))) throw new ArgumentException("Invalid list name.", nameof(name));
-        return Path.Combine(Directory, name.Trim() + ".txt");
+        if (name.Any(c => c < 32)) throw new ArgumentException("Invalid list name.", nameof(name));
+        string value = name.Trim();
+        return Path.Combine(Directory, StorageName(value));
     }
+
+    // A separate extension distinguishes reversible display names from legacy literal .txt stems.
+    // Contents remain one machine per line. Encode '%' too so A/B and A%2FB never alias.
+    private static string StorageName(string value)
+    {
+        if (!value.Any(c => "<>:\"/\\|?*".Contains(c))) return value + ".txt";
+        return string.Concat(value.Select(c => c == '%' || "<>:\"/\\|?*".Contains(c)
+            ? "%" + ((int)c).ToString("X2") : c.ToString())) + ".vlist";
+    }
+
+    private static string DisplayName(string path) =>
+        Path.GetExtension(path).Equals(".vlist", StringComparison.OrdinalIgnoreCase)
+            ? Uri.UnescapeDataString(Path.GetFileNameWithoutExtension(path))
+            : Path.GetFileNameWithoutExtension(path);
+
+    private static IEnumerable<string> ListFiles(string folder) =>
+        System.IO.Directory.EnumerateFiles(folder).Where(path =>
+            Path.GetExtension(path).Equals(".txt", StringComparison.OrdinalIgnoreCase)
+            || Path.GetExtension(path).Equals(".vlist", StringComparison.OrdinalIgnoreCase));
 
     public static string? NameError(string name)
     {
         if (string.IsNullOrWhiteSpace(name)) return "Enter a list name.";
         string value = name.Trim();
         if (value.Length > 240) return "Use a list name of 240 characters or fewer.";
-        if (value.Any(c => c < 32 || "<>:\"/\\|?*".Contains(c)))
-            return "List names cannot contain < > : \" / \\ | ? * or control characters.";
+        if (value.Any(c => c < 32)) return "List names cannot contain control characters.";
+        if (StorageName(value).Length > 245) return "This list name is too long to store; use a shorter name.";
         if (value.EndsWith('.')) return "A list name cannot end with a dot.";
         string stem = value.Split('.')[0].TrimEnd().ToUpperInvariant();
         if (stem is "CON" or "PRN" or "AUX" or "NUL" or "CLOCK$"

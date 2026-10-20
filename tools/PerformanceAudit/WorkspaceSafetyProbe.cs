@@ -160,7 +160,7 @@ internal static class WorkspaceSafetyProbe
         try
         {
             var input = (Wpf.Ui.Controls.TextBox)prompt.FindName("InputBox");
-            input.Text = "A/B";
+            input.Text = "CON";
             typeof(TextPromptWindow).GetMethod("OnOk", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(prompt, [prompt, new RoutedEventArgs()]);
             Require(prompt.Value is null && !string.IsNullOrWhiteSpace(((TextBlock)prompt.FindName("ErrorText")).Text), "Invalid save name closed prompt or hid error.");
             Require(prompt.AcceptText == "Save list", "Save action label missing.");

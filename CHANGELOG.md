@@ -6,7 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
-_No changes yet._
+### Fixed
+- Preserve punctuation such as /, : and | in saved-list display names using reversible filename encoding, while retaining overwrite and recovery protections.
 
 ## 1.19.1 — 2026-10-19
 

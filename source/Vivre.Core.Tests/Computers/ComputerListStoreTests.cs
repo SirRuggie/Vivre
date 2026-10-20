@@ -58,20 +58,39 @@ public class ComputerListStoreTests : IDisposable
     }
 
     [Theory]
-    [InlineData("A/B")]
-    [InlineData("A:B")]
     [InlineData("..")]
     [InlineData("List.")]
     [InlineData("CON")]
     [InlineData("nul.backup")]
     [InlineData("COM1")]
     [InlineData("LPT¹")]
-    [InlineData("\\server")]
     public void Invalid_names_are_rejected_without_sanitizing(string name)
     {
         var store = new ComputerListStore(_dir);
         Assert.Throws<ArgumentException>(() => store.Save(name, ["DUMMY"]));
         Assert.Empty(store.List());
+    }
+
+    [Fact]
+    public void Display_names_preserve_punctuation_and_do_not_alias_legacy_files()
+    {
+        const string name = "Tuesday, 10/20/2026 | 09:00 AM ET";
+        var store = new ComputerListStore(_dir);
+        string[] names = [name, "A/B", "A:B", "A_B", "A%2FB", "../outside", "A%2F/B"];
+        foreach (string entry in names) store.Save(entry, [entry == name ? "DUMMY-A" : "DUMMY-B"]);
+        var reopened = new ComputerListStore(_dir);
+        Assert.Equal(names.OrderBy(x => x), reopened.List().OrderBy(x => x));
+        Assert.Equal(["DUMMY-A"], reopened.LoadRequired(name));
+        Assert.ThrowsAny<IOException>(() => reopened.Save(name, ["WRONG"]));
+        string revision = reopened.GetRevision(name)!;
+        reopened.Save(name, ["DUMMY-NEW"], true, revision);
+        Assert.Throws<IOException>(() => reopened.Save(name, ["STALE"], true, revision));
+        reopened.Delete(name, reopened.GetRevision(name));
+        var deleted = Assert.Single(reopened.DeletedLists());
+        Assert.Equal(name, deleted.Name);
+        reopened.Restore(deleted.Id, name);
+        Assert.Equal(["DUMMY-NEW"], reopened.LoadRequired(name));
+        Assert.Equal(names.Length, Directory.GetFiles(_dir).Count(p => p.EndsWith(".txt") || p.EndsWith(".vlist")));
     }
 
     [Fact]
@@ -158,7 +177,7 @@ public class ComputerListStoreTests : IDisposable
         store.Delete("Saved", store.GetRevision("Saved"));
         Assert.Equal(2, store.DeletedLists().Count);
         Assert.Throws<ArgumentException>(() => store.Restore("../outside", "Restored"));
-        Assert.Throws<ArgumentException>(() => store.Restore(store.DeletedLists()[0].Id, "../outside"));
+        Assert.Throws<ArgumentException>(() => store.Restore(store.DeletedLists()[0].Id, "Invalid\nname"));
         Assert.Equal(2, store.DeletedLists().Count);
         int index = 0;
         foreach (var item in store.DeletedLists()) store.Restore(item.Id, "Copy" + ++index);

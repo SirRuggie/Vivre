@@ -124,7 +124,7 @@ public static class HelpContent
                 "Open, Delete, and Restore list menus have search boxes. Restored lists do not replace the machines in your current tab.",
                 "Recovery keeps deletions made by this version under %APPDATA%\\Vivre\\Lists\\Deleted until restored; older permanent deletions cannot be recovered.",
             ],
-            Tip = "Lists are plain .txt files under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
+            Tip = "Lists are plain-text .txt files (or .vlist files for names with punctuation) under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
         },
         new HelpTopic
         {
