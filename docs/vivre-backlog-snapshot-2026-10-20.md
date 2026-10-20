@@ -1,0 +1,614 @@
+# Vivre backlog snapshot — 2026-10-20
+
+> **Point-in-time record, never edited after the fact.** Preserved from `master` at `5c56ea3` before backlog reconciliation.
+> The original tracker below mixes historical and current claims; its “open,” “none fixed,” version and authorization statements are not current instructions.
+> Use the [current backlog](vivre-backlog.md) for reconciled status and the [UI/UX checklist](vivre-ui-ux-backlog.md) for U identifiers.
+> Original content follows unchanged; historical commit IDs may predate a history rewrite.
+
+---
+
+# Vivre — running backlog (deferred items & open threads)
+
+> Working tracker for things found during build work that are NOT yet done.
+> As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
+> **Current release: 1.20.0 (2026-10-20).** The DO NEXT section and [UI/UX backlog](vivre-ui-ux-backlog.md) carry current decisions; the release history below is point-in-time context.
+> **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
+> not a mandate). Legacy baseline: **2026-07-29** (release **1.17.1** — a patch release on top of 1.17.0: a
+> hand Force reboot now proves itself by UPTIME COLLAPSE rather than by waiting to see the machine drop off
+> the network, so a fast-rebooting VM no longer leaves its row stuck on "Reboot forced — going down"
+> (field-confirmed 2026-07-28); the proof is clock-immune; multi-row baselines are captured concurrently; and
+> force-reboot reads reserve capacity so a big selection can't starve the monitor. Suite 1200 green.)
+> 1.17.0 was the reboot arc: DCOM 1191 →
+> forced-escalation on the same channel, which removed the SMB/SCM service creation SentinelOne scored as
+> Lateral Movement, plus the reboot-verify arc — per-tab log tagging, the bounded + DETACHED post-reboot
+> verify arc and its three-leg freshness gate. **Minor, not patch: reboot semantics changed** — a machine
+> with any session logged on is now forced immediately with no countdown, and machines that previously
+> reported success can now land Unverified. See CHANGELOG.md ▸ 1.17.0 ▸ Changed, first entry.
+> 1.16.4 (2026-07-21) was the WUG state-check arc — see docs/wug-state-check-findings.md.
+> Older release narration lives with its DONE entries in docs/archive/vivre-backlog-done-archive.md.
+> Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
+> not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
+> are point-in-time only (the then-current suite was 1200 green as of 2026-07-28, release 1.17.1).**
+
+---
+
+## ▶ DO NEXT — recommended order
+
+**Current follow-up (2026-10-20):** [S-1 and U-40–U-42 review](vivre-follow-up-review-2026-10-20.md). Shaun deferred U-40's rare cross-instance saved-list race and U-42's unmeasured list-loading pause; revisit only with an observed problem or changed priority. U-41 already-open list selection is complete in 1.19.2; see the [UI/UX ledger](vivre-ui-ux-backlog.md). S-1 remains a separate security/availability decision; no implementation is authorized by this backlog entry.
+
+- **[S-1] — WinRM update-agent folder permissions (conditional high, decision pending).** The launcher currently ignores an ACL-setting failure before registering a SYSTEM task. Verify the folder's *effective* permissions first, try to repair them if needed, and consider stopping only a **new** launch on that host if the folder remains unsafe. Do not fail solely because `Set-Acl` reports an error, interrupt an update already running, or change other patching lanes. Confirm normal launch and failure behavior in focused tests before choosing a fix; no unsafe production folder or exploit has been confirmed. Shaun's operational concern: an unnecessary permission failure must not prevent an otherwise safe update from finishing.
+
+**Comprehensive audit — 2026-10-14:** [Frozen F26–F45 findings](vivre-comprehensive-audit-2026-10-14.md); [current implementation, red-team corrections and acceptance evidence](vivre-audit-implementation-2026-10-14.md). F26–F45 source fixes are implemented with independent review and local regression evidence; the ledger records remaining live/native/signing validation limits. F12 and force-reboot fast-watch remain explicitly deferred.
+
+**Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking is implemented in 1.17.3 (see its release ledger). Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
+
+**Performance batch — 2026-10-14:** F13–F20 implemented; [implementation evidence and limits](vivre-performance-implementation-2026-10-14.md), [frozen baseline assessment](vivre-performance-review-2026-10-14.md). F13–F19 have local runtime validation; F20 compiled/source-reviewed, visible banner/tray behavior unverified. Live integration/native soak gaps remain. F12 stays skipped. Earlier dated release/test summaries below are historical.
+
+**DCOM 1191 → SMB/SCM fallback (the SentinelOne "Lateral Movement" source) — BUILT 2026-07-27.** Shipped: `5f6d437` (a 1191 on a GRACEFUL call now
+escalates to the FORCED form on the same DCOM session instead of switching transports — new `RebootDispatch.EscalatedToForced`, forced go-offline
+window, null-ReturnValue fix), `81d8a2f` (the SMB fallback sends `/f` after a failed escalation, + the uptime rescue on the escalated branch), and this
+commit (an escalated send that THROWS still reports `ForceRequired`; an SMB-FORCED fallback reports `EscalatedToForced` so it too gets the forced window).
+**Still open:** the trigger has no direct test seam (`CimSession.Create` is inline inside the private `TryDcomShutdown`, so the throw-after-1191 leg is
+unprovable from tests). Full case file: **docs/dcom-1191-reboot-fallback-findings.md** (feasibility, blast radius, red team).
+**DISPROVEN AT THE `shutdown.exe` LAYER (2026-07-29, NYC-FP1) — was "unproven from code", now settled the other way:** `shutdown.exe /r` without `/f` is
+**NOT** refused on a session-logged-on box (disconnected session confirmed by `quser`, exit 0), and a warned countdown COMPLETES on an occupied box
+(`/r /t 60`, Active RDP session → offline at 69 s; repeated with Notepad holding unsaved text → offline at 77 s). **The 1191 refusal is a property of the
+WMI primitive, not of Windows** — the DCOM behaviour and everything built on it are unchanged. Evidence, the stock-configuration control, and the limits
+(one box, one OS, Notepad is a weak blocker, unsaved data still LOST) live in **docs/windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED"**. The frozen
+1191 case file is NOT edited; it is partially superseded, as noted in docs/README.md.
+
+**Audit findings (2026-07-01) — status as of 2026-07-21 (release 1.16.4; suite 1054 green):** the full five-lens audit
+record is `docs/archive/vivre-audit-findings.md` (point-in-time, never edited). **Both HIGHs are CLOSED** —
+HIGH-1 dead-worker-undetectable (`852662d`) and HIGH-2 one-hung-box-freezes-monitor (`7e2102c`) —
+**and every actionable MED is now closed** (the batch-sequential residue closed this pass — see the bounded-loops DONE entry)**:** Stop-during-SMB-copy + settings-save-invisible-in-Release
++ Enable-WinRM no-timeout/sequential (`7e2102c`), cancel-clears-chip-on-failed-unregister +
+SCCM-ClientSDK-false-green (`289878f`), the post-reboot false-green cluster (`f965b29`), the install
+re-entry `installBegan` race (`832aa7f`), and the orphan `Vivre_Reboot_*` service (`a008747`) — plus
+the audit-adjacent install wall-clock incident (`12a5e36`), the TriggerSchedule / atomic-settings /
+LastBootTime trio (`d600009`), the atomic computer-list save (`1add64f`), and the session-found
+users-online false-green (`f26a7c4`). The audit LOW "stale agent doc comments promise a reboot the
+code excised" (audit doc ▸ LOW, Program.cs :58/:826/:911) is **CLOSED** — all three rewritten to the
+reported-only truth, plus a fourth of the same class found in the sweep (the `Summarize` docstring's
+"the actual reboot is the caller's job").
+
+**Still open** (none is day-to-day work — no urgent items remain). **Each item carries a `[named-anchor]` —
+cite those, never a position.** They were ordinals until 2026-07-29 and three cross-references broke in one
+arc because inserting an item renumbered everything below it; anchors are stable across inserts and reorders.
+The list is still in recommended do-next order.
+- **[transport-cache-staleness] — CLOSED in F10.** Rejections are scoped to connection and credentials; explicit Retry WinRM verifies recovery and fences stale attempts. See the review decisions and tests.
+- **[details-window-leak]** — **Details-window CollectionView leak** — **MEASURE FIRST**, do not fix on theory.
+- **[stop-monitor-only-tab] — monitor-only button mismatch CLOSED in 1.17.2.** The button now uses existing StopCommand eligibility; the real view-model probe confirms Stop halts monitoring. Help matches. Schedule/cancel loops retain their existing separate cancellation behavior; this change does not wire new cancellation tokens into those loops.
+- **[scheduled-reboot-stampede]** — **Scheduled-reboot "stampede" — CLOSED, CONSCIOUS ACCEPT (operator decision, 2026-07-13). Do not
+   re-raise; build nothing.** The facts stand: scheduled reboots have no burst stagger — every
+   selected box fires `shutdown.exe /r /f /t 0` locally at the SAME absolute UTC instant
+   (`ScheduleTimeFormatter` StartBoundary=…Z), and the wave's `_rebootTriggerThrottle`(12)+jitter
+   never touches this path. **Why that is fine:** the wave throttle exists because a wave makes
+   VIVRE fire ~20 simultaneous REMOTE calls — 20 simultaneous auths against the DCs. A scheduled
+   reboot has none of that: the task already lives on the box, the box reboots itself locally at
+   trigger time, and Vivre isn't even running. The DC/DNS/auth burst the throttle protects against
+   structurally cannot happen here. What remains is "the boxes I picked go down at the time I
+   picked" — which is what a maintenance window IS. **The one condition that would reopen this:**
+   batching interdependent boxes into one instant (DCs/DNS together, or a SQL box + its app tier) —
+   that is per-run operator judgment, not a code problem.
+- **[warn-then-force]** — **Warn-then-force reboot (a countdown instead of an immediate force) — CLOSED, CONSCIOUS ACCEPT
+   (operator decision, 2026-07-29). Do not re-chase; build no part of it.** Field-proven to WORK and still
+   declined: reboots run inside an agreed maintenance window, so a per-box countdown only adds latency and a
+   new Abort surface. Rationale + evidence: **windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED"**.
+- **[force-reboot-no-escalation]** — **Force reboot sends once and never escalates or re-dispatches — DOCUMENTED FACT, not a defect.**
+   `RebootForceSelectedAsync` never calls `RebootWave`, so the graceful→8min→force escalation does not apply;
+   there is nothing to escalate to (the command already carries `/f`). A stalled box is SURFACED — the watch
+   gives up and lands it **Unverified**. A second unrequested send would breach the cardinal. **Not a bug.**
+- **[post-reboot-smb-optout]** — **Post-reboot rescan no longer drops an agent EXE while WinRM is still starting — BUILT 2026-07-29.**
+   `PatchOptions.AllowSmbScanFallback` (default TRUE) suppresses the SMB fallback on the rescan's non-final
+   attempts only; the final attempt permits it, so every cohort keeps its rescue. Retry delay 20s→60s.
+   **Option B (mirroring the install `when` filter) is DEAD** — see case file ▸ "SMB scan fallback".
+- **[1191-fix-inert-on-kerberos-leg]** — **The 1.17.0 escalation is INERT on the Kerberos fallback leg — "1.17.0 fixed the SMB/SCM exposure" is
+   true ONLY for a graceful 1191.** `ForceRebootRunner.cs:87` calls the trigger with `forced: true`, and the
+   escalation branch is guarded `when !forced` (`DcomRebootTrigger.cs:241`), so it cannot execute there; every
+   other null-dispatch arm still reaches `:95` → `:377` service creation. Recorded so the fix is not over-credited.
+- **[2016-stage-service-creation]** — **2016 Stage creates a remote service unconditionally, on every flagged box, every cycle — BY DESIGN, not a
+   defect.** `FullPackageLcuLane.cs:160-161` (`InstallFullPackageAsync`) and `:68` (`RunComponentCleanupAsync`)
+   go straight to the SMB agent lane with no try/catch and no Kerberos condition. Unrelated to reboots.
+   **EDR-conversation scope** — if SentinelOne policy is being discussed, Stage belongs in it. Build nothing.
+- **[trace-empty-default-interface-method]** — **`IActivityLog.Trace` is an empty default interface method
+   (`IActivityLog.cs:44`) — any future implementation that forgets to override it silently no-ops, with NO
+   compiler warning.** Same silent-no-op class as reboot finding #6 (`Debug.WriteLine` compiled out of Release).
+   Production is SAFE today: one implementation, `ActivityLog.cs:81`, overrides correctly and writes at
+   Information. **Fix = make the member abstract** so the compiler forces it; expect that to force changes in
+   test doubles (e.g. `SharedSettingsStoreTests`' `CapturingLog`, which relies on the default today). Not built.
+- **[shared-settings-stomp-guard] — CLOSED by F35 (2026-10-14).** A cross-process file lease now
+  covers fresh read/merge/atomic replacement, also serializing the writer's fixed temporary filename.
+  Settings callers fail immediately on lease contention through their existing save-error path;
+  unknown keys and corrupt-file refusal remain intact. Separate-process contention and regression
+  tests passed. See the current audit acceptance ledger for evidence and commit linkage.
+
+The RDP Reconnect button (a previous #1) shipped — see DONE. The 2016 staged-patching toggle shipped
+(see DONE), and **KB auto-population from a scan is closed — manual only** (decision recorded under
+*Settings simplification* below). Beyond the Still-open items above, what remains is the polish /
+standalone items further down, each "do only if it recurs / when a signal appears."
+
+---
+
+## ▶ REBOOT-PATH & GUARDRAIL FINDINGS (2026-07-28 session — none fixed, all cardinal-adjacent)
+
+> Surfaced while investigating the SentinelOne detection, the 1191 arc and the silent grid freeze. Listed
+> most severe first. **Nothing here is a live incident** — they are gaps in confirm coverage, guardrails and
+> failure visibility. The reboot cardinal (nothing auto-reboots) still holds on every path below: each one
+> is operator-initiated. What varies is how much the operator is told before it fires.
+>
+> **Full text, verified citations and the framing note live in the case file:
+> [docs/reboot-path-and-guardrail-findings.md](reboot-path-and-guardrail-findings.md)** (frozen 2026-07-29
+> against `99995b6`; every file:line re-checked, drifted line numbers corrected in place with the original
+> kept beside them). The entries below are pointers only — **none is fixed**.
+>
+> **Two relationships to honour when scoping:** #12 is a **PREREQUISITE for #5**, and **#2 · #3 · #4 are one
+> cohort** (three reboot paths shipping with no yes/no confirm — decide the confirm story once).
+>
+> **The numbers are STABLE IDs into the case file, not the current ranking.** They preserve the original
+> 2026-07-28 severity order so the pointers stay valid. One re-rank since: **#2 now sits below #3** (the
+> Schedule modal carries disclosure text, so it is a gate without a confirm; the install nudge has neither).
+
+1. **Approve-vs-execute gap — the set approved is not the set rebooted.** OPEN, none fixed.
+   The confirm dialog reads the selection, then the command re-reads it, so a change between the two reboots
+   an unapproved set; Force reboot has the same shape and the install nudge is the pattern to copy.
+   → case file ▸ finding 1.
+2. **Schedule ▸ Reboot has no yes/no confirm; Enter is the default button.** OPEN, none fixed.
+   The modal carries disclosure text, so it IS a gate — just not a confirm: fields are pre-filled and Enter
+   arms a `/r /f /t 0` SYSTEM task with no restatement of count or targets. **Re-ranked 2026-07-29 to BELOW
+   #3** (a disclosing modal beats none); the finding stands. **Cohort with #3 and #4.** → case file ▸ finding 2.
+3. **The install nudge's primary button force-reboots every reboot-pending box in the tab.** OPEN, none fixed.
+   Highest-exposure reboot surface: no selection needed, no machines named, no command shown, reachable by
+   Ctrl+Enter. **Cohort with #2 and #4.** → case file ▸ finding 3.
+4. **Run script ▸ Reboot is a reboot path with no confirm of any kind.** OPEN, none fixed.
+   The runner executes ungated, "All machines…" needs no selection, and the shipped reboot scripts include a
+   forced restart — missed by every reboot-command inventory because it arrives as a script.
+   **Same class as #2 and #3 — scope the three together.** → case file ▸ finding 4.
+5. **The cardinal gate grep guarded ONE of five reboot primitives — FIXED 2026-07-29 by
+   `tools/reboot-primitive-gate.sh`** (cited by path, not hash: a commit cannot contain its own hash, and an
+   amend invalidated the first attempt — `git log -- tools/reboot-primitive-gate.sh` is authoritative)**.**
+   All five sites pinned at exact counts, every file type
+   scanned, plus a containment check that fails on a SIXTH primitive anywhere. Old one-line grep SUBSUMED as
+   SITE 1/5. Proven to fail on demand (4 evasion forms). → case file ▸ finding 5.
+6. **The SMB/SCM fallback cannot report a failed start — in Release it reports to nobody.** OPEN, none fixed.
+   It never reads an exit code and its only failure surface is `Debug.WriteLine`, which compiles to nothing in
+   Release, while the caller returns a success value regardless. → case file ▸ finding 6.
+7. **Force reboot AND the Reboot Wave both drop the operator's alternate credential on the DCOM/SMB leg.**
+   OPEN, none fixed. **RE-SCOPED 2026-07-29 — wider than first written:** `IRebootWave.cs:14` has no credential
+   parameter at all, so BOTH paths authenticate on the ambient process token; a different principal reaches the
+   box and the UI reports the channel switch, never the identity change. → case file ▸ finding 7.
+8. **Custom columns auto-run arbitrary operator PowerShell on every host on list load.** OPEN, none fixed.
+   No click and no confirm on a path that base64-wraps into `ScriptBlock::Create` (gated only on Auto-check
+   on load); invisible to every gate grep. **A capability risk, not a live one.** → case file ▸ finding 8.
+9. **`Vivre_Reboot_*` fallback services get no SDDL and their delete is raceable.** OPEN, none fixed.
+   Nothing constrains who could start a leftover service, and the reaper exists precisely because the delete
+   loses races — an ACL at creation would make the reaper a backstop, not the control. → case file ▸ finding 9.
+10. **`WinRmEnabler` is a second Lateral-Movement detection surface.** OPEN, none fixed.
+    It launches `powershell.exe` on remote hosts via `Win32_Process.Create` — unrelated to the 1191 arc, same
+    EDR signature, and it scores whenever Enable-WinRM is run. → case file ▸ finding 10.
+11. **`HostName.IsLocal`'s alias branch is case-sensitive.** OPEN, none fixed.
+    An FQDN or an upper-case `LOCALHOST` row gets no self-target warning while the reboot still lands on the
+    Vivre host. **Latent** — the operator's lists are short-name today. → case file ▸ finding 11.
+12. **The "/t 300" warned-reboot path — CLOSED 2026-07-29 as #5's prerequisite; it EXISTS and the
+    silent-no-op concern is closed.** Its resolution is what let the inventory close at five, which is what
+    made #5's gate buildable — the two shipped together.
+    Real, in the script library (a warned, non-forced 5-min countdown), so the earlier inventory was incomplete.
+    **Field-demonstrated 2026-07-29, not merely accepted:** it ARMS *and* COMPLETES on an occupied box — see
+    windows-patching-lane.md ▸ "WHAT IS ACTUALLY REFUSED". **PREREQUISITE FOR #5.** → case file ▸ finding 12.
+13. **HelpContent's Install topic never got the self-target line.** OPEN, none fixed.
+    Three how-to topics received it; the "reboot these first" nudge — the broadest-scope reboot surface
+    (see #3) — did not, so the help describes three of the four surfaces that warn. **This one is code, not
+    housekeeping** (`HelpContent.cs` is source). → case file ▸ finding 13.
+
+---
+
+## RESEARCH — open questions to confirm (no fix yet — confirm the behavior first)
+
+- **Why some OS cumulative updates show a "—" (dash) for size — e.g. KB5094126 on Win11 24H2 / build 26100
+  (observation, not a fix — working as designed).** The dash means `UpdateSizeResolver.ResolveDisplaySize`
+  ([UpdateSizeResolver.cs] line 46) returned null = "no trustworthy size to show." For a 24H2 / Server-2025
+  express/checkpoint CU, WUA reports a wildly-inflated worst-case `MaxDownloadSize` (tens of GB), so Vivre
+  deliberately ignores it (showing it would be a lie) and falls back to the Microsoft Update Catalog for the
+  real `.msu` size; if that lookup can't answer (the catalog isn't reachable from the patching host, or the KB
+  doesn't match a catalog row) the failed lookup is cached "unavailable" for the session — so the cell stays a
+  dash. (Less-likely alternative cause: WUA reported no size at all, Min = Max = 0, in which case the catalog
+  is never consulted — it's only used for the >10 GB inflated case.) This is intentional: a dash, never a wrong
+  number. **If we ever want fewer dashes:** confirm which case KB5094126 actually hits (inflated-Max-but-catalog-
+  empty vs 0/0), then decide whether to (a) extend the catalog lookup to the 0/0 case and/or (b) diagnose why
+  the catalog returns null for these CUs from the patching host (reachability vs row-match). Files:
+  `UpdateSizeResolver.cs`, `MicrosoftUpdateCatalogService.cs`, `WorkspaceViewModel.ResolveCatalogSizesAsync`.
+
+---
+
+## OPEN — patching features (design mostly settled, build pending)
+
+### Settings simplification
+- `ExpectedSizeMb` (the display-only "Approx. package size (MB)" field) is **DONE** (removed;
+  package matched by KB + arch, never size).
+- KB and Target UBR **cannot** be removed: Target UBR is not present in any WUA scan result so it
+  can't be derived automatically, and KB must remain overridable for off-cycle patches. Keep KB,
+  Target UBR, and the package folder.
+- **KB auto-population from a scan — CLOSED, manual only.** The strong (every-scan auto-write) version
+  is a bad idea — it clobbers the single-value `MonthlyCu` across mixed/old-cycle fleets and overwrites a
+  deliberately-set KB — and the weak ("use this scan's CU" button) version isn't worth it: UBR must be
+  set by hand every cycle anyway (not in any scan result), and the Settings **update-history URL**
+  now makes the manual KB+UBR lookup a two-click copy. The `Lcu2016CuMatcher.FindCuKb`
+  heuristic built for the staged-patching dialog exists if this is ever revisited, but the decision is:
+  manual only.
+- **Clear the CU month label when the KB is hand-edited.** The 1.16.0 CU month label (read from the staged
+  package — see DONE) is not cleared when the operator manually changes the KB, so a stale label from the old
+  package can sit on a newly-typed KB and mislead the team about which cycle they're on. Clear (or re-derive)
+  the label whenever the KB field is edited by hand.
+
+### Unverified / reboot-verify follow-ups (from the 1.16.0 Unverified + reboot arc — see DONE)
+- **Monitor self-heal for the Unverified state.** A later successful monitor probe updates the reboot dot but
+  never rewrites the stale "couldn't confirm — re-check" message or clears the **Unverified** chip, so a box
+  that has since become verifiable keeps reading Unverified until the operator acts. Extend the `was == true`
+  monitor guard so a subsequent clean probe rewrites the message and chip and the fleet converges on its own —
+  no operator action needed.
+- **Reboot-pending-probe DCOM fallback for the Kerberos cohort.** The post-reboot reboot-pending probe is
+  WinRM-only, so a Kerberos-broken box (WinRM auth rejected) can NEVER be confirmed after a reboot — it is
+  **guaranteed Unverified** every cycle. Add a DCOM fallback: the reboot-pending registry legs need no WinRM,
+  and the `DcomRebootReadinessProbe` machinery already exists — wiring it in rescues that cohort so its boxes
+  can verify like the rest. (Design settled, build pending; related to the parked Kerberos remoting-cache
+  work in DO NEXT ▸ [transport-cache-staleness] and the drift-hunt "stale reboot-pending dot on DCOM-only boxes" note below.)
+- **Desktop wiring has NO regression guard — the verify-arc fixes are untestable where they live.** Reverting
+  `arcCts.Token` back to `token` (the original freeze defect) leaves the whole suite green; the same holds for
+  the generation bumps, the freshness gate and the one-arc claim. `Vivre.Core.Tests` (net10.0) cannot reference
+  `Vivre.Desktop` (net10.0-windows), so the tests cover the razors and none of the wiring. Closing it needs
+  either a net10.0-windows test project or extracting the monitor/arc orchestration behind a UI-free seam.
+- **Tab-count correlation: REFUTED, recorded so it is not re-investigated.** Three rounds chased "one host in
+  several tabs" as the cause of the silent grid freeze. Field reproduction killed it: a SINGLE tab, host in no
+  other tab, still froze with the activity log silent for 2m 52s. The cause was the unbounded verify arc racing
+  the box going offline — not instance count. `HostWinRmGate` contention was refuted separately (background
+  acquires can never hold more than 2 of 4 slots, and admission requires `online`, so contention drops to zero
+  for the whole outage).
+- **Worst-case monitor stall is NOT 120s.** `_rebootProbeThrottle` is a `static SemaphoreSlim(8)` shared across
+  every open tab and waited on the RAW monitor token, so with M wedged rows fleet-wide the real bound is
+  ceil(M/8) × 120s, not one probe's ceiling. Pre-existing and unchanged by the verify-arc work; worth tracking
+  because the arc's detachment removed the other unbounded term and left this as the dominant one.
+- **The fast reboot watch is uncancellable and holds its per-host claim for ~16 minutes.** Neither caller
+  passes a token to `RebootForceSelectedAsync`, so the watch runs on `CancellationToken.None`: its give-up
+  delay cannot be cancelled by Stop, monitoring-off or tab close, and `_fastRebootWatches` stays claimed for
+  the whole window — so a SECOND Force reboot on that host inside it gets no watch and can end up in exactly
+  the stuck state this arc fixed. Needs a view-model lifetime token. **Deferred by operator decision**
+  (2026-07-28) — a repeat Force reboot inside 16 minutes is rare. **TRAP for whoever wires that token up:**
+  the concurrent baseline phase has no `OperationCanceledException` arm, so cancelling there would leave
+  EVERY row reading "Rebooting (force)…" with no reboot sent and no error — latent only because no caller
+  passes a token today. Mirror the dispatch loop's existing OCE arm before enabling cancellation.
+- **The fast watch can overwrite the monitor's richer "back online" text.** Both mechanisms can resolve the
+  same row; if the monitor observed the drop but the watch proves the reboot first, the watch's plain
+  "Back online HH:mm" replaces the monitor's "Back online HH:mm (down 1m 48s)" form. Cosmetic — the row is
+  correct, the operator just loses the down-duration on rows where both fired.
+- **TAB SCOPE — one decision governs two open items that pull in OPPOSITE directions.** Decide the principle
+  once, then apply it to both. (i) The verify-arc guards (`_verifyArcsInFlight`, `_rebootStateGeneration`) are
+  per-tab instance fields, so one host open in two tabs gets two concurrent arcs, each invisible to the other's
+  guard — this asks whether a per-tab guard should be app-wide. (ii) The per-tab Update Source arc asks the
+  reverse: `PatchOptions` is a single SHARED instance (`App.xaml.cs:83`), `Clone()` at `:132` is the fix token,
+  and Option A is per-tab clone + tab-header badge + stale banner + source lock during patch work — making a
+  global setting per-tab. Deciding these separately risks making tab scope mean one thing for settings and the
+  opposite for guards.
+
+---
+
+## OPEN — polish / smaller standalone items
+
+- **Custom columns are intentionally NOT exported from the Patching grid** (they only render on Health; the shown-rows CSV mirrors the clicked grid) — readdress only if a Patching-grid custom-column export is ever wanted.
+
+- **Auto-heal for "couldn't rescan" Unverified boxes — PARKED, gather signal first.** After a
+  reboot-verify, B/C/D Unverified boxes (rescan itself failed) need a manual rescan; 1.16.2
+  already self-heals the common variant-A case. Design is DONE + red-teamed (auto-rescan, or a
+  simpler one-click "Rescan all Unverified" button — leaning button). Build nothing until a few
+  patch cycles show how often this actually recurs; today's cases were largely a broken SCCM
+  client on one box. Full design lives in the Action-3 gate discussion.
+
+- **Stage copy fan-out I/O contention (UI sluggish during big batch Stage)** — NOT a UI-blocking copy and NOT
+  a wrong-thread hash (both were earlier guesses). The 1.7 GB Stage copy already runs OFF the UI thread
+  (`SmbAgentLane.cs:230-246` — `File.Copy` inside `Task.Run(...).ConfigureAwait(false)`), and integrity is
+  byte-count only (no SHA-256 of the package). Real cause: **copy fan-out** — up to the install cap hosts each
+  `File.Copy` the SAME workstation-local 1.7 GB source concurrently → N parallel source reads + N concurrent
+  1.7 GB SMB uploads → workstation disk + uplink saturation; "sluggish, not frozen" is the per-host UI-thread
+  progress continuations queueing on the single Dispatcher under that pressure. **Concurrency facts — NOT A TASK; the "make concurrency configurable" notion is a MYTH (CLOSED),
+  the install/stage cap is already operator-settable:** there is NO hardcoded 10 — `PatchOptions.MaxConcurrentHosts = 50`
+  (`PatchOptions.cs:78`), and the install/stage throttle is the operator-settable **Max simultaneous installs**
+  (per-tab `_patchThrottle`, default 50; `MaxConcurrentScans = 32` is separate). Cross-tab coupling is
+  architectural (one Dispatcher + singleton `PatchService`/`PSRunspaceHost`; scan/monitor/reboot throttles are
+  `static`) but `_patchThrottle` is per-tab, so installs are NOT cross-tab gated. Fix direction (future): a
+  dedicated I/O-aware copy cap separate from the install cap; and/or stage to one share and have targets pull;
+  and/or sequence the large copies.
+- **SHA-256 package-hash verification for the staged CU package — CLOSED in 1.17.2.** CopyPackage holds the source read-locked and compares destination SHA-256 before agent launch. Local and mapped-share dummy tests reject equal-size corruption. Large CU copies incur extra source/destination reads; fleet-scale I/O behavior remains unmeasured. Older byte-count-only descriptions are historical.
+- **Staged-machine list "copy all / export" UX gap.** The Settings staged-patching management card lists /
+  Removes / Clears the flagged machines but has no way to copy the whole list out (clipboard or file export),
+  so an operator can't easily hand the staged set to a teammate or record it. Add a copy-all / export affordance.
+- **Clean UI-sluggishness at ~50 concurrent cleans — watch item (perf).** Since Clean went
+  selection-driven (`9133226`, shipped 1.14.x-era — resolution record in
+  docs/archive/vivre-backlog-done-archive.md), it cleans ALL selected 2016 boxes (up to ~50), so a lag
+  at ~50 concurrent cleans is a **live signal**, not a hypothetical. The measurement apparatus (Probe
+  A thread-pool / Probe B cap / Probe C layout, plus the `Width="Auto"` message-column A/B via
+  `VIVRE_CLEAN_MSG_FIXEDWIDTH`) is parked on throwaway branch `perf/clean-measure`. Keep it parked;
+  only pursue if a real 50-box clean actually lags.
+- **Proactive gray-out of known-WinRM-broken boxes** — visually mark boxes that are known to fail WinRM
+  so the operator isn't surprised, rather than only learning at action time. Design pass needed.
+- **Idle-monitor reachability throttle** — throttle added (d3b5ed0). Verify it holds at scale
+  (300 boxes); drop from list once confirmed in practice.
+- **Bottom-panel resize freeze with large row counts** — row virtualization added (ce624d4); appears
+  fixed. Watch under heavy update-scan load; if it returns, next lever is the `Width="Auto"` columns
+  forcing full-width measure. (Measured in the 1.14.2 cold-start hunt: the Auto-width column measure is ~120–180ms/pass — real but minor, NOT a freeze cause.)
+- **Scan-timeout edge** — 5-min cap (a997642) may be short for the very worst first-scan boxes; bump to
+  10 min (600s) ONLY if real "Scan timed out" false-positives appear.
+- **Multiple scheduled tasks per host — CLOSED in 1.17.3 for this workspace session's known tasks.** Install results carry their actual task identities; the tracker retains each, shows the earliest pending time and remaining count, and advances without erasing later tasks. Confirmed same-name registrations replace only that task; uncertain replacements retain possible prior times. Failed cancellation keeps tracking; verified absence clears it. This is not remote inventory reconciliation or cross-tab/persistent tracking.
+- **No Desktop test project** — three of the four `7e2102c` fixes have no unit-test home (the 120s
+  reboot-probe timeout, the settings ActivityLog hook, parallel Enable WinRM), and every per-host
+  timeout in the app (incl. the existing vitals/health ones) is trust-the-pattern. A
+  `Vivre.Desktop.Tests` project + a delaying `IPowerShellHost` fake would unlock coverage for all of
+  them at once. Recurring theme across three sessions — worth doing when test appetite is high.
+
+> **HANDLE WITH CARE — read before touching anything in the two hunt clusters below.** These items
+> (especially the live-filtered grid, the load-bearing `PatchState`, the bulk-add path, and the per-row
+> notification cascade) sit in the EXACT code that caused the past cross-thread crash. There are real
+> concerns here — this is precisely the "one small thing I didn't fully check, so it caused X, Y and Z"
+> class of regression we are NOT willing to repeat. So before tackling ANY of them:
+>
+> - **Research and observe FIRST.** Read the full call path end-to-end, map every property -> aggregate and
+>   collection -> subscription dependency, and confirm thread affinity (the live-filter writers MUST stay on
+>   the UI thread). Do not pattern-match a "quick fix" — these need deeper thought and observation of the
+>   actual code before any edit.
+> - **Beware the obvious-fix traps already found:** disposing the install-throttle / WinRM-gate semaphores
+>   breaks in-flight installs (they are held by reference on purpose); a naive `Clear` + range / `Reset` on the
+>   grid or the update checklist skips the per-row `PropertyChanged` re-subscription (the `Reset` ->
+>   `NewItems == null` trap) and silently breaks live row updates.
+> - **One at a time.** Tackle a SINGLE item, verify it (build + full tests + a visual check in the running app
+>   at fleet scale), and COMMIT it on its own before starting the next. Do not batch these.
+- **From the 2026-06-23 drift/stale hunt — not yet fixed (the easy 8 were done; these need more thought):**
+  - **Stale reboot-pending dot on DCOM-only boxes (narrow edge).** `ApplyVitals` only clears `RebootRequired`
+    when `v.RebootPending` is non-null; `DcomVitalsProbe` returns null when all three reboot reads fail, so a
+    Kerberos-broken box in Health mode can keep an amber dot after it rebooted (Check All clears it). Low.
+  - **"Last reboot" grid column vs Readings card can disagree on DCOM hosts.** `ApplyVitals` keeps the prior
+    `LastBootTime` when a DCOM read returns null while the Readings card shows "—". Low / cosmetic.
+  - **Latent / no current impact:** RebootWave "Overdue — offline N min" wording before the box has actually
+    gone offline (slow shutdown); `WuaUpdateLane` skips `SafetyCleanupAsync` on a currently-unreachable
+    mid-stream Kerberos error; `HostWinRmGate` assumes a single `PSRunspaceHost`; `VitalsProbe` DCOM-fallback
+    swallows the DCOM exception with no trace; RDP FullScreen not re-applied after Reconnect;
+    `CrossDomainRdpViewModel.Dispose` skips the `HasSessions` notification; the Deploy / SoftwareCheck / Columns
+    fire-and-forget dialog tasks have no top-level fault surface.
+- **From the 2026-06-23 performance / leak hunt — not yet fixed (the one safe leak fix shipped; these touch the
+  live-filtered grid / load-bearing `PatchState` hot path — the area behind the past cross-thread crash — so they
+  need a dedicated, TESTED pass, NOT a quick knock-out):**
+  - **Loading a big list is janky.** `AddComputers` / `SetComputers` add rows one at a time; each
+    `ObservableCollection.Add` fires the full `OnComputersChanged` + `RaiseFleetChanged` cascade synchronously on
+    the UI thread, so loading 300+ stutters and 500+ can freeze for seconds. A batched/suppressed add is the fix —
+    BUT a naive `Clear`+range/`Reset` skips the per-row `PropertyChanged` re-subscription in `OnComputersChanged`
+    (the `Reset` → `NewItems==null` trap), which would break live row updates. Needs a careful design + test. Medium. **Update (1.14.2):** the cold-start *freeze* that was conflated with this is FIXED — its real cause was thread-pool serial worker-injection (see `docs/cold-start-freeze-and-threadpool-findings.md`), NOT the row-add. The row-add cascade itself measured ~65–83ms for 319 rows — small; this stays a minor "smoother load" nicety, not a freeze.
+  - **Fleet-recompute storm — remaining cleanup — DEFERRED, do not build without a trigger (rare-event only; the high-frequency progress-tick flood is
+    already fixed — see DONE ▸ "Fleet-recompute storm — progress-tick slice shipped").** Now that a per-row
+    `UpdateProgress` tick raises just `FleetProgress`, what's left fires ONLY on the rare phase-change events (a
+    handful per row, not the per-tick flood), so the payoff is low. **Update (1.14.2) — DEFERRED:** the `UpdateProgress`-only → `FleetProgress`-only slice shipped (CHANGELOG "Smoother grid during large patch sweeps"). The remaining `Has*` double-walk + `PatchState`-parse-cache slices are technically still open, but cold-start instrumentation (2026-06-29, 319-box worst-case sweep) measured `FleetRecompute` ticks at ~0ms each — a near-zero gain inside the live-filtered crash zone. **Do not build these without a trigger. Revisit ONLY if** the patch sweep becomes *measurably* janky again, or someone is already editing `WorkspaceViewModel` for another reason and can fold them in cheaply. Both still sit in the load-bearing
+    live-filtered grid area — **HANDLE WITH CARE** applies — and each should be its own dependency-verified,
+    tested pass if/when it proves worth doing:
+    - **`Has*` double-walk cleanup.** `HasFleetSummary`→`FleetSummary`, `HasVitalsFleetSummary`→`VitalsFleetSummary`,
+      `IsPatchOperationOrFleetHeld`→`IsPatchOperationActive`, and `FilterStatus`→`VisibleRowCount` each re-walk the
+      list (or the filtered view) a second time just to check a length/count. Collapse the redundant double
+      evaluation so one `RaiseFleetChanged` doesn't pay for the same walk twice. Low payoff now. Low.
+    - **`PatchState` `Enum.TryParse`-per-read cache.** `DerivePatchState` parses the phase string on every read
+      (`Computer.cs` ~312). Same tier — only fires on phase changes now, not the progress flood; any cache MUST be
+      invalidated when `UpdatePhase` / `RebootRequired` change (the staleness trap), so it needs care, not a quick
+      memoize. Low.
+  - **Lower-impact (perf):** `RaiseCanExecuteForSweepCommands` re-checks whole-list conditions + 10 command states
+    per completed row (mitigated by short-circuit); the focused machine's update checklist repopulates row-by-row
+    (O(n²) re-hook) instead of in bulk; the grids don't enable column virtualization. (The 60-second relative-time
+    no-op refresh that was listed here was the one safe item and is now fixed.)
+  - **Low-impact (leaks / hygiene):** old install-throttle `SemaphoreSlim` not disposed on a cap change; per-host
+    WinRM-gate semaphores + the catalog `HttpClient` never disposed (bounded / app-lifetime).
+  - **Checked and CLEARED (false alarms — do NOT chase):** "detail window leaks per open/close" (WPF weak events +
+    the requery timer is stopped on close); "selecting rows freezes the grid" (WPF batches selection to one event);
+    "the embedded-RDP host control leaks handles" (disposed on close; a manual dispose would break Reconnect);
+    "Stop poisons the update-size cache" (the cancel token isn't passed to that lookup).
+
+---
+
+## PARKED — needs a signal/decision before it's worth building
+
+- **Update-untick carry-forward → false "No updates selected" (found 2026-07-21) — PARKED, not a day-to-day issue.**
+  A rescan can wrongly carry forward Vivre's own post-install untick rather than the operator's, so a re-surfaced update comes
+  back unchecked. Confirmed anchors: `WorkspaceViewModel.cs:3560` (install-success untick), `:4693` (checklist rebuild preserves
+  tick-by-KB), `:3423` (empty-checklist gate), `:4349` (reboot-wave re-tick, which doesn't share this problem). Open design question on revisit: reconcile with the wave's blanket re-tick, which currently overrides operator unticks too.
+- **Custom / predefined columns over DCOM (the "WinRM n/a" / "WinRM is broken" on Kerberos-broken boxes).** Distinct from the DCOM VITALS fix (`4c88c69`, DONE) — that filled the built-in vitals fields over DCOM, but the grid's custom columns and the predefined "Logged-on user" column each run their OWN private WinRM one-liner, have no DCOM fallback, and keep showing "WinRM n/a" / "WinRM is broken on this box…" on a Kerberos-broken box. **Why parked / hard:** a user-defined custom column runs ARBITRARY PowerShell, and arbitrary PS can't run over DCOM (DCOM does specific WMI queries, not general script) — so most custom columns fundamentally CAN'T fall back to DCOM. The PREDEFINED columns (known queries like "Logged-on user") might be special-cased to a DCOM/WMI equivalent — a separate, maybe-feasible investigation; the "Logged-on user" one could reuse the explorer-owner-over-DCOM query the vitals fix just proved works. **Build only if** "WinRM n/a" on those columns becomes a real day-to-day annoyance, and if so scope it to PREDEFINED columns only. Raised as a "wondering" during the vitals work, not a committed item.
+- **Scheduled-task SECOND mode — "each machine's local time" (per-box wall-clock).** A deliberate, labeled companion to the shipped "operator's time = same absolute instant fleet-wide" mode: this mode would fire the picked time at that wall-clock on EACH box's OWN local zone, so a fleet across zones fires at N different absolute instants. Best for "2 AM local quiet hours honored per-box" when the operator does NOT want one synchronized moment. **Parked deliberately:** the base case had to be proven first (now done + live-verified), and this is a distinct feature — it changes the picker (a mode toggle / two clearly-labeled options), the "scheduled for…" message (must state WHICH mode fired), and the trigger string (this mode emits the bare no-offset local string — literally the just-fixed old behavior, made intentional and labeled). **Labeling trap:** "local time" alone is ambiguous (whose local?). Proposed framing: **"2:00 PM my time (here)"** vs **"2:00 PM on each machine"**, each with a one-line consequence sub-line. Needs its own design + red-team pass. Note: the code already knows how to build the no-offset string (it's what the old bug produced), so the work is the mode toggle + labeling + routing the two modes to the two string forms — NOT new trigger plumbing.
+- **"ping = online" is Vivre's core reachability definition — the deeper cause behind the off-from-start "Offline" fix (`032293f`).** That fix worked AROUND it (a "was ever genuinely managed" flag) rather than changing it. The root cause is that `ProbeReachabilityAsync` equates an ICMP ping / DCOM host-probe success with "online", so a powered-off server whose BMC/iDRAC/iLO, reused IP, or DNS answers ping reads as online. **Changing the core definition (require a real remoting success to count as "online") is a fleet-wide ripple** — it moves the green online dot, `OnlineSummary`, the online/offline filters, and every consumer of `IsOnline` — out of proportion to the messaging fix already shipped. **Build only if** BMC-answering-but-off boxes become a recurring real problem AND the messaging fix proves insufficient. Otherwise leave it; the managed-flag workaround is the right-sized answer.
+- **Pre-flight DISM-vs-WUA detection** — no reliable predictor found (DO absence is fleet-wide golden
+  image, not a predictor; try-WUA-then-fail wastes 1+ hr; failure isn't tied to consistent boxes).
+  Current working answer: just run DISM for 2016 boxes you own (the toggle above). Revisit only if a
+  cheap reliable signal appears.
+- **Script execution / other ops over SMB on Kerberos-broken boxes** — the read-only investigation
+  landed and the chosen near-term answer shipped (clean honest gate with plain WinRM-unavailable
+  guidance, live-verified). Deferred richer option: scheduled-task-over-SMB delivery to actually RUN
+  scripts on Kerberos boxes. Build only if the gate proves insufficient in practice (don't build
+  arbitrary-script-over-SMB-as-SYSTEM without a strong reason).
+- **Force-reboot-over-RPC/SMB** as an additional wave fallback path — only if the DCOM + SMB reboot
+  paths prove insufficient at scale.
+- **APVPATCHING — "New-ScheduledTaskAction is not recognized" — PARKED by the operator (known; do NOT
+  troubleshoot ad hoc).** **Cause corrected 2026-07-27: this is NOT a property of that box.**
+  `Get-Command New-ScheduledTaskAction` resolves fine in a plain console on APVPATCHING (Function,
+  ScheduledTasks, 1.0.0.0). The failure is Vivre's own **in-process PS7 runspace not carrying the Windows
+  PowerShell 5.1 module paths**: a self-targeted host takes the `HostName.IsLocal` branch to
+  `RunLocalAsync` (`WuaUpdateLane.cs:421`), which runs in that runspace — and Vivre's PS7 host rewrites the
+  process `PSModulePath` to PS7 folders (the repo states this itself at `WugMaintenance.cs:1098-1101`, which
+  is why the WUG lane strips `PSModulePath` before shelling to 5.1). A REMOTE target's own session has its
+  native module path and is unaffected. **Scope is wider than "Schedule":** the cmdlet sits in the install
+  bootstrap at `WuaUpdateLane.cs:960`, so a **self-targeted Install/Uninstall hits it too**, not only
+  Schedule ▸ Install/Reboot (`WorkspaceViewModel.cs:1930`). Still parked — the operator has chosen not to
+  chase it; act only if he re-raises it. Do not "fix" it opportunistically.
+- **Per-host RDP display-scale toggle — CLOSED / DISPROVEN, do not build.** The old theory
+  (mRemoteNG = WinForms framework DPI scaling; recommended lever = a **per-host display-scale
+  toggle**) was disproven: mRemoteNG ships DPI-unaware, and ANY session scale above 100% breaks FCM
+  context menus, so the toggle is a dead lever. The magnification itself **SHIPPED in 1.15.0** via
+  the OCX's client-side **ZoomLevel** with the session pinned at 100% (THE PIN CARDINAL) — see the
+  1.15.0 DONE entries. Full record: `docs/vivre-rdp-scaling-and-fcm-findings.md`; method:
+  `docs/freeze-hunting-playbook.md`.
+
+---
+
+## DONE (committed) — recent
+
+- **WUG state-check arc — cold-start mass-unknown + IP substring false-classing — DONE, shipped 1.16.4**
+  (`c6463d2` · `a19d150` · `c49b4da`; `4b158c5` was a superseded intermediate). The module re-armed a runspace-bound
+  scriptblock cert callback per API call (cold TLS → mass LookupError), and 0-exact IP substring hits read
+  Ambiguous; now a compiled delegate + no `-IgnoreSSLErrors` + exact-count classing. Full story: `docs/wug-state-check-findings.md`.
+
+- **Reboot arc — Reboot & Verify reaches patch-failed boxes + Force reboot falls back to DCOM on Kerberos
+  boxes — DONE, shipped 1.16.0** (`cabe230` · `e016c4f` · `039ce6f`, on master). (1) **Reboot & Verify is now enabled on a
+  box in `Error` that still needs a reboot** — a patch that failed but left the box reboot-required could not be
+  sent through Reboot & Verify (the menu gated `Error` out), stranding it; the gate now admits Error +
+  reboot-required. (2) **Force reboot falls back to DCOM** when the WinRM auth is rejected on a Kerberos-broken
+  box (`0x80090322`) — routed through the existing, already-Kerberos-capable `DcomRebootTrigger`, so the one
+  manual Force-reboot action no longer dead-ends on the cohort the reboot wave already handles. (3) The **Reboot
+  message column narrates live** through the reboot → offline → back-online sequence. Cardinal: reboot stays
+  operator-confirmed and `Win32Shutdown` stays confined to `DcomRebootTrigger`. (Verdict record: MEMORY ▸
+  "Kerberos reboot dead-end verdict".)
+- **Neutral "Unverified" patch state — couldn't-confirm / couldn't-rescan boxes no longer read green — DONE,
+  shipped 1.16.0** (`6f3a4ed`, on master). A box whose post-reboot reboot-pending probe or WUA rescan could not
+  complete used to fall through to a green "Up to date"; it now shows a neutral **Unverified** state (not green,
+  not red) across all five surfaces it can appear on. Extends the honest-post-reboot
+  cluster (`f965b29`) — a couldn't-confirm/couldn't-rescan outcome is now visibly "we don't know," never a false
+  green. **Known follow-up gaps are OPEN** (see OPEN ▸ patching features ▸ *Unverified / reboot-verify
+  follow-ups*): a later successful monitor probe does not yet self-heal the stale message/chip, and the
+  Kerberos cohort's WinRM-only reboot-pending probe leaves those boxes permanently Unverified.
+- **2016 CU auto-read from the staged package + CU month label — DONE, shipped 1.16.0** (`794baf4` the month
+  label, on master). The 2016 CU KB is now read from the staged `.msu` package (`MsuPackageReader`,
+  product-pinned) and offered side-by-side with the existing Settings value as a **read-and-confirm** — never a
+  silent overwrite of a deliberately-set KB (the same guardrail that kept KB-auto-population-from-scan manual
+  only, above). A **month label** derived from the package annotates the CU so the team can see which cycle it
+  is. (OPEN follow-up: clear that label when the KB is hand-edited — see *Settings simplification*.)
+- **Personal / shared settings split — DONE, shipped 1.16.0** (`003c963`, on master). Per-operator preferences
+  stay personal in `%APPDATA%\Vivre\settings.json`; the shared operational settings (this month's CU,
+  LCU/package folders, WUG server, staged-machine list) move to a machine-wide `SharedSettingsStore` at
+  `C:\ProgramData\Vivre\settings.json` (Authenticated-Users Modify ACL, fresh uncached read per `Load`). Writes
+  go through `Update(Action<SharedSettings>)` — a **sibling-key-safe read-merge-write** that changes only the
+  keys the delta touches, preserves every other key (including a future build's), and **refuses (throws) on a
+  degraded read** rather than stomping unread keys with defaults (the fix for the save that once wiped
+  `StagedHosts`); an `Update`-time reflection guard throws on a credential-shaped field. **This is the
+  prerequisite the DO NEXT ▸ stomp guard called for** — concurrent-writer exclusion and the
+  `AtomicFileWriter` fixed-name `.tmp` collision are now covered by F35 leases (see [shared-settings-stomp-guard]). No migration/copy shipped with the
+  split by design.
+- **Settings-window UX — reorg + 2016 CU plain-language relabels + catalog link + numeric-box typing fix —
+  DONE, shipped 1.16.0** (no single hash — 1.16.0 Settings polish). The Settings page was reorganized and the
+  2016 CU / patching fields relabeled into plain language, with the Microsoft Update **update-history / catalog
+  link** that makes the manual KB+UBR lookup a two-click copy (already referenced under *Settings
+  simplification*). The numeric Settings boxes (Max simultaneous installs, WUG state-check concurrency) now
+  commit **on LostFocus only**, so an intermediate value typed mid-edit no longer clamps/rewrites under the
+  operator. Reorg was pure-XAML-safe (MEMORY ▸ "Settings reorg + 2016 CU auto-read verdicts").
+- **Health-grid column caps + calm name-resolution offline — DONE, shipped 1.16.0** (no single hash — 1.16.0).
+  The health grid's columns gained width caps (no single column blowing out the layout), and a `PingErrorKind`
+  name-resolution failure (DNS can't resolve the host — WSAHOST_NOT_FOUND / 11001) now reads as a calm
+  **Offline** instead of a red error — a host that no longer resolves is off/decommissioned, not a fault to
+  alarm on (MEMORY ▸ "Health-grid false-alarm arc").
+- **WUG state-check SPEED — pooled per-name lookups — DONE** (this pass: chunks A + B + a test-speed pass,
+  uncommitted at writing; suite 873 → 897). The read-only "Check WhatsUp Gold state…" read now runs its
+  per-name `Get-WUGDevice` lookups a few AT A TIME instead of strictly one-by-one — a runspace pool INSIDE
+  `StateScript` (`StateResolveLoopScript`), sized by the operator's new **Settings ▸ "WhatsUp Gold state
+  check — simultaneous lookups"** (`AppSettings.WugStateConcurrency`, default **2**, clamp **1–4** →
+  `StateReadMaxConcurrency`; `VIVRE_WUG_CONCURRENCY` absent = 1 = the untouched sequential branch). Measured
+  ~2× win: a 324-box run drops from ~6.5 min to ~3 min at N=2. Streaming is unchanged — rows still fill in
+  live, Stop still cancels + kills the child, the 90s stall watchdog + 45-min ceiling still bound it. The
+  four fan-out traps are all honoured (T1 `DefaultConnectionLimit=32` before the first request; T2 connect
+  ONCE-per-runspace, no shared auth globals; T3 completion-order poll-drain, not `WaitHandle.WaitAny`/
+  submission-order `EndInvoke`; T4 the external C# stall watchdog stays the sole wedge authority since
+  `PowerShell.Stop()` can't interrupt a blocked `Invoke-RestMethod`); the shared `ResolveFunctionScript` +
+  `Process-WugOutcome` are single-sourced into both branches, and `__WUGDEV__` is emitted only from the main
+  drain thread. A per-lookup latency tally appends "WUG lookups slowed during the run…" (+ "consider lowering
+  the concurrency setting" at N>1) when the average exceeds 2× the first-5 baseline.
+  **The cap (default 2, ceiling 4) and WHY:** the live Gate 0 ramp measured the 1→2 halving as the whole win;
+  2→4→8 stayed flat with per-lookup latency creeping UP (WUG serialises under load), so >4 is pure extra load
+  on the one box that watches the whole fleet for no wall-time gain.
+  **This is the SPEED fix that REPLACED the old DO-NEXT-#5 "WUG bulk-fetch prefetch" idea, now DEAD — DO NOT
+  re-propose.** The bulk idea (pull ONE paged inventory up front and match in-script, falling back to per-name
+  lookups only for the leftovers) was MEASURED and rejected: a single unfiltered bulk pull took **426s for
+  1469 devices** — SLOWER than the per-name sequential lookups it was meant to beat (per-lookup ~1.1s live,
+  1.0–1.7s; ~6.5 min sequential on 324). Pulling one big inventory loses to N targeted lookups, so the speed
+  fix is concurrency on the targeted lookups, not a bulk pull.
+  Suite wall-clock stayed in its ~87s ballpark despite the new real-`powershell.exe` pool process tests: they
+  ride the `VIVRE_WUG_MODULE_OVERRIDE` seam + a COMMITTED stub-module fixture
+  (`Vivre.Core.Tests/Wug/Fixtures/WugStubModule.psm1`, copied to the test output) through the SAME
+  `ImportPSModule`-by-path path, skipping the real WhatsUpGoldPS ~8s-per-runspace cold-load; one real-module
+  smoke test still exercises the production import. Cardinal clean (read path; no reboot).
+- **WUG resolver identity-verify + error honesty — DONE** (`b67ed55`; suite 852 → 873). Shipped without its
+  own docs round — this is that round. The per-name resolver was SINGLE-SOURCED into one
+  `ResolveFunctionScript` spliced into both the set path (`Script`) and the state read (`StateScript`) so they
+  can't diverge on how a name maps to a WUG device. Matching is now a normalized, case-insensitive,
+  DOT-BOUNDARY compare (`Test-WugNameMatch`) against `name`/`hostName`/`displayName` (each presence-guarded) +
+  a `networkAddress` clause for IP-literal inputs — REPLACING the dead `displayName -eq $srv` verify (null for
+  FQDN-registered fleets) and the de-facto `$results[0]` pick; the dot boundary rejects prefix collisions
+  ("APVSQL1" ≠ "APVSQL10.domain"). Outcome is exactly one of MatchedByName / MatchedByIp / NoDevice /
+  Ambiguous / LookupError. **An errored search reads UNKNOWN (`LookupError`), NEVER a false "no matching
+  device"** — only a clean-empty answer everywhere is `NoDevice`, so a struggling server can no longer
+  masquerade as a fleet of ghosts. The set path's all-nothing guard is FAIL-SAFE: a `LookupError`/`Ambiguous`
+  box over-reports failure (re-setting maintenance is idempotent) rather than silently claiming "set" for a box
+  never cleanly looked up. Cardinal clean.
+- **WUG streaming state-check arc — DONE** (this pass, uncommitted at writing; suite 823 → 852, +29).
+  The read-only "Check WhatsUp Gold state…" read now STREAMS one result per machine (`__WUGDEV__`) as
+  WUG answers, instead of going silent and dumping everything at the end. A `StateReadStallTimeout`
+  (90s) watchdog — reset ONLY by a device line — catches a wedged run and names where it stopped
+  (`ComposeAbortError`), backstopped by a `StateReadCeiling` (45min) runaway cap; both REPLACE the old
+  `min(60+5·N, 600s)` total cap that guillotined slow-but-working runs. An aborted read (stall / ceiling /
+  Stop) KEEPS the per-device results already streamed (partial map, snapshot-copied under a lock against
+  the killed child's draining pump) and stamps unreached rows the new distinct state
+  `WugRowText.NotChecked` = "not checked (read stopped)" (never "unknown", never "no matching device").
+  Stop is wired via the passive-op rail (`BeginOperation(registerRows: false)`) — it lights, cancels, and
+  KILLS the `powershell.exe` child, and logs "Stopped — N of M checked"; a generation guard supersedes a
+  first check with a second. The summary parse (`ParseMaintenanceState`) now REQUIRES the `__WUGRESULT__`
+  marker — the last-braced-line fallback was DELETED, because with device lines on the wire it could parse
+  a trailing `__WUGDEV__` line AS a clean-but-empty summary → a quiet false green; `ParsePreflight` keeps
+  its fallback (no streamed lines there). Kill-on-cancel also covers the SET path (`RunAsync` via the
+  `RunCoreAsync` seam) — before, a cancelled maintenance set kept running and could still flip WUG
+  maintenance after the UI said "cancelled". **Suite 823 → 852** (the pre-arc 810/817 doc claims were
+  stale; 823 was the measured 2026-07-14 baseline — chunk 1 → 843, chunk 2 → 852, incl. 6
+  real-`powershell.exe` process tests that took the suite ~5s → ~23s). Cardinal clean (read path; no
+  reboot).
+- **Schedule/Cancel scheduled-task loops bounded per row — DONE** (this pass, uncommitted at
+  writing; suite 810 → 817). The audit MED's two remaining sites are fixed: `ScheduleRebootSelectedAsync`
+  and `CancelScheduledTaskSelectedAsync` now wrap each row's invoke in a linked **60s** CTS (the
+  `d600009` client-action budget — the per-host WinRM gate wait + the 20s connect + the invoke all
+  count against it), so a hung box fails ITS OWN row and the loop completes the rest of the selection
+  (before: one hung box stalled the list forever — worst case, later boxes' `Vivre_Reboot` tasks were
+  never cancelled and still fired). Deliberately **SEQUENTIAL** — `ScheduledNextRun` is a live-filter
+  input (`RowMatchesFilter` ▸ Scheduled, WorkspaceViewModel.cs:457) and the bare awaits keep every row
+  write on the UI thread; do not parallelize (the `7d8abd4` cross-thread class). New pure
+  `ScheduleRegistrationOutcome` (Vivre.Core/Updates, test-pinned) encodes the register-side ASYMMETRY:
+  an unconfirmed (timed-out) registration is treated as **Scheduled — "couldn't confirm; verify on the
+  box"** (before: the chip stayed DARK over a possibly-armed task — the dangerous direction); a cancel
+  timeout NEVER clears the chip ("task may still fire" — invariant pinned in
+  `ScheduledTaskCancelOutcomeTests`, extended with the exact-match case/whitespace pins). **The whole
+  don't-know CLASS is closed, not just the timeout** (`ScheduleRegistrationOutcome.IsUnconfirmedFailure`,
+  test-pinned per door): a MID-INVOKE session drop (`RemoteSessionLostException.AtConnect == false` —
+  the type's own contract says work may be in flight), a cancel that trips mid-request, and any untyped
+  mid-call escape all light the chip; a row goes dark ONLY on proof the command never ran (connect-phase
+  loss, Kerberos rejection, shell-init) or the box's own failure report (HadErrors / a terminating
+  in-script error). The cancel loop needed no bucket work — it only ever clears on the verified REMOVED.
+  **Correction to the audit record (the audit doc is point-in-time and never edited, so this is the
+  only place the truth can live): the audit rated this MED partly on the mitigation "these are
+  cancellable IAsyncRelayCommands, so Stop recovers them" — that mitigation was DISPROVEN. The
+  handlers were plain async-void with no token, no `BeginOperation`, no `_activeCts` registration:
+  Stop never lit for these loops (`IsBusy` stays false) and, if pressed, would have cancelled
+  nothing.** Stop's darkness here shares its root line with Still-open #3 (MainWindow.xaml:436) but
+  was the HONEST direction, so no Stop change shipped — that remains #3's decision.
+- **Patching-lane status snapshot (moved verbatim 2026-07-22 from windows-patching-lane.md ▸ Status):**
+  - **Done:** scan; install with live progress; uninstall (WUA + DISM, with the cumulative-update reason
+    surfaced); schedule (install + reboot + cancel); the reliability mechanisms above; the per-machine
+    detail window; force-reboot.
+  - **Verified live on real targets (2026-05):** scan (with counts), install with live progress,
+    uninstall (including a cumulative update correctly reporting "can't be removed" / `0x800F0825`),
+    a scheduled reboot firing at its set time, and the "WinRM unhealthy" degraded-host flag coming and
+    going as the self-heal re-tests. One box flapped WinRM-unhealthy intermittently — confirmed to be
+    the back-off / self-heal working as designed, not a regression.
+- Older DONE entries (pre-1.16.0 — 1.15.x and earlier, back to the shell refactor) moved verbatim to docs/archive/vivre-backlog-done-archive.md.
+
+---
+
+## KNOWLEDGE DOCS
+
+The doc inventory (every doc, one-line purpose, read-when cue) lives in **docs/README.md** — the single map.
+
+- **F46 — CU staging dispatcher pause (2026-10-15):** reproduced synchronous package-hash blocking with dummy targets; background-validation fix and focused tests pass. Current acceptance and live-validation limits: [implementation ledger](vivre-audit-implementation-2026-10-14.md#f46--server-2016-multi-target-staging-pauses-the-dispatcher-2026-10-15).
+
+- **F47/F48 — local-host install and pending-reboot approval (2026-10-15):** implemented embedded ScheduledTasks discovery/local streaming and the missing Install-anyway approval contract; independent source review and local regression checks passed. Current status and validation boundaries: [implementation ledger](vivre-audit-implementation-2026-10-14.md#f47f48--local-host-task-discovery-and-explicit-install-override-2026-10-15).
+
+- **F49 — Software display and resizing:** concise results/tooltip, live Details → Software diagnostics, and manually expandable column implemented and locally validated. See the implementation ledger for evidence.

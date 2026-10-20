@@ -87,10 +87,10 @@ People uses Quick Add and Paste list, Open review, and a row right-click menu wi
 - Divider movement is exercised through the WPF splitter implementation; its height survives queue advancement and closing/reopening review. Both identity columns remain pinned. Rendered review layouts cover 800/1280 widths and 400/680 heights in dark/light; the probe now asserts actual theme color rather than relying on a requested theme name.
 - Independent `gpt-5.6-sol` review found no material product issue; its loading-control visibility test suggestion was added. Parent fixed offscreen visibility/theme assumptions in the probe. Representative dark/light renders were inspected.
 - Existing 2,000-entry responsiveness, Stop-during-add/lookup, late-response rejection, quick-add draft preservation, right-click/menu, export and Fleet isolation checks passed in two final sequential runs of the already-built harness. Maximum sampled dispatcher gaps were 251 ms and 188 ms. One preceding run failed the unchanged 500 ms limit at 608 ms (752 ms total addition/layout); earlier samples were 148–268 ms. No cause is proven for that variation and no threshold was relaxed; these measurements do not guarantee host latency.
-- No live AD, native clipboard, server work, physical mouse/keyboard, Windows DPI or spoken screen-reader validation occurred in this batch. Scoped offscreen themes do not test application-wide theme propagation. No signed package was produced; release version remains 1.19.2 with these changes under Unreleased.
+- No live AD, native clipboard, server work, physical mouse/keyboard, Windows DPI or spoken screen-reader validation occurred in this batch. Scoped offscreen themes do not test application-wide theme propagation. No signed package was produced; at that checkpoint, the release version was 1.19.2 with these changes under Unreleased (now included in 1.20.0).
 
 
-## Unreleased — U-56/U-57 People recovery (2026-10-20)
+## Implementation checkpoint — U-56/U-57 People recovery (2026-10-20; included in 1.20.0)
 
 | Approved capability | Status |
 |---|---|
@@ -105,4 +105,4 @@ Release desktop/harness build, all nine People core tests, `--people-recovery-on
 
 The 2,000-entry dummy-data run recorded addition/layout **204.4 ms**, lookup/layout **125.8 ms**, and maximum sampled dispatcher gap **137.2 ms** with 15 recorded heartbeat ticks (unchanged 500 ms limit). This is local cooperative-dispatch evidence, not a guarantee for real directory/network latency. The exit dialog is rendered and checked at 540×350 and 420×300 with scoped dark/light resources; scrollable explanatory text and wrapping action buttons support the minimum size.
 
-All new checks use dummy identities and temporary settings/CSV files. Clipboard/save-path selection is intercepted; dialogs run offscreen with routed WPF input. No live AD, server operations, physical input, native Windows DPI, native save picker, screen-reader validation, signed package or deployment occurred. Version remains **1.19.2**, with this batch under **Unreleased**.
+All new checks use dummy identities and temporary settings/CSV files. Clipboard/save-path selection is intercepted; dialogs run offscreen with routed WPF input. No live AD, server operations, physical input, native Windows DPI, native save picker, screen-reader validation, signed package or deployment occurred. At that checkpoint, version was **1.19.2** with this batch under **Unreleased**; it is now included in 1.20.0 source.

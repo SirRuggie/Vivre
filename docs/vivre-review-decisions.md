@@ -2,7 +2,9 @@
 
 Living decision log for the [October 5, 2026 design review](C:/src/Vivre/docs/vivre-design-review-2026-10-05.md). The original review is a point-in-time record and stays unchanged. This log records Shaun's decisions as each finding is discussed.
 
-Last updated: October 14, 2026.
+Implementation decisions recorded October 14, 2026; status reconciliation October 20, 2026.
+
+**Reading order:** the decision register and later capability/acceptance ledgers supersede earlier proposal/authorization wording. In particular, F02's original exclusion of scheduled/script reboot approval was superseded by F38 in the [audit implementation ledger](vivre-audit-implementation-2026-10-14.md). F07 is transport-cache recovery; F10 is preference write ordering. F12 remains explicitly skipped. See the [current backlog](vivre-backlog.md) for remaining gaps and deferred work.
 
 ## Authorization and status
 

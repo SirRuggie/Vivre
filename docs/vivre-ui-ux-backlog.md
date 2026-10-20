@@ -8,6 +8,13 @@ Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendati
 
 Current release: **1.20.0** (2026-10-20), including the saved-tab rename, list folders and U-45–U-57. See [release validation](release-1.20.0-validation.md). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version and Unreleased references below describe the implementation checkpoints at that time; those approved changes are now included in 1.20.0.
 
+## Reconciled status — 2026-10-20
+
+- **Implemented/local evidence recorded:** U-1–U-57 except the four unchecked items below; U-39 also has Shaun's explicit confirmation.
+- **Still open:** U-21 native scaling/layout checks; U-22 physical input/Narrator checks plus the RDP naming/announcement follow-up recorded at the end of this ledger.
+- **Deferred by Shaun:** U-40 and U-42; S-1 is tracked separately in the [current backlog](vivre-backlog.md).
+- **Historical checkpoints:** earlier Unreleased/version/package statements describe those batches only; 1.20.0 includes U-43/U-44 and U-45–U-57. No current deployment/native certification is implied.
+
 ## How to use
 
 - Keep all U identifiers stable; record decisions, commits, and validation under the matching item.
@@ -17,6 +24,8 @@ Current release: **1.20.0** (2026-10-20), including the saved-tab rename, list f
 - **U-21/U-22:** local fixes/tests delivered; native DPI/physical keyboard/spoken screen-reader validation remains open. U-18 is implemented and locally validated; follow-up reviews are recorded below, with native interaction still unverified.
 
 ## Completed batch acceptance — U-8 (2026-10-19)
+
+> **Original checkpoint, partly superseded:** the [later handoff correction](#patching-handoff-and-status-banner-correction-2026-10-19) restores normal Auto-check on load and assigns a distinct Patching title. The same-title and idle-default assertions below describe the original implementation only.
 
 - **Implemented and locally tested:** Health tab context menu → Open tab in Patching copies all underlying names into a new same-title Patching tab, including unselected/filtered-out machines.
 - **Preservation:** Source rows, results, selection, and work remain unchanged; existing Patching tabs are not reused or overwritten, and saved-list identity/results are not copied.
@@ -44,7 +53,7 @@ Current release: **1.20.0** (2026-10-20), including the saved-tab rename, list f
 - **Validation:** Debug and Release builds passed; focused probe passed four shortcuts, five stale-target cases, empty-selection guards, both right-click modes, and toolbar selection binding/accessibility label. Existing library/script-dialog regression passed.
 - **Limits:** Dummy local workspaces and intercepted dialog dispatch only; no live operations or physical-keyboard usability study. Existing unsigned-agent certificate warning remains; no package produced.
 - **Documentation/delivery:** Help, README, changelog, and harness instructions updated; included in the commit containing this checklist update. Version remains 1.18.0 plus Unreleased.
-- After delivery, stop. The requested hands-on usability study is deferred until Shaun says **continue**; start new findings at U-23, preserve U-1 through U-22, and report each finding with one bullet plus a Why sub-bullet. A study can compare usability, not prove universal optimality.
+- **Historical delivery instruction (superseded):** the study was paused awaiting Shaun's continue request. He subsequently authorized the U-23–U-27 study and follow-up batches recorded below; no current pause is implied. A study can compare usability, not prove universal optimality.
 
 ## Highest priority — behavior found in the code
 
@@ -436,7 +445,7 @@ See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for ev
 
 - [x] **U-43 · Low — Name the tab after a successful Save tab as list.** The saved tab now takes the exact list name after storage succeeds; cancellation or failed overwrite leaves its title, machines, results, and selection unchanged. Verified with the isolated workspace safety probe and Release build; no live machines were contacted.
 - [x] **U-44 · Organize saved lists like bookmarks.** Lists ▾ ▸ Organize lists creates, renames, and removes one-level folders and moves saved lists into or out of them. Existing lists stay directly in the menu with no extra label; removing a folder returns its lists to the top level. Assignments persist in `list-folders.json` while list files, names, revisions, open tabs, and recovery stay unchanged. Focused storage and offscreen menu tests passed; no live deployment or visible-window usability test was performed.
-- **U-44 acceptance ledger:** Implemented and locally tested: folder create/rename/remove, list move in/out, restart persistence, unchanged list contents/revisions, recovery, grouped Open/Delete search, and exact move-menu dispatch. Full Core suite: 1,580 passed, two skipped; Release desktop build and workspace/menu probes passed. User-only deployment validation remains untested; this change is Unreleased, not in the existing 1.19.2 ZIP.
+- **U-44 acceptance ledger:** Implemented and locally tested: folder create/rename/remove, list move in/out, restart persistence, unchanged list contents/revisions, recovery, grouped Open/Delete search, and exact move-menu dispatch. Full Core suite: 1,580 passed, two skipped; Release desktop build and workspace/menu probes passed. User-only deployment validation remains untested; at that checkpoint this change was Unreleased and absent from the then-existing 1.19.2 ZIP; it is now included in 1.20.0 source.
 
 ## Full-spectrum usability review — U-45–U-57 (2026-10-20)
 
@@ -457,7 +466,7 @@ Scope: reuse the existing People handlers and matching rules; preserve selected/
 - **Validation:** Release desktop/harness builds and nine focused People core tests passed. Expanded `--people-only` passed queue-versus-selected review, global queue/copy scope under filters, resize/close/reopen/queue advance, warning text, initial/loading/no-match/error states, column settings disk round trip, existing row/keyboard context-menu routes, Stop/late results, export and hidden-Fleet navigation isolation.
 - **Visual/performance evidence:** eight actual review layouts at 800/1280 × 400/680 in dark/light; rendered root colors assert the intended theme and representative renders were inspected. Final sequential, already-built 2,000-entry probes passed with maximum sampled dispatcher gaps of 251 ms and 188 ms. An earlier rerun failed the unchanged 500 ms threshold at 608 ms (752 ms total addition/layout); other measured runs were 148–268 ms. The outlier is retained, not attributed to a proven cause or treated as a latency guarantee; native host performance remains environment-dependent.
 - **Independent red team:** separate `gpt-5.6-sol` reviewer completed two read-only source passes with no material product defect. Added its suggested control-level loading visibility assertion; reconciled the ledger and included the new flow probe with its caller. Parent corrected offscreen visibility and theme validation so an unattached control or unchanged dark palette cannot masquerade as native/light-theme evidence.
-- **Limits/release:** all new directory responses and identities were synthetic; no live AD or server operations. Programmatic splitter/routed events and scoped theme dictionaries do not verify native mouse/keyboard, app-wide theme switching, Windows DPI or screen-reader narration. Changes are Unreleased over 1.19.2; the existing signing-certificate warning remains, and no ZIP was produced.
+- **Limits/release:** all new directory responses and identities were synthetic; no live AD or server operations. Programmatic splitter/routed events and scoped theme dictionaries do not verify native mouse/keyboard, app-wide theme switching, Windows DPI or screen-reader narration. At that checkpoint, changes were Unreleased over 1.19.2 (now included in 1.20.0); the existing signing-certificate warning remains, and no ZIP was produced.
 
 ### U-45–U-48 acceptance ledger
 
@@ -471,7 +480,7 @@ Scope: reuse the existing People handlers and matching rules; preserve selected/
 - **Independent red team:** separate reviewer inspected production changes and challenged the focused coverage; no material defect remained. Parent found normal App startup could run when the existing harness pumped WPF; reviewer then identified workspace constructors reading real settings. Both harness issues are fixed: startup is suppressed, production resources are loaded separately, and workspace settings use scratch stores through optional constructor dependencies (normal app defaults unchanged). Review was independent source/test refutation; execution results below were produced by the implementation agent after isolation fixes.
 - **Validation:** 90 targeted Core tests passed (StagePreconditions, ComponentCleanup, CleanupLiveness, StagedInstallPlanner and reboot primitive gate); Release Desktop and PerformanceAudit build passed. `--operational-clarity-only`, existing `--patching-clarity-only` and `--cu-stage-only` passed.
 - **Evidence limits:** modal tests use production WPF controls and access-key routing for Escape, not physical keyboard input. Cleanup and dispatch use dummy hosts, inert delegates and an injected patch service. No live installs, reboot, server cleanup, credential authentication or deployment were performed. Existing native U-21/U-22 validation remains open.
-- **Build/release:** changes are Unreleased over version 1.19.2; local build warns that the configured signing certificate is unavailable and its agent is unsigned. No deployment ZIP was produced. Publish on the signing workstation through the existing verified release command.
+- **Build/release:** at that checkpoint, changes were Unreleased over version 1.19.2 (now included in 1.20.0); local build warns that the configured signing certificate is unavailable and its agent is unsigned. No deployment ZIP was produced. Publish on the signing workstation through the existing verified release command.
 - **Scope:** no requested capability in U-45–U-48 is deferred or blocked; transport, package readiness, DISM execution, reboot policy, People and RDP behavior are unchanged.
 
 - [x] **U-45 · High — Keep CU actions within the chosen machines.**
@@ -517,7 +526,7 @@ Shaun approved this batch on 2026-10-20. Keep the existing People workspace, mat
 
 - **Validation:** Release desktop/harness build, `--people-recovery-only`, `--people-only` and all nine People core tests passed. The existing 2,000-entry probe measured a 137 ms maximum sampled UI heartbeat gap against its unchanged 500 ms limit; this is an isolated measurement, not a host-latency guarantee. Exit-dialog default/minimum layouts were checked with scoped themes; native Windows DPI/input remains unverified.
 - **Review corrections:** the independent `gpt-5.6-sol` agent found two submission dispatcher gaps that appeared idle, then a submission-only Stop that wrongly expired Undo and dirtied unchanged exported results. A submission guard now covers both gaps and is released by its owner; Stop marks results changed only when queued statuses change. Tests cover an older lookup completing before a newer submission resumes. The overlap probe was corrected to control WPF Background continuation ordering instead of assuming Normal priority; no product assertion was weakened.
-- **Limits/release:** dummy identities, intercepted clipboard/save-path selection, temporary CSV/settings and offscreen WPF dialogs only. No live AD, physical input, native save picker, screen reader, server work or deployment. Independent reviewer inspected source/tests without executing them; execution evidence is from the implementing session. Version remains **1.19.2 + Unreleased**; the existing missing local signing-certificate warning remains, and no ZIP was produced.
+- **Limits/release:** dummy identities, intercepted clipboard/save-path selection, temporary CSV/settings and offscreen WPF dialogs only. No live AD, physical input, native save picker, screen reader, server work or deployment. Independent reviewer inspected source/tests without executing them; execution evidence is from the implementing session. At that checkpoint, version was **1.19.2 + Unreleased** (now included in 1.20.0); the existing missing local signing-certificate warning remains, and no ZIP was produced.
 
 ### U-52 remainder and U-53–U-55 acceptance ledger
 
@@ -537,7 +546,7 @@ No live server operations, production list edits, script execution or deployment
 - **Validation:** Release desktop/harness build passed; `--navigation-clarity-only` (including the existing script-editor safety suite), `--actions-menu-only`, `--tab-options-only` and `--layout-accessibility-only` passed. The last probe covers offscreen layout/raster sizes; it does not establish native Windows DPI or screen-reader behavior.
 - **Test limitation:** `--library-search-only` stopped at “List search cannot receive keyboard focus,” both during concurrent UI checks and when rerun alone. Its native-popup focus claim is unverified in this session; the assertion was not weakened. New picker behavior and Scripts dirty-editor/filter checks ran separately and passed. This does not close U-21/U-22.
 - **Independent review:** a separate `gpt-5.6-sol` agent inspected the actual diff and scope/cancellation/selection behavior. No material code defect was found. Its documentation findings—the pending ledger and two stale toolbar-source descriptions—were corrected. It did not independently run builds, physical input or live operations.
-- **Release:** Unreleased over **1.19.2**; the existing local signing-certificate warning remains, so no signed ZIP or deployment is claimed.
+- **Release:** At that checkpoint, Unreleased over **1.19.2** (now included in 1.20.0); the existing local signing-certificate warning remains, so no signed ZIP or deployment is claimed.
 
 ### Review decisions and limits
 

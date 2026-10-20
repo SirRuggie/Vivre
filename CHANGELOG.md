@@ -6,6 +6,10 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Documentation
+
+- Reconcile current backlog statuses with later implementation evidence, preserve the previous tracker as a dated snapshot, and distinguish deferred work, validation gaps and historical release checkpoints.
+
 ## 1.20.0 — 2026-10-20
 
 ### Added

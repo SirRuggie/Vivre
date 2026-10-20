@@ -16,7 +16,7 @@ live status of anything they raise is tracked in the backlog.
 
 - **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-57 checklist, decisions, completion evidence, and strengths to preserve; U-45–U-57 included in 1.20.0 with local evidence and native-testing limits. *Read when: choosing or updating UI/UX work.*
 
-- **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F45 acceptance ledger, independent review corrections and exact local/live validation limits.
+- **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F49 acceptance ledger and follow-ups, independent review corrections and exact local/live validation limits.
 
 - **[../CHANGELOG.md](../CHANGELOG.md)** — current release **1.20.0**, with future work under **Unreleased**; see the UI/UX checklist for current local validation limits.
 
@@ -24,9 +24,7 @@ live status of anything they raise is tracked in the backlog.
 
 - **[release-1.17.2-validation.md](release-1.17.2-validation.md)** — release acceptance ledger, package evidence, shared-drive checks and remaining pilot gaps.
 
-- **[vivre-backlog.md](vivre-backlog.md)** — the running tracker: open/parked/done work in recommended
-  do-next order, with commit hashes. *Read when: deciding what to build next, or checking whether a
-  finding was already fixed.*
+- **[vivre-backlog.md](vivre-backlog.md)** — reconciled current validation gaps, explicit deferrals, implemented findings and legacy candidates requiring revalidation. *Read when: choosing the next investigation or checking whether an old finding was already fixed.*
 - **[key-file-path-map.md](key-file-path-map.md)** — the load-bearing file locations and per-area
   rules, so new sessions don't re-derive them. *Read when: you need to know where something lives
   before touching it.*
@@ -49,6 +47,8 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
   slow" report — BEFORE theorizing.*
 
 ## Case files / findings (point-in-time, never edited)
+
+- **[vivre-backlog-snapshot-2026-10-20.md](vivre-backlog-snapshot-2026-10-20.md)** — verbatim pre-reconciliation tracker, including older open/closed claims and decisions; consult the current backlog for superseding status, not this snapshot for instructions.
 
 - **[ui-ux-full-spectrum-review-2026-10-20.md](ui-ux-full-spectrum-review-2026-10-20.md)** — U-45–U-57 screenshot/source-backed review of People and the full UI surface, operational interaction findings, research, proposed batches and native-study limits.
 
@@ -85,7 +85,7 @@ Top-level (repo root): **[../README.md](../README.md)** — the human-facing ove
   reboot-path / guardrail findings in full, citations re-verified against `99995b6`: the approve-vs-execute gap,
   three reboot paths shipping with no confirm, and the known-incomplete `Win32Shutdown` gate grep (one of five
   reboot-issuing sites). *Read when: touching a reboot path, a confirm dialog, or the cardinal gate grep — and
-  BEFORE claiming a reboot path already confirms.*
+  BEFORE claiming a reboot path already confirms; use the current backlog's stable-ID reconciliation for later F02/F03/F38 closures.*
 - **[reboot-monitor-arc-findings.md](reboot-monitor-arc-findings.md)** — the monitor/verify-arc arc: the
   unbounded inline verify arc that froze a whole tab, the ~40 s detection floor that made fast-rebooting VMs
   stick forever, THREE formally refuted hypotheses (tab count, throttle starvation, HostWinRmGate), and the
