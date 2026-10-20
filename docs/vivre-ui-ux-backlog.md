@@ -4,9 +4,9 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-57 are implemented with local validation in Unreleased. Native validation limits remain recorded below.
+Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-57 are included in release 1.20.0 with local validation. Native validation limits remain recorded below.
 
-Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
+Current release: **1.20.0** (2026-10-20), including the saved-tab rename, list folders and U-45–U-57. See [release validation](release-1.20.0-validation.md). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version and Unreleased references below describe the implementation checkpoints at that time; those approved changes are now included in 1.20.0.
 
 ## How to use
 

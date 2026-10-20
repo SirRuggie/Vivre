@@ -2,6 +2,8 @@
 
 Scope: real, read-only AD lookup in a separate People section; no machine-operation changes.
 
+Current source release: **1.20.0**, including the approved People improvements through U-57; see [release validation](release-1.20.0-validation.md). Earlier version/Unreleased references record the validation checkpoints when those changes were implemented.
+
 | Capability | Acceptance | Status |
 |---|---|---|
 | Paste | Names/usernames/emails, one per line; preserve commas; add without losing results | Implemented and tested locally |
@@ -67,7 +69,7 @@ Stop was dispatched during a pending lookup and during adding; late lookup resul
 
 The exact reported five-person pause on the deployment host remains unverified. Native clipboard redirection can still have its own latency, and cancellation of an already-running LDAP request still waits for that request. No production directory or server operation was run in this follow-up. Diagnostic artifacts remain untracked; an earlier crashed probe temporarily locked the normal harness output and could not be terminated from this execution context (access denied), so a separate output directory was used; that process had exited by the final check.
 
-## Current release — 1.19.2
+## 1.19.2 release checkpoint
 
 People uses Quick Add and Paste list, Open review, and a row right-click menu with review/edit before copying; the footer Row actions button was removed. Results/review column widths and order are remembered independently with separate resets under Actions. Shaun confirmed the deployment-host responsiveness issue (U-39) resolved on 2026-10-20; closure is based on operator feedback, not a new local benchmark.
 

@@ -2,7 +2,7 @@
 
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
-> **Current release: 1.19.2 (2026-10-20).** The DO NEXT section and [UI/UX backlog](vivre-ui-ux-backlog.md) carry current decisions; the release history below is point-in-time context.
+> **Current release: 1.20.0 (2026-10-20).** The DO NEXT section and [UI/UX backlog](vivre-ui-ux-backlog.md) carry current decisions; the release history below is point-in-time context.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
 > not a mandate). Legacy baseline: **2026-07-29** (release **1.17.1** — a patch release on top of 1.17.0: a
 > hand Force reboot now proves itself by UPTIME COLLAPSE rather than by waiting to see the machine drop off

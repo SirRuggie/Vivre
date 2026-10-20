@@ -6,17 +6,19 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
-- **[release-1.19.2-validation.md](release-1.19.2-validation.md)** — U-41 and saved-list-name acceptance ledger, local checks and deployment limits for the current release.
+- **[release-1.20.0-validation.md](release-1.20.0-validation.md)** — current release metadata, included list/People/UI changes, reused regression evidence and packaging limits.
+
+- **[release-1.19.2-validation.md](release-1.19.2-validation.md)** — historical U-41 and saved-list-name acceptance ledger and checks for 1.19.2.
 
 - **[people-lookup-validation.md](people-lookup-validation.md)** — People lookup capabilities, independent review corrections, tests and live AD validation limits.
 
 - **[ui-ux-u21-u22-validation.md](ui-ux-u21-u22-validation.md)** — layout/accessibility fixes, local test evidence, and remaining native Windows validation.
 
-- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-57 checklist, decisions, completion evidence, and strengths to preserve; U-45–U-57 implemented in Unreleased with local evidence and native-testing limits. *Read when: choosing or updating UI/UX work.*
+- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-57 checklist, decisions, completion evidence, and strengths to preserve; U-45–U-57 included in 1.20.0 with local evidence and native-testing limits. *Read when: choosing or updating UI/UX work.*
 
 - **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F45 acceptance ledger, independent review corrections and exact local/live validation limits.
 
-- **[../CHANGELOG.md](../CHANGELOG.md)** — current release **1.19.2**, with future work under **Unreleased**; see the UI/UX checklist for current local validation limits.
+- **[../CHANGELOG.md](../CHANGELOG.md)** — current release **1.20.0**, with future work under **Unreleased**; see the UI/UX checklist for current local validation limits.
 
 - **[release-1.17.3-validation.md](release-1.17.3-validation.md)** — historical 1.17.3 candidate validation: multiple-schedule fix and expanded banner checks; not validation of the current build.
 

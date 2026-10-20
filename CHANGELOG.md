@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.20.0 — 2026-10-20
+
 ### Added
 
 - Organize saved machine lists into bookmark-style folders from the Lists menu, while keeping existing lists at the top level and their contents unchanged.

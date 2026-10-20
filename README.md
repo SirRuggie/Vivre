@@ -121,7 +121,7 @@ In **Settings → Remote credentials**, Apply works for either credential choice
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22); People responsiveness (U-39) was confirmed resolved by the operator on 2026-10-20; see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
-- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57, implemented in Unreleased. Current evidence, deferred items and native-validation limits are in [the living backlog](docs/vivre-ui-ux-backlog.md).
+- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57, included in release 1.20.0. Current evidence, deferred items and native-validation limits are in [the living backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a
@@ -140,7 +140,7 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.19.2** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
+Current release: **1.20.0** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 

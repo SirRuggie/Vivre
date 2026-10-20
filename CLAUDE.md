@@ -339,7 +339,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 - Saved-list folders are bookmark-style metadata in `Lists/list-folders.json`; existing `.txt`/`.vlist` files stay flat and appear directly in Lists until moved. Folder create/rename/remove/move must not rewrite list contents or identity; removing a folder returns its lists to the top level. Rebuild grouped Open/Delete menus from current list files, and keep those files visible at the top level if folder metadata is unreadable.
 - Right-click saved-list moves require an explicit destination and Move; typing/filtering/cancelling must never move or open a list. Reuse `ComputerListFolders` validation. Fleet Actions keeps selected shortcuts separate from all-tab Remove offline/Clear results and rejects stale tab/row snapshots.
 - Preserve standard scrollbar page commands in both orientations and the transparent 14-DIP thumb hit area. Empty/search recovery must reuse existing handlers and never discard editor contents or workspace results.
-- Current release is 1.19.2; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
+- Current release is 1.20.0; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
 
 ## Health-to-Patching handoff
 
