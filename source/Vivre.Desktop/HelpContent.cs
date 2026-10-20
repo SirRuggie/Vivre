@@ -113,7 +113,7 @@ public static class HelpContent
             Lines =
             [
                 "1. Load the machines you want in the tab.",
-                "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt.",
+                "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt. After a successful save, that tab takes the saved list's name.",
                 "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
                 "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",

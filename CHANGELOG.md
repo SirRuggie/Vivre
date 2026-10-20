@@ -6,6 +6,10 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Fixed
+
+- Saving a tab as a list now gives that tab the saved list's name after the save succeeds, while preserving its machines and results.
+
 ## 1.19.2 — 2026-10-20
 
 ### Fixed

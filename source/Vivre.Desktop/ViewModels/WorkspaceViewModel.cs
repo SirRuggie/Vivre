@@ -1668,6 +1668,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         string[] names = Computers.Select(c => c.Name).ToArray();
         _lists.Save(name, names, overwrite, expectedRevision);
         RecordSavedList(name, names, justSaved: true);
+        Title = name.Trim();
     }
 
     /// <summary>Deletes a saved list.</summary>

@@ -35,6 +35,9 @@ internal static class WorkspaceSafetyProbe
         Require(ReferenceEquals(first, vm.Computers[0]) && vm.SelectedComputers.Contains(first), "Unchanged membership rebuilt rows.");
         vm.SaveCurrentAsList("Identity");
         Require(vm.SavedListName == "Identity" && vm.ListStatus.EndsWith("Saved"), "Successful save lacks identity/feedback.");
+        Require(vm.Title == "Identity" && ReferenceEquals(vm.Computers[0], first)
+            && first.CommandResult == "Existing result" && vm.SelectedComputers.Contains(first),
+            "Saving did not rename this tab or changed its existing workspace state.");
         vm.Title = "Renamed tab";
         first.CommandResult = "Existing result";
         RefreshStatus(vm);
@@ -53,7 +56,8 @@ internal static class WorkspaceSafetyProbe
         string beforeFailedSave = vm.ListStatus;
         try { vm.SaveCurrentAsList("Identity"); throw new Exception("Overwrite unexpectedly succeeded."); }
         catch (IOException) { }
-        Require(vm.ListStatus == beforeFailedSave && vm.SavedListName == "Identity", "Failed save changed identity/status.");
+        Require(vm.ListStatus == beforeFailedSave && vm.SavedListName == "Identity" && vm.Title == "Renamed tab",
+            "Failed save changed identity, status, or tab title.");
         vm.RecordListDeleted("unrelated");
         Require(vm.SavedListName == "Identity", "Unrelated delete detached list.");
         vm.RecordListDeleted("IDENTITY");
