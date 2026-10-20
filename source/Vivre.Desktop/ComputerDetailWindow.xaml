@@ -95,12 +95,18 @@
                                 </Style.Triggers>
                             </Style>
                         </Border.Style>
-                        <TextBlock Text="{Binding Computer.PatchState, Converter={StaticResource PhaseLabel}}"
-                                   FontSize="11" FontWeight="SemiBold">
+                        <TextBlock x:Name="PatchPhaseLabel" FontSize="11" FontWeight="SemiBold">
                             <TextBlock.Style>
                                 <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="{Binding Computer.PatchState, Converter={StaticResource PhaseLabel}}" />
                                     <Setter Property="Foreground" Value="{DynamicResource SystemFillColorNeutralBrush}" />
                                     <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Computer.UpdatePhase}" Value="Cleaning">
+                                            <Setter Property="Text" Value="Cleaning up" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding Computer.UpdatePhase}" Value="Cleaned">
+                                            <Setter Property="Text" Value="Cleaned" />
+                                        </DataTrigger>
                                         <DataTrigger Binding="{Binding Computer.PatchState}" Value="Scanning">
                                             <Setter Property="Foreground" Value="{DynamicResource TextFillColorPrimaryBrush}" />
                                         </DataTrigger>

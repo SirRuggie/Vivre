@@ -595,6 +595,9 @@
                                    IsEnabled="{Binding HasServer2016, Mode=OneWay}"
                                    Click="OnVerify2016"
                                    ToolTip="Read each 2016 box's build and confirm the CU committed. Read-only — safe to run any time." />
+                        <TextBlock x:Name="CuTargetSummaryText" Text="{Binding CuTargetSummary}"
+                                   VerticalAlignment="Center" Margin="10,0,0,0" FontSize="12"
+                                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                     </WrapPanel>
                 </StackPanel>
             </Border>

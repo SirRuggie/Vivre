@@ -132,11 +132,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     private readonly IBootTimeReader _bootTime;
     // Personal, per-user (Roaming) preferences: auto-check-on-load, the grid column layout, the install cap
     // (MaxSimultaneousInstalls) and the WUG state-check concurrency (WugStateConcurrency) — each operator's own.
-    private readonly AppSettingsStore _appSettings = new();
+    private readonly AppSettingsStore _appSettings;
     // Machine-wide operational settings (this month's CU, package folders, WUG server, staged-machine list)
     // shared by every operator on the box — see SharedSettingsStore. Stateless; fresh disk read per Load so a
     // change another operator saved is picked up on the next read.
-    private readonly SharedSettingsStore _shared = new();
+    private readonly SharedSettingsStore _shared;
 
     /// <summary>User-defined custom columns (machine mode), loaded from settings; the view builds a grid
     /// column per entry and the CSV export appends them. Mutated via Add/Remove which persist.</summary>
@@ -958,8 +958,10 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     public CredentialStore Credentials => _credentials;
 
     /// <summary>Services are injected from the composition root (App) and shared across tabs.</summary>
-    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime, Vivre.Core.Operations.HostOperationCoordinator? operations = null, IAdLinuxLabelLookup? adLinuxLabels = null)
+    public WorkspaceViewModel(IHostPinger pinger, IHostProbe hostProbe, IConfigMgrClient configMgr, IWinRmEnabler winRm, CredentialStore credentials, IComputerListStore lists, IActivityLog activity, IScriptLibrary scripts, IPatchService patch, PatchOptions patchOptions, IHostRebootProbe rebootProbe, IPowerShellHost powerShell, IVitalsProbe vitals, IRemediationService remediation, IDeploymentService deployment, ISoftwareProbe software, ICustomColumnProbe customColumns, ICatalogSizeService catalogSize, OrphanRebootServiceReaper reaper, ForceRebootRunner forceReboot, IBootTimeReader bootTime, Vivre.Core.Operations.HostOperationCoordinator? operations = null, IAdLinuxLabelLookup? adLinuxLabels = null, AppSettingsStore? appSettings = null, SharedSettingsStore? sharedSettings = null)
     {
+        _appSettings = appSettings ?? new AppSettingsStore();
+        _shared = sharedSettings ?? new SharedSettingsStore();
         _adLinuxLabels = adLinuxLabels;
         Operations = operations ?? new Vivre.Core.Operations.HostOperationCoordinator();
         _pinger = pinger;
@@ -1180,6 +1182,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // sweep storm — so raise immediately (the Staged column should appear/disappear at once).
             case nameof(Computer.RequiresStagedPatching):
                 OnPropertyChanged(nameof(HasStagedServer2016));
+                OnPropertyChanged(nameof(CuTargetSummary));
                 break;
         }
     }
@@ -1267,6 +1270,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(Server2016Count));
         OnPropertyChanged(nameof(HasServer2016));
         OnPropertyChanged(nameof(HasStagedServer2016));
+        OnPropertyChanged(nameof(CuTargetSummary));
         // The 2016 chip just vanished — never leave its (now-invisible) filter active hiding every row.
         if (!HasServer2016 && ActiveFilter == RowFilter.Server2016) { ActiveFilter = RowFilter.All; }
         RaiseFleetChanged();
@@ -3867,14 +3871,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
     /// flagged 2016 row when none are selected. A non-flagged 2016 box patches via Windows Update, so the DISM
     /// staging lane never touches it; non-2016 selections are ignored. (Clean up is decoupled from staged-state
     /// — see <see cref="Clean2016Targets"/>.)</summary>
-    private IReadOnlyList<Computer> Server2016Targets()
-    {
-        // Staged patching is opt-in per box: the panel's Stage / Verify act ONLY on flagged 2016 boxes
-        // (StagePreconditions.IsStageTarget). A non-flagged 2016 box patches via Windows Update and is never
-        // touched by the DISM staging lane.
-        var selected = SelectedComputers.Where(StagePreconditions.IsStageTarget).ToList();
-        return selected.Count > 0 ? selected : [.. Computers.Where(StagePreconditions.IsStageTarget)];
-    }
+    private IReadOnlyList<Computer> Server2016Targets() =>
+        StagePreconditions.SelectTargets(SelectedComputers, Computers);
+
+    public string CuTargetSummary =>
+        $"Install CU / Verify: {Server2016Targets().Count} {(SelectedComputers.Count > 0 ? "selected" : "in tab")}";
 
     /// <summary>The rows the panel's Clean up acts on: selection-driven and independent of staged-state — the
     /// selected 2016 boxes, or every 2016 box in the tab when none are selected. DISM component cleanup is
@@ -3888,7 +3889,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     // --- Staged-patching decision (the "Server 2016 staged update required" dialog) ---
 
-    /// <summary>Public accessor for the panel's Stage / Clean up / Verify target set (flagged 2016 boxes), so the
+    /// <summary>Public accessor for the panel's Stage / Verify target set (flagged 2016 boxes), so the
     /// View's stage workflow can scope to exactly the boxes the panel buttons act on.</summary>
     public IReadOnlyList<Computer> Server2016ActionTargets() => Server2016Targets();
 
@@ -4340,11 +4341,18 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         int? latestPercent = null;
         bool latestStalled = false;
         bool terminalSeen = false;
+        bool progressClosed = false;
 
         var progress = new Progress<HostPatchStatus>(s =>
         {
+            // Queued callbacks must not replace a final result or a user cancellation.
+            if (progressClosed || terminalSeen || token.IsCancellationRequested) return;
+            // The SMB bootstrap calls its generic startup phase Scanning. This operation is cleanup;
+            // retain its active phase and elapsed message until actual cleanup progress arrives.
+            if (s.Phase == PatchPhase.Scanning) return;
             if (s.Phase == PatchPhase.Cleaning)
             {
+                computer.UpdatePhase = PatchPhase.Cleaning.ToString();
                 // A non-terminal "Cleaning" display line: capture its % + stalled hint for the updater, but
                 // do NOT write the message here (the updater owns the live label so it never looks frozen).
                 latestPercent = s.Percent;
@@ -4352,7 +4360,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
                 return;
             }
 
-            // Any non-Cleaning status (terminal, or a transient Scanning) goes through the shared bookkeeping
+            // Other statuses go through the shared bookkeeping
             // (RebootRequired on 3010, error recording, etc.). The terminal label is applied below the await.
             terminalSeen = s.Phase is PatchPhase.Done or PatchPhase.PendingReboot or PatchPhase.Deferred or PatchPhase.Error;
             ApplyStatus(computer, s);
@@ -4369,6 +4377,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
             // (live-filtered properties), so the continuation must resume on the captured (UI) context.
             HostPatchStatus final = await _patch
                 .ComponentCleanupLcuAsync(computer.Name, _patchOptions, progress, token);
+            progressClosed = true;
 
             // Stop the live readout before applying the terminal label so it can't overwrite it on a late tick.
             updaterCts.Cancel();
@@ -4400,6 +4409,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (OperationCanceledException)
         {
+            progressClosed = true;
             // Clear any transient phase (Scanning/Cleaning/…) so a user Stop never leaves the row stuck
             // spinning — it resolves to Idle, or to amber RebootPending if a reboot is still flagged.
             computer.UpdatePhase = PatchPhase.Idle.ToString();
@@ -4408,6 +4418,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         catch (Exception ex)
         {
+            progressClosed = true;
             computer.UpdateError = ex.Message;
             computer.UpdateMessage = "Cleanup failed";
             computer.UpdatePhase = PatchPhase.Error.ToString();
@@ -4415,6 +4426,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         }
         finally
         {
+            progressClosed = true;
             // Belt-and-braces: ensure the updater is stopped on every exit path (cancel/error too).
             updaterCts.Cancel();
             try { await updater; } catch { /* updater already faulted/cancelled — nothing to surface */ }
@@ -6216,6 +6228,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         OnPropertyChanged(nameof(SelectedComputerCount));
         OnPropertyChanged(nameof(ScanButtonLabel));
         OnPropertyChanged(nameof(InstallButtonLabel));
+        OnPropertyChanged(nameof(CuTargetSummary));
     }
 
     /// <summary>Drops a removed machine's per-host monitor state so stale name-keyed entries don't
@@ -6242,6 +6255,7 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         // Toolbar Scan/Install labels reflect the current target (selected count, or "all").
         OnPropertyChanged(nameof(ScanButtonLabel));
         OnPropertyChanged(nameof(InstallButtonLabel));
+        OnPropertyChanged(nameof(CuTargetSummary));
         OnPropertyChanged(nameof(SelectionSummary));
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(SelectedComputerCount));

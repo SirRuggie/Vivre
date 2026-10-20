@@ -276,16 +276,24 @@ Update, not for every 2016 box — so the operator declares which ones, instead 
   ("CU staged — run Reboot Wave"); already verified this session → WUA for its remaining minor updates; not
   yet staged → the decision dialog owns it (the row is never silently auto-staged or WUA-installed — reaching
   it directly skips with guidance). `Server2016Targets()` (the panel's Install CU / Verify) is
-  flagged-only; Clean up uses its separate Server 2016 selection helper, and `LcuRouting.RebootVerifyLaneFor(osBuild, requiresStaging)` is override-aware: a non-flagged
+  selection-first, then flagged-only: any nonempty selection is the whole allowed scope, even when none qualify.
+  Only no selection uses all flagged 2016 rows in the tab. The CU bar displays the eligible target count.
+  Clean up uses its separate Server 2016 selection helper, and `LcuRouting.RebootVerifyLaneFor(osBuild, requiresStaging)` is override-aware: a non-flagged
   2016 box verifies via the WUA lane, not UBR.
 - **Decision dialog** (`StagedInstallDecisionDialog`, gated by the View-layer `StagedInstallInteraction`):
   when Install / Install all hits a flagged box whose CU isn't staged, the operator chooses **Install CU (no reboot)**
   (the chip Stage workflow, scoped to those boxes), **Install minor updates only** (WUA with **every**
   CU-titled KB excluded so the broken Express-delta CU never goes via WUA — requires this month's CU set in
-  Settings as a floor), or **Cancel** (skip the flagged boxes; the rest of the fleet still installs). A
+  Settings as a floor), or **Skip CU — install other N** (skip the flagged boxes and install the counted remainder).
+  **Cancel**, Escape, and window close dispatch no installations from this pending batch, including from the
+  minor-update confirmation step; work already running elsewhere is unaffected. A
   Settings-vs-scan CU KB mismatch warns at the top. The partition (`StagedInstallPlanner`) and CU-title
   matching (`Lcu2016CuMatcher` — `FindCuKb` for the single-confident warning, `CuKbs` for the conservative
   exclude set) are pure + unit-tested.
+- **Cleanup display:** generic SMB bootstrap `Scanning` does not replace the active `Cleaning` phase.
+  The grid and details show Cleaning up, then the actual result. Cleanup progress callbacks are ignored
+  after cancellation, an observed terminal status, or final result application; the elapsed updater cannot
+  overwrite the terminal message. DISM, servicing guards, transport and reboot policy are unchanged.
 - **Already-current pre-check** (`WorkspaceViewModel.ResolveAlreadyCurrentAsync` → `StagedInstallPlanner.PartitionByCurrency`):
   before prompting, each flagged box's UBR is read over the **same** `VerifyLcuAsync` → `DcomLcuBuildReader`
   path the Stage lane's pre-stage check uses; a box already at the target UBR (or verified this session) is

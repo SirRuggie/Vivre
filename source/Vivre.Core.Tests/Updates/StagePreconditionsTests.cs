@@ -151,6 +151,28 @@ public class StagePreconditions_StageTarget_Tests
     private const int Server2016 = 14393; // LcuRouting.Server2016Build
     private const int Server2019 = 17763;
 
+    [Theory]
+    [InlineData(null, true)]
+    [InlineData(Server2019, true)]
+    [InlineData(Server2016, false)]
+    public void Ineligible_selection_never_targets_another_machine(int? build, bool flagged)
+    {
+        var selected = new Computer("DUMMY-SELECTED") { OsBuild = build, RequiresStagedPatching = flagged };
+        var other = new Computer("DUMMY-OTHER") { OsBuild = Server2016, RequiresStagedPatching = true };
+        Assert.Empty(StagePreconditions.SelectTargets([selected], [selected, other]));
+    }
+
+    [Fact]
+    public void Mixed_selection_keeps_only_its_eligible_rows()
+    {
+        var chosen = new Computer("DUMMY-CHOSEN") { OsBuild = Server2016, RequiresStagedPatching = true };
+        var unflagged = new Computer("DUMMY-WUA") { OsBuild = Server2016 };
+        var other = new Computer("DUMMY-OTHER") { OsBuild = Server2016, RequiresStagedPatching = true };
+        Assert.Equal([chosen], StagePreconditions.SelectTargets([chosen, unflagged], [chosen, unflagged, other]));
+        Assert.Equal([chosen, other], StagePreconditions.SelectTargets([], [chosen, unflagged, other]));
+        Assert.Empty(StagePreconditions.SelectTargets([], []));
+    }
+
     [Fact]
     public void Flagged_2016_box_is_a_stage_target()
     {

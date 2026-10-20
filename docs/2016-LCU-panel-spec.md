@@ -11,6 +11,12 @@ as-built record plus the standing rules for anyone touching these files again. C
 > `StagedInstallDecisionDialog` (Stage CU / minor-only / Cancel), the scan-before-Stage gate, and the
 > `LcuVerifiedThisSession` skip — live in `2016-LCU-lane-spec.md`.
 
+**U-45/U-48 update (Unreleased, 2026-10-20):** Install CU / Verify choose selected rows before
+filtering CU eligibility; zero eligible selected rows show guidance and never fall back to other
+machines. With no selection, all eligible tab rows remain in scope. The bar displays that target count.
+Cleanup uses its existing independent selection rule and now retains the Cleaning up badge through
+bootstrap in both grid and details; terminal and cancellation results defeat late progress.
+
 The point of the panel: the people taking over patching **don't know which servers are 2016**.
 Vivre classifies them (a vitals check fills `Computer.OsBuild`) and surfaces the classification
 as a one-click filtered view with the four 2016 actions — nothing to look up, nothing manual.

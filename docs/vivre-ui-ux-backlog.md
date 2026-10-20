@@ -4,7 +4,7 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. Research only; application changes are not yet approved.
+Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-48 are implemented and locally validated in Unreleased; U-49–U-57 await approval.
 
 Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
 
@@ -440,15 +440,30 @@ See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for ev
 
 ## Full-spectrum usability review — U-45–U-57 (2026-10-20)
 
-Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. All items below are recommendations awaiting approval, not implemented changes or a claim of native usability testing.
+Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48 together; U-49–U-57 remain recommendations awaiting approval.
 
-- [ ] **U-45 · High — Keep CU actions within the chosen machines.**
+### U-45–U-48 acceptance ledger
+
+| Capability | Status |
+| --- | --- |
+| U-45: selection-first CU Install/Verify targeting, accurate count and ineligible-selection guidance | Implemented and locally tested: ineligible, mixed, empty and eligible selection; live count and flag changes |
+| U-46: Apply Windows login and show the applied identity separately from draft choices | Implemented and locally tested: actual radio/Apply controls, explicit → login → explicit, unapplied drafts |
+| U-47: explicit skip-CU choice; Cancel, Escape and close dispatch no installation | Implemented and locally tested: six modal dismissals across both dialog steps, each dispatch choice and unknown choice |
+| U-48: cleanup badge/message agree; terminal, error and cancellation states win over late progress | Implemented and locally tested: bootstrap, active cleanup, success, pending reboot, deferral, failure, exception, Stop, locked files and late callbacks |
+
+- **Independent red team:** separate reviewer inspected production changes and challenged the focused coverage; no material defect remained. Parent found normal App startup could run when the existing harness pumped WPF; reviewer then identified workspace constructors reading real settings. Both harness issues are fixed: startup is suppressed, production resources are loaded separately, and workspace settings use scratch stores through optional constructor dependencies (normal app defaults unchanged). Review was independent source/test refutation; execution results below were produced by the implementation agent after isolation fixes.
+- **Validation:** 90 targeted Core tests passed (StagePreconditions, ComponentCleanup, CleanupLiveness, StagedInstallPlanner and reboot primitive gate); Release Desktop and PerformanceAudit build passed. `--operational-clarity-only`, existing `--patching-clarity-only` and `--cu-stage-only` passed.
+- **Evidence limits:** modal tests use production WPF controls and access-key routing for Escape, not physical keyboard input. Cleanup and dispatch use dummy hosts, inert delegates and an injected patch service. No live installs, reboot, server cleanup, credential authentication or deployment were performed. Existing native U-21/U-22 validation remains open.
+- **Build/release:** changes are Unreleased over version 1.19.2; local build warns that the configured signing certificate is unavailable and its agent is unsigned. No deployment ZIP was produced. Publish on the signing workstation through the existing verified release command.
+- **Scope:** no requested capability in U-45–U-48 is deferred or blocked; transport, package readiness, DISM execution, reboot policy, People and RDP behavior are unchanged.
+
+- [x] **U-45 · High — Keep CU actions within the chosen machines.**
   - **Why:** Selecting only ineligible machines can make Install CU target other eligible machines in the tab.
-- [ ] **U-46 · High — Make the credential choice match the identity in use.**
+- [x] **U-46 · High — Make the credential choice match the identity in use.**
   - **Why:** Switching to Windows login disables Apply while the previously applied explicit credentials remain active.
-- [ ] **U-47 · High — Separate skipping CU machines from cancelling an install.**
+- [x] **U-47 · High — Separate skipping CU machines from cancelling an install.**
   - **Why:** Cancel or closing the CU decision can still start installations on the other machines in a mixed batch.
-- [ ] **U-48 · Medium — Keep the operation badge and progress message consistent.**
+- [x] **U-48 · Medium — Keep the operation badge and progress message consistent.**
   - **Why:** A machine can say Scanning while its message and progress describe component cleanup.
 - [ ] **U-49 · Medium — Organize People around add, review and copy.**
   - **Why:** Retry leads the screen while the main output action is hidden under Actions.
@@ -473,7 +488,7 @@ Three independent research agents plus parent source/screenshot review; see [the
 
 - **Order recommended:** operational correctness U-45–U-48 first; People flow U-49–U-51 plus its U-52 states next; shared navigation U-53–U-55 plus remaining U-52; People recovery U-56/U-57 afterward.
 - **Preserve:** current lookup matching, no invented email addresses, selected/all scope safeguards, right-click shortcuts, per-tab settings, saved-list protections, no People tabs/saved lists, and RDP keep-alive/session-scale behavior.
-- **U-47 nuance:** the dialog currently notes that other machines install normally; the misleading Cancel/dismiss action is the concern. A true cancellation path changes that interaction and needs explicit agreement before implementation.
+- **U-47 decision:** Shaun approved a true Cancel path with this batch. Skip CU explicitly installs the counted remainder; Cancel/Escape/close start nothing from the pending batch and leave previously running work alone.
 - **U-57 nuance:** email copy is not a full export of unresolved inputs and review history; do not clear the export warning simply because any copy succeeded.
 - **U-22 follow-up evidence:** RDP host/folder credential inputs lack explicit accessible name associations, and older validation messages lack the shared announcement helper; inspect and verify within the existing accessibility work. Native behavior remains untested.
 - **Existing status:** U-21/U-22 remain native-validation work; U-39 stays operator-confirmed resolved; U-40/U-42 remain deferred by Shaun. No new performance measurements or live operations occurred.

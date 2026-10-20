@@ -5,16 +5,19 @@ using CommunityToolkit.Mvvm.ComponentModel;
 namespace Vivre.Desktop.ViewModels;
 
 /// <summary>
-/// Backs the Settings window's credential section. Session-only: editing here just
-/// updates the shared <see cref="CredentialStore"/> in memory — nothing is persisted.
+/// Backs the Settings window's credential draft. Apply updates the shared
+/// <see cref="CredentialStore"/> in memory for this session — nothing is persisted.
 /// </summary>
 public partial class SettingsViewModel : ObservableObject
 {
     private readonly CredentialStore _store;
+    private readonly string _windowsLoginName;
 
     public SettingsViewModel(CredentialStore store)
     {
         _store = store;
+        using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+        _windowsLoginName = identity.Name;
         if (store.Current is { } current)
         {
             UseExplicitCredentials = true;
@@ -23,7 +26,7 @@ public partial class SettingsViewModel : ObservableObject
         }
     }
 
-    /// <summary>When false, remote ops use the current Windows login.</summary>
+    /// <summary>Draft choice; becomes active only on Apply.</summary>
     [ObservableProperty]
     public partial bool UseExplicitCredentials { get; set; }
 
@@ -32,6 +35,10 @@ public partial class SettingsViewModel : ObservableObject
 
     [ObservableProperty]
     public partial string UserName { get; set; } = string.Empty;
+
+    public string AppliedCredentialSummary => _store.Current is { } current
+        ? $"Applied: {current.DisplayName}"
+        : $"Applied: Windows login ({_windowsLoginName})";
 
     /// <summary>
     /// Writes the chosen credential into the store. <paramref name="password"/> comes from
@@ -43,6 +50,7 @@ public partial class SettingsViewModel : ObservableObject
         if (!UseExplicitCredentials || string.IsNullOrWhiteSpace(UserName))
         {
             _store.Current = null;
+            OnPropertyChanged(nameof(AppliedCredentialSummary));
             return;
         }
 
@@ -51,5 +59,6 @@ public partial class SettingsViewModel : ObservableObject
             : _store.Current?.Password ?? password;
 
         _store.Current = new ConnectionCredential(Domain, UserName, effective);
+        OnPropertyChanged(nameof(AppliedCredentialSummary));
     }
 }

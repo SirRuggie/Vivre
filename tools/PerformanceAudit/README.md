@@ -106,3 +106,18 @@ U-44 extends --library-search-only with grouped saved-list search and exact list
 `--people-directory-check <output.json>` is an explicit live read-only check using the current Windows account: a generated nonexistent username, the current username, and its domain-qualified equivalent. It writes only counts and boolean results, not directory names or emails. Unlike the default isolated probes, this flag requires reachable AD and directory-read access. It is not an all-domain or cross-forest audit.
 
 People flow follow-up: `--people-only` also validates the shared paste-dialog configuration, pinned identity column, fixed footer geometry, quick-add typing preservation and Stop during additions. Its 2,000-entry dispatcher test uses a UI heartbeat plus an independent background observer after draining setup work, recording elapsed addition/lookup time and sampled heartbeat gaps. Requests are dummy responses, not live AD; this does not measure RDP clipboard or native DPI behavior.
+
+## U-45–U-48 operational interaction checks
+
+`dotnet run --project tools/PerformanceAudit -c Release -- --operational-clarity-only .artifacts/u45-u48-operational.json`
+
+Uses production WPF controls, dummy machines and an injected cleanup service. Checks selection-first
+CU scope/count, draft vs applied credentials, actual modal Cancel/Escape/close from both decision steps,
+explicit skip dispatch, and cleanup phase/terminal/cancellation races. Modal tests briefly create
+transparent off-screen windows; no live target operations or production settings writes occur.
+Escape is exercised through WPF access-key routing, not physical keyboard input.
+
+The audit host explicitly suppresses `Application.OnStartup` (dispatcher pumping can invoke it without
+`Application.Run`), loads the production App.xaml resource dictionaries without its application class,
+and asserts no shell window opened. Workspace factories inject unique scratch personal/shared stores;
+production construction retains its normal defaults. This also removes operator settings from probe inputs.

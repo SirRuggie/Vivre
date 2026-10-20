@@ -25,13 +25,18 @@ public static class StagePreconditions
     public static IReadOnlyList<string> UnscannedThisSession(IEnumerable<Computer> targets) =>
         targets.Where(c => c.LastScannedApplicable is null).Select(c => c.Name).ToList();
 
-    /// <summary>The 2016-staged-patching rule the panel's Stage / Clean up / Verify act on: a Server 2016
+    /// <summary>The 2016-staged-patching rule the panel's Stage / Verify act on: a Server 2016
     /// box the operator has explicitly flagged for staged patching. A non-flagged 2016 box patches via
     /// Windows Update, so the DISM lane never touches it.</summary>
     public static bool IsStageTarget(Computer c) => LcuRouting.Is2016(c.OsBuild) && c.RequiresStagedPatching;
 
+    /// <summary>Choose the scope BEFORE filtering eligibility. A nonempty ineligible selection must
+    /// never broaden an Install CU or Verify action to other machines in the tab.</summary>
+    public static IReadOnlyList<Computer> SelectTargets(IReadOnlyList<Computer> selected, IReadOnlyList<Computer> all) =>
+        (selected.Count > 0 ? selected : all).Where(IsStageTarget).ToList();
+
     /// <summary>True when <paramref name="boxes"/> contains at least one flagged Server 2016 box — i.e. the
-    /// panel's Stage / Clean up / Verify have something to act on. When false those buttons would silently
+    /// panel's Stage / Verify have something to act on. When false those buttons would silently
     /// no-op, so the View shows the "mark a box for staged patching first" guidance instead of touching
     /// anything.</summary>
     public static bool HasAnyStageTarget(IEnumerable<Computer> boxes) => boxes.Any(IsStageTarget);

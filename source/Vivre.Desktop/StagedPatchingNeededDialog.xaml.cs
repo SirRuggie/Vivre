@@ -12,5 +12,13 @@ namespace Vivre.Desktop;
 /// </summary>
 public partial class StagedPatchingNeededDialog : FluentWindow
 {
-    public StagedPatchingNeededDialog() => InitializeComponent();
+    public StagedPatchingNeededDialog(bool hasSelection = false)
+    {
+        InitializeComponent();
+        if (hasSelection)
+        {
+            GuidanceBar.Title = "None of the selected machines use the Server 2016 CU lane";
+            GuidanceBar.Message = "Select CU lane machines and try again. No other machines in the tab were targeted.";
+        }
+    }
 }

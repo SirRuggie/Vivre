@@ -1235,7 +1235,7 @@ public partial class WorkspaceView : UserControl
             return true;
         }
 
-        new StagedPatchingNeededDialog { Owner = Window.GetWindow(this) }.ShowDialog();
+        new StagedPatchingNeededDialog(vm.SelectedComputers.Count > 0) { Owner = Window.GetWindow(this) }.ShowDialog();
         return false;
     }
 

@@ -30,6 +30,12 @@ Full doc inventory with one-liners: **[docs/README.md](docs/README.md)**. Read-b
 
 Keep this file, the patching-lane doc, and README.md current when a decision changes or a feature
 lands — they're the human-readable source of truth.
+
+U-45–U-48 interaction invariants: choose CU selection scope before eligibility filtering; never
+broaden an ineligible selection. Mixed-install Cancel/Escape/close dispatch nothing; only the
+explicit Skip CU action installs the remainder. Credential radios/fields are drafts until Apply,
+which stays enabled for Windows login; show the applied identity. Cleanup progress cannot replace
+a terminal/cancelled result. Local regression command: `dotnet run --project tools/PerformanceAudit -c Release -- --operational-clarity-only <output.json>`.
 Any new case-file / findings doc ships with the "point-in-time record, never edited after the fact"
 header from creation (the wug-state-check-findings.md pattern) — that keeps docs/README.md's
 "never edited" claim true.

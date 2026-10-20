@@ -154,8 +154,8 @@ public static class HelpContent
             Lines =
             [
                 "1. Open Settings (left navigation) ▸ Remote credentials.",
-                "2. Keep \"Use my Windows login\", or pick \"Use these credentials\", enter Domain / Username / Password, then click Apply.",
-                "This is the account Vivre uses to reach your machines — for health checks, patching, Run Script, SCCM client actions, and Enable WinRM.",
+                "2. Choose \"Use my Windows login\", or pick \"Use these credentials\" and enter Domain / Username / Password. Click Apply for either choice, including switching back to Windows login.",
+                "The Applied line shows the identity currently in use. Editing the choice or fields does not change it until Apply. Explicit credentials apply to supported remote connections; SMB/DCOM fallback uses your Windows login.",
             ],
             Tip = "Credentials are held in memory for the session only — never written to disk. Set an admin account here if your login can't reach the targets.",
         },
@@ -661,6 +661,7 @@ public static class HelpContent
                 "Server 2016 boxes get their monthly OS update through their own lane (regular Windows Update chronically fails on them). Vivre finds them for you:",
                 "1. Check Vitals on your machines — any confirmed 2016 box makes a \"Server 2016 (N)\" filter chip appear.",
                 "2. Click the chip: the grid filters to those boxes and the 2016 action bar shows the month's CU (e.g. KB5094122 / 9234).",
+                "   Install CU / Verify show their eligible target count: selected machines if any are selected, otherwise CU lane machines in the tab. A selection with no eligible machines shows guidance and never targets other rows.",
                 "   Install CU and Verify act only on boxes you've configured for the CU lane (right-click a row ▸ Use CU lane — see \"CU lane vs Windows Update\" below). If none are marked, the button shows a reminder instead of doing nothing. Clean up is different — it works on any 2016 box: the selected ones, or all of them when nothing's selected.",
                 "3. Install CU (no reboot): delivers + installs the CU but does NOT reboot. Installation can affect performance; reboot later to complete. The row turns amber with \"STAGED — needs Reboot Wave\". Boxes must have been scanned this session — otherwise Install CU shows a \"Scan before installing CU\" reminder first.",
                 "Before installing, Checking CU package runs in the background so you can keep using Vivre. Stop cancels waiting without starting installation; an already-running file read may finish in the background. Clicking Install CU again while the same precheck is open does not start another wave.",
@@ -683,7 +684,8 @@ public static class HelpContent
                 "2. Click Install (or Install all). If the run includes a flagged box whose cumulative update isn't staged yet, Vivre asks what to do (it also warns when the Settings KB doesn't match what the scan actually found):",
                 "   • Install CU (no reboot) (recommended) — copies + installs this month's cumulative update on those boxes (size and installation time vary); you commit it later with the Reboot Wave. Other machines in the run install normally at the same time.",
                 "   • Install minor updates only — installs everything except the cumulative update now (the CU is installed separately). You'll be reminded that minor updates may need a reboot.",
-                "   • Cancel — skips just those flagged boxes for now; the rest of the run still installs.",
+                "   • Skip CU — install other N: leave the CU machines untouched and install updates only on the other machines counted in this batch.",
+                "   • Cancel, Escape, or closing the dialog — start no installations from this batch. Work already running continues.",
                 "3. A box already at this month's build is detected up front and skipped automatically (\"Already current — skipped\") — it just installs its minor updates.",
                 "Manage your flagged boxes in Settings ▸ CU lane machines: see the whole list, remove a box (sends it back to normal Windows Update), or Clear all.",
             ],

@@ -122,7 +122,6 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
                         <ui:TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Margin="0,0,0,8" Text="Domain" />
@@ -139,10 +138,14 @@
                         <PasswordBox  Grid.Row="2" Grid.Column="1" x:Name="PasswordBox" AutomationProperties.Name="Explicit credentials password"
                                       Height="32" VerticalContentAlignment="Center" Margin="0,0,0,8" />
 
-                        <ui:Button Grid.Row="3" Grid.Column="1" HorizontalAlignment="Left"
-                                   Appearance="Primary" Content="Apply"
-                                   Click="OnApplyCredentials" />
                     </Grid>
+                    <ui:Button x:Name="ApplyCredentialsButton" HorizontalAlignment="Left" Margin="24,0,0,8"
+                               Appearance="Primary" Content="Apply" Click="OnApplyCredentials" />
+                    <TextBlock x:Name="AppliedCredentialText" Text="{Binding AppliedCredentialSummary}"
+                               TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
+                    <TextBlock Text="Changes take effect after Apply. SMB/DCOM fallback uses your Windows login."
+                               Margin="0,4,0,0" TextWrapping="Wrap" FontSize="12"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                 </StackPanel>
             </ui:CardExpander>
 

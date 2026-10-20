@@ -106,11 +106,15 @@ Script saves ask before replacing an existing destination and reject stale appro
 
 Column widths and order are remembered separately for Health, Patching, People results, and People review. Right-click a Fleet grid and choose **Reset column layout**; in People, use **Actions → Reset results column layout** or **Reset review column layout**. Names stay pinned first. Changing the product in Check software clears the previous product’s service and uses a remembered suggestion only for the new product.
 
+CU **Install / Verify** use eligible selected machines, or eligible machines in the tab only when nothing is selected; their scope count is shown beside the actions. An ineligible selection never targets other rows. In the mixed-install dialog, **Skip CU — install other N** continues only the remainder; **Cancel**, Escape and close start no installations. Cleanup shows **Cleaning up** consistently in the grid and machine details.
+
+In **Settings → Remote credentials**, Apply works for either credential choice, including switching back to Windows login. The **Applied** line shows the active identity separately from edits; credentials remain session-only, and SMB/DCOM fallback still uses the Windows login.
+
 ## Roadmap
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22); People responsiveness (U-39) was confirmed resolved by the operator on 2026-10-20; see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
-- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57: operational interaction issues, a simpler People flow, and shared navigation improvements; these are findings awaiting approval, not delivered fixes.
+- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57. U-45–U-48 are addressed in Unreleased; the People and shared navigation recommendations U-49–U-57 await approval. Current evidence is in [the living backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a

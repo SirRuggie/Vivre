@@ -30,7 +30,7 @@
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="20,8,20,8">
             <StackPanel>
                 <!-- What's wrong, in plain terms. No box was touched. (Static text only — no Run.Text binding.) -->
-                <ui:InfoBar Severity="Informational" IsOpen="True" IsClosable="False"
+                <ui:InfoBar x:Name="GuidanceBar" Severity="Informational" IsOpen="True" IsClosable="False"
                             Title="None of these Server 2016 boxes are configured for the CU lane"
                             Message="Install CU and Verify only act on Server 2016 boxes you've configured for the CU lane — so right now they have nothing to do. No machine was touched. (Clean up works on any 2016 box, marked or not.)"
                             Margin="0,0,0,16" />

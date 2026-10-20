@@ -13,6 +13,10 @@ it ships, then gets a dated heading.
 ### Fixed
 
 - Saving a tab as a list now gives that tab the saved list's name after the save succeeds, while preserving its machines and results.
+- Keep CU Install/Verify within eligible selected machines, show their target count, and explain selections with no CU targets instead of silently using other rows.
+- Allow applying Windows login after explicit credentials and show the applied session identity separately from draft changes.
+- Separate skipping CU machines from cancelling a mixed install: Cancel, Escape and close start no new installations from that batch.
+- Keep cleanup status consistent in the grid and details, and prevent late progress from replacing completion, failure or cancellation.
 
 ## 1.19.2 — 2026-10-20
 

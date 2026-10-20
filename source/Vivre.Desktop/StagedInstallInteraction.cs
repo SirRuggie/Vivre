@@ -24,9 +24,8 @@ internal enum StagedInstallOutcome
 /// The View-layer gate for the "Server 2016 staged update required" decision. Every Install / Install-all entry
 /// point routes through <see cref="ResolveAsync"/>: when the target set has no flagged-2016 box awaiting a stage
 /// decision it returns <see cref="StagedInstallOutcome.ProceedNormally"/> and the caller installs as usual; when
-/// it does, the decision dialog is shown. The rest of the fleet ALWAYS installs normally — the choice only decides
-/// what happens to the flagged-not-staged boxes (stage the CU, install their minor updates, or skip them for
-/// later) — and the flagged action runs concurrently so a 30–60 min stage never blocks the other machines.
+/// it does, the decision dialog is shown. Cancel/dismiss dispatches nothing. The explicit installation choices
+/// include the normal remainder; the flagged action runs concurrently so a long stage never blocks other machines.
 /// </summary>
 internal static class StagedInstallInteraction
 {
@@ -60,37 +59,46 @@ internal static class StagedInstallInteraction
 
         var dialog = new StagedInstallDecisionDialog(plan) { Owner = owner };
         dialog.ShowDialog();
+        if (dialog.Choice == StagedInstallChoice.Cancel) return StagedInstallOutcome.Handled;
 
         if (!await EnsureScopeUnchangedAsync(owner, targetScopeIsUnchanged))
         {
             return StagedInstallOutcome.Handled;
         }
 
-        // The rest of the fleet installs normally regardless of the choice; the choice only governs the
-        // flagged-not-staged boxes. (Cancel = "deal with these later" — skip them, but don't stop everything.)
-        switch (dialog.Choice)
+        await ExecuteChoiceAsync(dialog.Choice,
+            () => InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall),
+            () => RunStageWorkflowAsync(owner, vm, plan.FlaggedNotStaged),
+            () => vm.InstallMinorOnlyAsync(plan.FlaggedNotStaged, allowPendingRebootInstall));
+
+        return StagedInstallOutcome.Handled;
+    }
+
+    // One dispatch boundary for every dialog outcome. Unknown/dismissed choices fail closed.
+    private static async Task ExecuteChoiceAsync(
+        StagedInstallChoice choice, Func<Task> installNormal, Func<Task> stageCu, Func<Task> installMinor)
+    {
+        switch (choice)
         {
             case StagedInstallChoice.StageCu:
                 // Start the normal install on the rest first (fire-and-forget, like the toolbar Install), then run
                 // the stage workflow (which may show the scan-gate / package-needed prompts and then fires the
                 // stage sweep). Both proceed concurrently — the long stage never holds up the other machines, and
                 // the two row sets are disjoint so the sweeps don't collide.
-                _ = InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall);
-                await RunStageWorkflowAsync(owner, vm, plan.FlaggedNotStaged);
+                _ = installNormal();
+                await stageCu();
                 break;
 
             case StagedInstallChoice.MinorOnly:
                 // Fire both sweeps (disjoint row sets) — same fire-and-forget shape as a normal install.
-                _ = vm.InstallMinorOnlyAsync(plan.FlaggedNotStaged, allowPendingRebootInstall);
-                _ = InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall);
+                _ = installMinor();
+                _ = installNormal();
                 break;
 
-            default: // Cancel — skip the flagged boxes ("deal with them later"); the rest of the run still installs.
-                _ = InstallNormalAsync(vm, plan.Normal, allowPendingRebootInstall);
+            case StagedInstallChoice.SkipCu:
+                _ = installNormal();
                 break;
         }
-
-        return StagedInstallOutcome.Handled;
     }
 
     private static async Task<bool> EnsureScopeUnchangedAsync(Window owner, Func<bool>? validator)

@@ -16,12 +16,15 @@ public enum StagedInstallChoice
 
     /// <summary>Install the non-cumulative updates now via Windows Update; the CU is installed separately.</summary>
     MinorOnly,
+
+    /// <summary>Skip the CU machines and install only the explicitly listed remainder.</summary>
+    SkipCu,
 }
 
 /// <summary>
 /// Shown when an Install / Install-all run includes Server 2016 boxes that are configured for the CU lane but
 /// whose monthly CU hasn't been staged yet. It forces a real choice — never silent, never automatic: stage the
-/// CU first (recommended), install only the minor (non-CU) updates now, or cancel. If Settings' CU KB disagrees
+/// CU first (recommended), install only minor updates, skip CU machines, or cancel the batch. If Settings' CU KB disagrees
 /// with what the boxes actually scanned, a warning is shown at the top. The minor-only path first reveals an
 /// inline reboot caution the operator must confirm.
 /// </summary>
@@ -41,6 +44,9 @@ public partial class StagedInstallDecisionDialog : FluentWindow
         if (plan.Normal.Count > 0)
         {
             OthersNote.Visibility = Visibility.Visible;
+            OthersNote.Text = $"The installation choices also install updates on {plan.Normal.Count} other machine(s). Cancel starts no installations.";
+            SkipCuButton.Content = $"Skip CU — install other {plan.Normal.Count}";
+            SkipCuButton.Visibility = Visibility.Visible;
         }
 
         if (plan.Mismatches.Count > 0)
@@ -105,6 +111,13 @@ public partial class StagedInstallDecisionDialog : FluentWindow
     {
         Choice = StagedInstallChoice.Cancel;
         DialogResult = false;
+        Close();
+    }
+
+    private void OnSkipCu(object sender, RoutedEventArgs e)
+    {
+        Choice = StagedInstallChoice.SkipCu;
+        DialogResult = true;
         Close();
     }
 }

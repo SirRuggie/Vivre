@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
 using System.Diagnostics;
+using System.IO;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Windows.Data;
@@ -192,7 +193,7 @@ internal static class WorkspaceProbe
             {
                 "No WorkspaceView/DataGrid is created, so binding, cell realization, column measurement, layout, render, and input costs are excluded.",
                 "The STA dispatcher is pumped only while waiting for the final debounced filter result; no production App startup or window occurs.",
-                "WorkspaceViewModel construction reads the existing per-user settings cache/file through AppSettingsStore; this probe performs no saves.",
+                "WorkspaceViewModel uses unique scratch personal/shared settings stores under the audit's temporary root; production settings are not read.",
                 "All remote-capable dependencies are null inert sentinels. IsMonitoring is disabled before rows are added, and AddComputers is never called.",
                 "Timings are single-process Stopwatch samples, not a benchmark; use repeated external runs and medians before drawing release conclusions.",
             },
@@ -319,11 +320,15 @@ internal static class WorkspaceProbe
         void Stop(object? sender, EventArgs e) => frame.Continue = false;
     }
 
+    internal static string? SettingsRoot { get; set; }
+
     internal static WorkspaceViewModel CreateWorkspace(Vivre.Core.Computers.IAdLinuxLabelLookup? adLinuxLabels = null)
         => CreateWorkspaceWithOptions(new PatchOptions(), adLinuxLabels);
 
     internal static WorkspaceViewModel CreateWorkspaceWithOptions(PatchOptions options, Vivre.Core.Computers.IAdLinuxLabelLookup? adLinuxLabels = null)
     {
+        string settings = Path.Combine(SettingsRoot ?? throw new InvalidOperationException("Configure scratch workspace settings first."),
+            Guid.NewGuid().ToString("N"));
         var workspace = new WorkspaceViewModel(
             pinger: null!,
             hostProbe: null!,
@@ -346,7 +351,10 @@ internal static class WorkspaceProbe
             reaper: null!,
             forceReboot: null!,
             bootTime: null!,
-            adLinuxLabels: adLinuxLabels);
+            adLinuxLabels: adLinuxLabels,
+            appSettings: (Vivre.Desktop.AppSettingsStore)Activator.CreateInstance(typeof(Vivre.Desktop.AppSettingsStore),
+                BindingFlags.NonPublic | BindingFlags.Instance, null, [Path.Combine(settings, "personal.json"), null], null)!,
+            sharedSettings: new Vivre.Core.Configuration.SharedSettingsStore(Path.Combine(settings, "shared")));
 
         // Construction starts an empty monitor loop. Cancel it before adding any row so none of the
         // null remote sentinels can be reached, even if a host pumps the dispatcher concurrently.

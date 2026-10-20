@@ -10,5 +10,6 @@
     <ProjectReference Include="../../source/Vivre.Desktop/Vivre.Desktop.csproj" />
     <!-- MainWindow uses an entry-assembly pack URI; reuse the production icon in this test host. -->
     <Resource Include="../../source/Vivre.Desktop/Assets/AppIcon.png" Link="Assets/AppIcon.png" />
+    <EmbeddedResource Include="../../source/Vivre.Desktop/App.xaml" LogicalName="Vivre.App.xaml" />
   </ItemGroup>
 </Project>

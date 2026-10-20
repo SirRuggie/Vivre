@@ -43,6 +43,7 @@ internal static class Program
         bool librarySearchOnly = args.Length == 2 && args[0] == "--library-search-only";
         bool settingsClarityOnly = args.Length == 2 && args[0] == "--settings-clarity-only";
         bool patchingClarityOnly = args.Length == 2 && args[0] == "--patching-clarity-only";
+        bool operationalClarityOnly = args.Length == 2 && args[0] == "--operational-clarity-only";
         bool workspaceSafetyOnly = args.Length == 2 && args[0] == "--workspace-safety-only";
         bool tabOptionsOnly = args.Length == 2 && args[0] == "--tab-options-only";
         bool adLinuxOnly = args.Length == 2 && args[0] == "--ad-linux-only";
@@ -52,15 +53,35 @@ internal static class Program
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly && !actionsMenuOnly && !peopleOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !operationalClarityOnly && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly && !actionsMenuOnly && !peopleOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
-        var app = new Vivre.Desktop.App { ShutdownMode = ShutdownMode.OnExplicitShutdown };
-        app.InitializeComponent(); // resources only; Application.Run/OnStartup is never called
+        var app = new AuditApplication { ShutdownMode = ShutdownMode.OnExplicitShutdown };
+        // Read the exact production dictionaries without instantiating its x:Class/composition root.
+        using (var source = Assembly.GetExecutingAssembly().GetManifestResourceStream("Vivre.App.xaml")!)
+        {
+            Assembly.Load("Wpf.Ui"); // Register its XML namespace before loose-XAML resource parsing.
+            var document = System.Xml.Linq.XDocument.Load(source);
+            var application = document.Root!;
+            var resources = application.Element(application.Name.Namespace + "Application.Resources")!.Elements().Single();
+            foreach (var attribute in application.Attributes().Where(a => a.IsNamespaceDeclaration))
+                resources.SetAttributeValue(attribute.Name, attribute.Value.Replace("clr-namespace:Vivre.Desktop", "clr-namespace:Vivre.Desktop;assembly=Vivre"));
+            app.Resources = (ResourceDictionary)System.Windows.Markup.XamlReader.Parse(resources.ToString());
+        }
+        System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(
+            () => { }, System.Windows.Threading.DispatcherPriority.ApplicationIdle);
+        if (!app.StartupSuppressed || app.Windows.Count != 0)
+            throw new InvalidOperationException("The isolated audit must suppress production startup and open no application windows.");
         string root = Path.Combine(Path.GetTempPath(), "VivrePerformanceAudit_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
+        WorkspaceProbe.SettingsRoot = Path.Combine(root, "workspaces");
         try
         {
+            if (operationalClarityOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(OperationalClarityProbe.Run(), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (peopleOnly)
             {
                 string renders = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "people-renders");
@@ -174,6 +195,14 @@ internal static class Program
                 Directory.Delete(root, true);
             app.Shutdown();
         }
+    }
+
+    // Application queues OnStartup from its constructor: pumping a dispatcher can run it even
+    // without Application.Run. Never construct production services, load sessions, or show the shell.
+    private sealed class AuditApplication : Application
+    {
+        public bool StartupSuppressed { get; private set; }
+        protected override void OnStartup(StartupEventArgs e) => StartupSuppressed = true;
     }
 
     private static object FilterExperiment()
