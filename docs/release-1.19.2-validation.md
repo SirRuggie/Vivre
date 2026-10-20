@@ -1,6 +1,8 @@
 # Vivre 1.19.2 validation — 2026-10-20
 
-Scope: the saved-list display-name correction already in Unreleased and U-41's already-open list behavior. This is local release preparation, not a signed package or live-server validation. No remote operations were authorized or run.
+Scope: the previously accumulated saved-list display-name correction and U-41's already-open list behavior. This is local release preparation, not a signed package or live-server validation. No remote operations were authorized or run.
+
+Implementation commit: `cac0fc7` on `master`.
 
 | Requested capability | Status and evidence |
 | --- | --- |
