@@ -24,7 +24,7 @@
 
 ## ▶ DO NEXT — recommended order
 
-**Current follow-up (2026-10-20):** [S-1 and U-40–U-42 review](vivre-follow-up-review-2026-10-20.md). Next practical batch: U-40/U-42 saved-list read and responsiveness work, with U-41 duplicate tab titles if it remains a small adjacent change. S-1 is recorded below for a separate security/availability decision; no implementation is authorized by this backlog entry.
+**Current follow-up (2026-10-20):** [S-1 and U-40–U-42 review](vivre-follow-up-review-2026-10-20.md). Shaun deferred U-40's rare cross-instance saved-list race and U-42's unmeasured list-loading pause; revisit only with an observed problem or changed priority. U-41 duplicate tab titles remains a low-priority polish item. S-1 is recorded below for a separate security/availability decision; no implementation is authorized by this backlog entry.
 
 - **[S-1] — WinRM update-agent folder permissions (conditional high, decision pending).** The launcher currently ignores an ACL-setting failure before registering a SYSTEM task. Verify the folder's *effective* permissions first, try to repair them if needed, and consider stopping only a **new** launch on that host if the folder remains unsafe. Do not fail solely because `Set-Acl` reports an error, interrupt an update already running, or change other patching lanes. Confirm normal launch and failure behavior in focused tests before choosing a fix; no unsafe production folder or exploit has been confirmed. Shaun's operational concern: an unnecessary permission failure must not prevent an otherwise safe update from finishing.
 

@@ -426,6 +426,6 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 
 See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for evidence, conditions, security finding S-1, and validation limits. These findings are not implementation authorization.
 
-- [ ] **U-40 · Medium — Revalidate a saved list at choice confirmation.** An external save/delete while Append/Replace/New tab is open can leave the new tab labeled as the current saved list while showing older names.
+- [ ] **U-40 · Medium — Revalidate a saved list at choice confirmation.** An external save/delete while Append/Replace/New tab is open can leave the new tab labeled as the current saved list while showing older names. **Deferred by Shaun (2026-10-20):** expected to be rare; revisit if observed or priorities change.
 - [ ] **U-41 · Low — Distinguish repeated saved-list tabs.** Opening one saved list repeatedly creates identical tab titles.
-- [ ] **U-42 · Medium when storage is slow — Keep list menu/open reads responsive.** List enumeration and content reads currently run on the UI thread; deployment-host latency has not been measured.
+- [ ] **U-42 · Medium when storage is slow — Keep list menu/open reads responsive.** List enumeration and content reads currently run on the UI thread; deployment-host latency has not been measured. **Deferred by Shaun (2026-10-20):** measure an actual pause before adding loading behavior.
