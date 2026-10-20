@@ -69,4 +69,4 @@ The exact reported five-person pause on the deployment host remains unverified. 
 
 ## Current release — 1.19.1
 
-People uses Quick Add and Paste list, Open review, and a row right-click menu with review/edit before copying; the footer Row actions button was removed. Results/review column widths and order are remembered independently with separate resets under Actions. The deployment-host responsiveness check (U-39) remains open.
+People uses Quick Add and Paste list, Open review, and a row right-click menu with review/edit before copying; the footer Row actions button was removed. Results/review column widths and order are remembered independently with separate resets under Actions. Shaun confirmed the deployment-host responsiveness issue (U-39) resolved on 2026-10-20; closure is based on operator feedback, not a new local benchmark.

@@ -4,7 +4,7 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Current release: **1.19.1** (2026-10-19). U-21/U-22 native validation and U-39 deployment-host responsiveness remain open. Earlier version references below describe the implementation checkpoints at that time.
+Current release: **1.19.1** (2026-10-19). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
 
 ## How to use
 
@@ -328,12 +328,12 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - [x] **U-38 · Medium — Make People follow the Fleet entry and review flow.**
   - **Why:** A flat button row and hidden review interactions made People feel disconnected from the rest of Vivre.
   - **Delivered:** Shared Fleet toolbar style; Quick Add; existing multiline paste dialog reused with People validation, no replacement/tabs/saved-list controls; fixed bottom-right Open review, plus explicit double-click/right-click guidance; the later row-menu correction below removes the redundant Row actions button.
-- [ ] **U-39 · Medium — Keep People additions and result updates responsive.**
+- [x] **U-39 · Medium — Keep People additions and result updates responsive.**
   - **Why:** Synchronous clipboard access and repeated grid refreshes could interrupt the input flow.
   - **Delivered:** Paste opens without reading the clipboard automatically; validated additions yield every 100 rows, fast results every 25, and expensive aggregate/filter refreshes coalesce to 100ms. Stop during adding keeps submitted inputs as Stopped and prevents automatic lookup restart.
 - **U-33–U-36 delivered within this flow change:** identity columns pinned; Actions explicitly says Copy all resolved emails; Look up again is enabled only for eligible retry states; duplicate-only paste no longer dirties exported results.
 - **Evidence:** Release build, People/dispatcher probes and Fleet workspace/menu/tab regressions passed; independent read-only reviewer caught the footer-menu anchor issue, corrected before final re-review. See [People validation](people-lookup-validation.md) for measurements and remaining host-specific validation.
-- **Limits:** The reported five-person remote clipboard/host pause is not reproduced; native/RDP/DPI/physical-input checks remain open under U-21/U-22. U-39 remains open for deployment-host confirmation despite the delivered local mitigation and passing tests.
+- **Limits:** The reported five-person remote clipboard/host pause is not reproduced; native/RDP/DPI/physical-input checks remain open under U-21/U-22. Shaun confirmed U-39 resolved on 2026-10-20 based on deployment use; this closes the reported responsiveness issue without claiming a universal performance guarantee.
 
 ## U-29 / U-30 delivery ledger (2026-10-19)
 
@@ -406,3 +406,9 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 
 - Removed the 300-pixel list-status cap. Health uses the full available banner width; Patching reserves only the space needed for its update-options summary. Ellipsis applies only when the available space is actually exhausted; full text remains in the tooltip.
 - Verified: Release build and existing patching-clarity/banner probe passed. This is a layout-only change; no live operations were run. Build retains the known missing-signing-certificate warning.
+
+
+## Operator validation update (2026-10-20)
+
+- U-39 closed: Shaun explicitly confirmed the People responsiveness issue resolved.
+- U-21/U-22: Shaun reports other UI behavior seems fine so far in normal use; retain the specific Windows scaling, physical keyboard, and spoken screen-reader checks as unverified rather than treating them as reported defects.

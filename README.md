@@ -107,7 +107,7 @@ Column widths and order are remembered separately for Health, Patching, People r
 ## Roadmap
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
-- Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22), plus People responsiveness on the deployment host (U-39); see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
+- Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22); People responsiveness (U-39) was confirmed resolved by the operator on 2026-10-20; see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a
