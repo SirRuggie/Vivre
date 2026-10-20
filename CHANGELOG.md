@@ -6,6 +6,8 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.20.1 — 2026-10-20
+
 ### Changed
 
 - Simplify list organization into one searchable window, retaining the right-click move shortcut; choose or create a folder directly while saving a list, with top-level defaults for new lists and preserved folders for existing lists unless explicitly changed.

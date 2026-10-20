@@ -2,7 +2,7 @@
 
 Scope: real, read-only AD lookup in a separate People section; no machine-operation changes.
 
-Current source release: **1.20.0**, including the approved People improvements through U-57; see [release validation](release-1.20.0-validation.md). Earlier version/Unreleased references record the validation checkpoints when those changes were implemented.
+Current source release: **1.20.1**, retaining the approved People improvements through U-57; see [release validation](release-1.20.1-validation.md). Earlier version/Unreleased references record the validation checkpoints when those changes were implemented.
 
 | Capability | Acceptance | Status |
 |---|---|---|

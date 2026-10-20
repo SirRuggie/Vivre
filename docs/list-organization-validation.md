@@ -1,6 +1,6 @@
 # Saved-list organization — U-58/U-59 acceptance ledger
 
-Living implementation record, 2026-10-20. Scope: simplify organization and allow folder choice while saving; preserve list names/files, overwrite approvals, tab state, patching and flat top-level lists. Source version remains 1.20.0 until a release is requested; this work is **Unreleased after 1.20.0**.
+Living implementation record, 2026-10-20. Scope: simplify organization and allow folder choice while saving; preserve list names/files, overwrite approvals, tab state, patching and flat top-level lists. This work is included in **1.20.1**; see [release validation](release-1.20.1-validation.md). The execution evidence below records the implementation checkpoint before the release metadata update.
 
 | Requested capability | Status |
 | --- | --- |

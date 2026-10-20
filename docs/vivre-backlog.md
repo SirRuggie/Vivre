@@ -2,9 +2,9 @@
 
 Reconciled **2026-10-20** against release **1.20.0**, source baseline `5c56ea3`, later acceptance records and targeted source reads. This is a documentation reconciliation, not a new full audit or production test.
 
-The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The [release ledger](release-1.20.0-validation.md) identifies the released source and packaging limits. The previous tracker is preserved verbatim in the [dated snapshot](vivre-backlog-snapshot-2026-10-20.md); frozen findings and historical test results remain unchanged.
+The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The [release ledger](release-1.20.1-validation.md) identifies the current released source and packaging limits. The previous tracker is preserved verbatim in the [dated snapshot](vivre-backlog-snapshot-2026-10-20.md); frozen findings and historical test results remain unchanged.
 
-**Unreleased after 1.20.0:** U-58/U-59 simplify the saved-list organizer and add save-time folder choice; see [acceptance and review](list-organization-validation.md). No patching behavior or deferred item is changed.
+**Current release 1.20.1:** U-58/U-59 simplify the saved-list organizer and add save-time folder choice; see [acceptance and review](list-organization-validation.md). No patching behavior or deferred item is changed.
 
 ## Status rules
 
@@ -23,11 +23,11 @@ The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The 
 | **Native popup behavior** | The library-search probe could not acquire keyboard focus in the latest shared-navigation batch; focused picker/editor checks passed separately. Keep native popup focus unverified within U-22. |
 | **Long-running resource use** | No current-build whole-app memory/CPU/handle/native-RDP soak proves that every leak or stall is absent. Repeated tab/Details/RDP open-close and large-fleet work are measurement targets, not confirmed leaks. |
 | **Deployment integration** | Latest-build directory, WinRM/DCOM/SMB, local-host update, multi-server CU throughput and EDR behavior need deployment-host evidence where relevant; older canaries and dummy-host checks do not cover every environment. No live operation is authorized by this tracker. |
-| **Packaging / restart** | 1.20.0 release metadata/build checks are recorded; Shaun is producing/deploying the ZIP. Do not infer that the latest signed ZIP, deployed startup or upgrade/persistence checks ran here. |
+| **Packaging / restart** | See the 1.20.1 release ledger for metadata/build checks; Shaun will produce/deploy the ZIP. Do not infer that the latest signed ZIP, deployed startup or upgrade/persistence checks ran here. |
 | **Completion notifications** | F20's actual MainWindow/InfoBar queue/cap/order/dismissal behavior was exercised in the 1.17.3 acceptance work; visible native tray behavior remains unverified. |
 | **Filesystem privilege cases** | Privileged file-symlink cases were skipped where Windows rights were unavailable; directory-junction coverage did execute. Do not merge those into one “all passed” claim. |
 
-Evidence: [U-21/U-22 matrix](ui-ux-u21-u22-validation.md), [UI ledger](vivre-ui-ux-backlog.md), [People ledger](people-lookup-validation.md), [audit acceptance](vivre-audit-implementation-2026-10-14.md), [performance acceptance](vivre-performance-implementation-2026-10-14.md), [1.17.3 notification checks](release-1.17.3-validation.md), [current release](release-1.20.0-validation.md).
+Evidence: [U-21/U-22 matrix](ui-ux-u21-u22-validation.md), [UI ledger](vivre-ui-ux-backlog.md), [People ledger](people-lookup-validation.md), [audit acceptance](vivre-audit-implementation-2026-10-14.md), [performance acceptance](vivre-performance-implementation-2026-10-14.md), [1.17.3 notification checks](release-1.17.3-validation.md), [current release](release-1.20.1-validation.md).
 
 ## Explicitly deferred
 
