@@ -6,8 +6,11 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.19.2 — 2026-10-20
+
 ### Fixed
 - Preserve punctuation such as /, : and | in saved-list display names using reversible filename encoding, while retaining overwrite and recovery protections.
+- Recognize saved lists already open in the same Health or Patching section and switch to the existing tab on confirmation without replacing its machines or results; the current tab can still Append or Replace its own list.
 
 ## 1.19.1 — 2026-10-19
 

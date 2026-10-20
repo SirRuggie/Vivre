@@ -134,16 +134,61 @@ internal static class TabHandoffProbe
                 try { shell.OpenPastedListInNewTab(origin, []); throw new Exception("Empty paste accepted."); } catch (ArgumentException) { }
                 Require(shell.AllTabs.Count() == before, "Empty paste created a tab.");
             }
+            WorkspaceViewModel? healthSavedTab = null;
+            WorkspaceViewModel? patchingSavedTab = null;
             foreach (var origin in new[] { selectedHealth, oldPatch })
             {
+                if (origin.IsUpdateMode)
+                    Require(shell.FindOpenSavedListTab(origin, "Saved example") is null,
+                        "A Health saved list blocked opening the same name in Patching.");
                 var originalRows = origin.Computers.ToArray();
                 shell.OpenPastedListInNewTab(origin, ["DUMMY-SAVED"], "Saved example");
-                Require(shell.SelectedTab!.SavedListName == "Saved example" && shell.SelectedTab.Title == "Saved example"
-                    && shell.SelectedTab.IsUpdateMode == origin.IsUpdateMode, "Saved-list tab lost identity or section.");
+                var savedTab = shell.SelectedTab!;
+                Require(savedTab.SavedListName == "Saved example" && savedTab.Title == "Saved example"
+                    && savedTab.IsUpdateMode == origin.IsUpdateMode, "Saved-list tab lost identity or section.");
                 Require(origin.Computers.SequenceEqual(originalRows), "Opening saved list in new tab changed source.");
+                savedTab.Title = "Renamed by operator";
+                savedTab.Computers[0].CommandResult = "Keep this result";
+                savedTab.AddComputers(["DUMMY-UNSAVED"]);
+                Require(savedTab.Computers.Count == 2 && savedTab.SavedListName == "Saved example",
+                    "Probe failed to establish changed list membership.");
+                Require(ReferenceEquals(shell.FindOpenSavedListTab(origin, "saved EXAMPLE", excludeSource: true), savedTab),
+                    "Already-open detection used the editable title or ignored saved-list identity.");
+                Require(ReferenceEquals(shell.FindOpenSavedListTab(savedTab, "Saved example"), savedTab)
+                    && shell.FindOpenSavedListTab(savedTab, "Saved example", excludeSource: true) is null,
+                    "Current-tab and other-tab lookup were not distinguished.");
+                int tabCount = shell.AllTabs.Count();
+                if (origin.IsUpdateMode) shell.SelectedPatchingTab = origin; else shell.SelectedHealthTab = origin;
+                var selectExisting = typeof(MainWindow).GetMethod("SelectAlreadyOpenSavedList", BindingFlags.Instance | BindingFlags.NonPublic)!;
+                Require((bool)selectExisting.Invoke(window, [origin, "Saved example", true,
+                    (Func<WorkspaceViewModel, bool>)(_ => false)])!
+                    && ReferenceEquals(shell.SelectedTab, origin) && shell.AllTabs.Count() == tabCount,
+                    "Cancel changed the selected tab or created another tab.");
+                Require((bool)selectExisting.Invoke(window, [origin, "saved EXAMPLE", true,
+                    (Func<WorkspaceViewModel, bool>)(tab => ReferenceEquals(tab, savedTab))])!
+                    && ReferenceEquals(shell.SelectedTab, savedTab)
+                    && shell.AllTabs.Count() == tabCount && savedTab.Computers.Count == 2
+                    && savedTab.Computers[0].CommandResult == "Keep this result",
+                    "OK did not select the already-open tab or changed its results/unsaved membership.");
+                Require(!(bool)selectExisting.Invoke(window, [savedTab, "Saved example", true,
+                    (Func<WorkspaceViewModel, bool>)(_ => throw new Exception("Prompted for current tab before Replace."))])!,
+                    "Reopening the current tab's own list blocked Append/Replace.");
+                Require((bool)selectExisting.Invoke(window, [savedTab, "Saved example", false,
+                    (Func<WorkspaceViewModel, bool>)(_ => true)])! && shell.AllTabs.Count() == tabCount,
+                    "New tab duplicated the current tab's own saved list.");
+                if (origin.IsUpdateMode) patchingSavedTab = savedTab; else healthSavedTab = savedTab;
                 shell.OpenPastedListInNewTab(origin, [], "Empty saved list");
-                Require(shell.SelectedTab!.Computers.Count == 0, "Empty saved list could not open in a new tab.");
+                var emptyTab = shell.SelectedTab!;
+                Require(emptyTab.Computers.Count == 0, "Empty saved list could not open in a new tab.");
+                Require((bool)selectExisting.Invoke(window, [emptyTab, "Saved example", true,
+                    (Func<WorkspaceViewModel, bool>)(_ => true)])!
+                    && ReferenceEquals(shell.SelectedTab, savedTab) && shell.AllTabs.Count() == tabCount + 1,
+                    "An empty tab opened a second copy instead of selecting the existing list.");
             }
+            Require(ReferenceEquals(shell.FindOpenSavedListTab(selectedHealth, "Saved example"), healthSavedTab)
+                && ReferenceEquals(shell.FindOpenSavedListTab(oldPatch, "Saved example"), patchingSavedTab),
+                "Saved-list lookup crossed the Health/Patching section boundary.");
+            Require(!shell.SelectOpenTab(source), "A removed tab was selected.");
             var choice = new LoadComputersWindow("Saved example", _ => { });
             Require(((RadioButton)choice.FindName("NewTabMode")).IsChecked == true
                 && ((TextBox)choice.FindName("NamesBox")).Visibility == Visibility.Collapsed,
@@ -158,6 +203,7 @@ internal static class TabHandoffProbe
             paste.Close();
             return new { pass = true, inactiveTabMenu = true, allNames = true, independentRowsAndDefaults = true,
                 sourcePreserved = true, normalAutoChecks = true, navigation = true, emptyRepeatedStaleAndFailure = true,
+                alreadyOpenSavedListIdentityAndSelection = true,
                 scope = "Production XAML/handler/shell with dummy workspaces, fake offline transports, remote-service null sentinels and temporary settings; no live hosts or visible UI" };
         }
         finally

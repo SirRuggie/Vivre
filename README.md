@@ -24,7 +24,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Actions dropdown** - select machines, then choose Check software, Stage software, Run script, or WhatsUp Gold maintenance; each opens its existing review dialog. Right-click retains all commands, with Connection and WhatsUp Gold grouped into submenus.
 - **Per-tab update options** — each Patching tab owns its update source, driver setting, exclusions, and applicable/installed scope; its source appears in the tab header and toolbar, and new tabs start with Windows Update.
 - **Tab saving** - right-click a Health or Patching tab and choose Save tab as list; saves that tab through the existing name/overwrite checks without switching tabs.
-- **Opening saved lists** — empty tabs open directly; populated tabs offer Append list, Replace list, or New tab (default). Append preserves existing results.
+- **Opening saved lists** — empty tabs open directly; populated tabs offer Append list, Replace list, or New tab (default). Append preserves existing results. If the list is already open in the same Health/Patching section, OK switches to that tab without changing its machines or results; Cancel stays put. Reopening a list in its current tab still offers Append/Replace, while New tab avoids a duplicate.
 - **List names** — date/time punctuation such as `/`, `:` and `|` is preserved; legacy lists remain accessible without automatic renaming.
 - **List clarity** — each tab shows its saved-list identity and membership changes; Paste and Quick Add accept the same separators, and machine names stay visible while scrolling results.
 - **Workspace protection** — Paste adds without resetting existing results; explicit replacement and Clear confirm removals and refuse while work is active. Saved-list overwrites require approval and reject stale revisions; window and tray Exit warn about active or scheduled work.
@@ -127,7 +127,7 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.19.1** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
+Current release: **1.19.2** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 

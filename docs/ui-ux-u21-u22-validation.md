@@ -1,6 +1,6 @@
 # U-21/U-22 — layout and accessibility validation
 
-Date: 2026-10-19. Status: **product fixes implemented; automated validation passed; native-environment validation remains open.** Current release: 1.19.1; evidence below was collected during development from the 1.18.0 baseline. This is not a full accessibility certification or a claim that every layout combination is verified.
+Date: 2026-10-19. Status: **product fixes implemented; automated validation passed; native-environment validation remains open.** Current release: 1.19.2; evidence below was collected during development from the 1.18.0 baseline. This is not a full accessibility certification or a claim that every layout combination is verified.
 
 ## Implemented
 

@@ -53,6 +53,7 @@ and retired. **Load-bearing constraints — DON'T break:**
 - **Patch options are per workspace, session-only.** Each workspace clones defaults; new tabs start with Windows Update, and source labels appear in Patching headers and the active toolbar. Credentials and read throttling remain app-wide.
 - **List clarity:** membership status uses the existing coalesced fleet timer and the last successful open/save snapshot, never polling disk or reacting to scan results. Paste and Quick Add share ComputerNameInput; Name is the fixed first column in both grids.
 - **Machine list safety:** Paste defaults to Add; SetComputers reconciles retained rows and order. Destructive replacement uses WorkspaceListActions and refuses active operations or undrained monitor passes. List opens use LoadRequired; list overwrites require a revision fingerprint under the existing cross-process lease. Tray Exit must use Close(), not Application.Shutdown(), so cancellation is honored.
+- **Already-open saved lists:** match `SavedListName` within the same Health/Patching section, not editable tab titles. OK selects the existing tab without refreshing machines/results; Cancel changes nothing. Reopening the current tab's own list must still allow Append/Replace, while New tab must not duplicate it.
 - **The bottom dock is window-level/global** (Activity + per-machine Updates), not per-tab.
 - **Mode is fixed by Fleet section, not a per-tab toggle** — Health tabs are health mode, Patching
   tabs are patching mode.
@@ -327,7 +328,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 
 - Search reuses existing menu entries and grouped script collection views; never read files per keystroke or execute a script on search. Keep the open script pinned and editor/selection guards intact, including rename/category saves.
 - List deletion moves the approved revision into `Lists/Deleted/<GUID>` on the same volume. Restore is explicit, never overwrites, and does not replace a workspace. Reject linked recovery folders/payloads; retain existing save/delete leases and revision checks.
-- Current release is 1.19.1; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
+- Current release is 1.19.2; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
 
 ## Health-to-Patching handoff
 

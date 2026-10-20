@@ -1710,10 +1710,29 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    private bool SelectAlreadyOpenSavedList(WorkspaceViewModel source, string name, bool excludeCurrentTab,
+        Func<WorkspaceViewModel, bool>? confirm = null)
+    {
+        var shell = Shell ?? throw new InvalidOperationException("The workspace is unavailable.");
+        var existing = shell.FindOpenSavedListTab(source, name, excludeCurrentTab);
+        if (existing is null) return false;
+        bool accepted = confirm?.Invoke(existing) ?? System.Windows.MessageBox.Show(this,
+            $"'{name}' is already open in the '{existing.Title}' tab.\n\nSelect that tab? Its machines and results will stay as they are.",
+            "List already open", System.Windows.MessageBoxButton.OKCancel, MessageBoxImage.Information,
+            System.Windows.MessageBoxResult.OK) == System.Windows.MessageBoxResult.OK;
+        if (accepted && !shell.SelectOpenTab(existing))
+            throw new InvalidOperationException("That tab is no longer open. Open the list again.");
+        return true;
+    }
+
     private void OpenSavedList(WorkspaceViewModel vm, string name)
     {
         try
         {
+            var shell = Shell ?? throw new InvalidOperationException("The workspace is unavailable.");
+            // An empty tab should not load a second copy, and a populated tab should not open
+            // a second copy while the list is already associated with another tab in this section.
+            if (SelectAlreadyOpenSavedList(vm, name, excludeCurrentTab: true)) return;
             var names = vm.ReadSavedList(name); // read before changing the existing workspace
             void ReplaceAndRecord()
             {
@@ -1733,8 +1752,10 @@ public partial class MainWindow : FluentWindow
                 if (vm.IsClosed) throw new InvalidOperationException("This tab has been closed.");
                 if (mode == LoadComputersWindow.SavedListOpenMode.NewTab)
                 {
-                    var shell = Shell ?? throw new InvalidOperationException("The workspace is unavailable.");
-                    shell.OpenPastedListInNewTab(vm, names.ToArray(), name);
+                    // Reopening the current tab's own list may still use Replace or Append above;
+                    // choosing New tab must not create another tab with the same saved identity.
+                    if (!SelectAlreadyOpenSavedList(vm, name, excludeCurrentTab: false))
+                        shell.OpenPastedListInNewTab(vm, names.ToArray(), name);
                 }
                 else if (mode == LoadComputersWindow.SavedListOpenMode.Append)
                     vm.AddComputers(names);

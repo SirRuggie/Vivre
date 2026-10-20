@@ -166,6 +166,34 @@ public partial class ShellViewModel : ObservableObject
         return true;
     }
 
+    /// <summary>Find the same saved list in the source workspace's Fleet section, regardless of tab title.</summary>
+    public WorkspaceViewModel? FindOpenSavedListTab(WorkspaceViewModel source, string name, bool excludeSource = false)
+    {
+        ObservableCollection<WorkspaceViewModel> tabs = PatchingTabs.Contains(source) ? PatchingTabs
+            : HealthTabs.Contains(source) ? HealthTabs
+            : throw new InvalidOperationException("The original tab is no longer open.");
+        return tabs.FirstOrDefault(tab => (!excludeSource || tab != source) && !tab.IsClosed
+            && string.Equals(tab.SavedListName, name, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Select a still-open tab without changing its machines or results.</summary>
+    public bool SelectOpenTab(WorkspaceViewModel tab)
+    {
+        if (HealthTabs.Contains(tab) && !tab.IsClosed)
+        {
+            SelectedHealthTab = tab;
+            ActiveFleetSection = FleetSection.Health;
+            return true;
+        }
+        if (PatchingTabs.Contains(tab) && !tab.IsClosed)
+        {
+            SelectedPatchingTab = tab;
+            ActiveFleetSection = FleetSection.Patching;
+            return true;
+        }
+        return false;
+    }
+
     /// <summary>Open pasted or saved names in a fresh tab in the originating section; existing work stays untouched.</summary>
     public void OpenPastedListInNewTab(WorkspaceViewModel source, string[] names, string? savedListName = null)
     {

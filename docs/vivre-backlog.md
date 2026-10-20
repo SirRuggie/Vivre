@@ -2,8 +2,9 @@
 
 > Working tracker for things found during build work that are NOT yet done.
 > As items get fixed, move them to DONE with the commit hash. Add new finds under the right tier.
+> **Current release: 1.19.2 (2026-10-20).** The DO NEXT section and [UI/UX backlog](vivre-ui-ux-backlog.md) carry current decisions; the release history below is point-in-time context.
 > **Order below is the recommended do-next order** (Ruggie can override — it's a recommendation,
-> not a mandate). Last refreshed: **2026-07-29** (release **1.17.1** — a patch release on top of 1.17.0: a
+> not a mandate). Legacy baseline: **2026-07-29** (release **1.17.1** — a patch release on top of 1.17.0: a
 > hand Force reboot now proves itself by UPTIME COLLAPSE rather than by waiting to see the machine drop off
 > the network, so a fast-rebooting VM no longer leaves its row stuck on "Reboot forced — going down"
 > (field-confirmed 2026-07-28); the proof is clock-immune; multi-row baselines are captured concurrently; and
@@ -18,13 +19,13 @@
 > Older release narration lives with its DONE entries in docs/archive/vivre-backlog-done-archive.md.
 > Everything below is on `master`. **Commit hashes in the DONE list predate a history rewrite and may
 > not all resolve — `git log` is the authoritative restore-point list, and the per-entry test counts
-> are point-in-time only (current suite is 1200 green as of 2026-07-28, release 1.17.1).**
+> are point-in-time only (the then-current suite was 1200 green as of 2026-07-28, release 1.17.1).**
 
 ---
 
 ## ▶ DO NEXT — recommended order
 
-**Current follow-up (2026-10-20):** [S-1 and U-40–U-42 review](vivre-follow-up-review-2026-10-20.md). Shaun deferred U-40's rare cross-instance saved-list race and U-42's unmeasured list-loading pause; revisit only with an observed problem or changed priority. U-41 duplicate tab titles remains a low-priority polish item. S-1 is recorded below for a separate security/availability decision; no implementation is authorized by this backlog entry.
+**Current follow-up (2026-10-20):** [S-1 and U-40–U-42 review](vivre-follow-up-review-2026-10-20.md). Shaun deferred U-40's rare cross-instance saved-list race and U-42's unmeasured list-loading pause; revisit only with an observed problem or changed priority. U-41 already-open list selection is complete in 1.19.2; see the [UI/UX ledger](vivre-ui-ux-backlog.md). S-1 remains a separate security/availability decision; no implementation is authorized by this backlog entry.
 
 - **[S-1] — WinRM update-agent folder permissions (conditional high, decision pending).** The launcher currently ignores an ACL-setting failure before registering a SYSTEM task. Verify the folder's *effective* permissions first, try to repair them if needed, and consider stopping only a **new** launch on that host if the folder remains unsafe. Do not fail solely because `Set-Acl` reports an error, interrupt an update already running, or change other patching lanes. Confirm normal launch and failure behavior in focused tests before choosing a fix; no unsafe production folder or exploit has been confirmed. Shaun's operational concern: an unnecessary permission failure must not prevent an otherwise safe update from finishing.
 
