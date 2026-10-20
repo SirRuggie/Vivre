@@ -97,6 +97,8 @@ U-25/U-26 extend --actions-menu-only with explicit maintenance naming and disabl
 
 U-23/U-24 extend --actions-menu-only with selected/all-tab/this-machine labels, changed-menu membership/name/selection rejection, a real routed-click guard, and cancellation refusal/approval/selection-change/rename/removal/closure/empty cases. Dispatch is intercepted: no scheduled task is created or removed.
 
+U-44 extends --library-search-only with grouped saved-list search and exact list selection. Core `ComputerListFoldersTests` cover persistence across instances, moving, renaming, removing, file-content preservation, recovery, invalid operations, and damaged metadata using temporary dummy lists.
+
 ## People lookup probes
 
 `--people-only <output.json>` exercises the real People view/model with dummy directory responses: exact/review/no-mail matching, copying/CSV escaping, paste preservation, retry/error/stop behavior, navigation and fleet-shortcut isolation. It saves offscreen layout renders under `.artifacts/people-renders`. This is not physical keyboard, clipboard, save-dialog, screen-reader, or native DPI validation.

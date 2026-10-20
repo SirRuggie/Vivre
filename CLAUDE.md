@@ -328,6 +328,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 
 - Search reuses existing menu entries and grouped script collection views; never read files per keystroke or execute a script on search. Keep the open script pinned and editor/selection guards intact, including rename/category saves.
 - List deletion moves the approved revision into `Lists/Deleted/<GUID>` on the same volume. Restore is explicit, never overwrites, and does not replace a workspace. Reject linked recovery folders/payloads; retain existing save/delete leases and revision checks.
+- Saved-list folders are bookmark-style metadata in `Lists/list-folders.json`; existing `.txt`/`.vlist` files stay flat and appear directly in Lists until moved. Folder create/rename/remove/move must not rewrite list contents or identity; removing a folder returns its lists to the top level. Rebuild grouped Open/Delete menus from current list files, and keep those files visible at the top level if folder metadata is unreadable.
 - Current release is 1.19.2; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
 
 ## Health-to-Patching handoff

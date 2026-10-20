@@ -1621,6 +1621,11 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
 
     /// <summary>Names of the saved machine lists.</summary>
     public IReadOnlyList<string> SavedLists() => _lists.List();
+    public ListFolderSnapshot SavedListFolders(IReadOnlyList<string> names) => new ComputerListFolders(_lists).Snapshot(names);
+    public void CreateListFolder(string name) => new ComputerListFolders(_lists).Create(name);
+    public void RenameListFolder(string oldName, string newName) => new ComputerListFolders(_lists).Rename(oldName, newName);
+    public void RemoveListFolder(string name) => new ComputerListFolders(_lists).Remove(name);
+    public void MoveSavedList(string name, string? folder) => new ComputerListFolders(_lists).Move(name, folder);
     public IReadOnlyList<DeletedComputerList> DeletedLists() => _lists.DeletedLists();
     public void RestoreList(string id, string name) => _lists.Restore(id, name);
 

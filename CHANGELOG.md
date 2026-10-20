@@ -6,6 +6,10 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+
+- Organize saved machine lists into bookmark-style folders from the Lists menu, while keeping existing lists at the top level and their contents unchanged.
+
 ### Fixed
 
 - Saving a tab as a list now gives that tab the saved list's name after the save succeeds, while preserving its machines and results.

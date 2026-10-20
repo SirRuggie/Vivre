@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
 using Vivre.Desktop;
+using Vivre.Core.Computers;
 
 namespace Vivre.PerformanceAudit;
 
@@ -48,10 +49,55 @@ internal static class LibrarySearchProbe
             search.Clear();
             ((MenuItem)parent.Items[3]).RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
             if (chosen != 2) throw new InvalidOperationException("Duplicate labels selected the wrong recovery record.");
+            VerifyOrganizedLists();
             return new { routedTyping = true, keyboardFocus = true, clearButton = true, noMatches = true, exactDuplicateRecord = true,
+                organizedLists = true,
                 scope = "Production menu helper; offscreen native popup and routed WPF input, not physical mouse/keyboard or DPI testing" };
         }
         finally { menu.IsOpen = false; }
+    }
+
+    private static void VerifyOrganizedLists()
+    {
+        var parent = new MenuItem { Header = "Open list" };
+        var folders = new ListFolderSnapshot(["October Updates"],
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["Monthly"] = "October Updates" });
+        string? opened = null;
+        typeof(MainWindow).GetMethod("AddOrganizedListItems", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, [parent, new[] { "Current", "Monthly" }, folders, (Action<string>)(name => opened = name)]);
+        if (parent.Items.Count != 4 || ((MenuItem)parent.Items[1]).Header.ToString() != "Current"
+            || ((MenuItem)parent.Items[2]).Header.ToString() != "October Updates")
+            throw new InvalidOperationException("Top-level lists or folder grouping changed unexpectedly.");
+        var search = (Wpf.Ui.Controls.TextBox)((MenuItem)parent.Items[0]).Header;
+        var root = (MenuItem)parent.Items[1];
+        var folder = (MenuItem)parent.Items[2];
+        var child = (MenuItem)folder.Items[0];
+        search.Text = "monthly";
+        if (root.Visibility != Visibility.Collapsed || folder.Visibility != Visibility.Visible || child.Visibility != Visibility.Visible)
+            throw new InvalidOperationException("Search failed to find a list inside its folder.");
+        search.Text = "october";
+        if (folder.Visibility != Visibility.Visible || child.Visibility != Visibility.Visible)
+            throw new InvalidOperationException("Folder search did not expose its lists.");
+        child.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        if (opened != "Monthly") throw new InvalidOperationException("Folder list opened the wrong saved list.");
+
+        var move = new MenuItem { Header = "Move list" };
+        (string? List, string? Folder) moved = (null, null);
+        typeof(MainWindow).GetMethod("AddMoveListItems", BindingFlags.Static | BindingFlags.NonPublic)!
+            .Invoke(null, [move, new[] { "Current", "Monthly" }, folders,
+                (Action<string, string?>)((list, destination) => moved = (list, destination))]);
+        var current = (MenuItem)move.Items[1];
+        var monthly = (MenuItem)move.Items[2];
+        var intoFolder = (MenuItem)current.Items[1];
+        if (!intoFolder.IsEnabled) throw new InvalidOperationException("Unfoldered list cannot be moved into a folder.");
+        intoFolder.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        if (moved != ("Current", "October Updates"))
+            throw new InvalidOperationException("Move menu sent the wrong list or folder.");
+        var toTop = (MenuItem)monthly.Items[0];
+        if (!toTop.IsEnabled) throw new InvalidOperationException("Foldered list cannot be moved to the top level.");
+        toTop.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
+        if (moved != ("Monthly", null))
+            throw new InvalidOperationException("Top-level move sent the wrong list.");
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.IO;
 using System.Text;
+using Vivre.Core.Computers;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -1548,13 +1549,22 @@ public partial class MainWindow : FluentWindow
 
     // --- Lists ▾ drop-down ---
 
-    /// <summary>Rebuilds the Open and Delete list submenus every time the Lists flyout opens.</summary>
+    /// <summary>Rebuilds saved-list menus from current files and bookmark-style folder assignments.</summary>
     private void OnListsFlyoutOpened(object sender, RoutedEventArgs e)
     {
         if (sender is not ContextMenu cm) return;
 
         WorkspaceViewModel? vm = Shell?.SelectedTab as WorkspaceViewModel;
         IReadOnlyList<string> lists = vm?.SavedLists() ?? [];
+        ListFolderSnapshot folders;
+        string? folderError = null;
+        try { folders = vm?.SavedListFolders(lists) ?? new ListFolderSnapshot([], new Dictionary<string, string>()); }
+        catch (Exception ex)
+        {
+            // Folder metadata must never hide otherwise readable list files.
+            folders = new ListFolderSnapshot([], new Dictionary<string, string>());
+            folderError = ex.Message;
+        }
 
         // Find the Open list and Delete list items by Tag.
         MenuItem? openMenu = cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "OpenList");
@@ -1563,14 +1573,22 @@ public partial class MainWindow : FluentWindow
         if (openMenu is not null)
         {
             openMenu.Items.Clear();
-            AddListItems(openMenu, lists, (_, name) => { if (vm is not null) OpenSavedList(vm, name); });
+            AddOrganizedListItems(openMenu, lists, folders, name => { if (vm is not null) OpenSavedList(vm, name); });
             openMenu.IsEnabled = vm is not null;
         }
 
         if (deleteMenu is not null)
         {
             deleteMenu.Items.Clear();
-            AddListItems(deleteMenu, lists, (_, name) => { if (vm is not null) ConfirmDeleteList(vm, name); });
+            AddOrganizedListItems(deleteMenu, lists, folders, name => { if (vm is not null) ConfirmDeleteList(vm, name); });
+        }
+        if (cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "OrganizeLists") is { } organizeMenu)
+        {
+            organizeMenu.Items.Clear();
+            organizeMenu.IsEnabled = vm is not null && folderError is null;
+            organizeMenu.ToolTip = folderError;
+            if (vm is not null && folderError is null) AddListOrganizationItems(organizeMenu, vm, lists, folders);
+            else if (folderError is not null) organizeMenu.Items.Add(new MenuItem { Header = "Could not read folders", ToolTip = folderError, IsEnabled = false });
         }
         if (cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "RestoreList") is { } restoreMenu)
         {
@@ -1681,6 +1699,144 @@ public partial class MainWindow : FluentWindow
             foreach (var item in entries) item.Visibility = item.Header.ToString()!.Contains(query, StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed;
             empty.Visibility = entries.Any(item => item.Visibility == Visibility.Visible) ? Visibility.Collapsed : Visibility.Visible;
         };
+    }
+
+    private static void AddOrganizedListItems(MenuItem parent, IReadOnlyList<string> lists,
+        ListFolderSnapshot folders, Action<string> onClick)
+    {
+        var search = new Wpf.Ui.Controls.TextBox { Width = 260, PlaceholderText = "Search lists…", ClearButtonEnabled = true };
+        System.Windows.Automation.AutomationProperties.SetName(search, "Search lists");
+        parent.Items.Add(new MenuItem { Header = search, StaysOpenOnClick = true });
+        var roots = new List<(MenuItem Item, string Name)>();
+        var grouped = new List<(MenuItem Folder, string Name, List<(MenuItem Item, string Name)> Children)>();
+        foreach (string name in lists.Where(name => folders.FolderFor(name) is null))
+        {
+            var item = new MenuItem { Header = name };
+            item.Click += (_, _) => onClick(name);
+            parent.Items.Add(item);
+            roots.Add((item, name));
+        }
+        foreach (string folderName in folders.Folders.OrderBy(name => name, StringComparer.OrdinalIgnoreCase))
+        {
+            var folder = new MenuItem { Header = folderName };
+            var children = new List<(MenuItem Item, string Name)>();
+            foreach (string name in lists.Where(name => string.Equals(folders.FolderFor(name), folderName, StringComparison.OrdinalIgnoreCase)))
+            {
+                var item = new MenuItem { Header = name };
+                item.Click += (_, _) => onClick(name);
+                folder.Items.Add(item);
+                children.Add((item, name));
+            }
+            if (children.Count == 0) folder.Items.Add(new MenuItem { Header = "(empty)", IsEnabled = false });
+            parent.Items.Add(folder);
+            grouped.Add((folder, folderName, children));
+        }
+        var empty = new MenuItem { Header = lists.Count == 0 && folders.Folders.Count == 0 ? "(no lists)" : "(no matches)", IsEnabled = false };
+        parent.Items.Add(empty);
+        void Filter()
+        {
+            string query = search.Text.Trim();
+            foreach (var (item, name) in roots)
+                item.Visibility = name.Contains(query, StringComparison.OrdinalIgnoreCase) ? Visibility.Visible : Visibility.Collapsed;
+            foreach (var (folder, name, children) in grouped)
+            {
+                bool folderMatches = name.Contains(query, StringComparison.OrdinalIgnoreCase);
+                foreach (var (item, childName) in children)
+                    item.Visibility = folderMatches || childName.Contains(query, StringComparison.OrdinalIgnoreCase)
+                        ? Visibility.Visible : Visibility.Collapsed;
+                folder.Visibility = folderMatches || children.Any(child => child.Item.Visibility == Visibility.Visible)
+                    ? Visibility.Visible : Visibility.Collapsed;
+            }
+            empty.Visibility = roots.Any(root => root.Item.Visibility == Visibility.Visible)
+                || grouped.Any(group => group.Folder.Visibility == Visibility.Visible) ? Visibility.Collapsed : Visibility.Visible;
+        }
+        search.TextChanged += (_, _) => Filter();
+        Filter();
+    }
+
+    private void AddListOrganizationItems(MenuItem parent, WorkspaceViewModel vm,
+        IReadOnlyList<string> lists, ListFolderSnapshot folders)
+    {
+        var create = new MenuItem { Header = "New folder…" };
+        create.Click += (_, _) => PromptListFolder(vm, null);
+        parent.Items.Add(create);
+
+        var move = new MenuItem { Header = "Move list", IsEnabled = lists.Count > 0 && folders.Folders.Count > 0 };
+        AddMoveListItems(move, lists, folders, (name, folder) => MoveSavedList(vm, name, folder));
+        parent.Items.Add(move);
+
+        var rename = new MenuItem { Header = "Rename folder", IsEnabled = folders.Folders.Count > 0 };
+        AddListItems(rename, folders.Folders, (_, folder) => PromptListFolder(vm, folder));
+        parent.Items.Add(rename);
+
+        var remove = new MenuItem { Header = "Remove folder", IsEnabled = folders.Folders.Count > 0 };
+        AddListItems(remove, folders.Folders, (_, folder) => RemoveListFolder(vm, folder));
+        parent.Items.Add(remove);
+    }
+
+    private static void AddMoveListItems(MenuItem parent, IReadOnlyList<string> lists,
+        ListFolderSnapshot folders, Action<string, string?> onMove)
+    {
+        var search = new Wpf.Ui.Controls.TextBox { Width = 260, PlaceholderText = "Search lists…", ClearButtonEnabled = true };
+        System.Windows.Automation.AutomationProperties.SetName(search, "Search lists to move");
+        parent.Items.Add(new MenuItem { Header = search, StaysOpenOnClick = true });
+        var entries = new List<MenuItem>();
+        foreach (string name in lists)
+        {
+            var item = new MenuItem { Header = name };
+            string? current = folders.FolderFor(name);
+            var top = new MenuItem { Header = "Top level", IsEnabled = current is not null };
+            top.Click += (_, _) => onMove(name, null);
+            item.Items.Add(top);
+            foreach (string folder in folders.Folders.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+            {
+                var destination = new MenuItem { Header = folder,
+                    IsEnabled = !string.Equals(folder, current, StringComparison.OrdinalIgnoreCase) };
+                destination.Click += (_, _) => onMove(name, folder);
+                item.Items.Add(destination);
+            }
+            parent.Items.Add(item);
+            entries.Add(item);
+        }
+        var empty = new MenuItem { Header = "(no matches)", IsEnabled = false, Visibility = Visibility.Collapsed };
+        parent.Items.Add(empty);
+        search.TextChanged += (_, _) =>
+        {
+            string query = search.Text.Trim();
+            foreach (MenuItem item in entries)
+                item.Visibility = item.Header.ToString()!.Contains(query, StringComparison.OrdinalIgnoreCase)
+                    ? Visibility.Visible : Visibility.Collapsed;
+            empty.Visibility = entries.Any(item => item.Visibility == Visibility.Visible) ? Visibility.Collapsed : Visibility.Visible;
+        };
+    }
+
+    private void PromptListFolder(WorkspaceViewModel vm, string? previous)
+    {
+        var dialog = new TextPromptWindow(previous is null ? "New list folder" : "Rename list folder",
+            "Folder name:", previous ?? "") { Owner = this, AcceptText = previous is null ? "Create" : "Rename" };
+        dialog.ValidateAndAccept = name =>
+        {
+            if (previous is null) vm.CreateListFolder(name);
+            else vm.RenameListFolder(previous, name);
+            return null;
+        };
+        dialog.ShowDialog();
+    }
+
+    private void RemoveListFolder(WorkspaceViewModel vm, string folder)
+    {
+        if (System.Windows.MessageBox.Show(this,
+            $"Remove the folder '{folder}'? Its saved lists will remain available at the top level.",
+            "Remove list folder", System.Windows.MessageBoxButton.YesNo, MessageBoxImage.Question,
+            System.Windows.MessageBoxResult.No) != System.Windows.MessageBoxResult.Yes) return;
+        try { vm.RemoveListFolder(folder); }
+        catch (Exception ex) { System.Windows.MessageBox.Show(this, ex.Message, "Could not remove folder", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning); }
+    }
+
+    private void MoveSavedList(WorkspaceViewModel vm, string list, string? folder)
+    {
+        try { vm.MoveSavedList(list, folder); }
+        catch (Exception ex) { System.Windows.MessageBox.Show(this, ex.Message, "Could not move list", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private void RestoreDeletedList(WorkspaceViewModel vm, Vivre.Core.Computers.DeletedComputerList item)

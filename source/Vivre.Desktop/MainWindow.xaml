@@ -732,6 +732,7 @@
                                     <ContextMenu Opened="OnListsFlyoutOpened">
                                         <MenuItem Header="Open list" Tag="OpenList" />
                                         <MenuItem Header="Save tab as list…" Click="OnSaveTabAsList" />
+                                        <MenuItem Header="Organize lists" Tag="OrganizeLists" />
                                         <Separator />
                                         <MenuItem Header="Delete list" Tag="DeleteList" />
                                         <MenuItem Header="Restore deleted list" Tag="RestoreList" />

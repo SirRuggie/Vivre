@@ -115,6 +115,7 @@ public static class HelpContent
                 "1. Load the machines you want in the tab.",
                 "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt. After a successful save, that tab takes the saved list's name.",
                 "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
+                "To organize lists, use Lists ▾ ▸ Organize lists: create a folder, then choose Move list ▸ [list] ▸ [folder]. Choose Top level to move it back. Rename folder changes its label; Remove folder keeps every saved list and shows them at the top level.",
                 "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
                 "The line above the filters shows the associated list and unsaved membership changes; Saved confirms a successful save. Status compares with the last open/save, not continuous disk monitoring.",
@@ -125,7 +126,7 @@ public static class HelpContent
                 "Open, Delete, and Restore list menus have search boxes. Restored lists do not replace the machines in your current tab.",
                 "Recovery keeps deletions made by this version under %APPDATA%\\Vivre\\Lists\\Deleted until restored; older permanent deletions cannot be recovered.",
             ],
-            Tip = "Lists are plain-text .txt files (or .vlist files for names with punctuation) under %APPDATA%\\Vivre\\Lists — you can edit or back them up outside Vivre.",
+            Tip = "Lists are plain-text .txt files (or .vlist files for names with punctuation) under %APPDATA%\\Vivre\\Lists. Bookmark-style folder assignments are stored separately in list-folders.json; moving a list never rewrites its machine file.",
         },
         new HelpTopic
         {
