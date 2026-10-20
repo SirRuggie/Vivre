@@ -24,6 +24,10 @@
 
 ## ▶ DO NEXT — recommended order
 
+**Current follow-up (2026-10-20):** [S-1 and U-40–U-42 review](vivre-follow-up-review-2026-10-20.md). Next practical batch: U-40/U-42 saved-list read and responsiveness work, with U-41 duplicate tab titles if it remains a small adjacent change. S-1 is recorded below for a separate security/availability decision; no implementation is authorized by this backlog entry.
+
+- **[S-1] — WinRM update-agent folder permissions (conditional high, decision pending).** The launcher currently ignores an ACL-setting failure before registering a SYSTEM task. Verify the folder's *effective* permissions first, try to repair them if needed, and consider stopping only a **new** launch on that host if the folder remains unsafe. Do not fail solely because `Set-Acl` reports an error, interrupt an update already running, or change other patching lanes. Confirm normal launch and failure behavior in focused tests before choosing a fix; no unsafe production folder or exploit has been confirmed. Shaun's operational concern: an unnecessary permission failure must not prevent an otherwise safe update from finishing.
+
 **Comprehensive audit — 2026-10-14:** [Frozen F26–F45 findings](vivre-comprehensive-audit-2026-10-14.md); [current implementation, red-team corrections and acceptance evidence](vivre-audit-implementation-2026-10-14.md). F26–F45 source fixes are implemented with independent review and local regression evidence; the ledger records remaining live/native/signing validation limits. F12 and force-reboot fast-watch remain explicitly deferred.
 
 **Release reconciliation — 2026-10-14:** [1.17.2 acceptance ledger](release-1.17.2-validation.md) supersedes conflicting historical statuses below. Transport-cache staleness was addressed by F10; monitor-only Stop and CU SHA-256 copy verification are now implemented. Multiple-task schedule tracking is implemented in 1.17.3 (see its release ledger). Fast-watch lifetime changes retain the previous explicit deferral. The remainder of this historical backlog is not a newly validated defect inventory.
