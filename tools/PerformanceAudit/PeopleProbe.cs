@@ -24,6 +24,7 @@ internal static class PeopleProbe
     public static object Run(string root)
     {
         var responsiveness = Responsiveness();
+        PeopleFlowProbe.Run(root);
         int queries = 0;
         using var vm = new PeopleViewModel(new Fake((input, token) =>
         {
@@ -92,7 +93,7 @@ internal static class PeopleProbe
         foreach (int height in new[] { 400, 680 })
         foreach (int width in new[] { 800, 1280 })
         {
-            Wpf.Ui.Appearance.ApplicationThemeManager.Apply(dark ? Wpf.Ui.Appearance.ApplicationTheme.Dark : Wpf.Ui.Appearance.ApplicationTheme.Light);
+            PeopleFlowProbe.ApplyTheme(view, dark);
             view.Measure(new Size(width, height)); view.Arrange(new Rect(0, 0, width, height)); view.UpdateLayout();
             var scroll = (ScrollViewer)view.FindName("PageScroll");
             var footer = (FrameworkElement)view.FindName("OpenReviewButton");

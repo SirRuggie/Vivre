@@ -70,3 +70,19 @@ The exact reported five-person pause on the deployment host remains unverified. 
 ## Current release — 1.19.2
 
 People uses Quick Add and Paste list, Open review, and a row right-click menu with review/edit before copying; the footer Row actions button was removed. Results/review column widths and order are remembered independently with separate resets under Actions. Shaun confirmed the deployment-host responsiveness issue (U-39) resolved on 2026-10-20; closure is based on operator feedback, not a new local benchmark.
+
+## Unreleased — U-49–U-51 and People U-52 (2026-10-20)
+
+| Approved capability | Status |
+|---|---|
+| Review and Copy visible; Add/Paste aligned right; retry/export/clear/reset under Actions | Implemented and locally tested |
+| Queue count and enabled state agree; selected resolved/skipped rows can still be reviewed | Implemented and locally tested |
+| Resizable review, current input/pending count, disabled-account/no-email notices | Implemented and locally tested |
+| Initial/loading/no-filter-match guidance, shown/total counts and Clear filters | Implemented and locally tested |
+| Matching, Stop, copy scopes, saved column layouts and navigation preserved | Focused regressions passed; independent source review complete |
+
+- Release builds passed and all nine People core tests passed. The expanded People probe uses synthetic identities/responses, real XAML and temporary settings; it verifies queue advancement without automatic candidate selection, no-mail acceptance, selected-row revisiting at zero pending, filtered-out queue targets, column settings disk round trip, loading/errors and Clear filters without result/export-state changes.
+- Divider movement is exercised through the WPF splitter implementation; its height survives queue advancement and closing/reopening review. Both identity columns remain pinned. Rendered review layouts cover 800/1280 widths and 400/680 heights in dark/light; the probe now asserts actual theme color rather than relying on a requested theme name.
+- Independent `gpt-5.6-sol` review found no material product issue; its loading-control visibility test suggestion was added. Parent fixed offscreen visibility/theme assumptions in the probe. Representative dark/light renders were inspected.
+- Existing 2,000-entry responsiveness, Stop-during-add/lookup, late-response rejection, quick-add draft preservation, right-click/menu, export and Fleet isolation checks passed in two final sequential runs of the already-built harness. Maximum sampled dispatcher gaps were 251 ms and 188 ms. One preceding run failed the unchanged 500 ms limit at 608 ms (752 ms total addition/layout); earlier samples were 148–268 ms. No cause is proven for that variation and no threshold was relaxed; these measurements do not guarantee host latency.
+- No live AD, native clipboard, server work, physical mouse/keyboard, Windows DPI or spoken screen-reader validation occurred in this batch. Scoped offscreen themes do not test application-wide theme propagation. No signed package was produced; release version remains 1.19.2 with these changes under Unreleased.

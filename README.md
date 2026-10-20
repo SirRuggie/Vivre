@@ -12,7 +12,7 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 
 ## Features
 
-- **People email lookup** — use Quick Add or the editable Paste list (one person per line) in People; unique exact AD matches resolve automatically, while uncertain matches open for review. Use Open review or double-click to review; right-click a row for review, edit, and copy actions. Copy all resolved emails and CSV export are under Actions. Uses your current Windows login and current AD domain; results are session-only.
+- **People email lookup** — use Add or Paste list (one person per line) on the right, then Review matches and Copy all resolved emails on the toolbar. Unique enabled exact AD matches resolve automatically; uncertain matches require your choice. Drag the divider above the review panel for more room; disabled accounts and missing emails are identified. Open review or double-click revisits a selected row; right-click offers review, edit, and selected-field copying. Actions contains retry and CSV export. Uses your current Windows login and current AD domain; results are session-only.
 
 - **Layout and keyboard clarity** — wrapping filters/script actions, visible focus rings, keyboard tab menus, and explicit field/status labels; native DPI and spoken screen-reader validation remain tracked in the UI/UX checklist.
 
@@ -106,6 +106,8 @@ Script saves ask before replacing an existing destination and reject stale appro
 
 Column widths and order are remembered separately for Health, Patching, People results, and People review. Right-click a Fleet grid and choose **Reset column layout**; in People, use **Actions → Reset results column layout** or **Reset review column layout**. Names stay pinned first. Changing the product in Check software clears the previous product’s service and uses a remembered suggestion only for the new product.
 
+People shows **Showing X of Y** when filtering; **Clear filters** restores the view without changing results. **Review matches (N)** walks all pending matches, including filtered-out entries, and disables at zero; selected-row review remains available. **Copy all resolved emails** includes filtered-out resolved rows and removes duplicates; right-click copies only selected rows. An empty People view offers Paste list, while a filtered empty view offers Clear filters.
+
 CU **Install / Verify** use eligible selected machines, or eligible machines in the tab only when nothing is selected; their scope count is shown beside the actions. An ineligible selection never targets other rows. In the mixed-install dialog, **Skip CU — install other N** continues only the remainder; **Cancel**, Escape and close start no installations. Cleanup shows **Cleaning up** consistently in the grid and machine details.
 
 In **Settings → Remote credentials**, Apply works for either credential choice, including switching back to Windows login. The **Applied** line shows the active identity separately from edits; credentials remain session-only, and SMB/DCOM fallback still uses the Windows login.
@@ -114,7 +116,7 @@ In **Settings → Remote credentials**, Apply works for either credential choice
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22); People responsiveness (U-39) was confirmed resolved by the operator on 2026-10-20; see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
-- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57. U-45–U-48 are addressed in Unreleased; the People and shared navigation recommendations U-49–U-57 await approval. Current evidence is in [the living backlog](docs/vivre-ui-ux-backlog.md).
+- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57. U-45–U-51 and the People portion of U-52 are addressed in Unreleased; the remaining U-52 surfaces and U-53–U-57 await approval. Current evidence is in [the living backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a

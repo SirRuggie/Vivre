@@ -11,33 +11,40 @@
  <Grid x:Name="PeopleRoot">
  <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
  <ScrollViewer x:Name="PageScroll" Margin="8" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
- <Grid MinHeight="500" Height="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+ <Grid Height="{Binding ViewportHeight, RelativeSource={RelativeSource AncestorType=ScrollViewer}}">
+  <Grid.Style>
+   <Style TargetType="Grid">
+    <Setter Property="MinHeight" Value="500"/>
+    <Style.Triggers><DataTrigger Binding="{Binding HasReview}" Value="True"><Setter Property="MinHeight" Value="600"/></DataTrigger></Style.Triggers>
+   </Style>
+  </Grid.Style>
   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-  <StackPanel>
-   <WrapPanel Margin="0,0,0,8">
-    <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon Search24}" Content="Look up again" Click="OnRetry" IsEnabled="{Binding CanRetry}" ToolTip="Retry failed, stopped, and not-found entries; reviewed matches stay unchanged."/>
-    <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon Stop24}" Content="Stop" Click="OnStop" IsEnabled="{Binding CanStop}"/>
-    <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon MoreHorizontal24}" Content="Actions ▾" Click="OnActions"/>
-    <WrapPanel Margin="12,0,0,0" IsEnabled="{Binding CanAdd}">
+   <DockPanel Margin="0,0,0,8" LastChildFill="True">
+    <WrapPanel DockPanel.Dock="Right" Margin="12,0,0,0" IsEnabled="{Binding CanAdd}">
      <ui:TextBox x:Name="QuickAddBox" Width="220" PlaceholderText="Add name, username, or email…" AutomationProperties.Name="Person to add" KeyDown="OnQuickAddKeyDown" MaxLength="256"/>
      <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon Add24}" Content="Add" Click="OnQuickAdd" Margin="6,0,0,0"/>
      <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon ClipboardPaste24}" Content="Paste list…" Click="OnPaste" ToolTip="Open an editable list; one person per line. Existing results are kept."/>
     </WrapPanel>
+   <WrapPanel>
+    <ui:Button x:Name="ReviewQueueButton" Style="{StaticResource ToolbarButtonStyle}" Content="{Binding ReviewLabel}" Icon="{ui:SymbolIcon Person24}" Click="OnReview" IsEnabled="{Binding HasPendingReview}" ToolTip="Review pending matches across all entries, including filtered-out rows."/>
+    <ui:Button x:Name="CopyResolvedButton" Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon Copy24}" Content="Copy all resolved emails" Click="OnCopyResolved" IsEnabled="{Binding CanCopyResolved}" ToolTip="Copy unique resolved emails across all entries, including filtered-out rows."/>
+    <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon Stop24}" Content="Stop" Click="OnStop" IsEnabled="{Binding CanStop}"/>
+    <ui:Button Style="{StaticResource ToolbarButtonStyle}" Icon="{ui:SymbolIcon MoreHorizontal24}" Content="Actions ▾" Click="OnActions"/>
    </WrapPanel>
-  </StackPanel>
+   </DockPanel>
   <StackPanel Grid.Row="1" Margin="0,0,0,8">
    <WrapPanel>
     <ui:TextBox Width="220" PlaceholderText="Filter people…" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" ClearButtonEnabled="True" AutomationProperties.Name="Filter people by name, username or email" Margin="0,0,12,6"/>
     <TextBlock Text="Show:" VerticalAlignment="Center" Margin="0,0,8,6"/>
     <ComboBox ItemsSource="{Binding Filters}" SelectedItem="{Binding Filter}" MinWidth="130" AutomationProperties.Name="People result filter" Margin="0,0,12,6"/>
-    <ui:Button Content="{Binding ReviewLabel}" Icon="{ui:SymbolIcon Person24}" Click="OnReview" IsEnabled="{Binding HasReviewable}" Margin="0,0,12,6" ToolTip="Review uncertain matches one at a time."/>
+    <ui:Button Content="Clear filters" Click="OnClearFilters" Visibility="{Binding HasFilters, Converter={StaticResource BoolToVis}}" Margin="0,0,12,6"/>
     <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Margin="0,0,0,6"/>
    </WrapPanel>
    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
   </StackPanel>
   <Grid Grid.Row="2">
-   <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-   <ui:DataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}" AutoGenerateColumns="False"
+   <Grid.RowDefinitions><RowDefinition Height="2*" MinHeight="100"/><RowDefinition Height="Auto"/><RowDefinition x:Name="ReviewRowDefinition" Height="0"/></Grid.RowDefinitions>
+   <ui:DataGrid x:Name="ResultsGrid" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedResult}" AutoGenerateColumns="False"
      IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False" FrozenColumnCount="1" HeadersVisibility="Column" GridLinesVisibility="Horizontal" RowHeight="36" PreviewKeyDown="OnResultKeyDown" SelectionMode="Extended" SelectionUnit="FullRow"
      EnableRowVirtualization="True" EnableColumnVirtualization="True" MinHeight="100"
      PreviewMouseRightButtonDown="OnRowRightClick"
@@ -45,7 +52,18 @@
     <DataGrid.ContextMenu><ContextMenu/></DataGrid.ContextMenu>
     <DataGrid.Columns>
      <DataGridTextColumn Header="Original input" Binding="{Binding Input}" Width="180" MaxWidth="320" CanUserReorder="False"/>
-     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110"/>
+     <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="110">
+      <DataGridTextColumn.ElementStyle>
+       <Style TargetType="TextBlock">
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Style.Triggers>
+         <DataTrigger Binding="{Binding Status}" Value="Needs review"><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger>
+         <DataTrigger Binding="{Binding Status}" Value="No email"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger>
+         <DataTrigger Binding="{Binding Status}" Value="Lookup failed"><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCriticalBrush}"/></DataTrigger>
+        </Style.Triggers>
+       </Style>
+      </DataGridTextColumn.ElementStyle>
+     </DataGridTextColumn>
      <DataGridTextColumn Header="Matched name" Binding="{Binding MatchedName}" Width="170"/>
      <DataGridTextColumn Header="Username" Binding="{Binding Username}" Width="120"/>
      <DataGridTextColumn Header="Email" Binding="{Binding Email}" Width="230"/>
@@ -55,10 +73,21 @@
      <DataGridTextColumn Header="Detail" Binding="{Binding Detail}" Width="240"/>
     </DataGrid.Columns>
    </ui:DataGrid>
-   <Border x:Name="ReviewPanel" Grid.Row="1" Visibility="{Binding HasReview, Converter={StaticResource BoolToVis}}"
-     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1" Padding="10" Margin="0,10,0,0">
+   <StackPanel x:Name="EmptyState" Visibility="{Binding ShowEmptyState, Converter={StaticResource BoolToVis}}"
+     HorizontalAlignment="Center" VerticalAlignment="Center" MaxWidth="420" Margin="16,36,16,8">
+    <TextBlock Text="{Binding EmptyTitle}" Style="{StaticResource EmptyStateTitle}"/>
+    <TextBlock Text="{Binding EmptyDetail}" Style="{StaticResource EmptyStateSubtitle}"/>
+    <ui:Button x:Name="EmptyPasteButton" Content="Paste list…" Click="OnPaste" HorizontalAlignment="Center" Margin="0,8,0,0" Visibility="{Binding ShowEmptyPaste, Converter={StaticResource BoolToVis}}"/>
+    <ui:Button x:Name="EmptyClearFiltersButton" Content="Clear filters" Click="OnClearFilters" HorizontalAlignment="Center" Margin="0,8,0,0" Visibility="{Binding HasFilters, Converter={StaticResource BoolToVis}}"/>
+   </StackPanel>
+   <GridSplitter x:Name="ReviewSplitter" Grid.Row="1" Height="8" HorizontalAlignment="Stretch"
+     ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" KeyboardIncrement="20"
+     Visibility="{Binding HasReview, Converter={StaticResource BoolToVis}}" Background="{DynamicResource DividerStrokeColorDefaultBrush}"
+     AutomationProperties.Name="Resize People review panel" ToolTip="Drag to resize review; use Up/Down when focused."/>
+   <Border x:Name="ReviewPanel" Grid.Row="2" Visibility="{Binding HasReview, Converter={StaticResource BoolToVis}}"
+     BorderBrush="{DynamicResource DividerStrokeColorDefaultBrush}" BorderThickness="1" Padding="10">
     <Grid>
-     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="160"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
      <TextBlock Text="{Binding ReviewTitle}" FontWeight="SemiBold" TextWrapping="Wrap"/>
      <TextBlock Grid.Row="1" Text="{Binding ReviewRow.Detail}" TextWrapping="Wrap" Margin="0,4,0,6"/>
      <ui:DataGrid x:Name="CandidatesGrid" Grid.Row="2" ItemsSource="{Binding ReviewRow.Candidates}" SelectedItem="{Binding SelectedCandidate}"
@@ -67,15 +96,36 @@
       <DataGrid.Columns>
        <DataGridTextColumn Header="Name" Binding="{Binding Person.Name}" Width="180" MaxWidth="320" CanUserReorder="False"/>
        <DataGridTextColumn Header="Username" Binding="{Binding Person.Username}" Width="110"/>
-       <DataGridTextColumn Header="Email" Binding="{Binding Person.Email}" Width="210"/>
+       <DataGridTemplateColumn Header="Email" SortMemberPath="Person.Email" Width="210">
+        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+         <TextBlock VerticalAlignment="Center">
+          <TextBlock.Style><Style TargetType="TextBlock">
+           <Setter Property="Text" Value="{Binding Person.Email, TargetNullValue='No email'}"/>
+           <Style.Triggers>
+            <DataTrigger Binding="{Binding Person.Email}" Value=""><Setter Property="Text" Value="No email"/><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger>
+           </Style.Triggers>
+          </Style></TextBlock.Style>
+         </TextBlock>
+        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
        <DataGridTextColumn Header="Department" Binding="{Binding Person.Department}" Width="110"/>
-       <DataGridTextColumn Header="Enabled" Binding="{Binding Person.Enabled}" Width="75"/>
+       <DataGridTemplateColumn Header="Enabled" SortMemberPath="Person.Enabled" Width="90">
+        <DataGridTemplateColumn.CellTemplate><DataTemplate>
+         <TextBlock VerticalAlignment="Center">
+          <TextBlock.Style><Style TargetType="TextBlock">
+           <Setter Property="Text" Value="Enabled"/>
+           <Style.Triggers><DataTrigger Binding="{Binding Person.Enabled}" Value="False"><Setter Property="Text" Value="Disabled"/><Setter Property="Foreground" Value="{DynamicResource SystemFillColorCautionBrush}"/></DataTrigger></Style.Triggers>
+          </Style></TextBlock.Style>
+         </TextBlock>
+        </DataTemplate></DataGridTemplateColumn.CellTemplate>
+       </DataGridTemplateColumn>
        <DataGridTextColumn Header="Reason" Binding="{Binding Reason}" Width="140"/>
        <DataGridTextColumn Header="Title" Binding="{Binding Person.Title}" Width="140"/>
        <DataGridTextColumn Header="Office" Binding="{Binding Person.Office}" Width="110"/>
       </DataGrid.Columns>
      </ui:DataGrid>
-     <WrapPanel Grid.Row="3" Margin="0,8,0,0">
+     <TextBlock x:Name="CandidateNotice" Grid.Row="3" Text="{Binding CandidateNotice}" TextWrapping="Wrap" Margin="0,6,0,0" AutomationProperties.LiveSetting="Polite"/>
+     <WrapPanel Grid.Row="4" Margin="0,8,0,0">
       <ui:Button Content="Use selected match" Click="OnAccept" IsEnabled="{Binding HasCandidate}" Margin="0,0,8,0"/>
       <ui:Button Content="Skip for now" Click="OnSkip" Margin="0,0,8,0"/>
       <ui:Button Content="Close review" Click="OnCloseReview"/>
@@ -89,7 +139,7 @@
   <DockPanel LastChildFill="True">
    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
     <Border Width="1" Margin="12,2,8,2" Background="{DynamicResource DividerStrokeColorDefaultBrush}"/>
-    <ui:Button x:Name="OpenReviewButton" Content="Open review" FontSize="11" Padding="6,2" VerticalAlignment="Center" Icon="{ui:SymbolIcon PanelRight24, FontSize=14}" Click="OnOpenReview" IsEnabled="{Binding HasReviewable}" ToolTip="Review the selected person, or the next uncertain match."/>
+    <ui:Button x:Name="OpenReviewButton" Content="Open review" FontSize="11" Padding="6,2" VerticalAlignment="Center" Icon="{ui:SymbolIcon PanelRight24, FontSize=14}" Click="OnOpenReview" IsEnabled="{Binding CanOpenReview}" ToolTip="Review the selected person, or the next uncertain match."/>
    </StackPanel>
    <TextBlock Text="Double-click a person to review a match; right-click a row to review, edit, or copy." FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="Double-click a person to review a match; right-click a row to review, edit, or copy." VerticalAlignment="Center" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
   </DockPanel>

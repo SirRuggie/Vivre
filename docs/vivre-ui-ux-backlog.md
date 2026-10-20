@@ -4,7 +4,7 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-48 are implemented and locally validated in Unreleased; U-49–U-57 await approval.
+Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-51 and the People portion of U-52 are implemented and locally validated in Unreleased; remaining U-52 surfaces and U-53–U-57 await approval.
 
 Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
 
@@ -440,7 +440,24 @@ See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for ev
 
 ## Full-spectrum usability review — U-45–U-57 (2026-10-20)
 
-Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48 together; U-49–U-57 remain recommendations awaiting approval.
+Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48, followed by U-49–U-51 and the People portion of U-52. The remaining recommendations await approval.
+
+### U-49–U-51 and People U-52 acceptance ledger
+
+| Requested capability | Status |
+|---|---|
+| Visible Add/Paste, Review and Copy actions; secondary work under Actions | Implemented and locally tested at narrow/normal widths |
+| Pending-review count controls queue button; selected-row review remains available | Implemented and locally tested for pending, resolved, skipped and filtered-out rows |
+| Resizable candidate panel with input/count context and disabled/missing-email warnings | Implemented and locally tested, including height retention and saved column layouts |
+| People initial, loading and no-match states; shown/total count and Clear filters | Implemented and locally tested with preserved results/export state and visible directory errors |
+| Independent red team, focused regressions, documentation, commit/push | Review/tests/docs complete; delivered in the commit containing this ledger |
+
+Scope: reuse the existing People handlers and matching rules; preserve selected/all copying, saved column layouts, Stop and session-only results. Other U-52 surfaces and U-53–U-57 are not part of this batch.
+
+- **Validation:** Release desktop/harness builds and nine focused People core tests passed. Expanded `--people-only` passed queue-versus-selected review, global queue/copy scope under filters, resize/close/reopen/queue advance, warning text, initial/loading/no-match/error states, column settings disk round trip, existing row/keyboard context-menu routes, Stop/late results, export and hidden-Fleet navigation isolation.
+- **Visual/performance evidence:** eight actual review layouts at 800/1280 × 400/680 in dark/light; rendered root colors assert the intended theme and representative renders were inspected. Final sequential, already-built 2,000-entry probes passed with maximum sampled dispatcher gaps of 251 ms and 188 ms. An earlier rerun failed the unchanged 500 ms threshold at 608 ms (752 ms total addition/layout); other measured runs were 148–268 ms. The outlier is retained, not attributed to a proven cause or treated as a latency guarantee; native host performance remains environment-dependent.
+- **Independent red team:** separate `gpt-5.6-sol` reviewer completed two read-only source passes with no material product defect. Added its suggested control-level loading visibility assertion; reconciled the ledger and included the new flow probe with its caller. Parent corrected offscreen visibility and theme validation so an unattached control or unchanged dark palette cannot masquerade as native/light-theme evidence.
+- **Limits/release:** all new directory responses and identities were synthetic; no live AD or server operations. Programmatic splitter/routed events and scoped theme dictionaries do not verify native mouse/keyboard, app-wide theme switching, Windows DPI or screen-reader narration. Changes are Unreleased over 1.19.2; the existing signing-certificate warning remains, and no ZIP was produced.
 
 ### U-45–U-48 acceptance ledger
 
@@ -465,14 +482,15 @@ Three independent research agents plus parent source/screenshot review; see [the
   - **Why:** Cancel or closing the CU decision can still start installations on the other machines in a mixed batch.
 - [x] **U-48 · Medium — Keep the operation badge and progress message consistent.**
   - **Why:** A machine can say Scanning while its message and progress describe component cleanup.
-- [ ] **U-49 · Medium — Organize People around add, review and copy.**
+- [x] **U-49 · Medium — Organize People around add, review and copy.**
   - **Why:** Retry leads the screen while the main output action is hidden under Actions.
-- [ ] **U-50 · Medium — Make the review queue button match its count.**
+- [x] **U-50 · Medium — Make the review queue button match its count.**
   - **Why:** Review matches (0) can remain enabled and open no pending review.
-- [ ] **U-51 · Medium — Give People review enough space and context.**
+- [x] **U-51 · Medium — Give People review enough space and context.**
   - **Why:** A short, wide candidate grid makes similar accounts harder to compare.
 - [ ] **U-52 · Medium — Explain empty and filtered views, with a direct next action.**
   - **Why:** Blank results or unchanged totals can leave users unsure whether to add, wait or clear a filter.
+  - **Partial delivery:** People implemented and locally tested in this batch; Health/Fleet, Scripts and Help empty/filter guidance remain pending approval.
 - [ ] **U-53 · Medium — Give Fleet commands a clearer visual hierarchy.**
   - **Why:** Patching, health checks and workspace housekeeping compete across several equally prominent bands.
 - [ ] **U-54 · Medium — Restore normal scrollbar track behavior.**

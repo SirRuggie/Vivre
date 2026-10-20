@@ -107,6 +107,8 @@ U-44 extends --library-search-only with grouped saved-list search and exact list
 
 People flow follow-up: `--people-only` also validates the shared paste-dialog configuration, pinned identity column, fixed footer geometry, quick-add typing preservation and Stop during additions. Its 2,000-entry dispatcher test uses a UI heartbeat plus an independent background observer after draining setup work, recording elapsed addition/lookup time and sampled heartbeat gaps. Requests are dummy responses, not live AD; this does not measure RDP clipboard or native DPI behavior.
 
+U-49–U-51 and People U-52: the same command invokes `PeopleFlowProbe` for pending-queue versus selected-row review, hidden-row queue scope, disabled/missing-mail notices, divider resizing and height retention, filter counts/recovery, loading/errors, and persisted review columns in a temporary settings file. It renders the actual review panel in two themes at 800/1280 widths and 400/680 heights. Programmatic splitter movement and routed button events are not physical mouse/keyboard or screen-reader validation.
+
 ## U-45–U-48 operational interaction checks
 
 `dotnet run --project tools/PerformanceAudit -c Release -- --operational-clarity-only .artifacts/u45-u48-operational.json`

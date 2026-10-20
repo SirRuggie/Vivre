@@ -62,12 +62,15 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     partial void OnIsAddingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanAdd)); OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanStop));
+        NotifyEmptyState();
     }
     [ObservableProperty] private string _searchText = "";
-    partial void OnSearchTextChanged(string value) => Results.Refresh();
+    partial void OnSearchTextChanged(string value) => RefreshFilters();
     [ObservableProperty] private string _message = "Paste one username, name, or email per line. Reads your current AD domain using your Windows login; results last for this session.";
     [ObservableProperty] private PersonLookupRow? _reviewRow;
     [ObservableProperty] private PersonCandidate? _selectedCandidate;
+    [ObservableProperty] private PersonLookupRow? _selectedResult;
+    partial void OnSelectedResultChanged(PersonLookupRow? value) => OnPropertyChanged(nameof(CanOpenReview));
     public bool HasUnexportedResults { get; private set; }
     public void MarkExported() => HasUnexportedResults = false;
     public void Clear()
@@ -76,18 +79,61 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
         CloseReview(); Rows.Clear(); Filter = "All"; SearchText = ""; HasUnexportedResults = false; Refresh();
         Message = "Results cleared. Paste people to start a new lookup.";
     }
-    public string Summary => $"{Rows.Count} entries | {Rows.Count(r => r.Status == "Resolved")} resolved | {Rows.Count(r => r.Status == "Needs review")} need review";
-    public string ReviewLabel => $"Review matches ({Rows.Count(r => r.Status == "Needs review")})";
+    public int VisibleCount { get; private set; }
+    public int PendingReviewCount => Rows.Count(r => r.Status == "Needs review");
+    public string Summary => $"Showing {VisibleCount} of {Rows.Count} · {Rows.Count(r => r.Status == "Resolved")} resolved · {PendingReviewCount} need review";
+    public string ReviewLabel => $"Review matches ({PendingReviewCount})";
+    public bool HasPendingReview => PendingReviewCount > 0;
+    public bool CanCopyResolved => Rows.Any(r => r.Status == "Resolved" && !string.IsNullOrWhiteSpace(r.Email));
     public bool HasCandidate => SelectedCandidate is not null;
-    partial void OnSelectedCandidateChanged(PersonCandidate? value) => OnPropertyChanged(nameof(HasCandidate));
+    public string CandidateNotice => SelectedCandidate is not { } candidate ? "Select an account to compare, then use the selected match."
+        : string.Join(" ", new[]
+        {
+            candidate.Person.Enabled ? "" : "This account is disabled.",
+            string.IsNullOrWhiteSpace(candidate.Person.Email) ? "No email is recorded; this match will not be included when copying emails." : ""
+        }.Where(s => s.Length > 0));
+    partial void OnSelectedCandidateChanged(PersonCandidate? value)
+    {
+        OnPropertyChanged(nameof(HasCandidate)); OnPropertyChanged(nameof(CandidateNotice));
+    }
     public bool HasReview => ReviewRow is not null;
-    public string ReviewTitle => ReviewRow is null ? "" : $"Review: {ReviewRow.Input}";
+    public string ReviewTitle => ReviewRow is null ? "" : $"Review: {ReviewRow.Input} · {PendingReviewCount} need review";
     public bool CanRetry => !IsBusy && !IsAdding && Rows.Any(r => r.Status is "Lookup failed" or "Stopped" or "Not found");
     public bool HasRows => Rows.Count > 0;
-    public bool HasReviewable => Rows.Any(r => r.Candidates.Count > 0);
+    public bool CanOpenReview => SelectedResult?.Candidates.Count > 0 || HasPendingReview;
     public bool CanClear => !IsBusy && !IsAdding && HasRows;
-    partial void OnIsBusyChanged(bool value) { OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanStop)); }
-    partial void OnFilterChanged(string value) => Results.Refresh();
+    public bool HasFilters => Filter != "All" || !string.IsNullOrWhiteSpace(SearchText);
+    public bool ShowEmptyState => VisibleCount == 0;
+    public bool ShowEmptyPaste => !HasRows && !CanStop;
+    public string EmptyTitle => IsAdding ? "Adding people…" : IsBusy ? "Looking up people…"
+        : HasRows ? "No people match these filters" : "Add or paste people to get started";
+    public string EmptyDetail => CanStop ? "Results will appear here as lookup progresses."
+        : HasRows ? "Clear the filters to see all entries; your results are kept."
+        : "Use Add for one person, or paste a list with one name, username, or email per line.";
+    partial void OnIsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanStop));
+        NotifyEmptyState();
+    }
+    partial void OnFilterChanged(string value) => RefreshFilters();
+    public void ClearFilters() { Filter = "All"; SearchText = ""; }
+    private void RefreshFilters()
+    {
+        Results.Refresh();
+        RefreshViewState();
+    }
+    private void RefreshViewState()
+    {
+        VisibleCount = Results.Cast<PersonLookupRow>().Count();
+        OnPropertyChanged(nameof(VisibleCount)); OnPropertyChanged(nameof(Summary));
+        OnPropertyChanged(nameof(HasFilters));
+        NotifyEmptyState();
+    }
+    private void NotifyEmptyState()
+    {
+        OnPropertyChanged(nameof(ShowEmptyState)); OnPropertyChanged(nameof(ShowEmptyPaste));
+        OnPropertyChanged(nameof(EmptyTitle)); OnPropertyChanged(nameof(EmptyDetail));
+    }
     partial void OnReviewRowChanged(PersonLookupRow? value)
     {
         SelectedCandidate = null;
@@ -246,9 +292,11 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
         _lastRefresh = Stopwatch.GetTimestamp();
         // Row notifications update cells; only filtered membership needs a view reset.
         if (Filter != "All" || !string.IsNullOrWhiteSpace(SearchText)) Results.Refresh();
-        OnPropertyChanged(nameof(Summary)); OnPropertyChanged(nameof(ReviewLabel));
+        RefreshViewState();
+        OnPropertyChanged(nameof(ReviewLabel)); OnPropertyChanged(nameof(ReviewTitle));
+        OnPropertyChanged(nameof(HasPendingReview)); OnPropertyChanged(nameof(CanCopyResolved));
         OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(HasRows));
-        OnPropertyChanged(nameof(HasReviewable)); OnPropertyChanged(nameof(CanClear));
+        OnPropertyChanged(nameof(CanOpenReview)); OnPropertyChanged(nameof(CanClear));
     }
     public void Dispose() { _disposed = true; _stop?.Cancel(); }
 }

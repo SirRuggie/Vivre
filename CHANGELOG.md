@@ -17,6 +17,9 @@ it ships, then gets a dated heading.
 - Allow applying Windows login after explicit credentials and show the applied session identity separately from draft changes.
 - Separate skipping CU machines from cancelling a mixed install: Cancel, Escape and close start no new installations from that batch.
 - Keep cleanup status consistent in the grid and details, and prevent late progress from replacing completion, failure or cancellation.
+- Organize People around visible Review and Copy actions with Add/Paste on the right; keep retry, export and layout resets under Actions.
+- Disable Review matches at zero pending matches while preserving selected-row review; show the current input and pending count in a resizable review panel with disabled-account and missing-email notices.
+- Show People initial, lookup and filtered-empty guidance with Paste/Clear filters actions and an accurate shown/total count.
 
 ## 1.19.2 — 2026-10-20
 

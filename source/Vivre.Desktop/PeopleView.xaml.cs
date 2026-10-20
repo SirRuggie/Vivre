@@ -14,17 +14,41 @@ public partial class PeopleView : UserControl, IDisposable
 {
     public PeopleViewModel Model { get; }
     private bool _disposed;
+    private bool _reviewOpen;
+    private GridLength _reviewHeight = new(1, GridUnitType.Star);
     private readonly GridLayoutPersistence _resultsLayout, _candidatesLayout;
     public PeopleView() : this(new PeopleViewModel()) { }
-    public PeopleView(PeopleViewModel model)
+    public PeopleView(PeopleViewModel model, AppSettingsStore? settings = null)
     {
         InitializeComponent();
         DataContext = Model = model;
-        _resultsLayout = new(ResultsGrid, "People.Results");
-        _candidatesLayout = new(CandidatesGrid, "People.Candidates");
+        Model.PropertyChanged += OnModelChanged;
+        UpdateReviewHeight();
+        _resultsLayout = new(ResultsGrid, "People.Results", settings);
+        _candidatesLayout = new(CandidatesGrid, "People.Candidates", settings);
         // Cell text controls may supply their own copy menu. Always use the People row menu.
         ResultsGrid.AddHandler(ContextMenuService.ContextMenuOpeningEvent,
             new ContextMenuEventHandler(OnMenuOpening), handledEventsToo: true);
+    }
+    private void OnModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(PeopleViewModel.HasReview)) UpdateReviewHeight();
+    }
+    private void UpdateReviewHeight()
+    {
+        if (_reviewOpen == Model.HasReview) return;
+        _reviewOpen = Model.HasReview;
+        if (Model.HasReview)
+        {
+            ReviewRowDefinition.MinHeight = 240;
+            ReviewRowDefinition.Height = _reviewHeight;
+        }
+        else
+        {
+            if (ReviewRowDefinition.Height.Value > 0) _reviewHeight = ReviewRowDefinition.Height;
+            ReviewRowDefinition.MinHeight = 0;
+            ReviewRowDefinition.Height = new GridLength(0);
+        }
     }
     // Keep People actions and bindings owned here while the shell hosts the full-width footer.
     internal FrameworkElement TakeStatusBar()
@@ -92,7 +116,7 @@ public partial class PeopleView : UserControl, IDisposable
             var item = new MenuItem { Header = label, IsEnabled = enabled };
             item.Click += action; menu.Items.Add(item);
         }
-        Add("Copy all resolved emails", OnCopyResolved, PeopleViewModel.Emails(Model.Rows).Length > 0);
+        Add("Look up again (failed, stopped, not found)", OnRetry, Model.CanRetry);
         Add("Export all to CSV…", OnExport, Model.HasRows);
         menu.Items.Add(new Separator());
         Add("Clear results…", OnClear, Model.CanClear);
@@ -128,6 +152,7 @@ public partial class PeopleView : UserControl, IDisposable
             "Clear People results", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes) Model.Clear();
     }
     private void OnStop(object sender, RoutedEventArgs e) => Model.Stop();
+    private void OnClearFilters(object sender, RoutedEventArgs e) => Model.ClearFilters();
     private void OnReview(object sender, RoutedEventArgs e) { Model.StartReview(); RevealReview(); }
     private void OnAccept(object sender, RoutedEventArgs e)
     {
@@ -236,5 +261,5 @@ public partial class PeopleView : UserControl, IDisposable
         };
         if (dialog.ShowDialog() == true) await Model.LookupAsync();
     }
-    public void Dispose() { _disposed = true; Model.Dispose(); }
+    public void Dispose() { _disposed = true; Model.PropertyChanged -= OnModelChanged; Model.Dispose(); }
 }
