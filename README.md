@@ -126,7 +126,7 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.19.0** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
+Current release: **1.19.1** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 

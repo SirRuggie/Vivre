@@ -14,7 +14,7 @@ live status of anything they raise is tracked in the backlog.
 
 - **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F45 acceptance ledger, independent review corrections and exact local/live validation limits.
 
-- **[../CHANGELOG.md](../CHANGELOG.md)** — current release **1.19.0**, with future work under **Unreleased**; see the UI/UX checklist for current local validation limits.
+- **[../CHANGELOG.md](../CHANGELOG.md)** — current release **1.19.1**, with future work under **Unreleased**; see the UI/UX checklist for current local validation limits.
 
 - **[release-1.17.3-validation.md](release-1.17.3-validation.md)** — historical 1.17.3 candidate validation: multiple-schedule fix and expanded banner checks; not validation of the current build.
 

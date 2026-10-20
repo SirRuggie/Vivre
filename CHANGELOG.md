@@ -6,6 +6,10 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+_No changes yet._
+
+## 1.19.1 — 2026-10-19
+
 ### Fixed
 - Let saved-list banner text use the available window width instead of truncating at 300 pixels.
 - Offer Append, Replace, or New tab (default) when opening saved lists into populated tabs; empty tabs open directly.

@@ -67,6 +67,6 @@ Stop was dispatched during a pending lookup and during adding; late lookup resul
 
 The exact reported five-person pause on the deployment host remains unverified. Native clipboard redirection can still have its own latency, and cancellation of an already-running LDAP request still waits for that request. No production directory or server operation was run in this follow-up. Diagnostic artifacts remain untracked; an earlier crashed probe temporarily locked the normal harness output and could not be terminated from this execution context (access denied), so a separate output directory was used; that process had exited by the final check.
 
-## Current release — 1.19.0
+## Current release — 1.19.1
 
 People uses Quick Add and Paste list, Open review, and a row right-click menu with review/edit before copying; the footer Row actions button was removed. Results/review column widths and order are remembered independently with separate resets under Actions. The deployment-host responsiveness check (U-39) remains open.

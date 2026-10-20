@@ -4,7 +4,7 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Current release: **1.19.0** (2026-10-19). U-21/U-22 native validation and U-39 deployment-host responsiveness remain open. Earlier version references below describe the implementation checkpoints at that time.
+Current release: **1.19.1** (2026-10-19). U-21/U-22 native validation and U-39 deployment-host responsiveness remain open. Earlier version references below describe the implementation checkpoints at that time.
 
 ## How to use
 
