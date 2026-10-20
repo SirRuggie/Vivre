@@ -1,0 +1,22 @@
+# Vivre follow-up risk review — 2026-10-20
+
+This is a source and local-test review of the current `master` checkout. It is not a complete live usability study or a penetration test. The Windows UI control helper timed out during initialization, so native clicks, scaling, screen-reader output, and deployment-host behavior were not observed. No server operations were run and no application behavior was changed.
+
+## Findings
+
+- **S-1 · High if folder permissions cannot be applied — WinRM update launcher proceeds after ACL hardening fails.** `WuaUpdateLane.BuildAgentScript` catches and ignores `Set-Acl` failure for `C:\ProgramData\Vivre\agent`, then writes the agent, verifies its hash once, and registers a SYSTEM scheduled task that may execute later. If the folder is writable by an unprivileged local user, the one-time hash does not protect the interval until task execution. This is a conditional hardening gap, not evidence that any current server has a writable agent folder or has been exploited. The SMB lane's `EnsureHardenedDir` does not swallow ACL failure. Verify the effective ACL or refuse to schedule when it cannot be made safe. Evidence: `source/Vivre.Core/Updates/WuaUpdateLane.cs` around lines 984–1038; `SmbAgentLane.cs` around lines 440–472.
+- **U-40 · Medium — Opening a saved list can use an out-of-date file snapshot.** `MainWindow.OpenSavedList` reads the file before showing Append/Replace/New tab choices. Another Vivre instance can change or remove the list while the dialog remains open. Confirming still uses the captured names and `RecordSavedList` labels a New tab or replacement with that saved-list identity. Re-read or revision-check at confirmation, preserving the current active-work and changed-membership guards. Evidence: `source/Vivre.Desktop/MainWindow.xaml.cs` around lines 1713–1750; `WorkspaceViewModel.cs` `RecordSavedList`.
+- **U-41 · Low — Reopening a saved list creates indistinguishable tab titles.** The New tab path replaces the generated title with the saved-list name without checking existing Health/Patching titles. Two opens of one list produce identical tabs, which obscures which has newer results. Reuse the collision suffix approach already used by Health-to-Patching handoff. Evidence: `source/Vivre.Desktop/ViewModels/ShellViewModel.cs` `OpenPastedListInNewTab` and `OpenTabInPatching`.
+- **U-42 · Medium on slow or redirected storage — Lists menu/opening can pause the UI.** `OnListsFlyoutOpened` synchronously enumerates the list and recovery folders; `OpenSavedList` synchronously reads every line before opening its choice dialog. The normal `%APPDATA%` folder may be redirected. This is a source-backed latency risk, not a measured freeze on the deployment host. Move file reads off the dispatcher and show a loading/error state. Evidence: `MainWindow.xaml.cs` `OnListsFlyoutOpened` and `OpenSavedList`; `ComputerListStore.cs` `List`, `DeletedLists`, and `LoadRequired`.
+
+## Existing limits to keep visible
+
+- **F12 remains explicitly deferred:** concurrent Vivre processes staging a Server 2016 CU on the same host can collide in shared package/extraction paths. Treat same-host concurrent staging by two operators as unsupported until coordinated; see `vivre-design-review-2026-10-05.md` and `vivre-backlog.md`. No remote reproduction was attempted.
+- **U-21/U-22 remain open for native validation:** actual Windows scaling, physical keyboard navigation, and spoken screen-reader output. Normal-use feedback has been positive, but those particular checks have not been completed.
+- The older Details-window CollectionView retention concern remains marked **measure first** in `vivre-backlog.md`; no leak is claimed from this review.
+
+## Checks and evidence limits
+
+- `dotnet test source/Vivre.Core.Tests/Vivre.Core.Tests.csproj -c Release --no-restore --verbosity quiet`: **1,575 passed, 2 skipped, 0 failed**. These tests do not exercise the new findings above through a live window or remote host.
+- `dotnet list source/Vivre.slnx package --vulnerable --include-transitive`: no vulnerable packages reported by the configured NuGet advisory sources for Core, Desktop, UpdateAgent, or Core.Tests. This does not establish that every dependency or deployment environment is risk-free.
+- The separately mentioned Daybreak blue capability was not exposed as a callable tool in this session. The security assessment here uses repository inspection and the NuGet advisory command.

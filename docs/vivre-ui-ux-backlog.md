@@ -420,3 +420,12 @@ Review baseline: `fb46160`. Findings only; no implementation approved by this re
 - Implemented: preserve /, :, | and other filename punctuation through reversible encoding in .vlist filenames; contents remain one machine per line. Legacy .txt names and files are unchanged. Listing, loading, revisions, overwrite approval, delete and restore use the same mapping; literal percent sequences cannot alias separators.
 - Existing sanitized names cannot be safely reconstructed; no guessing or automatic renaming is performed.
 - Verified: 20 storage tests passed, one privileged file-symlink case skipped; Release build and workspace-safety probe passed. Tests cover the reported date/time name, collisions, reload, revision checks, delete/restore and safe separator encoding with dummy data. Existing missing-signing-certificate warning remains; no deployed package or live data changed.
+
+
+## Follow-up review — U-40–U-42 (2026-10-20)
+
+See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for evidence, conditions, security finding S-1, and validation limits. These findings are not implementation authorization.
+
+- [ ] **U-40 · Medium — Revalidate a saved list at choice confirmation.** An external save/delete while Append/Replace/New tab is open can leave the new tab labeled as the current saved list while showing older names.
+- [ ] **U-41 · Low — Distinguish repeated saved-list tabs.** Opening one saved list repeatedly creates identical tab titles.
+- [ ] **U-42 · Medium when storage is slow — Keep list menu/open reads responsive.** List enumeration and content reads currently run on the UI thread; deployment-host latency has not been measured.
