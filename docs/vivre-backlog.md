@@ -4,6 +4,8 @@ Reconciled **2026-10-20** against release **1.20.0**, source baseline `5c56ea3`,
 
 The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The [release ledger](release-1.20.0-validation.md) identifies the released source and packaging limits. The previous tracker is preserved verbatim in the [dated snapshot](vivre-backlog-snapshot-2026-10-20.md); frozen findings and historical test results remain unchanged.
 
+**Unreleased after 1.20.0:** U-58/U-59 simplify the saved-list organizer and add save-time folder choice; see [acceptance and review](list-organization-validation.md). No patching behavior or deferred item is changed.
+
 ## Status rules
 
 - **Implemented / locally validated:** the cited implementation has evidence; this does not claim current live-server, native interaction or whole-app soak coverage.

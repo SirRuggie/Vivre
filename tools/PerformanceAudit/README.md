@@ -138,3 +138,5 @@ It also runs the existing script-editor suite, including retained-editor guidanc
 without losing dirty content. The separate `--library-search-only` mode additionally requires native
 popup keyboard focus; inability to obtain focus is a failed/unverified check, not a pass.
 These are local WPF probes, not physical pointer/keyboard, native DPI or screen-reader tests.
+
+`--list-organization-only <output.json>` checks U-58/U-59 with production save/organize controls and temporary dummy lists: exact-name/default folders, explicit choices, concurrent moves, creation/rename/removal, cancellation/overwrite denial, stale destinations, failed writes/partial success, corrupted metadata, row preservation and eight light/dark/minimum/default layouts. It replaces the retired cascading move-menu coverage; `--navigation-clarity-only` retains the existing right-click move-picker checks. No production files, live servers or physical input/DPI/screen-reader certification.

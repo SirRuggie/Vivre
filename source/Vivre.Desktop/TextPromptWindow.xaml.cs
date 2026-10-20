@@ -24,6 +24,11 @@ public partial class TextPromptWindow : FluentWindow
     public string? Value { get; private set; }
 
     public Func<string, string?>? ValidateAndAccept { get; set; }
+    public FrameworkElement? AdditionalContent
+    {
+        get => AdditionalContentHost.Content as FrameworkElement;
+        set { AdditionalContentHost.Content = value; AdditionalContentHost.Visibility = value is null ? Visibility.Collapsed : Visibility.Visible; }
+    }
     public string AcceptText { get => (string)AcceptButton.Content; set => AcceptButton.Content = value; }
 
     private void OnOk(object sender, RoutedEventArgs e)

@@ -81,23 +81,9 @@ internal static class LibrarySearchProbe
         child.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
         if (opened != "Monthly") throw new InvalidOperationException("Folder list opened the wrong saved list.");
 
-        var move = new MenuItem { Header = "Move list" };
-        (string? List, string? Folder) moved = (null, null);
-        typeof(MainWindow).GetMethod("AddMoveListItems", BindingFlags.Static | BindingFlags.NonPublic)!
-            .Invoke(null, [move, new[] { "Current", "Monthly" }, folders,
-                (Action<string, string?>)((list, destination) => moved = (list, destination))]);
-        var current = (MenuItem)move.Items[1];
-        var monthly = (MenuItem)move.Items[2];
-        var intoFolder = (MenuItem)current.Items[1];
-        if (!intoFolder.IsEnabled) throw new InvalidOperationException("Unfoldered list cannot be moved into a folder.");
-        intoFolder.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-        if (moved != ("Current", "October Updates"))
-            throw new InvalidOperationException("Move menu sent the wrong list or folder.");
-        var toTop = (MenuItem)monthly.Items[0];
-        if (!toTop.IsEnabled) throw new InvalidOperationException("Foldered list cannot be moved to the top level.");
-        toTop.RaiseEvent(new RoutedEventArgs(MenuItem.ClickEvent));
-        if (moved != ("Monthly", null))
-            throw new InvalidOperationException("Top-level move sent the wrong list.");
+        // Flat organization and move destinations are covered by ListOrganizationProbe using
+        // the production window/store; the retired cascading submenu no longer exists.
+
     }
 
     private static IEnumerable<DependencyObject> Descendants(DependencyObject root)

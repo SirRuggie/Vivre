@@ -6,6 +6,10 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Changed
+
+- Simplify list organization into one searchable window, retaining the right-click move shortcut; choose or create a folder directly while saving a list, with top-level defaults for new lists and preserved folders for existing lists unless explicitly changed.
+
 ### Documentation
 
 - Reconcile current backlog statuses with later implementation evidence, preserve the previous tracker as a dated snapshot, and distinguish deferred work, validation gaps and historical release checkpoints.

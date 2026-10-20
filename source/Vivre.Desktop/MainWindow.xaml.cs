@@ -1621,8 +1621,6 @@ public partial class MainWindow : FluentWindow
             organizeMenu.Items.Clear();
             organizeMenu.IsEnabled = vm is not null && folderError is null;
             organizeMenu.ToolTip = folderError;
-            if (vm is not null && folderError is null) AddListOrganizationItems(organizeMenu, vm, lists, folders);
-            else if (folderError is not null) organizeMenu.Items.Add(new MenuItem { Header = "Could not read folders", ToolTip = folderError, IsEnabled = false });
         }
         if (cm.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "RestoreList") is { } restoreMenu)
         {
@@ -1821,89 +1819,18 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void AddListOrganizationItems(MenuItem parent, WorkspaceViewModel vm,
-        IReadOnlyList<string> lists, ListFolderSnapshot folders)
+    private async void OnOrganizeLists(object sender, RoutedEventArgs e)
     {
-        var create = new MenuItem { Header = "New folder…" };
-        create.Click += (_, _) => PromptListFolder(vm, null);
-        parent.Items.Add(create);
-
-        var move = new MenuItem { Header = "Move list", IsEnabled = lists.Count > 0 && folders.Folders.Count > 0 };
-        AddMoveListItems(move, lists, folders, (name, folder) => MoveSavedList(vm, name, folder));
-        parent.Items.Add(move);
-
-        var rename = new MenuItem { Header = "Rename folder", IsEnabled = folders.Folders.Count > 0 };
-        AddSearchableItems(rename, folders.Folders, (_, folder) => PromptListFolder(vm, folder), "folders");
-        parent.Items.Add(rename);
-
-        var remove = new MenuItem { Header = "Remove folder", IsEnabled = folders.Folders.Count > 0 };
-        AddSearchableItems(remove, folders.Folders, (_, folder) => RemoveListFolder(vm, folder), "folders");
-        parent.Items.Add(remove);
-    }
-
-    private static void AddMoveListItems(MenuItem parent, IReadOnlyList<string> lists,
-        ListFolderSnapshot folders, Action<string, string?> onMove)
-    {
-        var search = new Wpf.Ui.Controls.TextBox { Width = 260, PlaceholderText = "Search lists…", ClearButtonEnabled = true };
-        System.Windows.Automation.AutomationProperties.SetName(search, "Search lists to move");
-        parent.Items.Add(new MenuItem { Header = search, StaysOpenOnClick = true });
-        var entries = new List<MenuItem>();
-        foreach (string name in lists)
+        e.Handled = true;
+        var vm = Shell?.SelectedTab as WorkspaceViewModel;
+        ListsButton.ContextMenu.IsOpen = false;
+        await Dispatcher.Yield(DispatcherPriority.ApplicationIdle);
+        if (vm is null || vm.IsClosed || Shell?.AllTabs.Contains(vm) != true) return;
+        try { new OrganizeListsWindow(vm) { Owner = this }.ShowDialog(); }
+        catch (Exception ex)
         {
-            var item = new MenuItem { Header = name };
-            string? current = folders.FolderFor(name);
-            var top = new MenuItem { Header = "Top level", IsEnabled = current is not null };
-            top.Click += (_, _) => onMove(name, null);
-            item.Items.Add(top);
-            foreach (string folder in folders.Folders.OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
-            {
-                var destination = new MenuItem { Header = folder,
-                    IsEnabled = !string.Equals(folder, current, StringComparison.OrdinalIgnoreCase) };
-                destination.Click += (_, _) => onMove(name, folder);
-                item.Items.Add(destination);
-            }
-            parent.Items.Add(item);
-            entries.Add(item);
+            System.Windows.MessageBox.Show(this, ex.Message, "Could not organize lists", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
         }
-        var empty = new MenuItem { Header = "(no matches)", IsEnabled = false, Visibility = Visibility.Collapsed };
-        parent.Items.Add(empty);
-        search.TextChanged += (_, _) =>
-        {
-            string query = search.Text.Trim();
-            foreach (MenuItem item in entries)
-                item.Visibility = item.Header.ToString()!.Contains(query, StringComparison.OrdinalIgnoreCase)
-                    ? Visibility.Visible : Visibility.Collapsed;
-            empty.Visibility = entries.Any(item => item.Visibility == Visibility.Visible) ? Visibility.Collapsed : Visibility.Visible;
-        };
-    }
-
-    private void PromptListFolder(WorkspaceViewModel vm, string? previous)
-    {
-        var dialog = new TextPromptWindow(previous is null ? "New list folder" : "Rename list folder",
-            "Folder name:", previous ?? "") { Owner = this, AcceptText = previous is null ? "Create" : "Rename" };
-        dialog.ValidateAndAccept = name =>
-        {
-            if (previous is null) vm.CreateListFolder(name);
-            else vm.RenameListFolder(previous, name);
-            return null;
-        };
-        dialog.ShowDialog();
-    }
-
-    private void RemoveListFolder(WorkspaceViewModel vm, string folder)
-    {
-        if (System.Windows.MessageBox.Show(this,
-            $"Remove the folder '{folder}'? Its saved lists will remain available at the top level.",
-            "Remove list folder", System.Windows.MessageBoxButton.YesNo, MessageBoxImage.Question,
-            System.Windows.MessageBoxResult.No) != System.Windows.MessageBoxResult.Yes) return;
-        try { vm.RemoveListFolder(folder); }
-        catch (Exception ex) { System.Windows.MessageBox.Show(this, ex.Message, "Could not remove folder", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning); }
-    }
-
-    private void MoveSavedList(WorkspaceViewModel vm, string list, string? folder)
-    {
-        try { vm.MoveSavedList(list, folder); }
-        catch (Exception ex) { System.Windows.MessageBox.Show(this, ex.Message, "Could not move list", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning); }
     }
 
     private void RestoreDeletedList(WorkspaceViewModel vm, Vivre.Core.Computers.DeletedComputerList item)
@@ -1996,16 +1923,48 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    private void SaveCurrentAsList(WorkspaceViewModel vm)
+    private void SaveCurrentAsList(WorkspaceViewModel vm) => CreateSaveListDialog(vm).ShowDialog();
+
+    private TextPromptWindow CreateSaveListDialog(WorkspaceViewModel vm,
+        Func<Window, string, bool>? confirmOverwrite = null, Action<Window, string>? showWarning = null)
     {
         var dialog = new TextPromptWindow("Save list", "Save this tab's machines as a list named:", vm.SavedListName ?? vm.Title)
         {
-            Owner = this,
-            Width = 440,
+            Owner = IsLoaded ? this : null,
+            Width = 480,
             SizeToContent = SizeToContent.Height,
             WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.None,
             AcceptText = "Save list",
         };
+        var folderChoice = new ListFolderChoice();
+        bool foldersAvailable = true;
+        try { folderChoice.Configure(() => vm.SavedListFolders(vm.SavedLists()), vm.CreateListFolder, vm.SavedListName); }
+        catch (Exception ex)
+        {
+            // Damaged optional folder metadata must not prevent saving list contents or be overwritten.
+            foldersAvailable = false;
+            folderChoice.IsEnabled = false;
+            folderChoice.ToolTip = ex.Message;
+        }
+        var content = new StackPanel();
+        content.Children.Add(folderChoice);
+        if (!foldersAvailable) content.Children.Add(new System.Windows.Controls.TextBlock
+        {
+            Text = "Folders are unavailable. Saving will keep the list's existing organization.",
+            TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 6, 0, 0)
+        });
+        dialog.AdditionalContent = content;
+        folderChoice.DefaultForList(((Wpf.Ui.Controls.TextBox)dialog.FindName("InputBox")).Text);
+        // Cached snapshot only while typing; submit preserves the exact target's latest folder
+        // unless the user explicitly chose a destination (including a newly created folder).
+        ((Wpf.Ui.Controls.TextBox)dialog.FindName("InputBox")).TextChanged += (_, _) =>
+            folderChoice.DefaultForList(((Wpf.Ui.Controls.TextBox)dialog.FindName("InputBox")).Text);
+        confirmOverwrite ??= (owner, name) => System.Windows.MessageBox.Show(owner,
+            $"Replace the saved list '{name}' with this tab's machines? Its previous saved contents will be overwritten.",
+            "Overwrite saved list", System.Windows.MessageBoxButton.YesNo, MessageBoxImage.Warning,
+            System.Windows.MessageBoxResult.No) == System.Windows.MessageBoxResult.Yes;
+        showWarning ??= (owner, message) => System.Windows.MessageBox.Show(owner, message,
+            "List saved — folder unchanged", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
         dialog.ValidateAndAccept = name =>
         {
             string? error = Vivre.Core.Computers.ComputerListStore.NameError(name);
@@ -2013,16 +1972,35 @@ public partial class MainWindow : FluentWindow
             if (vm.IsClosed) return "This tab has been closed.";
             string? revision = vm.SavedListRevision(name);
             bool overwrite = revision is not null;
-            if (overwrite && System.Windows.MessageBox.Show(dialog,
-                $"Replace the saved list '{name}' with this tab's machines? Its previous saved contents will be overwritten.",
-                "Overwrite saved list", System.Windows.MessageBoxButton.YesNo, MessageBoxImage.Warning,
-                System.Windows.MessageBoxResult.No) != System.Windows.MessageBoxResult.Yes)
+            if (overwrite && !confirmOverwrite(dialog, name))
                 return "Not overwritten. Choose another name, or Cancel.";
+            bool explicitFolder = folderChoice.HasExplicitSelection;
+            string? destination = explicitFolder ? folderChoice.SelectedFolder : null;
+            if (foldersAvailable)
+            {
+                if (explicitFolder && !folderChoice.HasSelection) return "Choose a folder or Top level.";
+                var latest = vm.SavedListFolders(vm.SavedLists());
+                if (explicitFolder && destination is not null && !latest.Folders.Contains(destination, StringComparer.OrdinalIgnoreCase))
+                    return "That folder no longer exists. Choose Top level or create a new folder.";
+            }
             vm.SaveCurrentAsList(name, overwrite, revision);
+            if (foldersAvailable && (explicitFolder || !overwrite))
+            {
+                try
+                {
+                    var latest = vm.SavedListFolders(vm.SavedLists());
+                    if (!string.Equals(latest.FolderFor(name), destination, StringComparison.OrdinalIgnoreCase))
+                        vm.MoveSavedList(name, destination);
+                }
+                catch (Exception ex)
+                {
+                    showWarning(dialog, $"List '{name}' was saved, but its folder could not be updated. Use Lists > Organize lists to move it. {ex.Message}");
+                }
+            }
             return null;
         };
         dialog.SetResourceReference(BackgroundProperty, "ApplicationBackgroundBrush");
-        dialog.ShowDialog();
+        return dialog;
     }
 
     private async void ConfirmDeleteList(WorkspaceViewModel vm, string name)

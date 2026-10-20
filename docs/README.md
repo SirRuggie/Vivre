@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[list-organization-validation.md](list-organization-validation.md)** — Unreleased U-58/U-59 list organization/save-folder flow, review corrections, focused checks and native-validation limits.
+
 - **[release-1.20.0-validation.md](release-1.20.0-validation.md)** — current release metadata, included list/People/UI changes, reused regression evidence and packaging limits.
 
 - **[release-1.19.2-validation.md](release-1.19.2-validation.md)** — historical U-41 and saved-list-name acceptance ledger and checks for 1.19.2.
@@ -14,7 +16,7 @@ live status of anything they raise is tracked in the backlog.
 
 - **[ui-ux-u21-u22-validation.md](ui-ux-u21-u22-validation.md)** — layout/accessibility fixes, local test evidence, and remaining native Windows validation.
 
-- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-57 checklist, decisions, completion evidence, and strengths to preserve; U-45–U-57 included in 1.20.0 with local evidence and native-testing limits. *Read when: choosing or updating UI/UX work.*
+- **[vivre-ui-ux-backlog.md](vivre-ui-ux-backlog.md)** — living U-1–U-59 checklist, decisions, completion evidence, and strengths to preserve; U-45–U-57 included in 1.20.0 with local evidence and native-testing limits. *Read when: choosing or updating UI/UX work.*
 
 - **[vivre-audit-implementation-2026-10-14.md](vivre-audit-implementation-2026-10-14.md)** — F26–F49 acceptance ledger and follow-ups, independent review corrections and exact local/live validation limits.
 

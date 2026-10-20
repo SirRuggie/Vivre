@@ -1,0 +1,62 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.OrganizeListsWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+ xmlns:local="clr-namespace:Vivre.Desktop"
+ Title="Organize lists" Width="640" Height="560" MinWidth="440" MinHeight="460"
+ ExtendsContentIntoTitleBar="True" WindowBackdropType="None" WindowCornerPreference="Round"
+ Background="{DynamicResource ApplicationBackgroundBrush}"
+ WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+ <Grid>
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/>
+   <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+  </Grid.RowDefinitions>
+  <ui:TitleBar Title="Organize lists"/>
+  <StackPanel Grid.Row="1" Margin="24,8,24,12">
+   <TextBlock Text="Select a list, choose a folder, then Move." TextWrapping="Wrap" Margin="0,0,0,8"/>
+   <ui:TextBox x:Name="SearchBox" PlaceholderText="Search lists…" ClearButtonEnabled="True"
+               AutomationProperties.Name="Search saved lists" TextChanged="OnSearchChanged"/>
+  </StackPanel>
+  <Grid Grid.Row="2" Margin="24,0">
+   <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+   <Grid Margin="10,0,10,6">
+    <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+    <TextBlock Text="List"/><TextBlock Grid.Column="1" Text="Current folder"/>
+   </Grid>
+   <ListBox Grid.Row="1" x:Name="Lists" SelectionChanged="OnListSelected" HorizontalContentAlignment="Stretch"
+            AutomationProperties.Name="Saved lists to organize" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+    <ListBox.ItemContainerStyle>
+     <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+      <Setter Property="MinHeight" Value="32"/><Setter Property="Padding" Value="6,2"/>
+      <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+     </Style>
+    </ListBox.ItemContainerStyle>
+    <ListBox.ItemTemplate>
+     <DataTemplate>
+      <Grid Margin="4,2" ToolTip="{Binding Name}">
+       <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="140"/></Grid.ColumnDefinitions>
+       <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0"/>
+       <TextBlock Grid.Column="1" Text="{Binding FolderLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Folder}"
+                  Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"/>
+      </Grid>
+     </DataTemplate>
+    </ListBox.ItemTemplate>
+   </ListBox>
+   <TextBlock x:Name="EmptyText" Grid.Row="1" Text="No saved lists yet. Save a tab as a list to organize it here."
+              TextWrapping="Wrap" Margin="16" VerticalAlignment="Center" IsHitTestVisible="False" Visibility="Collapsed"/>
+  </Grid>
+  <StackPanel Grid.Row="3" Margin="24,16,24,0">
+   <local:ListFolderChoice x:Name="FolderChoice"/>
+   <WrapPanel Margin="0,8,0,0">
+    <ui:Button x:Name="RenameButton" Content="Rename folder…" Click="OnRenameFolder" IsEnabled="False"/>
+    <ui:Button x:Name="RemoveButton" Content="Remove folder…" Click="OnRemoveFolder" Margin="8,0,0,0" IsEnabled="False"/>
+   </WrapPanel>
+  </StackPanel>
+  <TextBlock x:Name="StatusText" Grid.Row="4" Margin="24,8,24,0" TextWrapping="Wrap" local:AccessibleStatus.Enabled="True"/>
+  <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Margin="24,12,24,16">
+   <ui:Button x:Name="MoveButton" Content="Move" Appearance="Primary" IsEnabled="False" Click="OnMove"/>
+   <ui:Button Content="Close" IsCancel="True" Margin="8,0,0,0"/>
+  </StackPanel>
+ </Grid>
+</ui:FluentWindow>

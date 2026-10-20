@@ -6,6 +6,8 @@ Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublishe
 
 Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-57 are included in release 1.20.0 with local validation. Native validation limits remain recorded below.
 
+Unreleased follow-up: U-58/U-59 simplify organization and saving; their acceptance record is below.
+
 Current release: **1.20.0** (2026-10-20), including the saved-tab rename, list folders and U-45–U-57. See [release validation](release-1.20.0-validation.md). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version and Unreleased references below describe the implementation checkpoints at that time; those approved changes are now included in 1.20.0.
 
 ## Reconciled status — 2026-10-20
@@ -14,6 +16,12 @@ Current release: **1.20.0** (2026-10-20), including the saved-tab rename, list f
 - **Still open:** U-21 native scaling/layout checks; U-22 physical input/Narrator checks plus the RDP naming/announcement follow-up recorded at the end of this ledger.
 - **Deferred by Shaun:** U-40 and U-42; S-1 is tracked separately in the [current backlog](vivre-backlog.md).
 - **Historical checkpoints:** earlier Unreleased/version/package statements describe those batches only; 1.20.0 includes U-43/U-44 and U-45–U-57. No current deployment/native certification is implied.
+
+## U-58/U-59 — simpler saved-list organization (Unreleased after 1.20.0)
+
+- [x] **U-58 · Medium — Organize lists in one searchable window.** Select a list, choose its folder and Move; folder creation/rename/removal are available without cascading menus, and the existing right-click Move to folder shortcut remains.
+- [x] **U-59 · Medium — Choose or create a folder while saving.** New lists default to Top level (no folder); existing submitted list names retain their current assignment unless a destination is explicitly chosen, including when a different name is entered or another process moves the list.
+- **Evidence/limits:** [acceptance ledger](list-organization-validation.md); real controls and isolated dummy storage, no live operations or native DPI/input certification. Existing U-21/U-22 checks and S-1/U-40/U-42 deferrals remain unchanged. This save-folder protection does not close U-40's separate list-open race.
 
 ## How to use
 

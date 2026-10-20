@@ -115,9 +115,9 @@ public static class HelpContent
             Lines =
             [
                 "1. Load the machines you want in the tab.",
-                "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt. After a successful save, that tab takes the saved list's name.",
+                "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt. Choose a folder from the dropdown, or use New folder to create one. New lists default to Top level (no folder); an existing list keeps its folder unless you choose another. After a successful save, that tab takes the saved list's name.",
                 "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
-                "Create folders under Lists ▾ ▸ Organize lists. In Open list, right-click a saved list ▸ Move to folder…, choose a destination, then Move. Top level (outside folders) moves it back out. Rename folder changes its label; Remove folder keeps every list at the top level. The Organize lists move route also remains available.",
+                "Lists ▾ ▸ Organize lists opens one window: search/select a list, choose its folder, then Move. New folder, Rename folder and Remove folder are available there; removing a folder keeps its lists at the top level. You can also right-click a saved list under Open list ▸ Move to folder…. Creating a folder is saved immediately, even if you later cancel saving a list.",
                 "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
                 "The line above the filters shows the associated list and unsaved membership changes; Saved confirms a successful save. Status compares with the last open/save, not continuous disk monitoring.",
