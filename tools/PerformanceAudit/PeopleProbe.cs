@@ -118,7 +118,7 @@ internal static class PeopleProbe
         typeof(PeopleView).GetMethod("BuildRowMenu", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(view, null);
         var rowItems = results.ContextMenu.Items.OfType<MenuItem>().ToArray();
         Require(rowItems[0].Header.ToString() == "Review/change match..." && rowItems[1].Header.ToString() == "Edit entry and retry...", "Row actions are buried behind copying.");
-        Require(rowItems.Length == 6, "Row menu lost actions.");
+        Require(rowItems.Length == 7 && rowItems[^1].Header.ToString()!.StartsWith("Remove from results"), "Row menu lost actions.");
         results.ScrollIntoView(vm.Rows[0]); view.UpdateLayout();
         var resultRow = (DataGridRow)results.ItemContainerGenerator.ContainerFromItem(vm.Rows[0]);
         ContextMenuEventArgs MenuEvent(object source, double coordinate) => (ContextMenuEventArgs)Activator.CreateInstance(

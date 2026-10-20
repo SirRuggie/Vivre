@@ -44,6 +44,8 @@ header from creation (the wug-state-check-findings.md pattern) — that keeps do
 
 PeopleView/PeopleViewModel own a separate session-only workspace. AdPeopleLookup uses the current Windows identity and current AD naming context, signed/sealed LDAP, bounded background requests, and DomainScope; no remote machine operations or directory writes. Only unique enabled exact matches auto-resolve. Suggestions require review and missing mail is never replaced with a guessed address or UPN. Reuse GridReportCsv escaping. Keep fleet accelerators gated to the visible fleet section. See docs/people-lookup-validation.md.
 
+People removal is local, selected-only and blocked during submission/adding/lookup; validate captured menu selection and current row membership. Keep only one bounded undo batch, expiring at the next result change. Copying is not a complete export; exports during active work remain dirty snapshots. Exit export must recheck idle state after the save dialog, and export cancel/failure must preserve results. Keep submission busy across both dispatcher yields and release only its own guard; submission-only Stop must preserve undo and clean export state when rows are unchanged. Discard approval must not clear or stop People before actual shell closure because a later close guard can veto exit.
+
 ## Shell / tab hosting
 
 The shell is a WPF-UI `ui:NavigationView` (LeftCompact pane: **Fleet ▸ Health / Patching · People · Scripts ·

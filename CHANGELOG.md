@@ -12,6 +12,8 @@ it ships, then gets a dated heading.
 
 ### Fixed
 
+- Remove selected People results locally with one-step undo, preserving other rows and review decisions and guarding active submission/adding/lookup.
+- Clarify People completion/copy feedback and offer Export CSV and exit, Exit without exporting, or Cancel; canceled/failed exports and vetoed closes retain results, while in-progress exports remain snapshots.
 - Lead Patching with Scan/Install, group health checks, keep Stop visible and move Remove offline/Clear results into Actions with explicit all-tab scope; label source settings Update options.
 - Restore vertical/horizontal scrollbar track paging and enlarge the thumb pointer area while retaining its slim appearance.
 - Add a saved-list right-click Move to folder picker with explicit confirmation, filtering and a top-level destination; label folder searches accurately.

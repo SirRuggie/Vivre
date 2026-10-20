@@ -37,6 +37,7 @@ internal static class Program
             return;
         }
         bool peopleOnly = args.Length == 2 && args[0] == "--people-only";
+        bool peopleRecoveryOnly = args.Length == 2 && args[0] == "--people-recovery-only";
         bool navigationClarityOnly = args.Length == 2 && args[0] == "--navigation-clarity-only";
         bool actionsMenuOnly = args.Length == 2 && args[0] == "--actions-menu-only";
         bool layoutAccessibilityOnly = args.Length == 2 && args[0] == "--layout-accessibility-only";
@@ -54,7 +55,7 @@ internal static class Program
         bool bannersOnly = args.Length == 2 && args[0] == "--banners-only";
         bool installOverrideOnly = args.Length == 2 && args[0] == "--install-override-only";
         bool filterExperiment = args.Length == 2 && args[0] == "--filter-experiment";
-        if (args.Length != 1 && !navigationClarityOnly && !operationalClarityOnly && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly && !actionsMenuOnly && !peopleOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
+        if (args.Length != 1 && !peopleRecoveryOnly && !navigationClarityOnly && !operationalClarityOnly && !filterExperiment && !bannersOnly && !auditFixesOnly && !cuStageOnly && !installOverrideOnly && !softwareDisplayOnly && !adLinuxOnly && !tabOptionsOnly && !workspaceSafetyOnly && !patchingClarityOnly && !settingsClarityOnly && !librarySearchOnly && !tabHandoffOnly && !layoutAccessibilityOnly && !actionsMenuOnly && !peopleOnly) throw new ArgumentException("Provide [--filter-experiment] and the JSON output path.");
         string outputPath = args[^1];
         // No production App startup, visible windows, credentials, server operations or production writes.
         var app = new AuditApplication { ShutdownMode = ShutdownMode.OnExplicitShutdown };
@@ -78,6 +79,11 @@ internal static class Program
         WorkspaceProbe.SettingsRoot = Path.Combine(root, "workspaces");
         try
         {
+            if (peopleRecoveryOnly)
+            {
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(PeopleRecoveryProbe.Run(root, Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "people-recovery-renders")), new JsonSerializerOptions { WriteIndented = true }));
+                return;
+            }
             if (navigationClarityOnly)
             {
                 File.WriteAllText(outputPath, JsonSerializer.Serialize(NavigationClarityProbe.Run(root), new JsonSerializerOptions { WriteIndented = true }));

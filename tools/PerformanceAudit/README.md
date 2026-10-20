@@ -101,6 +101,8 @@ U-44 extends --library-search-only with grouped saved-list search and exact list
 
 ## People lookup probes
 
+`--people-recovery-only <output.json>` checks U-56/U-57 with dummy identities and temporary settings/files: filtered and stale-selected removal, exact row/order/decision undo, undo expiry and active-work guards (including submission gaps, no-change Stop and overlapping lookup/submission), copying versus export state, CSV cancel/failure/success, busy snapshots, lookup starting inside save selection, modal Cancel/Enter/Escape/close, and another shell close guard vetoing discard. Default/minimum dialog layouts render beside the JSON in `people-recovery-renders` using scoped dark/light resources. It reuses the offscreen modal helper; clipboard and save-path selection are intercepted, CSV writes are real temporary files. No live AD, native clipboard/save-picker, physical input or deployment is exercised.
+
 `--people-only <output.json>` exercises the real People view/model with dummy directory responses: exact/review/no-mail matching, copying/CSV escaping, paste preservation, retry/error/stop behavior, navigation and fleet-shortcut isolation. It saves offscreen layout renders under `.artifacts/people-renders`. This is not physical keyboard, clipboard, save-dialog, screen-reader, or native DPI validation.
 
 `--people-directory-check <output.json>` is an explicit live read-only check using the current Windows account: a generated nonexistent username, the current username, and its domain-qualified equivalent. It writes only counts and boolean results, not directory names or emails. Unlike the default isolated probes, this flag requires reachable AD and directory-read access. It is not an all-domain or cross-forest audit.

@@ -40,7 +40,11 @@
     <ui:Button Content="Clear filters" Click="OnClearFilters" Visibility="{Binding HasFilters, Converter={StaticResource BoolToVis}}" Margin="0,0,12,6"/>
     <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" Margin="0,0,0,6"/>
    </WrapPanel>
-   <TextBlock Text="{Binding Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+   <DockPanel LastChildFill="True">
+    <ui:Button x:Name="UndoRemovalButton" DockPanel.Dock="Right" Content="{Binding UndoRemovalLabel}" Click="OnUndoRemoval" Margin="8,0,0,0"
+               Visibility="{Binding HasUndoRemoval, Converter={StaticResource BoolToVis}}" IsEnabled="{Binding CanUndoRemoval}" ToolTip="Restore the last removed entries and their results; available until results change."/>
+    <TextBlock Text="{Binding Message}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+   </DockPanel>
   </StackPanel>
   <Grid Grid.Row="2">
    <Grid.RowDefinitions><RowDefinition Height="2*" MinHeight="100"/><RowDefinition Height="Auto"/><RowDefinition x:Name="ReviewRowDefinition" Height="0"/></Grid.RowDefinitions>

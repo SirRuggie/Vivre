@@ -17,6 +17,9 @@ public partial class PeopleView : UserControl, IDisposable
     private bool _reviewOpen;
     private GridLength _reviewHeight = new(1, GridUnitType.Star);
     private readonly GridLayoutPersistence _resultsLayout, _candidatesLayout;
+    internal Func<Window?, string?>? ExportPathSelector { get; set; }
+    internal Action<string>? ClipboardWriterOverride { get; set; }
+    internal Func<PeopleExitWindow, bool?>? ExitDialogOverride { get; set; }
     public PeopleView() : this(new PeopleViewModel()) { }
     public PeopleView(PeopleViewModel model, AppSettingsStore? settings = null)
     {
@@ -77,6 +80,7 @@ public partial class PeopleView : UserControl, IDisposable
     }
     private async Task QuickAddAsync()
     {
+        if (!Model.CanAdd) return;
         string text = QuickAddBox.Text;
         try
         {
@@ -90,6 +94,16 @@ public partial class PeopleView : UserControl, IDisposable
     }
     private async Task<bool> AddEntriesAsync(string text)
     {
+        if (_disposed || !Model.CanAdd) return false;
+        Model.IsSubmitting = true;
+        bool preparing = true;
+        void EndPreparation()
+        {
+            // A completed older lookup must not release a newer submission's guard.
+            if (!preparing) return;
+            preparing = false;
+            Model.IsSubmitting = false;
+        }
         try
         {
             int stopVersion = Model.StopVersion;
@@ -102,11 +116,17 @@ public partial class PeopleView : UserControl, IDisposable
             if (added > 0 && stopVersion == Model.StopVersion)
             {
                 await System.Windows.Threading.Dispatcher.Yield(System.Windows.Threading.DispatcherPriority.Background);
-                if (!_disposed && stopVersion == Model.StopVersion) await Model.LookupAsync();
+                if (!_disposed && stopVersion == Model.StopVersion)
+                {
+                    var lookup = Model.LookupAsync();
+                    EndPreparation();
+                    await lookup;
+                }
             }
             return true;
         }
         catch (Exception ex) { Model.Message = $"Could not add people: {ex.Message}"; return false; }
+        finally { EndPreparation(); }
     }
     private void OnActions(object sender, RoutedEventArgs e)
     {
@@ -140,18 +160,22 @@ public partial class PeopleView : UserControl, IDisposable
         if (e.Key == Key.Enter) { OnOpenReview(sender, e); e.Handled = true; }
         else if (e.Key == Key.Escape && Model.HasReview) { Model.CloseReview(); e.Handled = true; }
     }
-    private async void OnRetry(object sender, RoutedEventArgs e) { Model.QueueRetry(); await Model.LookupAsync(); }
-    public bool ConfirmCanClose() => (!Model.IsBusy && !Model.IsAdding && !Model.HasUnexportedResults) ||
-        System.Windows.MessageBox.Show(Window.GetWindow(this),
-            "People lookup has session-only results or work in progress. Exit and discard unexported results? Any remaining lookup will stop.",
-            "Exit People lookup", MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No) == MessageBoxResult.Yes;
+    private async void OnRetry(object sender, RoutedEventArgs e) { if (!Model.CanRetry) return; Model.QueueRetry(); await Model.LookupAsync(); }
+    public bool ConfirmCanClose()
+    {
+        if (!Model.CanStop && !Model.HasUnexportedResults) return true;
+        var dialog = new PeopleExitWindow(Model, owner => ExportCsv(owner, requireComplete: true)) { Owner = Window.GetWindow(this) };
+        try { return (ExitDialogOverride is { } show ? show(dialog) : dialog.ShowDialog()) == true; }
+        finally { dialog.Close(); }
+    }
     private void OnClear(object sender, RoutedEventArgs e)
     {
-        if (Model.IsBusy || Model.IsAdding || Model.Rows.Count == 0) return;
+        if (Model.CanStop || Model.Rows.Count == 0) return;
         if (System.Windows.MessageBox.Show(Window.GetWindow(this), "Clear all People lookup results and review decisions?",
             "Clear People results", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) == MessageBoxResult.Yes) Model.Clear();
     }
     private void OnStop(object sender, RoutedEventArgs e) => Model.Stop();
+    private void OnUndoRemoval(object sender, RoutedEventArgs e) => Model.UndoRemoval();
     private void OnClearFilters(object sender, RoutedEventArgs e) => Model.ClearFilters();
     private void OnReview(object sender, RoutedEventArgs e) { Model.StartReview(); RevealReview(); }
     private void OnAccept(object sender, RoutedEventArgs e)
@@ -167,12 +191,12 @@ public partial class PeopleView : UserControl, IDisposable
         var emails = PeopleViewModel.Emails(rows);
         int excluded = rows.Count(r => r.Status != "Resolved" || string.IsNullOrWhiteSpace(r.Email));
         if (CopyText(string.Join(Environment.NewLine, emails)))
-            Model.Message = $"{emails.Length} unique emails copied; {excluded} unresolved/no-email entries excluded.";
+            Model.Message = $"{emails.Length} unique emails copied; {excluded} unresolved/no-email entries excluded. Export CSV to keep all entries and their status details.";
     }
     private bool CopyText(string text)
     {
         if (string.IsNullOrWhiteSpace(text)) { Model.Message = "Nothing to copy; the clipboard was left unchanged."; return false; }
-        try { Clipboard.SetText(text); return true; }
+        try { (ClipboardWriterOverride ?? Clipboard.SetText)(text); return true; }
         catch (Exception ex) { Model.Message = $"Could not copy: {ex.Message}"; return false; }
     }
     public static string Csv(IEnumerable<PersonLookupRow> rows)
@@ -182,13 +206,31 @@ public partial class PeopleView : UserControl, IDisposable
             output.AppendLine(string.Join(",", new[] { row.Input, row.MatchedName, row.Username, row.Email, row.Department, row.Account, row.Status, row.Detail }.Select(GridReportCsv.Escape)));
         return output.ToString();
     }
-    private void OnExport(object sender, RoutedEventArgs e)
+    private void OnExport(object sender, RoutedEventArgs e) => ExportCsv(Window.GetWindow(this), requireComplete: false);
+    private bool ExportCsv(Window? owner, bool requireComplete)
     {
-        if (Model.Rows.Count == 0) { Model.Message = "There are no results to export."; return; }
-        var dialog = new SaveFileDialog { Filter = "CSV files (*.csv)|*.csv", FileName = "People-email-lookup.csv", AddExtension = true, DefaultExt = ".csv" };
-        if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
-        try { File.WriteAllText(dialog.FileName, Csv(Model.Rows), new UTF8Encoding(true)); Model.MarkExported(); Model.Message = $"Exported {Model.Rows.Count} entries, including unresolved statuses."; }
-        catch (Exception ex) { Model.Message = $"Could not export: {ex.Message}"; }
+        if (Model.Rows.Count == 0) { Model.Message = "There are no results to export."; return false; }
+        if (requireComplete && Model.CanStop) { Model.Message = "Stop lookup and wait for it to finish before exporting and exiting."; return false; }
+        try
+        {
+            string? path;
+            if (ExportPathSelector is { } select) path = select(owner);
+            else
+            {
+                var dialog = new SaveFileDialog { Filter = "CSV files (*.csv)|*.csv", FileName = "People-email-lookup.csv", AddExtension = true, DefaultExt = ".csv" };
+                path = dialog.ShowDialog(owner) == true ? dialog.FileName : null;
+            }
+            if (string.IsNullOrEmpty(path)) { Model.Message = "Export canceled; People results are kept."; return false; }
+            // Native save dialogs pump messages; lookup may have started while it was open.
+            if (requireComplete && Model.CanStop) { Model.Message = "Lookup is still running. Cancel, stop lookup and try again when it finishes."; return false; }
+            var rows = Model.Rows.ToArray();
+            File.WriteAllText(path, Csv(rows), new UTF8Encoding(true));
+            Model.MarkExported();
+            Model.Message = $"Exported {rows.Length} entries, including unresolved statuses."
+                + (Model.CanStop ? " Lookup is still running; export again when it finishes to keep later results." : "");
+            return true;
+        }
+        catch (Exception ex) { Model.Message = $"Could not export: {ex.Message}. People results are kept."; return false; }
     }
     private static DataGridRow? RowFrom(DependencyObject? element)
     {
@@ -237,13 +279,24 @@ public partial class PeopleView : UserControl, IDisposable
             item.Click += (_, _) => action(); menu.Items.Add(item);
         }
         Add("Review/change match...", () => { Model.StartReview(rows[0]); RevealReview(); }, rows.Length == 1 && rows[0].Candidates.Count > 0);
-        Add("Edit entry and retry...", () => Edit(rows[0]), rows.Length == 1 && !Model.IsBusy && !Model.IsAdding);
+        Add("Edit entry and retry...", () => Edit(rows[0]), rows.Length == 1 && !Model.CanStop);
         menu.Items.Add(new Separator());
         string scope = $"selected ({rows.Length})";
         Add($"Copy names - {scope}", () => CopyField(rows, r => r.MatchedName), rows.Length > 0);
         Add($"Copy usernames - {scope}", () => CopyField(rows, r => r.Username), rows.Length > 0);
         Add($"Copy emails - {scope}", () => CopyEmails(rows), rows.Length > 0);
         Add($"Copy rows as CSV - {scope}", () => CopyText(Csv(rows)), rows.Length > 0);
+        menu.Items.Add(new Separator());
+        var remove = new MenuItem { Header = $"Remove from results - {scope}", IsEnabled = rows.Length > 0 && !Model.CanStop,
+            ToolTip = "Remove only these local results; AD accounts are unchanged. Available after adding and lookup finish." };
+        remove.Click += (_, _) =>
+        {
+            if (_disposed) return;
+            if (!ResultsGrid.SelectedItems.Cast<PersonLookupRow>().ToHashSet().SetEquals(rows))
+            { Model.Message = "Selection changed. Reopen the menu and review the selected entries."; return; }
+            Model.RemoveRows(rows);
+        };
+        menu.Items.Add(remove);
     }
     private void CopyField(PersonLookupRow[] rows, Func<PersonLookupRow, string> field)
     {

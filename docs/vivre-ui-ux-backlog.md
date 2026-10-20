@@ -4,7 +4,7 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-55 are implemented with local validation in Unreleased; U-56/U-57 await approval. Native validation limits remain recorded below.
+Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-57 are implemented with local validation in Unreleased. Native validation limits remain recorded below.
 
 Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
 
@@ -440,7 +440,7 @@ See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for ev
 
 ## Full-spectrum usability review — U-45–U-57 (2026-10-20)
 
-Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48, U-49–U-51 and People U-52, then U-53–U-55 and the rest of U-52. U-56/U-57 await approval.
+Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48, U-49–U-51 and People U-52, then U-53–U-55 and the rest of U-52. U-56/U-57 were then approved and implemented with the local evidence below.
 
 ### U-49–U-51 and People U-52 acceptance ledger
 
@@ -497,10 +497,27 @@ Scope: reuse the existing People handlers and matching rules; preserve selected/
   - **Why:** Clicking the scrollbar track cannot page through long grids, editors or panels.
 - [x] **U-55 · Low — Shorten the path for moving a saved list.**
   - **Why:** Organizing one list requires navigating several cascading menus.
-- [ ] **U-56 · Low — Allow removal of an accidental People entry.**
+- [x] **U-56 · Low — Allow removal of an accidental People entry.**
   - **Why:** A mistaken addition can be edited, but removing it requires clearing the whole session.
-- [ ] **U-57 · Low — Make People completion and exit choices explicit.**
+- [x] **U-57 · Low — Make People completion and exit choices explicit.**
   - **Why:** After copying emails, the exit warning still talks about unexported results without offering export there.
+
+### U-56/U-57 acceptance ledger
+
+Shaun approved this batch on 2026-10-20. Keep the existing People workspace, matching rules and export format.
+
+| Requested capability | Status |
+|---|---|
+| Remove selected local results, preserve other rows/review decisions, provide one-step undo | Implemented; filtered/stale targets, exact row/order/decision restoration, undo expiry and removed-row guards passed |
+| Block removal/undo during lookup, adding and submission; reject stale menu targets | Implemented; both dispatcher gaps, Stop, late responses and overlapping submissions passed |
+| Clear completion/copy feedback and Export CSV / Exit without exporting / Cancel choices | Implemented; copy stays distinct from full export, modal cancel/Enter/Escape/close and busy gating passed |
+| Preserve results on export cancel/failure and on another close safeguard veto | Implemented; real temporary CSV writes, canceled/failed exports, save-dialog reentrancy and actual shell/script close-veto checks passed |
+| Independent red team and documentation | Two material review findings fixed; final read-only independent refutation found no remaining material source defect; README, Help, changelog, instructions and validation docs updated |
+| Commit/push | Included in the commit containing this ledger; verify remote master at handoff |
+
+- **Validation:** Release desktop/harness build, `--people-recovery-only`, `--people-only` and all nine People core tests passed. The existing 2,000-entry probe measured a 137 ms maximum sampled UI heartbeat gap against its unchanged 500 ms limit; this is an isolated measurement, not a host-latency guarantee. Exit-dialog default/minimum layouts were checked with scoped themes; native Windows DPI/input remains unverified.
+- **Review corrections:** the independent `gpt-5.6-sol` agent found two submission dispatcher gaps that appeared idle, then a submission-only Stop that wrongly expired Undo and dirtied unchanged exported results. A submission guard now covers both gaps and is released by its owner; Stop marks results changed only when queued statuses change. Tests cover an older lookup completing before a newer submission resumes. The overlap probe was corrected to control WPF Background continuation ordering instead of assuming Normal priority; no product assertion was weakened.
+- **Limits/release:** dummy identities, intercepted clipboard/save-path selection, temporary CSV/settings and offscreen WPF dialogs only. No live AD, physical input, native save picker, screen reader, server work or deployment. Independent reviewer inspected source/tests without executing them; execution evidence is from the implementing session. Version remains **1.19.2 + Unreleased**; the existing missing local signing-certificate warning remains, and no ZIP was produced.
 
 ### U-52 remainder and U-53–U-55 acceptance ledger
 

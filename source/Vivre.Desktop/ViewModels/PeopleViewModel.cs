@@ -40,8 +40,14 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _stop;
     private bool _disposed;
     private long _lastRefresh;
+    private (int Index, PersonLookupRow Row)[] _removedRows = [];
+    public bool HasUndoRemoval => _removedRows.Length > 0;
+    public bool CanUndoRemoval => HasUndoRemoval && !CanStop;
+    public string UndoRemovalLabel => $"Undo removal ({_removedRows.Length})";
+    public bool CanExportComplete => HasRows && !CanStop;
+    public string ExitSummary => $"{Rows.Count} People entries are kept only for this session. Export all entries and their match/status details before exiting?";
     public int StopVersion { get; private set; }
-    public bool CanStop => IsBusy || IsAdding;
+    public bool CanStop => IsBusy || IsAdding || IsSubmitting;
     public PeopleViewModel() : this(new AdPeopleLookup()) { }
     public PeopleViewModel(IPeopleLookup lookup)
     {
@@ -58,10 +64,13 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     [ObservableProperty] private string _filter = "All";
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isAdding;
-    public bool CanAdd => !IsAdding;
+    [ObservableProperty] private bool _isSubmitting;
+    public bool CanAdd => !IsAdding && !IsSubmitting;
+    partial void OnIsSubmittingChanged(bool value) => OnIsAddingChanged(value);
     partial void OnIsAddingChanged(bool value)
     {
         OnPropertyChanged(nameof(CanAdd)); OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanUndoRemoval)); OnPropertyChanged(nameof(CanExportComplete));
         NotifyEmptyState();
     }
     [ObservableProperty] private string _searchText = "";
@@ -72,12 +81,50 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     [ObservableProperty] private PersonLookupRow? _selectedResult;
     partial void OnSelectedResultChanged(PersonLookupRow? value) => OnPropertyChanged(nameof(CanOpenReview));
     public bool HasUnexportedResults { get; private set; }
-    public void MarkExported() => HasUnexportedResults = false;
+    public void MarkExported() => HasUnexportedResults = CanStop;
     public void Clear()
     {
-        if (IsBusy || IsAdding) return;
-        CloseReview(); Rows.Clear(); Filter = "All"; SearchText = ""; HasUnexportedResults = false; Refresh();
+        if (CanStop) return;
+        CloseReview(); SelectedResult = null; Rows.Clear(); Filter = "All"; SearchText = ""; HasUnexportedResults = false; Refresh();
         Message = "Results cleared. Paste people to start a new lookup.";
+    }
+    public int RemoveRows(IEnumerable<PersonLookupRow> rows)
+    {
+        if (_disposed) return 0;
+        if (CanStop) { Message = "Wait for adding to finish and stop lookup before removing entries."; return 0; }
+        var targets = rows.ToHashSet();
+        if (targets.Count == 0) return 0;
+        if (targets.Any(row => !Rows.Contains(row))) { Message = "The results changed. Select the entries again."; return 0; }
+        var removed = Rows.Select((row, index) => (Index: index, Row: row)).Where(item => targets.Contains(item.Row)).ToArray();
+        if (ReviewRow is { } review && targets.Contains(review)) CloseReview();
+        if (SelectedResult is { } selected && targets.Contains(selected)) SelectedResult = null;
+        foreach (var item in removed.Reverse()) Rows.RemoveAt(item.Index);
+        if (Rows.Count == 0) HasUnexportedResults = false;
+        Refresh();
+        _removedRows = removed; NotifyUndo();
+        Message = $"Removed {removed.Length} entries from these results only. AD accounts are unchanged; Undo is available until the next result change.";
+        return removed.Length;
+    }
+    public void UndoRemoval()
+    {
+        if (_disposed || !CanUndoRemoval) return;
+        var existing = Rows.Select(row => row.Input).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (Rows.Count + _removedRows.Length > PeopleInput.MaxEntries || _removedRows.Any(item => !existing.Add(item.Row.Input)))
+        { ClearUndo(); Message = "Results changed; undo cannot replace existing entries."; return; }
+        var removed = _removedRows;
+        ClearUndo();
+        foreach (var item in removed) Rows.Insert(Math.Min(item.Index, Rows.Count), item.Row);
+        Refresh();
+        Message = $"Restored {removed.Length} entries and their previous results.";
+    }
+    private void ClearUndo()
+    {
+        if (!HasUndoRemoval) return;
+        _removedRows = []; NotifyUndo();
+    }
+    private void NotifyUndo()
+    {
+        OnPropertyChanged(nameof(HasUndoRemoval)); OnPropertyChanged(nameof(CanUndoRemoval)); OnPropertyChanged(nameof(UndoRemovalLabel));
     }
     public int VisibleCount { get; private set; }
     public int PendingReviewCount => Rows.Count(r => r.Status == "Needs review");
@@ -98,14 +145,14 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     }
     public bool HasReview => ReviewRow is not null;
     public string ReviewTitle => ReviewRow is null ? "" : $"Review: {ReviewRow.Input} · {PendingReviewCount} need review";
-    public bool CanRetry => !IsBusy && !IsAdding && Rows.Any(r => r.Status is "Lookup failed" or "Stopped" or "Not found");
+    public bool CanRetry => !CanStop && Rows.Any(r => r.Status is "Lookup failed" or "Stopped" or "Not found");
     public bool HasRows => Rows.Count > 0;
     public bool CanOpenReview => SelectedResult?.Candidates.Count > 0 || HasPendingReview;
-    public bool CanClear => !IsBusy && !IsAdding && HasRows;
+    public bool CanClear => !CanStop && HasRows;
     public bool HasFilters => Filter != "All" || !string.IsNullOrWhiteSpace(SearchText);
     public bool ShowEmptyState => VisibleCount == 0;
     public bool ShowEmptyPaste => !HasRows && !CanStop;
-    public string EmptyTitle => IsAdding ? "Adding people…" : IsBusy ? "Looking up people…"
+    public string EmptyTitle => IsAdding || IsSubmitting ? "Adding people…" : IsBusy ? "Looking up people…"
         : HasRows ? "No people match these filters" : "Add or paste people to get started";
     public string EmptyDetail => CanStop ? "Results will appear here as lookup progresses."
         : HasRows ? "Clear the filters to see all entries; your results are kept."
@@ -113,6 +160,7 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(CanClear)); OnPropertyChanged(nameof(CanStop));
+        OnPropertyChanged(nameof(CanUndoRemoval)); OnPropertyChanged(nameof(CanExportComplete));
         NotifyEmptyState();
     }
     partial void OnFilterChanged(string value) => RefreshFilters();
@@ -227,7 +275,7 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
                     await Dispatcher.Yield(DispatcherPriority.Background);
             }
             Message = stop.IsCancellationRequested ? "Lookup stopped; completed results kept. Retry unresolved entries when ready."
-                : "Lookup complete. Review uncertain matches; copy or export resolved results.";
+                : $"Lookup complete: {Rows.Count(r => r.Status == "Resolved")} resolved; {PendingReviewCount} need review. Copy resolved emails or export all entries to CSV.";
         }
         finally
         {
@@ -239,19 +287,21 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     {
         StopVersion++;
         _stop?.Cancel();
-        foreach (var row in Rows.Where(r => r.Status == "Queued")) row.Set("Stopped", "Not checked after Stop; retry when ready.");
+        var queued = Rows.Where(r => r.Status == "Queued").ToArray();
+        foreach (var row in queued) row.Set("Stopped", "Not checked after Stop; retry when ready.");
         Message = "Stopping lookup; completed results kept. Pending directory requests may take a moment to finish.";
-        Refresh();
+        Refresh(changed: queued.Length > 0);
     }
     public void QueueRetry()
     {
-        if (IsBusy || IsAdding) return;
+        if (CanStop) return;
         var retry = Rows.Where(r => r.Status is "Lookup failed" or "Stopped" or "Not found").ToArray();
         foreach (var row in retry) row.Set("Queued", candidates: []);
         Refresh(changed: retry.Length > 0);
     }
     public void StartReview(PersonLookupRow? row = null)
     {
+        if (row is not null && !Rows.Contains(row)) { Message = "That entry is no longer in these results."; return; }
         if (row is not null && row.Candidates.Count == 0)
         {
             CloseReview();
@@ -263,20 +313,21 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
     }
     public void Accept()
     {
-        if (ReviewRow is not { } row || SelectedCandidate is not { } candidate || !row.Candidates.Contains(candidate)) return;
+        if (ReviewRow is not { } row || !Rows.Contains(row) || SelectedCandidate is not { } candidate || !row.Candidates.Contains(candidate)) return;
         row.Resolve(candidate.Person, $"Reviewed: {candidate.Reason}");
         Refresh(); StartReview();
     }
     public void Skip()
     {
-        if (ReviewRow is not { } row) return;
+        if (ReviewRow is not { } row || !Rows.Contains(row)) return;
         row.Set("Skipped", "Skipped for now; use Review match on this row to return.");
         Refresh(); StartReview();
     }
     public void CloseReview() => ReviewRow = null;
     public void Edit(PersonLookupRow row, string input)
     {
-        if (IsBusy || IsAdding) throw new InvalidOperationException("Wait for adding to finish and stop lookup before editing an entry.");
+        if (CanStop) throw new InvalidOperationException("Wait for adding to finish and stop lookup before editing an entry.");
+        if (!Rows.Contains(row)) throw new InvalidOperationException("That entry is no longer in these results.");
         input = input.Trim();
         if (input.Length is 0 or > 256 || input.Contains('\r') || input.Contains('\n')) throw new ArgumentException("Enter one name, username, or email (1-256 characters).");
         if (Rows.Any(r => r != row && string.Equals(r.Input, input, StringComparison.OrdinalIgnoreCase))) throw new ArgumentException("That entry already exists.");
@@ -287,6 +338,7 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
         .Select(r => r.Email.Trim()).Where(e => e.Length > 0).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
     public void Refresh(bool changed = true, bool force = true)
     {
+        if (changed) ClearUndo();
         if (changed && Rows.Count > 0) HasUnexportedResults = true;
         if (!force && Stopwatch.GetElapsedTime(_lastRefresh).TotalMilliseconds < 100) return;
         _lastRefresh = Stopwatch.GetTimestamp();
@@ -297,6 +349,7 @@ public sealed partial class PeopleViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasPendingReview)); OnPropertyChanged(nameof(CanCopyResolved));
         OnPropertyChanged(nameof(CanRetry)); OnPropertyChanged(nameof(HasRows));
         OnPropertyChanged(nameof(CanOpenReview)); OnPropertyChanged(nameof(CanClear));
+        OnPropertyChanged(nameof(CanExportComplete)); OnPropertyChanged(nameof(ExitSummary));
     }
-    public void Dispose() { _disposed = true; _stop?.Cancel(); }
+    public void Dispose() { _disposed = true; ClearUndo(); _stop?.Cancel(); }
 }

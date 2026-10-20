@@ -1,0 +1,28 @@
+<ui:FluentWindow x:Class="Vivre.Desktop.PeopleExitWindow"
+ xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+ xmlns:local="clr-namespace:Vivre.Desktop"
+ Title="Exit Vivre — People results" Width="540" Height="350" MinWidth="420" MinHeight="300"
+ ExtendsContentIntoTitleBar="True" WindowBackdropType="Mica" WindowCornerPreference="Round"
+ WindowStartupLocation="CenterOwner" ShowInTaskbar="False">
+ <ui:FluentWindow.Resources><BooleanToVisibilityConverter x:Key="BoolToVis"/></ui:FluentWindow.Resources>
+ <Grid>
+  <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <ui:TitleBar Title="Exit Vivre — People results"/>
+  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="24,8,24,8">
+   <StackPanel>
+    <TextBlock Text="{Binding ExitSummary}" TextWrapping="Wrap"/>
+    <TextBlock Text="Copying emails does not save original inputs, match decisions or unresolved entries." TextWrapping="Wrap" Margin="0,10,0,0"/>
+    <TextBlock x:Name="BusyNotice" Text="Lookup or adding is still in progress. To export, cancel this dialog, stop lookup and wait for it to finish. Exiting stops remaining lookup."
+               TextWrapping="Wrap" Margin="0,10,0,0" Visibility="{Binding CanStop, Converter={StaticResource BoolToVis}}"/>
+    <TextBlock x:Name="ExportStatus" TextWrapping="Wrap" Margin="0,10,0,0" local:AccessibleStatus.Enabled="True"/>
+   </StackPanel>
+  </ScrollViewer>
+  <WrapPanel Grid.Row="2" HorizontalAlignment="Right" Margin="16,4,16,16">
+   <ui:Button x:Name="ExportButton" Content="Export CSV and exit" IsEnabled="{Binding CanExportComplete}" Click="OnExport" Margin="4"/>
+   <ui:Button x:Name="DiscardButton" Content="Exit without exporting" Click="OnDiscard" Margin="4"/>
+   <ui:Button x:Name="CancelButton" Content="Cancel" IsCancel="True" IsDefault="True" Appearance="Primary" Margin="4"/>
+  </WrapPanel>
+ </Grid>
+</ui:FluentWindow>

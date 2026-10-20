@@ -111,6 +111,8 @@ Column widths and order are remembered separately for Health, Patching, People r
 
 People shows **Showing X of Y** when filtering; **Clear filters** restores the view without changing results. **Review matches (N)** walks all pending matches, including filtered-out entries, and disables at zero; selected-row review remains available. **Copy all resolved emails** includes filtered-out resolved rows and removes duplicates; right-click copies only selected rows. An empty People view offers Paste list, while a filtered empty view offers Clear filters.
 
+To correct an accidental People addition, select its rows and right-click **Remove from results**; **Undo removal** restores the last removed rows and decisions until the next result change. Removal is local only and waits for adding/lookup to finish. On exit, **Export CSV and exit**, **Exit without exporting**, or **Cancel** makes the choice explicit; copying emails alone does not save original inputs or unresolved entries. Export cancellation/failure keeps the session open. Stop and wait before exporting on exit; a normal CSV export during lookup is labeled as a snapshot.
+
 CU **Install / Verify** use eligible selected machines, or eligible machines in the tab only when nothing is selected; their scope count is shown beside the actions. An ineligible selection never targets other rows. In the mixed-install dialog, **Skip CU — install other N** continues only the remainder; **Cancel**, Escape and close start no installations. Cleanup shows **Cleaning up** consistently in the grid and machine details.
 
 In **Settings → Remote credentials**, Apply works for either credential choice, including switching back to Windows login. The **Applied** line shows the active identity separately from edits; credentials remain session-only, and SMB/DCOM fallback still uses the Windows login.
@@ -119,7 +121,7 @@ In **Settings → Remote credentials**, Apply works for either credential choice
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22); People responsiveness (U-39) was confirmed resolved by the operator on 2026-10-20; see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
-- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57. U-45–U-55 are addressed in Unreleased; U-56/U-57 await approval. Current evidence and native-validation limits are in [the living backlog](docs/vivre-ui-ux-backlog.md).
+- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57, implemented in Unreleased. Current evidence, deferred items and native-validation limits are in [the living backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a

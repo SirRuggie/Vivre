@@ -86,3 +86,21 @@ People uses Quick Add and Paste list, Open review, and a row right-click menu wi
 - Independent `gpt-5.6-sol` review found no material product issue; its loading-control visibility test suggestion was added. Parent fixed offscreen visibility/theme assumptions in the probe. Representative dark/light renders were inspected.
 - Existing 2,000-entry responsiveness, Stop-during-add/lookup, late-response rejection, quick-add draft preservation, right-click/menu, export and Fleet isolation checks passed in two final sequential runs of the already-built harness. Maximum sampled dispatcher gaps were 251 ms and 188 ms. One preceding run failed the unchanged 500 ms limit at 608 ms (752 ms total addition/layout); earlier samples were 148–268 ms. No cause is proven for that variation and no threshold was relaxed; these measurements do not guarantee host latency.
 - No live AD, native clipboard, server work, physical mouse/keyboard, Windows DPI or spoken screen-reader validation occurred in this batch. Scoped offscreen themes do not test application-wide theme propagation. No signed package was produced; release version remains 1.19.2 with these changes under Unreleased.
+
+
+## Unreleased — U-56/U-57 People recovery (2026-10-20)
+
+| Approved capability | Status |
+|---|---|
+| Selected-only local removal with one undo batch, exact row order and review decisions | Implemented and locally tested |
+| Preserve other rows/review; reject stale selection, absent rows and active work | Implemented and locally tested, including both submission dispatcher gaps |
+| Completion/copy guidance and Export CSV and exit / Exit without exporting / Cancel | Implemented; cancel/failure/Enter/Escape/close and busy-work checks passed |
+| All-row CSV, dirty active snapshots, save-dialog recheck and later shell-close veto | Implemented; temporary file and actual shell guard checks passed |
+
+The independent read-only `gpt-5.6-sol` review found and retested two source corrections: pending additions looked idle around both dispatcher yields, and Stop before any addition expired Undo and marked unchanged exported results dirty. The new submission guard covers preparation without preventing Add during lookup; its owning submission alone releases it. Stop changes export/undo state only when rows actually change. Final source refutation found no remaining material defect; the reviewer did not independently execute tests.
+
+Release desktop/harness build, all nine People core tests, `--people-recovery-only`, and existing `--people-only` passed. Recovery covers filtered and stale selection, removed review rows, exact restoration, undo expiry, both submission gaps, draft-preserving Stop, overlapping old lookup/new submission, clipboard versus export state, all-row CSV including hidden/unresolved entries, cancellation/write failure, busy snapshots, save-selection reentrancy, safe modal defaults, and another shell close safeguard vetoing exit. The overlap test defers one new Background continuation to ContextIdle to exercise the ownership race deterministically. Initial probe assumptions about Normal-priority continuation draining were corrected; they were not product failures.
+
+The 2,000-entry dummy-data run recorded addition/layout **204.4 ms**, lookup/layout **125.8 ms**, and maximum sampled dispatcher gap **137.2 ms** with 15 recorded heartbeat ticks (unchanged 500 ms limit). This is local cooperative-dispatch evidence, not a guarantee for real directory/network latency. The exit dialog is rendered and checked at 540×350 and 420×300 with scoped dark/light resources; scrollable explanatory text and wrapping action buttons support the minimum size.
+
+All new checks use dummy identities and temporary settings/CSV files. Clipboard/save-path selection is intercepted; dialogs run offscreen with routed WPF input. No live AD, server operations, physical input, native Windows DPI, native save picker, screen-reader validation, signed package or deployment occurred. Version remains **1.19.2**, with this batch under **Unreleased**.

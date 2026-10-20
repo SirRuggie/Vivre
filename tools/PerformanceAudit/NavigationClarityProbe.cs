@@ -198,7 +198,7 @@ internal static class NavigationClarityProbe
         Require(folders.Snapshot(["DUMMY list"]).FolderFor("DUMMY list") == "October", "Cancel/failure changed assignment.");
     }
 
-    private static void RunDialog(Window window, Action action)
+    internal static bool? RunDialog(Window window, Action action)
     {
         window.WindowStartupLocation = WindowStartupLocation.Manual; window.Left = -20000; window.Top = -20000;
         Exception? failure = null;
@@ -207,8 +207,9 @@ internal static class NavigationClarityProbe
             try { action(); } catch (Exception ex) { failure = ex; }
             finally { if (window.IsVisible) window.Close(); }
         }));
-        window.ShowDialog();
+        bool? result = window.ShowDialog();
         if (failure is not null) throw failure;
+        return result;
     }
     private static MenuItem Item(ContextMenu menu, string prefix) => menu.Items.OfType<MenuItem>().Single(i => i.Header.ToString()!.StartsWith(prefix));
     private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
