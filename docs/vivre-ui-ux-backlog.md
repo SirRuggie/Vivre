@@ -4,6 +4,8 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
+Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. Research only; application changes are not yet approved.
+
 Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
 
 ## How to use
@@ -435,3 +437,43 @@ See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for ev
 - [x] **U-43 · Low — Name the tab after a successful Save tab as list.** The saved tab now takes the exact list name after storage succeeds; cancellation or failed overwrite leaves its title, machines, results, and selection unchanged. Verified with the isolated workspace safety probe and Release build; no live machines were contacted.
 - [x] **U-44 · Organize saved lists like bookmarks.** Lists ▾ ▸ Organize lists creates, renames, and removes one-level folders and moves saved lists into or out of them. Existing lists stay directly in the menu with no extra label; removing a folder returns its lists to the top level. Assignments persist in `list-folders.json` while list files, names, revisions, open tabs, and recovery stay unchanged. Focused storage and offscreen menu tests passed; no live deployment or visible-window usability test was performed.
 - **U-44 acceptance ledger:** Implemented and locally tested: folder create/rename/remove, list move in/out, restart persistence, unchanged list contents/revisions, recovery, grouped Open/Delete search, and exact move-menu dispatch. Full Core suite: 1,580 passed, two skipped; Release desktop build and workspace/menu probes passed. User-only deployment validation remains untested; this change is Unreleased, not in the existing 1.19.2 ZIP.
+
+## Full-spectrum usability review — U-45–U-57 (2026-10-20)
+
+Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. All items below are recommendations awaiting approval, not implemented changes or a claim of native usability testing.
+
+- [ ] **U-45 · High — Keep CU actions within the chosen machines.**
+  - **Why:** Selecting only ineligible machines can make Install CU target other eligible machines in the tab.
+- [ ] **U-46 · High — Make the credential choice match the identity in use.**
+  - **Why:** Switching to Windows login disables Apply while the previously applied explicit credentials remain active.
+- [ ] **U-47 · High — Separate skipping CU machines from cancelling an install.**
+  - **Why:** Cancel or closing the CU decision can still start installations on the other machines in a mixed batch.
+- [ ] **U-48 · Medium — Keep the operation badge and progress message consistent.**
+  - **Why:** A machine can say Scanning while its message and progress describe component cleanup.
+- [ ] **U-49 · Medium — Organize People around add, review and copy.**
+  - **Why:** Retry leads the screen while the main output action is hidden under Actions.
+- [ ] **U-50 · Medium — Make the review queue button match its count.**
+  - **Why:** Review matches (0) can remain enabled and open no pending review.
+- [ ] **U-51 · Medium — Give People review enough space and context.**
+  - **Why:** A short, wide candidate grid makes similar accounts harder to compare.
+- [ ] **U-52 · Medium — Explain empty and filtered views, with a direct next action.**
+  - **Why:** Blank results or unchanged totals can leave users unsure whether to add, wait or clear a filter.
+- [ ] **U-53 · Medium — Give Fleet commands a clearer visual hierarchy.**
+  - **Why:** Patching, health checks and workspace housekeeping compete across several equally prominent bands.
+- [ ] **U-54 · Medium — Restore normal scrollbar track behavior.**
+  - **Why:** Clicking the scrollbar track cannot page through long grids, editors or panels.
+- [ ] **U-55 · Low — Shorten the path for moving a saved list.**
+  - **Why:** Organizing one list requires navigating several cascading menus.
+- [ ] **U-56 · Low — Allow removal of an accidental People entry.**
+  - **Why:** A mistaken addition can be edited, but removing it requires clearing the whole session.
+- [ ] **U-57 · Low — Make People completion and exit choices explicit.**
+  - **Why:** After copying emails, the exit warning still talks about unexported results without offering export there.
+
+### Review decisions and limits
+
+- **Order recommended:** operational correctness U-45–U-48 first; People flow U-49–U-51 plus its U-52 states next; shared navigation U-53–U-55 plus remaining U-52; People recovery U-56/U-57 afterward.
+- **Preserve:** current lookup matching, no invented email addresses, selected/all scope safeguards, right-click shortcuts, per-tab settings, saved-list protections, no People tabs/saved lists, and RDP keep-alive/session-scale behavior.
+- **U-47 nuance:** the dialog currently notes that other machines install normally; the misleading Cancel/dismiss action is the concern. A true cancellation path changes that interaction and needs explicit agreement before implementation.
+- **U-57 nuance:** email copy is not a full export of unresolved inputs and review history; do not clear the export warning simply because any copy succeeded.
+- **U-22 follow-up evidence:** RDP host/folder credential inputs lack explicit accessible name associations, and older validation messages lack the shared announcement helper; inspect and verify within the existing accessibility work. Native behavior remains untested.
+- **Existing status:** U-21/U-22 remain native-validation work; U-39 stays operator-confirmed resolved; U-40/U-42 remain deferred by Shaun. No new performance measurements or live operations occurred.
