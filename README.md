@@ -21,11 +21,12 @@ Built with **.NET 10 / WPF** ([WPF-UI](https://github.com/lepoco/wpfui) Fluent s
 - **Clear activity and settings** — Activity identifies its originating tab, including search/copy; CU KB/build/month save together, and invalid numeric settings explain the correction inline.
 
 - **Menu target scope** - machine actions identify this machine, selected count, all-tab scope, or shown rows; changed menu targets require reopening. Cancelling schedules reviews the captured machines before removing all Vivre install/reboot schedules.
-- **Actions dropdown** - select machines, then choose Check software, Stage software, Run script, or WhatsUp Gold maintenance; each opens its existing review dialog. Right-click retains all commands, with Connection and WhatsUp Gold grouped into submenus.
-- **Per-tab update options** — each Patching tab owns its update source, driver setting, exclusions, and applicable/installed scope; its source appears in the tab header and toolbar, and new tabs start with Windows Update.
+- **Actions dropdown** — selected-machine shortcuts open the existing Check software, Stage software, Run script, or WhatsUp Gold maintenance dialogs; Remove offline and Clear results are labeled **all in tab** and work without a selection. Right-click retains all commands.
+- **Fleet toolbar** — Patching starts with Scan/Install; Ping, Check Vitals and Monitor stay together, with Stop visible. Empty tabs offer Paste machines and Open list directly.
+- **Per-tab update options** — each Patching tab owns its update source, driver setting, exclusions, and applicable/installed scope; **Update options** opens its settings, the source appears in the tab header/banner and button tooltip, and new tabs start with Windows Update.
 - **Tab saving** - right-click a Health or Patching tab and choose Save tab as list; a successful save names that tab after the list without switching tabs or losing results.
 - **Opening saved lists** — empty tabs open directly; populated tabs offer Append list, Replace list, or New tab (default). Append preserves existing results. If the list is already open in the same Health/Patching section, OK switches to that tab without changing its machines or results; Cancel stays put. Reopening a list in its current tab still offers Append/Replace, while New tab avoids a duplicate.
-- **Organizing saved lists** — Lists ▾ ▸ Organize lists lets you create, rename, or remove bookmark-style folders and move lists between folders and the top level. Existing lists remain directly in Lists until moved; folders only change how lists appear, not their files or machines.
+- **Organizing saved lists** — create, rename or remove bookmark-style folders under Lists ▾ ▸ Organize lists. In Open list, right-click a saved list → **Move to folder…**, choose a destination and click Move; **Top level (outside folders)** removes its folder assignment. Existing lists stay directly in Lists until moved; list files and machines remain unchanged.
 - **List names** — date/time punctuation such as `/`, `:` and `|` is preserved; legacy lists remain accessible without automatic renaming.
 - **List clarity** — each tab shows its saved-list identity and membership changes; Paste and Quick Add accept the same separators, and machine names stay visible while scrolling results.
 - **Workspace protection** — Paste adds without resetting existing results; explicit replacement and Clear confirm removals and refuse while work is active. Saved-list overwrites require approval and reject stale revisions; window and tray Exit warn about active or scheduled work.
@@ -104,6 +105,8 @@ In Health and Patching, **Paste** offers **Add to this tab**, **Replace this tab
 
 Script saves ask before replacing an existing destination and reject stale approvals; declining preserves editor text. Custom-column names must be unique (case-insensitive); duplicate additions keep the existing script and values without executing a replacement.
 
+Scripts explains when the open script is retained despite not matching a search. Scripts and Help offer **Clear search** when nothing matches; Fleet's existing **Clear filter** restores hidden rows. Scrollbars support track-click paging in both directions with a larger pointer area around the slim thumb.
+
 Column widths and order are remembered separately for Health, Patching, People results, and People review. Right-click a Fleet grid and choose **Reset column layout**; in People, use **Actions → Reset results column layout** or **Reset review column layout**. Names stay pinned first. Changing the product in Check software clears the previous product’s service and uses a remembered suggestion only for the new product.
 
 People shows **Showing X of Y** when filtering; **Clear filters** restores the view without changing results. **Review matches (N)** walks all pending matches, including filtered-out entries, and disables at zero; selected-row review remains available. **Copy all resolved emails** includes filtered-out resolved rows and removes duplicates; right-click copies only selected rows. An empty People view offers Paste list, while a filtered empty view offers Clear filters.
@@ -116,7 +119,7 @@ In **Settings → Remote credentials**, Apply works for either credential choice
 
 - (Optional) an **SCCM-deployment update lane**, if updates ever get deployed through SCCM here.
 - Remaining validation: native Windows scaling/layout and keyboard/screen-reader checks (U-21/U-22); People responsiveness (U-39) was confirmed resolved by the operator on 2026-10-20; see [the UI/UX backlog](docs/vivre-ui-ux-backlog.md).
-- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57. U-45–U-51 and the People portion of U-52 are addressed in Unreleased; the remaining U-52 surfaces and U-53–U-57 await approval. Current evidence is in [the living backlog](docs/vivre-ui-ux-backlog.md).
+- The [2026-10-20 UI/UX review](docs/ui-ux-full-spectrum-review-2026-10-20.md) records U-45–U-57. U-45–U-55 are addressed in Unreleased; U-56/U-57 await approval. Current evidence and native-validation limits are in [the living backlog](docs/vivre-ui-ux-backlog.md).
 - **Refactor (someday):** the per-tab `WorkspaceViewModel` is large — it could be split into a
   `HostMonitor` + `PatchController` for readability. Purely cosmetic and lowest priority; do it on its
   own (it touches the load-bearing monitor/reboot logic, now backed by tests). Two full audits — a

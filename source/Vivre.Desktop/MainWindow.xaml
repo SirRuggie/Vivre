@@ -378,144 +378,6 @@
                         <!-- Left action cluster. Named so AdaptiveLayoutController can measure it. -->
                         <StackPanel x:Name="ActionCluster" Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
 
-                            <!-- Hot path: Ping All (split), Check Vitals, Monitor.
-                                 All buttons use icon+label in a centred StackPanel as Content (no Icon= attribute)
-                                 so collapsing the label TextBlock leaves the icon correctly centred. -->
-                            <ui:SplitButton Style="{StaticResource ToolbarSplitButtonStyle}"
-                                            Command="{Binding SelectedTab.PingAllCommand}" AutomationProperties.Name="Ping all"
-                                            ToolTip="Ping All — ping every machine in this tab (F5)">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Ping All" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                                <ui:SplitButton.Flyout>
-                                    <ContextMenu>
-                                        <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
-                                    </ContextMenu>
-                                </ui:SplitButton.Flyout>
-                            </ui:SplitButton>
-                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       Style="{StaticResource ToolbarButtonStyle}"
-                                       Command="{Binding SelectedTab.CheckVitalsCommand}" AutomationProperties.Name="Check vitals"
-                                       ToolTip="Check Vitals — pull SCCM client health AND deep OS vitals. Read-only.">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Pulse24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Check Vitals" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                            </ui:Button>
-                            <ToggleButton Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}" Padding="11,6"
-                                          Style="{StaticResource ToolbarMonitorStyle}"
-                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}" AutomationProperties.Name="Monitor"
-                                          ToolTip="Monitor — continuously re-check online/offline. Stop halts it.">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Eye24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Monitor" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                            </ToggleButton>
-
-                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
-
-                            <!-- Operations: de-emphasised -->
-                            <ui:Button Style="{StaticResource ToolbarButtonStyle}"
-                                       Command="{Binding SelectedTab.RemoveOfflineCommand}"
-                                       ToolTip="Remove Offline — remove every offline machine from this tab." AutomationProperties.Name="Remove Offline — remove every offline machine from this tab.">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Delete24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Remove Offline" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                            </ui:Button>
-                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       Style="{StaticResource ToolbarButtonStyle}"
-                                       Command="{Binding SelectedTab.StopCommand}"
-                                       ToolTip="{Binding SelectedTab.StopTooltip}">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Stop24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Stop" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                            </ui:Button>
-                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       Style="{StaticResource ToolbarButtonStyle}"
-                                       Command="{Binding SelectedTab.ClearResultsCommand}"
-                                       ToolTip="Clear results — clear the Command result column on every row." AutomationProperties.Name="Clear results — clear the Command result column on every row.">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Eraser24" Margin="0,0,6,0" />
-                                    <TextBlock Text="Clear results" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                            </ui:Button>
-
-                            <!-- Update options button — visible only in Patching mode. -->
-                            <ui:Button x:Name="UpdateOptionsButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       AutomationProperties.Name="{Binding SelectedTab.UpdateOptionsDescription, StringFormat=Update options for this tab: {0}}"
-                                       ToolTip="{Binding SelectedTab.UpdateOptionsDescription}"
-                                       Click="OnUpdateOptionsButtonClick">
-                                <StackPanel Orientation="Horizontal">
-                                    <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />
-                                    <TextBlock Text="{Binding SelectedTab.UpdateSourceLabel}" Style="{StaticResource ToolbarLabelStyle}" />
-                                </StackPanel>
-                                <ui:Button.Style>
-                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </ui:Button.Style>
-                                <ui:Button.ContextMenu>
-                                    <ContextMenu>
-                                        <MenuItem Header="Source">
-                                            <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSwap24" /></MenuItem.Icon>
-                                            <MenuItem Header="Windows Update" Click="OnSourceWindowsUpdate">
-                                                <MenuItem.Icon>
-                                                    <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.WindowsUpdate}}"
-                                                                 IsHitTestVisible="False" Focusable="False" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Microsoft Update" Click="OnSourceMicrosoftUpdate">
-                                                <MenuItem.Icon>
-                                                    <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.MicrosoftUpdate}}"
-                                                                 IsHitTestVisible="False" Focusable="False" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                            <MenuItem Header="Managed (WSUS/SCCM)" Click="OnSourceManaged">
-                                                <MenuItem.Icon>
-                                                    <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.Managed}}"
-                                                                 IsHitTestVisible="False" Focusable="False" />
-                                                </MenuItem.Icon>
-                                            </MenuItem>
-                                        </MenuItem>
-                                        <Separator />
-                                        <MenuItem Header="Include drivers" IsCheckable="True"
-                                                  IsChecked="{Binding SelectedTab.IncludeDrivers, Mode=TwoWay}">
-                                            <MenuItem.Icon><ui:SymbolIcon Symbol="HardDrive24" /></MenuItem.Icon>
-                                        </MenuItem>
-                                        <Separator />
-                                        <MenuItem Header="Exclude updates…" Click="OnOpenExcludeDialog">
-                                            <MenuItem.Icon><ui:SymbolIcon Symbol="Filter24" /></MenuItem.Icon>
-                                        </MenuItem>
-                                    </ContextMenu>
-                                </ui:Button.ContextMenu>
-                            </ui:Button>
-
-                            <!-- Divider: shown in update mode only, AND only when no rows are selected
-                                 (the selection cluster below owns Scan/Install when rows are selected). -->
-                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                            </Border>
-
                             <!-- Updates (update-mode only, and only when no rows selected — the selection
                                  cluster owns Scan/Install for the selection so both don't show simultaneously). -->
                             <ui:Button Command="{Binding SelectedTab.ScanTargetCommand}" AutomationProperties.Name="Scan all machines"
@@ -578,20 +440,6 @@
                                  stays readable in compact mode (the number always shows; only the word
                                  "selected" collapses via ToolbarLabelStyle).
                                  Scan all / Install all already collapse on HasSelection via their own triggers above. -->
-
-                            <!-- Divider: shown only when HasSelection (separates the "all" group from the "selected" group) -->
-                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
-                                <Border.Style>
-                                    <Style TargetType="Border">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SelectedTab.HasSelection}" Value="True">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Border.Style>
-                            </Border>
 
                             <!-- Count chip: accent-tinted pill showing "N selected" -->
                             <Border Padding="8,4" CornerRadius="6" VerticalAlignment="Center"
@@ -684,11 +532,127 @@
                                 </StackPanel>
                             </ui:Button>
 
+                            <!-- Separate patching commands from health checks. -->
+                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                            </Border>
+
+                            <!-- Hot path: Ping All (split), Check Vitals, Monitor.
+                                 All buttons use icon+label in a centred StackPanel as Content (no Icon= attribute)
+                                 so collapsing the label TextBlock leaves the icon correctly centred. -->
+                            <ui:SplitButton Style="{StaticResource ToolbarSplitButtonStyle}"
+                                            Command="{Binding SelectedTab.PingAllCommand}" AutomationProperties.Name="Ping all"
+                                            ToolTip="Ping All — ping every machine in this tab (F5)">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Ping All" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                                <ui:SplitButton.Flyout>
+                                    <ContextMenu>
+                                        <MenuItem Header="Ping Offline only" Command="{Binding SelectedTab.PingOfflineCommand}" />
+                                    </ContextMenu>
+                                </ui:SplitButton.Flyout>
+                            </ui:SplitButton>
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       Style="{StaticResource ToolbarButtonStyle}"
+                                       Command="{Binding SelectedTab.CheckVitalsCommand}" AutomationProperties.Name="Check vitals"
+                                       ToolTip="Check Vitals — pull SCCM client health AND deep OS vitals. Read-only.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Pulse24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Check Vitals" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+                            <ToggleButton Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}" Padding="11,6"
+                                          Style="{StaticResource ToolbarMonitorStyle}"
+                                          IsChecked="{Binding SelectedTab.IsMonitoring, Mode=TwoWay}" AutomationProperties.Name="Monitor"
+                                          ToolTip="Monitor — continuously re-check online/offline. Stop halts it.">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Eye24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Monitor" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ToggleButton>
+
+                            <Border Width="1" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='12,4;6,2'}" Background="{DynamicResource DividerStrokeColorDefaultBrush}" />
+
+                            <ui:Button Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       Style="{StaticResource ToolbarButtonStyle}"
+                                       Command="{Binding SelectedTab.StopCommand}"
+                                       ToolTip="{Binding SelectedTab.StopTooltip}">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Stop24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Stop" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                            </ui:Button>
+
+                            <!-- Update options button — visible only in Patching mode. -->
+                            <ui:Button x:Name="UpdateOptionsButton" Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
+                                       AutomationProperties.Name="{Binding SelectedTab.UpdateOptionsDescription, StringFormat=Update options for this tab: {0}}"
+                                       ToolTip="{Binding SelectedTab.UpdateOptionsDescription}"
+                                       Click="OnUpdateOptionsButtonClick">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Settings24" Margin="0,0,6,0" />
+                                    <TextBlock Text="Update options" Style="{StaticResource ToolbarLabelStyle}" />
+                                </StackPanel>
+                                <ui:Button.Style>
+                                    <Style TargetType="ui:Button" BasedOn="{StaticResource ToolbarButtonStyle}">
+                                        <Setter Property="Visibility" Value="Collapsed" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding SelectedTab.IsUpdateMode}" Value="True">
+                                                <Setter Property="Visibility" Value="Visible" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ui:Button.Style>
+                                <ui:Button.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="Source">
+                                            <MenuItem.Icon><ui:SymbolIcon Symbol="ArrowSwap24" /></MenuItem.Icon>
+                                            <MenuItem Header="Windows Update" Click="OnSourceWindowsUpdate">
+                                                <MenuItem.Icon>
+                                                    <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.WindowsUpdate}}"
+                                                                 IsHitTestVisible="False" Focusable="False" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Microsoft Update" Click="OnSourceMicrosoftUpdate">
+                                                <MenuItem.Icon>
+                                                    <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.MicrosoftUpdate}}"
+                                                                 IsHitTestVisible="False" Focusable="False" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                            <MenuItem Header="Managed (WSUS/SCCM)" Click="OnSourceManaged">
+                                                <MenuItem.Icon>
+                                                    <RadioButton IsChecked="{Binding SelectedTab.SelectedSource, Converter={StaticResource EnumEquals}, ConverterParameter={x:Static updates:UpdateSource.Managed}}"
+                                                                 IsHitTestVisible="False" Focusable="False" />
+                                                </MenuItem.Icon>
+                                            </MenuItem>
+                                        </MenuItem>
+                                        <Separator />
+                                        <MenuItem Header="Include drivers" IsCheckable="True"
+                                                  IsChecked="{Binding SelectedTab.IncludeDrivers, Mode=TwoWay}">
+                                            <MenuItem.Icon><ui:SymbolIcon Symbol="HardDrive24" /></MenuItem.Icon>
+                                        </MenuItem>
+                                        <Separator />
+                                        <MenuItem Header="Exclude updates…" Click="OnOpenExcludeDialog">
+                                            <MenuItem.Icon><ui:SymbolIcon Symbol="Filter24" /></MenuItem.Icon>
+                                        </MenuItem>
+                                    </ContextMenu>
+                                </ui:Button.ContextMenu>
+                            </ui:Button>
+
                             <ui:Button x:Name="SelectedActionsButton" Style="{StaticResource ToolbarButtonStyle}"
                                        Margin="{Binding ToolbarCompact, RelativeSource={RelativeSource AncestorType=local:MainWindow}, Converter={StaticResource CompactThickness}, ConverterParameter='8,0,0,0;2,0,0,0'}"
-                                       IsEnabled="{Binding SelectedTab.HasSelection}"
-                                       Click="OnSelectedActionsClick" AutomationProperties.Name="Actions for selected machines"
-                                       ToolTipService.ShowOnDisabled="True" ToolTip="Select machines, then choose an action. Each action opens its existing review dialog.">
+                                       IsEnabled="{Binding IsWorkspaceTab}"
+                                       Click="OnSelectedActionsClick" AutomationProperties.Name="Machine actions and tab tools"
+                                       ToolTipService.ShowOnDisabled="True" ToolTip="Actions for selected machines, plus Remove offline and Clear results for all machines in this tab.">
                                 <StackPanel Orientation="Horizontal">
                                     <ui:SymbolIcon Symbol="Toolbox24" Margin="0,0,6,0" />
                                     <TextBlock Text="Actions" Style="{StaticResource ToolbarLabelStyle}" />

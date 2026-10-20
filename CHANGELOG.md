@@ -12,6 +12,11 @@ it ships, then gets a dated heading.
 
 ### Fixed
 
+- Lead Patching with Scan/Install, group health checks, keep Stop visible and move Remove offline/Clear results into Actions with explicit all-tab scope; label source settings Update options.
+- Restore vertical/horizontal scrollbar track paging and enlarge the thumb pointer area while retaining its slim appearance.
+- Add a saved-list right-click Move to folder picker with explicit confirmation, filtering and a top-level destination; label folder searches accurately.
+- Add direct Paste/Open list actions to empty Fleet tabs, explain retained nonmatching scripts, and offer clear-search recovery in Scripts and Help.
+
 - Saving a tab as a list now gives that tab the saved list's name after the save succeeds, while preserving its machines and results.
 - Keep CU Install/Verify within eligible selected machines, show their target count, and explain selections with no CU targets instead of silently using other rows.
 - Allow applying Windows login after explicit credentials and show the applied session identity separately from draft changes.

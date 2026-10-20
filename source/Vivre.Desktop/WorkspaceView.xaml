@@ -1284,7 +1284,7 @@
                         <StackPanel VerticalAlignment="Center">
                             <TextBlock Text="Paste machine names" FontSize="13" FontWeight="Medium"
                                        Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
-                            <TextBlock Text="Click the Paste button above or use the text box" FontSize="11"
+                            <TextBlock Text="Paste a new list or open a saved one below" FontSize="11"
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </StackPanel>
@@ -1316,6 +1316,12 @@
                                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
                         </StackPanel>
                     </StackPanel>
+                    <WrapPanel HorizontalAlignment="Center" Margin="0,0,0,12">
+                        <ui:Button x:Name="EmptyPasteMachinesButton" Content="Paste machines…" Icon="{ui:SymbolIcon ClipboardPaste24}"
+                                   Click="OnGetStartedPaste" Margin="0,0,8,0" />
+                        <ui:Button x:Name="EmptyOpenListButton" Content="Open list" Icon="{ui:SymbolIcon DocumentBulletList24}"
+                                   Click="OnGetStartedOpenList" />
+                    </WrapPanel>
                     <!-- "Open help" link — wired to the same F1 / Help ▸ How to use Vivre command. -->
                     <ui:Button HorizontalAlignment="Center" Appearance="Secondary"
                                Icon="{ui:SymbolIcon QuestionCircle24}" Content="Open help (F1)"

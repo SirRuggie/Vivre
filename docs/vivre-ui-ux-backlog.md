@@ -4,7 +4,7 @@ Living checklist — update as decisions, implementation, and validation progres
 
 Reviewed: 2026-10-19. Original audit baseline: `15663ab` (1.18.0 plus unpublished changes).
 
-Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-51 and the People portion of U-52 are implemented and locally validated in Unreleased; remaining U-52 surfaces and U-53–U-57 await approval.
+Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendations](ui-ux-full-spectrum-review-2026-10-20.md), U-45–U-57. U-45–U-55 are implemented with local validation in Unreleased; U-56/U-57 await approval. Native validation limits remain recorded below.
 
 Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version references below describe the implementation checkpoints at that time.
 
@@ -51,7 +51,7 @@ Current release: **1.19.2** (2026-10-20). U-21/U-22 specific native validation r
 - [x] **U-1 · High — Make update settings independent per tab.**
   - **Why:** Shared operational settings could differ from another tab's displayed settings.
   - **Decision:** Shaun chose tab-specific settings instead of synchronizing settings globally.
-  - **Delivered:** Independent source, drivers, exclusions, and applicable/installed scope; source labels in each Patching header and the active toolbar.
+  - **Delivered:** Independent source, drivers, exclusions, and applicable/installed scope. U-53 later labels the toolbar button Update options; source remains in each Patching header, banner and button tooltip.
   - **Defaults:** New tabs use Windows Update, drivers off, no exclusions, and applicable updates; settings are session-only.
   - **Commit:** `cd6f6b7` — `fix: isolate update options per tab`, pushed to `master`.
   - **Validated:** Real workspace isolation, new-tab defaults, scan/install arguments with inert services, and production header/toolbar bindings across tab switches.
@@ -440,7 +440,7 @@ See [the source-backed risk review](vivre-follow-up-review-2026-10-20.md) for ev
 
 ## Full-spectrum usability review — U-45–U-57 (2026-10-20)
 
-Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48, followed by U-49–U-51 and the People portion of U-52. The remaining recommendations await approval.
+Three independent research agents plus parent source/screenshot review; see [the point-in-time report](ui-ux-full-spectrum-review-2026-10-20.md) for exact evidence, sources, strengths and acceptance criteria. Shaun approved U-45–U-48, U-49–U-51 and People U-52, then U-53–U-55 and the rest of U-52. U-56/U-57 await approval.
 
 ### U-49–U-51 and People U-52 acceptance ledger
 
@@ -488,19 +488,39 @@ Scope: reuse the existing People handlers and matching rules; preserve selected/
   - **Why:** Review matches (0) can remain enabled and open no pending review.
 - [x] **U-51 · Medium — Give People review enough space and context.**
   - **Why:** A short, wide candidate grid makes similar accounts harder to compare.
-- [ ] **U-52 · Medium — Explain empty and filtered views, with a direct next action.**
+- [x] **U-52 · Medium — Explain empty and filtered views, with a direct next action.**
   - **Why:** Blank results or unchanged totals can leave users unsure whether to add, wait or clear a filter.
-  - **Partial delivery:** People implemented and locally tested in this batch; Health/Fleet, Scripts and Help empty/filter guidance remain pending approval.
-- [ ] **U-53 · Medium — Give Fleet commands a clearer visual hierarchy.**
+  - **Delivered:** People was completed in the preceding batch. Fleet empty tabs now offer Paste machines/Open list and retain the existing Clear filter recovery; Scripts explains retained nonmatching editors and offers Add/Clear search; Help offers no-match guidance and Clear search.
+- [x] **U-53 · Medium — Give Fleet commands a clearer visual hierarchy.**
   - **Why:** Patching, health checks and workspace housekeeping compete across several equally prominent bands.
-- [ ] **U-54 · Medium — Restore normal scrollbar track behavior.**
+- [x] **U-54 · Medium — Restore normal scrollbar track behavior.**
   - **Why:** Clicking the scrollbar track cannot page through long grids, editors or panels.
-- [ ] **U-55 · Low — Shorten the path for moving a saved list.**
+- [x] **U-55 · Low — Shorten the path for moving a saved list.**
   - **Why:** Organizing one list requires navigating several cascading menus.
 - [ ] **U-56 · Low — Allow removal of an accidental People entry.**
   - **Why:** A mistaken addition can be edited, but removing it requires clearing the whole session.
 - [ ] **U-57 · Low — Make People completion and exit choices explicit.**
   - **Why:** After copying emails, the exit warning still talks about unexported results without offering export there.
+
+### U-52 remainder and U-53–U-55 acceptance ledger
+
+Shaun approved this batch on 2026-10-20; use existing commands, filtering, folder storage and list protections.
+
+| Requested capability | Status |
+|---|---|
+| Fleet empty-tab Paste/Open list; Scripts retained/no-match guidance; Help no-match recovery | Implemented; local layout/binding and dirty-editor/search recovery checks passed |
+| Patching leads with Scan/Install; Health checks grouped; housekeeping under Actions; Stop and source visible | Implemented; both modes, selected/empty selection, compact labels, all-tab scope, stale-menu guards and per-tab option regressions passed |
+| Standard vertical/horizontal scrollbar paging and larger pointer area | Implemented; actual offscreen WPF track click commands, routed thumb dragging and transparent-edge hit tests passed in both directions |
+| Saved-list right-click Move to folder picker and accurate folder search labels | Implemented; exact move dispatch without open, filter/no-op/cancel/error paths, persistence and unchanged list revisions passed; five Core folder tests passed |
+| Independent red team and documentation | Read-only independent review found no material code defect; README, in-app Help, changelog, instructions, docs index and harness guide updated |
+| Commit/push | Included in the commit containing this ledger; verify remote master when handing off |
+
+No live server operations, production list edits, script execution or deployment are part of validation.
+
+- **Validation:** Release desktop/harness build passed; `--navigation-clarity-only` (including the existing script-editor safety suite), `--actions-menu-only`, `--tab-options-only` and `--layout-accessibility-only` passed. The last probe covers offscreen layout/raster sizes; it does not establish native Windows DPI or screen-reader behavior.
+- **Test limitation:** `--library-search-only` stopped at “List search cannot receive keyboard focus,” both during concurrent UI checks and when rerun alone. Its native-popup focus claim is unverified in this session; the assertion was not weakened. New picker behavior and Scripts dirty-editor/filter checks ran separately and passed. This does not close U-21/U-22.
+- **Independent review:** a separate `gpt-5.6-sol` agent inspected the actual diff and scope/cancellation/selection behavior. No material code defect was found. Its documentation findings—the pending ledger and two stale toolbar-source descriptions—were corrected. It did not independently run builds, physical input or live operations.
+- **Release:** Unreleased over **1.19.2**; the existing local signing-certificate warning remains, so no signed ZIP or deployment is claimed.
 
 ### Review decisions and limits
 

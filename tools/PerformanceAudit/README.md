@@ -123,3 +123,16 @@ The audit host explicitly suppresses `Application.OnStartup` (dispatcher pumping
 `Application.Run`), loads the production App.xaml resource dictionaries without its application class,
 and asserts no shell window opened. Workspace factories inject unique scratch personal/shared stores;
 production construction retains its normal defaults. This also removes operator settings from probe inputs.
+
+## U-52 remainder and U-53–U-55 navigation
+
+`dotnet run --project tools/PerformanceAudit -c Release -- --navigation-clarity-only .artifacts/u52-u55-navigation.json`
+
+Checks production toolbar order in Health/Patching with and without selection and compact labels,
+all-tab housekeeping and stale-menu rejection, Fleet empty actions, Help no-match recovery, both
+scrollbar track directions, thumb hit area and routed dragging, and saved-list move/cancel/filter/error
+paths with unchanged list revisions. Modal windows stay offscreen and list storage is temporary.
+It also runs the existing script-editor suite, including retained-editor guidance and Clear search
+without losing dirty content. The separate `--library-search-only` mode additionally requires native
+popup keyboard focus; inability to obtain focus is a failed/unverified check, not a pass.
+These are local WPF probes, not physical pointer/keyboard, native DPI or screen-reader tests.

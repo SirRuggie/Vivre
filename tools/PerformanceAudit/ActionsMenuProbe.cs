@@ -44,17 +44,17 @@ internal static class ActionsMenuProbe
         WorkspaceActions.Show(null, vm, WorkspaceAction.RunScript, Array.Empty<Computer>());
         Require(launches == 4, "Empty selection launched work.");
 
-        var window = new MainWindow { DataContext = new { SelectedTab = vm } };
+        var window = new MainWindow { DataContext = new { SelectedTab = vm, IsWorkspaceTab = true } };
         try
         {
             var button = (FrameworkElement)window.FindName("SelectedActionsButton");
             System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
-            Require(!button.IsEnabled, "Toolbar enabled without selection.");
+            Require(button.IsEnabled, "Tab housekeeping is inaccessible without selection.");
             vm.SetSelection(new[] { a });
             System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { }, System.Windows.Threading.DispatcherPriority.DataBind);
             Require(button.IsEnabled, "Toolbar did not enable for selection.");
             window.ToolbarCompact = true;
-            Require(System.Windows.Automation.AutomationProperties.GetName(button) == "Actions for selected machines", "Compact action lacks accessible label.");
+            Require(System.Windows.Automation.AutomationProperties.GetName(button) == "Machine actions and tab tools", "Compact action lacks accessible label.");
             vm.SetSelection(Array.Empty<Computer>());
         }
         finally { window.DataContext = null; window.Close(); }

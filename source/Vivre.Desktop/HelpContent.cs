@@ -116,7 +116,7 @@ public static class HelpContent
                 "1. Load the machines you want in the tab.",
                 "2. Right-click the tab and choose Save tab as list, or click Lists ▾ (top-right command bar) ▸ Save tab as list… — the name box uses the associated saved-list name, or the tab title for a new list; you can change it in the prompt. After a successful save, that tab takes the saved list's name.",
                 "3. Later, Lists ▾ ▸ Open list to load it into a tab — the tab automatically takes the list's name.",
-                "To organize lists, use Lists ▾ ▸ Organize lists: create a folder, then choose Move list ▸ [list] ▸ [folder]. Choose Top level to move it back. Rename folder changes its label; Remove folder keeps every saved list and shows them at the top level.",
+                "Create folders under Lists ▾ ▸ Organize lists. In Open list, right-click a saved list ▸ Move to folder…, choose a destination, then Move. Top level (outside folders) moves it back out. Rename folder changes its label; Remove folder keeps every list at the top level. The Organize lists move route also remains available.",
                 "Existing saved names require overwrite approval; if another Vivre instance changes the file before saving, the save is refused so you can review it again.",
                 "Invalid names show an error in the same dialog; characters such as / : and | are not silently renamed.",
                 "The line above the filters shows the associated list and unsaved membership changes; Saved confirms a successful save. Status compares with the last open/save, not continuous disk monitoring.",
@@ -125,6 +125,7 @@ public static class HelpContent
                 "Scans, selection, sorting, and tab renaming do not change saved-list membership; returning to the saved membership clears the changed state.",
                 "Lists ▾ ▸ Delete list removes a saved list; Restore deleted list brings it back, even after restarting Vivre. Choose another name if the original is in use; restore never overwrites.",
                 "Open, Delete, and Restore list menus have search boxes. Restored lists do not replace the machines in your current tab.",
+                "An empty Health or Patching tab offers Paste machines and Open list directly. If filters hide every row, Clear filter restores the view without changing machines or results.",
                 "Recovery keeps deletions made by this version under %APPDATA%\\Vivre\\Lists\\Deleted until restored; older permanent deletions cannot be recovered.",
             ],
             Tip = "Lists are plain-text .txt files (or .vlist files for names with punctuation) under %APPDATA%\\Vivre\\Lists. Bookmark-style folder assignments are stored separately in list-folders.json; moving a list never rewrites its machine file.",
@@ -333,7 +334,7 @@ public static class HelpContent
                 "1. Select the machines.",
                 "2. Right-click ▸ Run script ▸ Selected machines… (or All machines…) — opens the Run Script window.",
                 "3. Pick a saved script (grouped by category) or paste your own, review it, then click Run.",
-                "Search scripts by name or category in Run Script or the Scripts page. The script currently open stays visible while searching so edits and selection are protected.",
+                "Search scripts by name or category in Run Script or the Scripts page. The open script stays visible so edits and selection are protected; the Scripts page explains when it does not match. No-match views offer Clear search; an empty library offers Add script.",
                 "Mutating and custom scripts ask you to approve the captured script and target count. Verified read-only built-ins stay one-click. Conflicting patching, staging or cleanup blocks a mutating script on that host.",
                 "If a mutating script stops with errors or is cancelled, verify the host and service recovery before retrying conflicting work. A cancelled client request is not proof that remote work stopped.",
                 "Output lands per-machine in the Command result column and in the window's log. Captured streams and displayed text have limits; a truncation notice means some output was omitted, not that execution stopped.",
@@ -495,7 +496,8 @@ public static class HelpContent
             Keywords = "remove delete offline clear",
             Lines =
             [
-                "Remove Offline drops every offline (red) machine from the tab.",
+                "Actions ▸ Remove offline — all in tab drops every offline (red) machine from the tab. Actions ▸ Clear results — all in tab clears the Command result column. Both include unselected rows.",
+                "Patching puts Scan/Install first, followed by the grouped health checks; Stop stays on the toolbar. The other Actions shortcuts require selected machines and show their selected count.",
                 "Or select machines and press Delete (it confirms for large selections).",
             ],
             Tip = "Removing only takes them out of this tab — they stay in any saved list, so you can re-load them.",
@@ -530,11 +532,11 @@ public static class HelpContent
             Keywords = "source windows microsoft update wsus managed drivers exclude",
             Lines =
             [
-                "Click the source button in the Patching command bar (Windows Update, Microsoft Update, or Managed) ▸ Source to change it for this tab only. The source also appears beside the tab name.",
+                "Click Update options in the Patching command bar ▸ Source to choose Windows Update, Microsoft Update, or Managed for this tab only. The active source appears beside the tab name, in the banner, and in the button tooltip.",
                 "New tabs start with Windows Update, drivers off, no exclusions, and applicable updates; options stay in memory for this tab only.",
                 "A scan already dispatched keeps the settings it started with; changes apply to subsequent scans. In compact toolbar mode, read the source beside the tab name.",
-                "Source button ▸ Include drivers to also scan/install drivers (off by default). The summary above the Patching filters shows this tab's source, driver setting, and exclusion count, including in compact mode.",
-                "Source button ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
+                "Update options ▸ Include drivers to also scan/install drivers (off by default). The summary above the Patching filters shows this tab's source, driver setting, and exclusion count, including in compact mode.",
+                "Update options ▸ Exclude updates… to skip any update whose title contains your terms (e.g. \"SQL\").",
             ],
         },
         new HelpTopic

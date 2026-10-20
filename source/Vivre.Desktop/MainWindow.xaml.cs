@@ -1492,10 +1492,21 @@ public partial class MainWindow : FluentWindow
 
     private void OnPasteList(object sender, RoutedEventArgs e)
     {
-        if (Shell is { SelectedTab: WorkspaceViewModel vm } shell)
-        {
-            new LoadComputersWindow(vm, names => shell.OpenPastedListInNewTab(vm, names)) { Owner = this }.ShowDialog();
-        }
+        if (Shell?.SelectedTab is { } vm) PasteMachines(vm);
+    }
+
+    internal void PasteMachines(WorkspaceViewModel vm)
+    {
+        if (Shell is not { } shell || vm.IsClosed || !ReferenceEquals(shell.SelectedTab, vm) || !shell.AllTabs.Contains(vm)) return;
+        new LoadComputersWindow(vm, names => shell.OpenPastedListInNewTab(vm, names)) { Owner = this }.ShowDialog();
+    }
+
+    internal void OpenListsFromWorkspace(WorkspaceViewModel vm)
+    {
+        if (Shell is not { } shell || vm.IsClosed || !ReferenceEquals(shell.SelectedTab, vm) || !shell.AllTabs.Contains(vm)) return;
+        OnListsButtonClick(ListsButton, new RoutedEventArgs());
+        if (ListsButton.ContextMenu.Items.OfType<MenuItem>().FirstOrDefault(i => i.Tag is "OpenList") is { } open)
+            open.IsSubmenuOpen = true;
     }
 
     private void AddFromQuickBox()
@@ -1516,15 +1527,36 @@ public partial class MainWindow : FluentWindow
 
     private void OnSelectedActionsClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not FrameworkElement button || Shell?.SelectedTab is not { HasSelection: true } vm) return;
+        if (sender is not FrameworkElement button || Shell?.SelectedTab is not { } vm) return;
+        var menu = CreateToolbarActionsMenu(vm);
+        menu.PlacementTarget = button;
+        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        menu.IsOpen = true;
+    }
+
+    private ContextMenu CreateToolbarActionsMenu(WorkspaceViewModel vm)
+    {
         var menu = WorkspaceActions.CreateMenu(vm,
             () => ReferenceEquals(Shell?.SelectedTab, vm) && Shell.AllTabs.Contains(vm),
             (action, targets) => WorkspaceActions.Show(this, vm, action, targets),
             () => System.Windows.MessageBox.Show(this, "The tab or selection changed. Reopen Actions and review the selected machines.",
                 "Selection changed", System.Windows.MessageBoxButton.OK, MessageBoxImage.Information));
-        menu.PlacementTarget = button;
-        menu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
-        menu.IsOpen = true;
+        foreach (var item in menu.Items.OfType<MenuItem>()) item.Header += $" — selected ({vm.SelectedComputerCount})";
+        menu.Items.Add(new Separator());
+        var snapshotValid = WorkspaceActions.CaptureContextValidity(vm);
+        bool Valid() => ReferenceEquals(Shell?.SelectedTab, vm) && Shell.AllTabs.Contains(vm) && snapshotValid();
+        foreach (var (label, command) in new[] {
+            ("Remove offline — all in tab", (System.Windows.Input.ICommand)vm.RemoveOfflineCommand),
+            ("Clear results — all in tab", (System.Windows.Input.ICommand)vm.ClearResultsCommand) })
+        {
+            var item = new MenuItem { Header = label, IsEnabled = command.CanExecute(null) };
+            item.Click += (_, _) =>
+            {
+                if (Valid() && command.CanExecute(null)) command.Execute(null);
+            };
+            menu.Items.Add(item);
+        }
+        return menu;
     }
 
     private void OnListsButtonClick(object sender, RoutedEventArgs e)
@@ -1574,6 +1606,8 @@ public partial class MainWindow : FluentWindow
         {
             openMenu.Items.Clear();
             AddOrganizedListItems(openMenu, lists, folders, name => { if (vm is not null) OpenSavedList(vm, name); });
+            AttachListMoveMenus(openMenu, name => { if (vm is not null) PromptMoveSavedList(vm, name); }, folderError is null);
+            openMenu.ToolTip = "Open a saved list, or right-click one to move it to a folder.";
             openMenu.IsEnabled = vm is not null;
         }
 
@@ -1677,9 +1711,12 @@ public partial class MainWindow : FluentWindow
     }
 
     private static void AddListItems(MenuItem parent, IReadOnlyList<string> lists, Action<int, string> onClick)
+        => AddSearchableItems(parent, lists, onClick, "lists");
+
+    private static void AddSearchableItems(MenuItem parent, IReadOnlyList<string> lists, Action<int, string> onClick, string noun)
     {
-        var search = new Wpf.Ui.Controls.TextBox { Width = 260, PlaceholderText = "Search lists…", ClearButtonEnabled = true };
-        System.Windows.Automation.AutomationProperties.SetName(search, "Search lists");
+        var search = new Wpf.Ui.Controls.TextBox { Width = 260, PlaceholderText = $"Search {noun}…", ClearButtonEnabled = true };
+        System.Windows.Automation.AutomationProperties.SetName(search, $"Search {noun}");
         parent.Items.Add(new MenuItem { Header = search, StaysOpenOnClick = true });
         var entries = new List<MenuItem>();
         for (int index = 0; index < lists.Count; index++)
@@ -1691,7 +1728,7 @@ public partial class MainWindow : FluentWindow
             parent.Items.Add(item);
             entries.Add(item);
         }
-        var empty = new MenuItem { Header = lists.Count == 0 ? "(no lists)" : "(no matches)", IsEnabled = false, Visibility = lists.Count == 0 ? Visibility.Visible : Visibility.Collapsed };
+        var empty = new MenuItem { Header = lists.Count == 0 ? $"(no {noun})" : "(no matches)", IsEnabled = false, Visibility = lists.Count == 0 ? Visibility.Visible : Visibility.Collapsed };
         parent.Items.Add(empty);
         search.TextChanged += (_, _) =>
         {
@@ -1711,7 +1748,7 @@ public partial class MainWindow : FluentWindow
         var grouped = new List<(MenuItem Folder, string Name, List<(MenuItem Item, string Name)> Children)>();
         foreach (string name in lists.Where(name => folders.FolderFor(name) is null))
         {
-            var item = new MenuItem { Header = name };
+            var item = new MenuItem { Header = name, Tag = name };
             item.Click += (_, _) => onClick(name);
             parent.Items.Add(item);
             roots.Add((item, name));
@@ -1722,7 +1759,7 @@ public partial class MainWindow : FluentWindow
             var children = new List<(MenuItem Item, string Name)>();
             foreach (string name in lists.Where(name => string.Equals(folders.FolderFor(name), folderName, StringComparison.OrdinalIgnoreCase)))
             {
-                var item = new MenuItem { Header = name };
+                var item = new MenuItem { Header = name, Tag = name };
                 item.Click += (_, _) => onClick(name);
                 folder.Items.Add(item);
                 children.Add((item, name));
@@ -1754,6 +1791,36 @@ public partial class MainWindow : FluentWindow
         Filter();
     }
 
+    private static void AttachListMoveMenus(MenuItem parent, Action<string> move, bool enabled)
+    {
+        foreach (var item in parent.Items.OfType<MenuItem>())
+        {
+            if (item.Tag is string name)
+            {
+                var action = new MenuItem { Header = "Move to folder…", IsEnabled = enabled };
+                action.Click += (_, e) => { e.Handled = true; move(name); };
+                item.ContextMenu = new ContextMenu { Items = { action } };
+                item.ToolTip = "Right-click to move this list to a folder.";
+            }
+            else AttachListMoveMenus(item, move, enabled);
+        }
+    }
+
+    private void PromptMoveSavedList(WorkspaceViewModel vm, string name)
+    {
+        if (vm.IsClosed || Shell?.AllTabs.Contains(vm) != true) return;
+        ListsButton.ContextMenu.IsOpen = false;
+        try
+        {
+            var folders = vm.SavedListFolders(vm.SavedLists());
+            new ListFolderPickerWindow(name, folders, destination => vm.MoveSavedList(name, destination)) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show(this, ex.Message, "Could not read list folders", System.Windows.MessageBoxButton.OK, MessageBoxImage.Warning);
+        }
+    }
+
     private void AddListOrganizationItems(MenuItem parent, WorkspaceViewModel vm,
         IReadOnlyList<string> lists, ListFolderSnapshot folders)
     {
@@ -1766,11 +1833,11 @@ public partial class MainWindow : FluentWindow
         parent.Items.Add(move);
 
         var rename = new MenuItem { Header = "Rename folder", IsEnabled = folders.Folders.Count > 0 };
-        AddListItems(rename, folders.Folders, (_, folder) => PromptListFolder(vm, folder));
+        AddSearchableItems(rename, folders.Folders, (_, folder) => PromptListFolder(vm, folder), "folders");
         parent.Items.Add(rename);
 
         var remove = new MenuItem { Header = "Remove folder", IsEnabled = folders.Folders.Count > 0 };
-        AddListItems(remove, folders.Folders, (_, folder) => RemoveListFolder(vm, folder));
+        AddSearchableItems(remove, folders.Folders, (_, folder) => RemoveListFolder(vm, folder), "folders");
         parent.Items.Add(remove);
     }
 

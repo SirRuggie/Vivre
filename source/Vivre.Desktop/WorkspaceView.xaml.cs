@@ -1394,6 +1394,16 @@ public partial class WorkspaceView : UserControl
         }
     }
 
+    private void OnGetStartedPaste(object sender, RoutedEventArgs e)
+    {
+        if (OwnerWindow is MainWindow main && ViewModel is { } vm) main.PasteMachines(vm);
+    }
+
+    private void OnGetStartedOpenList(object sender, RoutedEventArgs e)
+    {
+        if (OwnerWindow is MainWindow main && ViewModel is { } vm) main.OpenListsFromWorkspace(vm);
+    }
+
     // --- M13: clear-filter button handler ---
 
     /// <summary>M13: Clear filter button on the filter-empty overlay — resets to All + clears the name box.</summary>

@@ -23,6 +23,9 @@ public partial class HelpViewModel : ObservableObject
 
     /// <summary>Grouped, filtered view bound by the window (groups become category headers).</summary>
     public ICollectionView Topics => _source.View;
+    public bool NoMatches => Topics.IsEmpty;
+    [RelayCommand]
+    private void ClearSearch() => SearchText = string.Empty;
 
     [ObservableProperty]
     public partial string SearchText { get; set; } = string.Empty;
@@ -38,6 +41,7 @@ public partial class HelpViewModel : ObservableObject
         }
 
         _source.View.Refresh();
+        OnPropertyChanged(nameof(NoMatches));
     }
 
     private bool Matches(HelpTopic t)

@@ -90,11 +90,11 @@ internal static class TabOptionsProbe
             header.DataContext = a;
             header.Measure(new Size(600, 50));
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            Require(label.Text == "Microsoft Update", "Toolbar doesn't identify active source.");
+            Require(label.Text == "Update options" && button.ToolTip.ToString()!.Contains("Microsoft Update"), "Update options lost active source tooltip.");
             Require(header.Children.OfType<TextBlock>().Any(t => t.Text == "Microsoft Update"), "Tab header doesn't show source.");
             window.DataContext = new { SelectedTab = b };
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
-            Require(label.Text == "Managed (WSUS/SCCM)", "Toolbar stayed on previous tab's source.");
+            Require(label.Text == "Update options" && button.ToolTip.ToString()!.Contains("Managed (WSUS/SCCM)"), "Update options tooltip stayed on previous tab's source.");
             window.ToolbarCompact = true;
             Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.DataBind);
             Require(label.Visibility == Visibility.Collapsed, "Source label bypassed compact toolbar layout.");

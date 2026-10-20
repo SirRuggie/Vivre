@@ -59,6 +59,24 @@ public partial class ScriptsPage : UserControl
                 ScriptList.SelectedItem = view.Cast<ScriptFile>().FirstOrDefault(script => string.Equals(script.FullPath, currentPath, StringComparison.OrdinalIgnoreCase));
         }
         finally { _changingSelection = wasChanging; }
+        UpdateSearchFeedback();
+    }
+
+    private void OnClearScriptSearch(object sender, RoutedEventArgs e) => ScriptSearchBox.Clear();
+
+    private void UpdateSearchFeedback()
+    {
+        if (_vm is null || ScriptSearchMessage is null) return;
+        string query = ScriptSearchBox.Text;
+        bool searching = !string.IsNullOrWhiteSpace(query);
+        int matches = _vm.Scripts.Count(script => LibrarySearch.Matches(script, query));
+        bool retained = searching && _loadedScript is not null && !LibrarySearch.Matches(_loadedScript, query);
+        ScriptSearchMessage.Text = _vm.Scripts.Count == 0 && !searching ? "No scripts yet. Add a script to get started."
+            : (searching && matches == 0 ? "No scripts match this search." : "")
+                + (retained ? $"{(matches == 0 ? " " : "")}Open script kept visible: {_loadedScript!.Name} (doesn't match)." : "");
+        ScriptSearchFeedback.Visibility = ScriptSearchMessage.Text.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ClearScriptSearchButton.Visibility = searching ? Visibility.Visible : Visibility.Collapsed;
+        EmptyAddScriptButton.Visibility = !searching && _vm.Scripts.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void OnScriptSelected(object sender, SelectionChangedEventArgs e)
@@ -251,6 +269,7 @@ public partial class ScriptsPage : UserControl
         if (_vm is null) return;
         _dirty.MarkClean(Editor.Text, _vm.ScriptName, _vm.SaveCategory);
         if (!string.IsNullOrWhiteSpace(ScriptSearchBox.Text)) OnScriptSearchChanged(this, null!);
+        else UpdateSearchFeedback();
     }
 
     private ScriptEditChoice PromptUnsavedChanges()
@@ -276,6 +295,7 @@ public partial class ScriptsPage : UserControl
 
     private void OnLibraryRefreshed(object? sender, EventArgs e)
     {
+        UpdateSearchFeedback();
         if (_changingSelection || _vm is null || _loadedScript is null || IsDirty()) return;
         ScriptFile? refreshed = _vm.Scripts.FirstOrDefault(s => s.FullPath == _loadedScript.FullPath);
         if (refreshed is null) return;

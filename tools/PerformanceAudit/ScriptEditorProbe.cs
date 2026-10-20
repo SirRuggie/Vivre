@@ -210,6 +210,15 @@ internal static class ScriptEditorProbe
         Require(list.Items.Count == 1 && ((ScriptFile)list.SelectedItem).FullPath == selected.FullPath,
             "Search lost the current script selection.");
         Require(editor.Text == text + " # dirty search", "Search changed dirty editor text.");
+        if (owner is ScriptsPage)
+        {
+            string feedback = RequireControl<TextBlock>(owner, "ScriptSearchMessage").Text;
+            Require(feedback.Contains("No scripts match") && feedback.Contains("Open script kept visible") && feedback.Contains(selected.Name),
+                "No-match feedback doesn't explain the retained open script.");
+            RequireControl<Button>(owner, "ClearScriptSearchButton").RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Require(search.Text.Length == 0 && editor.Text == text + " # dirty search" && list.Items.Count > 1,
+                "Clear search changed unsaved editor content or failed to recover results.");
+        }
         search.Text = "pRoBe";
         Require(list.Items.Cast<ScriptFile>().Any(s => s.Name == "B"), "Search failed category match.");
         search.Clear();

@@ -151,18 +151,22 @@
                 <Setter Property="TextWrapping" Value="Wrap" />
             </Style>
 
-            <!-- M27: thin overlay scrollbar — 6px track at rest, thumb brightens on hover/drag.
-                 Applies to ALL native ScrollBar controls (DataGrid, ScrollViewer, TextBox).
-                 Separate vertical and horizontal templates avoid layout-direction conflicts. -->
+            <!-- Slim visual thumb with a 14px pointer area and standard track paging.
+                 Applies to native ScrollBar controls in grids, editors and dialogs. -->
 
             <!-- Shared thumb sub-style used by both orientations. -->
             <Style x:Key="OverlayScrollThumbStyle" TargetType="Thumb">
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="Thumb">
-                            <Border x:Name="ThumbBd" CornerRadius="3" Margin="1"
-                                    Background="{DynamicResource TextFillColorTertiaryBrush}" />
+                            <Grid Background="Transparent">
+                                <Border x:Name="ThumbBd" CornerRadius="3" Margin="4,1"
+                                        Background="{DynamicResource TextFillColorTertiaryBrush}" />
+                            </Grid>
                             <ControlTemplate.Triggers>
+                                <DataTrigger Binding="{Binding Orientation, RelativeSource={RelativeSource AncestorType=ScrollBar}}" Value="Horizontal">
+                                    <Setter TargetName="ThumbBd" Property="Margin" Value="1,4" />
+                                </DataTrigger>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="ThumbBd" Property="Background"
                                             Value="{DynamicResource TextFillColorSecondaryBrush}" />
@@ -182,11 +186,13 @@
                     <Setter.Value>
                         <!-- Vertical scrollbar (default) -->
                         <ControlTemplate TargetType="ScrollBar">
-                            <Grid x:Name="Root" Width="8">
+                            <Grid x:Name="Root" Width="14" Background="Transparent">
                                 <Border x:Name="TrackBg" Background="Transparent" CornerRadius="4" />
                                 <Track x:Name="PART_Track" IsDirectionReversed="True" Margin="0">
                                     <Track.DecreaseRepeatButton>
-                                        <RepeatButton Opacity="0" IsEnabled="False">
+                                        <RepeatButton x:Name="PageDecrease" Opacity="0" Focusable="False"
+                                                      Command="{x:Static ScrollBar.PageUpCommand}"
+                                                      CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}">
                                             <RepeatButton.Template>
                                                 <ControlTemplate TargetType="RepeatButton">
                                                     <Rectangle Fill="Transparent" />
@@ -195,7 +201,9 @@
                                         </RepeatButton>
                                     </Track.DecreaseRepeatButton>
                                     <Track.IncreaseRepeatButton>
-                                        <RepeatButton Opacity="0" IsEnabled="False">
+                                        <RepeatButton x:Name="PageIncrease" Opacity="0" Focusable="False"
+                                                      Command="{x:Static ScrollBar.PageDownCommand}"
+                                                      CommandTarget="{Binding RelativeSource={RelativeSource TemplatedParent}}">
                                             <RepeatButton.Template>
                                                 <ControlTemplate TargetType="RepeatButton">
                                                     <Rectangle Fill="Transparent" />
@@ -211,8 +219,10 @@
                             <ControlTemplate.Triggers>
                                 <Trigger Property="Orientation" Value="Horizontal">
                                     <Setter TargetName="Root" Property="Width" Value="Auto" />
-                                    <Setter TargetName="Root" Property="Height" Value="8" />
+                                    <Setter TargetName="Root" Property="Height" Value="14" />
                                     <Setter TargetName="PART_Track" Property="IsDirectionReversed" Value="False" />
+                                    <Setter TargetName="PageDecrease" Property="Command" Value="{x:Static ScrollBar.PageLeftCommand}" />
+                                    <Setter TargetName="PageIncrease" Property="Command" Value="{x:Static ScrollBar.PageRightCommand}" />
                                 </Trigger>
                             </ControlTemplate.Triggers>
                         </ControlTemplate>

@@ -17,6 +17,7 @@
 
     <ui:FluentWindow.Resources>
         <local:StringToVisibilityConverter x:Key="TipVis" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </ui:FluentWindow.Resources>
 
     <Grid>
@@ -53,6 +54,12 @@
         </Grid>
 
         <!-- Grouped accordion -->
+        <StackPanel x:Name="NoHelpMatches" Grid.Row="2" Panel.ZIndex="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="{Binding NoMatches, Converter={StaticResource BoolToVis}}" Margin="24">
+            <TextBlock Text="No matching help topics" Style="{StaticResource EmptyStateTitle}" />
+            <TextBlock Text="Try a different search or clear it to see all topics." Style="{StaticResource EmptyStateSubtitle}" />
+            <ui:Button Content="Clear search" Command="{Binding ClearSearchCommand}" HorizontalAlignment="Center" Margin="0,12,0,0" />
+        </StackPanel>
         <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" Padding="24,0,24,16">
             <ItemsControl ItemsSource="{Binding Topics}">
                 <ItemsControl.GroupStyle>

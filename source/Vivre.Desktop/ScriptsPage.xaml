@@ -41,12 +41,18 @@
 
             <!-- ── Script list with category Expanders ───────────────────── -->
             <Grid Grid.Column="0">
-                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
                 <ui:TextBox x:Name="ScriptSearchBox" PlaceholderText="Search scripts…" ClearButtonEnabled="True" Margin="0,0,0,6"
                             AutomationProperties.Name="Search scripts by name or category" TextChanged="OnScriptSearchChanged"
                             ToolTip="Search names or categories. The script currently open stays visible to protect your edits." />
+                <StackPanel x:Name="ScriptSearchFeedback" Grid.Row="1" Visibility="Collapsed" Margin="0,0,0,8">
+                    <TextBlock x:Name="ScriptSearchMessage" TextWrapping="Wrap" local:AccessibleStatus.Enabled="True"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" />
+                    <ui:Button x:Name="ClearScriptSearchButton" Content="Clear search" Click="OnClearScriptSearch" HorizontalAlignment="Left" Margin="0,6,0,0" />
+                    <ui:Button x:Name="EmptyAddScriptButton" Content="Add script" Click="OnAdd" HorizontalAlignment="Left" Margin="0,6,0,0" />
+                </StackPanel>
             <ui:ListView x:Name="ScriptList"
-                         Grid.Row="1" Tag="{Binding Text, ElementName=ScriptSearchBox}"
+                         Grid.Row="2" Tag="{Binding Text, ElementName=ScriptSearchBox}"
                          ItemsSource="{Binding Source={StaticResource GroupedScripts}}"
                          SelectedItem="{Binding SelectedScript, Mode=TwoWay}"
                          SelectionChanged="OnScriptSelected"
