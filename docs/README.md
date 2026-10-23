@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[cu-transfer-settings-validation.md](cu-transfer-settings-validation.md)** — configurable CU file limit (default 2), safe live adjustment, persistence and UI checks; follow-up under Unreleased.
+
 - **[list-organization-validation.md](list-organization-validation.md)** — U-58/U-59 list organization/save-folder flow included in 1.20.1, review corrections, focused checks and native-validation limits.
 
 - **[cu-transfer-load-validation.md](cu-transfer-load-validation.md)** — current 1.20.2 CU file-load mitigation, independent review, local validation and unresolved production incident/packaging limits.

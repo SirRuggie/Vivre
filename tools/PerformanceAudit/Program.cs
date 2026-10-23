@@ -134,7 +134,8 @@ internal static class Program
             }
             if (settingsClarityOnly)
             {
-                File.WriteAllText(outputPath, JsonSerializer.Serialize(new { settings = SettingsClarityProbe.Run(root), gridsAndServices = GridPreferencesProbe.Run(root) }, new JsonSerializerOptions { WriteIndented = true }));
+                File.WriteAllText(outputPath, JsonSerializer.Serialize(new { settings = SettingsClarityProbe.Run(root,
+                    Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!, "cu-settings-renders")), gridsAndServices = GridPreferencesProbe.Run(root) }, new JsonSerializerOptions { WriteIndented = true }));
                 return;
             }
             if (patchingClarityOnly)

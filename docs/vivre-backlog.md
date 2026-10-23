@@ -6,6 +6,8 @@ The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The 
 
 **Current release 1.20.2:** a shared CU file-I/O queue reduces simultaneous controller traffic during mixed installs; the host/RDP incident remains unproven in production. See [acceptance and review](cu-transfer-load-validation.md). U-58/U-59 remain included from 1.20.1; deferred decisions are unchanged.
 
+**Follow-up under Unreleased:** Shaun requested a separate CU file-transfer setting, default 2, beside install concurrency. See [current settings acceptance](cu-transfer-settings-validation.md); this does not close the production freeze incident.
+
 ## Status rules
 
 - **Implemented / locally validated:** the cited implementation has evidence; this does not claim current live-server, native interaction or whole-app soak coverage.

@@ -59,6 +59,7 @@ public partial class SettingsPage : UserControl
         LcuPackagesFolderBox.Text = shared.LcuPackagesFolder;
         // The install cap and WUG state-check concurrency are PERSONAL — seed them from the per-user snapshot.
         MaxInstallsBox.Text = s.MaxSimultaneousInstalls.ToString();
+        MaxCuTransfersBox.Text = CuPackageIo.ClampConcurrency(s.MaxSimultaneousCuTransfers).ToString();
         WugStateConcurrencyBox.Text = s.WugStateConcurrency.ToString();
         ServicingWaitBox.Text = s.ServicingWaitMinutes.ToString();
 
@@ -258,6 +259,27 @@ public partial class SettingsPage : UserControl
 
         // Personal, per operator — persists to the per-user store (not the machine-wide shared file).
         PersistSettings(s => s.MaxSimultaneousInstalls = parsed);
+    }
+
+    private void OnMaxCuTransfersChanged(object sender, RoutedEventArgs e)
+    {
+        string raw = MaxCuTransfersBox.Text.Trim();
+        MaxCuTransfersError.Text = string.Empty;
+        if (!int.TryParse(raw, out int parsed) || parsed < 1 || parsed > CuPackageIo.MaximumConcurrency)
+        {
+            MaxCuTransfersError.Text = "Enter a whole number from 1–200. Your previous setting remains active.";
+            return;
+        }
+
+        if (PersistSettings(s => s.MaxSimultaneousCuTransfers = parsed))
+        {
+            MaxCuTransfersBox.Text = parsed.ToString();
+            CuPackageIo.ConfigureLimit(parsed);
+        }
+        else
+        {
+            MaxCuTransfersError.Text = "Could not apply the CU file limit. Your previous setting remains active.";
+        }
     }
 
     private void OnWugStateConcurrencyChanged(object sender, RoutedEventArgs e)
@@ -548,18 +570,20 @@ public partial class SettingsPage : UserControl
 
     // ── Helpers ────────────────────────────────────────────────────────────
 
-    private void PersistSettings(Action<AppSettings> mutate)
+    private bool PersistSettings(Action<AppSettings> mutate)
     {
-        if (_settingsStore is null) return;
+        if (_settingsStore is null) return false;
         try
         {
             AppSettings s = _settingsStore.Load();
             mutate(s);
             _settingsStore.Save(s);
+            return true;
         }
         catch (Exception ex)
         {
             _log?.Warn(null, $"Couldn't save settings. {ex.Message}");
+            return false;
         }
     }
 

@@ -1,5 +1,7 @@
 # Vivre 1.20.2 — CU transfer load safeguard — 2026-10-23
 
+This records the one-slot baseline delivered in `f701ff7`. Shaun subsequently requested a configurable default of 2; see [the follow-up acceptance ledger](cu-transfer-settings-validation.md) for the current implementation. Counts and one-slot statements below describe that original checkpoint.
+
 ## Acceptance ledger
 
 | Requested capability | Status |

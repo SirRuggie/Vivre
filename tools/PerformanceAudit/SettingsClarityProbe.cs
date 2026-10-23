@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using Serilog;
 using Vivre.Core.Configuration;
 using Vivre.Core.Logging;
+using Vivre.Core.Updates;
 using Vivre.Desktop;
 using Vivre.Desktop.ViewModels;
 
@@ -13,8 +14,9 @@ namespace Vivre.PerformanceAudit;
 
 internal static class SettingsClarityProbe
 {
-    public static object Run(string root)
+    public static object Run(string root, string? renderDirectory = null)
     {
+        using var cuLimitScope = new CuLimitScope();
         using var logger = new LoggerConfiguration().CreateLogger();
         var log = (ActivityLog)Activator.CreateInstance(typeof(ActivityLog), BindingFlags.NonPublic | BindingFlags.Instance, null, [logger], null)!;
         string title = "Health · Original #1";
@@ -72,7 +74,7 @@ internal static class SettingsClarityProbe
         Box(page, "LcuMonthTagBox").Text = "Manual after package";
         Call(page, "OnSaveCuSettings", page, new RoutedEventArgs());
         Require(shared.Load().MonthlyCu.MonthTag == "Manual after package", "Package left typed baseline stale.");
-        foreach (var item in new[] { ("MaxInstallsBox", "MaxInstallsError", "OnMaxInstallsChanged", "51"), ("WugStateConcurrencyBox", "WugStateConcurrencyError", "OnWugStateConcurrencyChanged", "3"), ("ServicingWaitBox", "ServicingWaitError", "OnServicingWaitChanged", "21") })
+        foreach (var item in new[] { ("MaxInstallsBox", "MaxInstallsError", "OnMaxInstallsChanged", "51"), ("MaxCuTransfersBox", "MaxCuTransfersError", "OnMaxCuTransfersChanged", "5"), ("WugStateConcurrencyBox", "WugStateConcurrencyError", "OnWugStateConcurrencyChanged", "3"), ("ServicingWaitBox", "ServicingWaitError", "OnServicingWaitChanged", "21") })
         {
             page.Measure(new Size(900, 900)); page.Arrange(new Rect(0, 0, 900, 900)); page.UpdateLayout();
             double beforeWidth = Box(page, item.Item1).ActualWidth;
@@ -86,6 +88,19 @@ internal static class SettingsClarityProbe
             Require(((TextBlock)page.FindName(item.Item2)).Text == "", "Correcting value left stale error.");
         }
         Require(personal.Load().MaxSimultaneousInstalls == 51 && personal.Load().WugStateConcurrency == 3 && personal.Load().ServicingWaitMinutes == 21, "Valid numeric inputs not applied.");
+        Require(personal.Load().MaxSimultaneousCuTransfers == 5 && CuPackageIo.Limit == 5, "CU file limit not persisted/applied independently.");
+        foreach (string invalid in new[] { "0", "201", "1.5", "" })
+        {
+            Box(page, "MaxCuTransfersBox").Text = invalid;
+            Box(page, "MaxCuTransfersBox").RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+            Require(CuPackageIo.Limit == 5 && personal.Load().MaxSimultaneousCuTransfers == 5, "Invalid CU limit changed runtime or saved preference.");
+            Require(((TextBlock)page.FindName("MaxCuTransfersError")).Text.Contains("previous setting"), "Invalid CU limit lacks inline guidance.");
+        }
+        Box(page, "MaxCuTransfersBox").Text = "02";
+        Require(CuPackageIo.Limit == 5, "CU limit applied while typing rather than on focus loss.");
+        Box(page, "MaxCuTransfersBox").RaiseEvent(new RoutedEventArgs(UIElement.LostFocusEvent));
+        Require(CuPackageIo.Limit == 2 && Box(page, "MaxCuTransfersBox").Text == "2" && personal.Load().MaxSimultaneousCuTransfers == 2, "CU limit LostFocus handler is not wired or failed to apply.");
+        Require(!string.IsNullOrWhiteSpace(System.Windows.Automation.AutomationProperties.GetName(Box(page, "MaxCuTransfersBox"))), "CU limit input lacks an accessible name.");
         personal.Flush(TimeSpan.FromSeconds(10));
         File.WriteAllText(Path.Combine(sharedRoot, "settings.json"), "broken JSON");
         string draft = Box(page, "LcuKbBox").Text;
@@ -93,8 +108,31 @@ internal static class SettingsClarityProbe
         Require(Box(page, "LcuKbBox").Text == draft && Status(page).StartsWith("Could not reload"), "Failed reload discarded draft or claimed success.");
         Call(page, "OnSaveCuSettings", page, new RoutedEventArgs());
         Require(Status(page).StartsWith("Nothing saved") && File.ReadAllText(Path.Combine(sharedRoot, "settings.json")) == "broken JSON", "Failed write claimed success or replaced unread settings.");
+        if (renderDirectory is not null)
+        {
+            Directory.CreateDirectory(renderDirectory);
+            var renderPage = new SettingsPage();
+            Box(renderPage, "MaxCuTransfersBox").Text = personal.Load().MaxSimultaneousCuTransfers.ToString();
+            LayoutAccessibilityProbe.Layout(renderPage, 900, 900);
+            var card = (FrameworkElement)System.Windows.Media.VisualTreeHelper.GetParent(
+                System.Windows.Media.VisualTreeHelper.GetParent(Box(renderPage, "MaxCuTransfersBox")));
+            ((Panel)card.Parent).Children.Remove(card); // Isolate the production card for the local render only.
+            foreach (double width in new[] { 600d, 1000d })
+            {
+                card.InvalidateMeasure();
+                card.Measure(new Size(width, double.PositiveInfinity));
+                double height = Math.Ceiling(card.DesiredSize.Height);
+                LayoutAccessibilityProbe.Layout(card, width, height);
+                LayoutAccessibilityProbe.Render(card, width, height, 1, Path.Combine(renderDirectory, $"CU-transfers-{width}.png"));
+            }
+        }
         object logging = LogProbe.Run();
-        return new { pass = true, logging, originVisibleSearchableAndCaptured = true, atomicCuSaveAndConflict = true, packageAndTypedFlow = true, inlineNumericValidation = true, failedSavePreservesDraftAndFile = true, scope = "Production controls and real temporary stores; no live targets or production writes" };
+        return new { pass = true, logging, originVisibleSearchableAndCaptured = true, atomicCuSaveAndConflict = true, packageAndTypedFlow = true, inlineNumericValidation = true, cuFileLimitPersistedAndApplied = true, failedSavePreservesDraftAndFile = true, scope = "Production controls and real temporary stores; no live targets or production writes" };
+    }
+    private sealed class CuLimitScope : IDisposable
+    {
+        private readonly int _original = CuPackageIo.Limit;
+        public void Dispose() => CuPackageIo.ConfigureLimit(_original);
     }
     private static string Status(SettingsPage page) => ((TextBlock)page.FindName("CuSettingsStatus")).Text;
     private static Wpf.Ui.Controls.TextBox Box(SettingsPage page, string name) => (Wpf.Ui.Controls.TextBox)page.FindName(name);

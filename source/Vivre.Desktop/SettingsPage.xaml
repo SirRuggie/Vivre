@@ -238,6 +238,33 @@
                 </Grid>
             </Border>
 
+            <!-- ── CU file transfers (separate from remote installation) ─── -->
+            <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
+                    Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"
+                    BorderBrush="{DynamicResource CardStrokeColorDefaultBrush}" BorderThickness="1">
+                <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:SymbolIcon Grid.Column="0" Symbol="ArrowDownload24" FontSize="20"
+                                   VerticalAlignment="Center" Margin="0,0,12,0" />
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <ui:TextBlock Text="Max simultaneous CU file transfers" Foreground="{DynamicResource TextFillColorPrimaryBrush}" />
+                        <ui:TextBlock Foreground="{DynamicResource TextFillColorSecondaryBrush}" TextWrapping="Wrap"
+                                      Text="How many CU packages Vivre checks or copies at once across tabs. Servers can install while the next files copy. Range 1–200; default 2. Changes apply to waiting transfers; active transfers finish normally. Higher values increase controller disk and network load." />
+                    </StackPanel>
+                    <ui:TextBox Grid.Column="2" x:Name="MaxCuTransfersBox" AutomationProperties.Name="Maximum simultaneous CU file transfers"
+                                MinWidth="70" VerticalAlignment="Center" Margin="16,0,0,0"
+                                PlaceholderText="2" LostFocus="OnMaxCuTransfersChanged"
+                                ToolTip="CU file checks, copies and verification across tabs (1–200). Default 2. Separate from remote installation concurrency." />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Margin="0,6,0,0" x:Name="MaxCuTransfersError"
+                               local:AccessibleStatus.Enabled="True" TextWrapping="Wrap" Foreground="{DynamicResource SystemFillColorCriticalBrush}" />
+                </Grid>
+            </Border>
+
             <!-- ── Reboot wave — max wait for in-progress servicing (flat row) ─────────────── -->
             <Border Padding="16" CornerRadius="6" Margin="0,0,0,8"
                     Background="{DynamicResource CardBackgroundFillColorDefaultBrush}"

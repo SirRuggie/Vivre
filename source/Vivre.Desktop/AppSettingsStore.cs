@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Vivre.Core.Columns;
 using Vivre.Core.IO;
 using Vivre.Core.Logging;
+using Vivre.Core.Updates;
 
 namespace Vivre.Desktop;
 
@@ -50,6 +51,11 @@ public sealed class AppSettings
     /// continue at the cap they were started with). The practical governor is update-download bandwidth (N hosts
     /// pulling cumulative updates simultaneously), not the client. Range 1–200; default 50.</summary>
     public int MaxSimultaneousInstalls { get; set; } = 50;
+
+    /// <summary>Personal cap on CU package checks/copies/verification across tabs in this process.
+    /// Defaults to 2 for new and older settings files. Range 1–200. Changing it adjusts waiting work;
+    /// active file jobs finish normally. Remote installations do not hold these slots.</summary>
+    public int MaxSimultaneousCuTransfers { get; set; } = CuPackageIo.DefaultConcurrency;
 
     /// <summary>How many WhatsUp Gold devices YOUR state check looks up at once — per operator, not shared.
     /// Tunable in Settings → "WhatsUp Gold state check — simultaneous lookups"; applied to checks started after

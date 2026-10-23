@@ -6,6 +6,14 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+### Added
+
+- **Max simultaneous CU file transfers** in Settings beside install concurrency: default 2, range 1–200, saved per user and shared across tabs. Changes adjust waiting file work without interrupting active transfers; remote installation concurrency stays separate.
+
+### Validation
+
+- See [CU transfer settings validation](docs/cu-transfer-settings-validation.md) for adjustable-limit, persistence and UI checks; the APVPatching production freeze remains unverified.
+
 ## 1.20.2 — 2026-10-23
 
 ### Fixed

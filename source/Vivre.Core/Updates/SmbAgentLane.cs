@@ -251,7 +251,7 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 {
                     progress?.Report(new HostPatchStatus(PatchPhase.Scanning, "Copying package to host…"));
                     var transferTime = Stopwatch.StartNew();
-                    _activity?.Info(host, "CU transfer started (one package transfer at a time across tabs).");
+                    _activity?.Info(host, $"CU transfer started (configured file limit across tabs: {CuPackageIo.Limit}).");
                     CopyPackage(pkg.SourcePath, uncPackage, cancellationToken);
                     _activity?.Info(host, $"CU transfer verified in {transferTime.Elapsed.TotalSeconds:F1}s; ready for remote installation.");
                 }

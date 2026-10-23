@@ -128,6 +128,7 @@ public partial class App : Application
         }
 
         ApplyTheme(settings.Theme);
+        CuPackageIo.ConfigureLimit(settings.MaxSimultaneousCuTransfers);
 
         // Factory for a fresh tab/workspace, capturing the shared services.
         // Force reboot's runner: WinRM shutdown + the narrow Kerberos-auth fallback onto the SAME

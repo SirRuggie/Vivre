@@ -12,6 +12,25 @@ public sealed class AppSettingsStoreTests : IDisposable
     private string SettingsPath => Path.Combine(_directory, "settings.json");
     private readonly List<AppSettingsStore> _stores = [];
 
+    [Fact]
+    public void Cu_transfer_limit_defaults_for_old_files_and_persists_separately_from_installs()
+    {
+        Assert.Equal(2, new AppSettings().MaxSimultaneousCuTransfers);
+        Directory.CreateDirectory(_directory);
+        File.WriteAllText(SettingsPath, "{\"MaxSimultaneousInstalls\":17,\"FutureOption\":true}");
+        var store = Store();
+        AppSettings settings = store.Load();
+        Assert.Equal(2, settings.MaxSimultaneousCuTransfers);
+        settings.MaxSimultaneousCuTransfers = 5;
+        store.Save(settings);
+        Assert.Equal(SaveFlushStatus.Success, store.Flush(TimeSpan.FromSeconds(5)).Status);
+        string json = File.ReadAllText(SettingsPath);
+        AppSettings restored = JsonSerializer.Deserialize<AppSettings>(json)!;
+        Assert.Equal(5, restored.MaxSimultaneousCuTransfers);
+        Assert.Equal(17, restored.MaxSimultaneousInstalls);
+        Assert.True(JsonNode.Parse(json)!["FutureOption"]!.GetValue<bool>());
+    }
+
     private AppSettingsStore Store(Action<string, string>? writer = null, string? path = null)
     {
         var store = new AppSettingsStore(path ?? SettingsPath, writer);

@@ -575,6 +575,7 @@ public static class HelpContent
                 "A required reboot is reported, not forced — reboot when you're ready.",
                 "A box whose OS build is unknown is skipped with \"Unknown OS build — run Check Vitals first so Vivre can pick the right update lane.\"",
                 "Settings ▸ Max simultaneous installs bounds how many boxes install at once (default 50).",
+                "Settings ▸ Patching ▸ Max simultaneous CU file transfers separately limits CU package checks, copies and verification across tabs (1–200; default 2). Remote installation does not hold a file-transfer slot.",
             ],
         },
         new HelpTopic
@@ -687,7 +688,7 @@ public static class HelpContent
                 "1. Flag a box: right-click its row in a Patching tab ▸ Use CU lane. A small \"CU lane\" pill appears on the row. To undo, right-click ▸ Remove CU lane flag.",
                 "2. Click Install (or Install all). If the run includes a flagged box whose cumulative update isn't staged yet, Vivre asks what to do (it also warns when the Settings KB doesn't match what the scan actually found):",
                 "   • Install CU (no reboot) (recommended) — copies + installs this month's cumulative update on those boxes (size and installation time vary); you commit it later with the Reboot Wave. Other machines in the run install normally at the same time.",
-                "     Per-host CU stage checks, copying and verification run one at a time across tabs in this Vivre instance. Waiting rows show Queued. The slot is released before remote installation, allowing the next copy while that server installs. The initial package-choice precheck remains separate. This reduces simultaneous file traffic; it does not change Max simultaneous installs, cap bandwidth or coordinate separate Vivre instances.",
+                "     Max simultaneous CU file transfers in Settings defaults to 2 (range 1–200) and is saved for your Windows login. It controls per-host CU checks, copying and verification across tabs; waiting rows show Queued. Changes affect waiting work without interrupting active transfers. Slots are released before remote installation, so servers can install while more packages copy. Higher values increase controller disk/network load. Initial package-choice preflight, Max simultaneous installs and separate Vivre instances remain independent; this is not a bandwidth cap.",
                 "   • Install minor updates only — installs everything except the cumulative update now (the CU is installed separately). You'll be reminded that minor updates may need a reboot.",
                 "   • Skip CU — install other N: leave the CU machines untouched and install updates only on the other machines counted in this batch.",
                 "   • Cancel, Escape, or closing the dialog — start no installations from this batch. Work already running continues.",

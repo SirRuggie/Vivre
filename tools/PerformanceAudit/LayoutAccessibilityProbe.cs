@@ -202,7 +202,7 @@ internal static class LayoutAccessibilityProbe
         return true;
     }
     private static string PeerName(UIElement element) => UIElementAutomationPeer.CreatePeerForElement(element)?.GetName() ?? "";
-    private static void Layout(FrameworkElement view, double width, double height)
+    internal static void Layout(FrameworkElement view, double width, double height)
     {
         System.Windows.Documents.TextElement.SetForeground(view, (Brush)Application.Current.FindResource("TextFillColorPrimaryBrush"));
         Pump();
@@ -210,7 +210,7 @@ internal static class LayoutAccessibilityProbe
         view.Measure(new Size(width, height)); view.Arrange(new Rect(0, 0, width, height)); view.UpdateLayout();
     }
     private static void Pump() => Dispatcher.CurrentDispatcher.Invoke(() => { }, DispatcherPriority.ContextIdle);
-    private static void Render(FrameworkElement view, double width, double height, double scale, string path)
+    internal static void Render(FrameworkElement view, double width, double height, double scale, string path)
     {
         var bitmap = new RenderTargetBitmap((int)Math.Ceiling(width * scale), (int)Math.Ceiling(height * scale), 96 * scale, 96 * scale, PixelFormats.Pbgra32);
         var drawing = new DrawingVisual();
