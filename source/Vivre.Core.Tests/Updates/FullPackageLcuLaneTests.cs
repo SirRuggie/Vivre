@@ -125,6 +125,25 @@ public class FullPackageLcuLaneTests
         Assert.Null(smb.StagedHost);
     }
 
+    [Fact]
+    public async Task Package_queue_is_released_before_remote_install_finishes()
+    {
+        using var dir = new TempDir();
+        dir.WriteFile("windows-kb9999999-x64.msu", 16);
+        var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var finish = new TaskCompletionSource<HostPatchStatus>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var smb = new RecordingSmb { InstallOverride = () => { started.TrySetResult(); return finish.Task; } };
+        Task<HostPatchStatus> run = new FullPackageLcuLane(smb).StageAsync("DUMMY-REMOTE", dir.Path,
+            new LcuTarget("KB9999999"), new(), new SyncProgress(), default);
+        try
+        {
+            await started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.False(run.IsCompleted);
+            Assert.True(await CuPackageIo.RunAsync(() => true, default).WaitAsync(TimeSpan.FromSeconds(5)));
+        }
+        finally { finish.TrySetResult(StagedSentinel); await run; }
+    }
+
     private sealed class FakeBuildReader(int? build, int? ubr) : ILcuBuildReader
     {
         public Task<(int? CurrentBuild, int? Ubr)> ReadAsync(string host, CancellationToken cancellationToken = default) =>
@@ -135,12 +154,13 @@ public class FullPackageLcuLaneTests
     {
         public string? StagedHost { get; private set; }
         public string? StagedPath { get; private set; }
+        public Func<Task<HostPatchStatus>>? InstallOverride { get; init; }
 
         public Task<HostPatchStatus> InstallFullPackageAsync(string host, string sourcePackagePath, PatchOptions options, IProgress<HostPatchStatus> progress, CancellationToken cancellationToken)
         {
             StagedHost = host;
             StagedPath = sourcePackagePath;
-            return Task.FromResult(StagedSentinel);
+            return InstallOverride?.Invoke() ?? Task.FromResult(StagedSentinel);
         }
 
         public Task<HostPatchStatus> ScanAsync(string host, PatchOptions options, CancellationToken cancellationToken) =>

@@ -8,7 +8,7 @@ Latest review: 2026-10-20 at `0929175`; [full-spectrum evidence and recommendati
 
 Release 1.20.1 follow-up: U-58/U-59 simplify organization and saving; their acceptance record is below.
 
-Current release: **1.20.1** (2026-10-20), adding U-58/U-59 to the saved-tab rename, list folders and U-45–U-57 delivered in 1.20.0. See [release validation](release-1.20.1-validation.md). U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version and Unreleased references below describe the implementation checkpoints at that time.
+Current release: **1.20.2** (2026-10-23), adding a CU controller file-load safeguard; see [release validation and incident limits](cu-transfer-load-validation.md). U-58/U-59 remain included from 1.20.1, alongside the saved-tab rename, list folders and U-45–U-57 delivered in 1.20.0. U-21/U-22 specific native validation remains open; Shaun confirmed U-39 resolved on 2026-10-20. Earlier version and Unreleased references below describe the implementation checkpoints at that time.
 
 ## Reconciled status — 2026-10-20
 

@@ -140,12 +140,15 @@ public sealed class FullPackageLcuLane
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(progress);
 
-        progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Checking the update package…"));
+        progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Queued — waiting to check CU package…"));
 
         // Folder access and optional full-package hashing must not occupy the caller's dispatcher.
-        LcuPackageResolution package = await Task.Run(() => _packages.Resolve(
-            packageDirectory, target.Kb, target.Arch,
-            target.ExpectedSizeBytes, target.ToleranceBytes, target.ExpectedSha256), cancellationToken).ConfigureAwait(false);
+        LcuPackageResolution package = await CuPackageIo.RunAsync(() =>
+        {
+            progress.Report(new HostPatchStatus(PatchPhase.Scanning, "Checking the update package…"));
+            return _packages.Resolve(packageDirectory, target.Kb, target.Arch,
+                target.ExpectedSizeBytes, target.ToleranceBytes, target.ExpectedSha256);
+        }, cancellationToken).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
 
         if (package.Status != LcuPackageStatus.Found || package.Path is null)

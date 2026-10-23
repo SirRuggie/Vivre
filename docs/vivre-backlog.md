@@ -2,9 +2,9 @@
 
 Reconciled **2026-10-20** against release **1.20.0**, source baseline `5c56ea3`, later acceptance records and targeted source reads. This is a documentation reconciliation, not a new full audit or production test.
 
-The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The [release ledger](release-1.20.1-validation.md) identifies the current released source and packaging limits. The previous tracker is preserved verbatim in the [dated snapshot](vivre-backlog-snapshot-2026-10-20.md); frozen findings and historical test results remain unchanged.
+The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The [release ledger](cu-transfer-load-validation.md) identifies the current released source and packaging limits. The previous tracker is preserved verbatim in the [dated snapshot](vivre-backlog-snapshot-2026-10-20.md); frozen findings and historical test results remain unchanged.
 
-**Current release 1.20.1:** U-58/U-59 simplify the saved-list organizer and add save-time folder choice; see [acceptance and review](list-organization-validation.md). No patching behavior or deferred item is changed.
+**Current release 1.20.2:** a shared CU file-I/O queue reduces simultaneous controller traffic during mixed installs; the host/RDP incident remains unproven in production. See [acceptance and review](cu-transfer-load-validation.md). U-58/U-59 remain included from 1.20.1; deferred decisions are unchanged.
 
 ## Status rules
 
@@ -18,16 +18,17 @@ The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The 
 
 | Area | Current status and next evidence needed |
 | --- | --- |
+| **APVPatching freeze / RDP loss** | 1.20.2 serializes per-host CU file work and clarifies lost-monitoring outcomes; local tests do not prove the production freeze resolved. Verify remote results before retrying timed-out jobs, then collect host/load evidence during the next operator-authorized run. See the release ledger. |
 | **U-21 — layout/scaling** | Local layout fixes and raster probes delivered; actual Windows DPI/text scaling, mixed monitors and narrow-window use remain unverified. |
 | **U-22 — accessibility/input** | Local focus/menu/name fixes delivered; physical keyboard and spoken screen-reader checks remain open. RDP host/folder credential naming and older validation announcements also need inspection; this is not solely a test checkbox. |
 | **Native popup behavior** | The library-search probe could not acquire keyboard focus in the latest shared-navigation batch; focused picker/editor checks passed separately. Keep native popup focus unverified within U-22. |
 | **Long-running resource use** | No current-build whole-app memory/CPU/handle/native-RDP soak proves that every leak or stall is absent. Repeated tab/Details/RDP open-close and large-fleet work are measurement targets, not confirmed leaks. |
 | **Deployment integration** | Latest-build directory, WinRM/DCOM/SMB, local-host update, multi-server CU throughput and EDR behavior need deployment-host evidence where relevant; older canaries and dummy-host checks do not cover every environment. No live operation is authorized by this tracker. |
-| **Packaging / restart** | See the 1.20.1 release ledger for metadata/build checks; Shaun will produce/deploy the ZIP. Do not infer that the latest signed ZIP, deployed startup or upgrade/persistence checks ran here. |
+| **Packaging / restart** | See the 1.20.2 release ledger for metadata/build checks; Shaun will produce/deploy the ZIP. Do not infer that the latest signed ZIP, deployed startup or upgrade/persistence checks ran here. |
 | **Completion notifications** | F20's actual MainWindow/InfoBar queue/cap/order/dismissal behavior was exercised in the 1.17.3 acceptance work; visible native tray behavior remains unverified. |
 | **Filesystem privilege cases** | Privileged file-symlink cases were skipped where Windows rights were unavailable; directory-junction coverage did execute. Do not merge those into one “all passed” claim. |
 
-Evidence: [U-21/U-22 matrix](ui-ux-u21-u22-validation.md), [UI ledger](vivre-ui-ux-backlog.md), [People ledger](people-lookup-validation.md), [audit acceptance](vivre-audit-implementation-2026-10-14.md), [performance acceptance](vivre-performance-implementation-2026-10-14.md), [1.17.3 notification checks](release-1.17.3-validation.md), [current release](release-1.20.1-validation.md).
+Evidence: [U-21/U-22 matrix](ui-ux-u21-u22-validation.md), [UI ledger](vivre-ui-ux-backlog.md), [People ledger](people-lookup-validation.md), [audit acceptance](vivre-audit-implementation-2026-10-14.md), [performance acceptance](vivre-performance-implementation-2026-10-14.md), [1.17.3 notification checks](release-1.17.3-validation.md), [current release](cu-transfer-load-validation.md).
 
 ## Explicitly deferred
 

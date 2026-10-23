@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Security.AccessControl;
@@ -224,6 +225,7 @@ public sealed class SmbAgentLane : ISmbAgentLane
             options, localProgress, mode, scope, isScan ? localResult : null, localPackage);
 
         RemoteServiceController? service = null;
+        bool dropStarted = false;
         try
         {
             // 1) Drop + verify the agent, and (for AddPackage) copy the CU .msu. This is heavy synchronous
@@ -232,8 +234,10 @@ public sealed class SmbAgentLane : ISmbAgentLane
             // synchronously that thread is the UI thread, and the app freezes for the whole copy. (Progress
             // reports still marshal back via IProgress; ConfigureAwait(false) is fine here — the result
             // writes the caller binds to happen in its own continuation, which keeps the UI context.)
-            await Task.Run(() =>
+            bool DropAndVerify()
             {
+                cancellationToken.ThrowIfCancellationRequested();
+                dropStarted = true;
                 EnsureHardenedDir(uncDir);
                 CleanStaleRunFiles(uncProgress, uncResult);
                 File.WriteAllBytes(uncExe, agentBytes);
@@ -246,9 +250,24 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 if (payload is { } pkg && uncPackage is not null)
                 {
                     progress?.Report(new HostPatchStatus(PatchPhase.Scanning, "Copying package to host…"));
+                    var transferTime = Stopwatch.StartNew();
+                    _activity?.Info(host, "CU transfer started (one package transfer at a time across tabs).");
                     CopyPackage(pkg.SourcePath, uncPackage, cancellationToken);
+                    _activity?.Info(host, $"CU transfer verified in {transferTime.Elapsed.TotalSeconds:F1}s; ready for remote installation.");
                 }
-            }, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+
+            if (payload is not null)
+            {
+                progress?.Report(new HostPatchStatus(PatchPhase.Scanning, "Queued — waiting to copy CU package…"));
+                _activity?.Info(host, "CU transfer queued; waiting for controller file I/O slot.");
+                await CuPackageIo.RunAsync(DropAndVerify, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await Task.Run(DropAndVerify, cancellationToken).ConfigureAwait(false);
+            }
 
             // A Stop pressed during the (possibly ~90s) copy above is only observed once the copy
             // completes — it must not launch the agent as SYSTEM; the finally cleans the dropped files.
@@ -277,10 +296,14 @@ public sealed class SmbAgentLane : ISmbAgentLane
                 service.Dispose();
             }
 
-            DeleteRunFiles(uncExe, uncConfig, uncProgress, uncResult);
-            if (uncPackage is not null)
+            // A canceled CU queue entry never touched this host. Preserve regular-lane cleanup.
+            if (payload is null || dropStarted)
             {
-                TryDelete(uncPackage); // don't leave a 1.7 GB .msu behind on the box
+                DeleteRunFiles(uncExe, uncConfig, uncProgress, uncResult);
+                if (uncPackage is not null)
+                {
+                    TryDelete(uncPackage); // don't leave a 1.7 GB .msu behind on the box
+                }
             }
         }
     }

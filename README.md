@@ -101,6 +101,8 @@ Linux identification: Health and Patching show a small Linux label beside hostna
 
 Server 2016 **Install CU (no reboot)** copies and installs the full CU package using DISM; it can affect performance and requires a later reboot to complete. The **CU lane** badge only identifies the configured patching route, not completed installation. Use the row menu **Use CU lane** / **Remove CU lane flag** to change that route.
 
+Per-host CU stage checks, large file copies and verification share one queue across tabs in a running Vivre instance. Waiting rows say **Queued**; after a transfer is verified, its server installs while the next transfer proceeds. The initial package-choice precheck remains separate. This reduces simultaneous controller file traffic without changing **Max simultaneous installs**, target selection or reboot approval. It does not cap bandwidth or coordinate separate Vivre processes. See [validation and incident limits](docs/cu-transfer-load-validation.md).
+
 In Health and Patching, **Paste** offers **Add to this tab**, **Replace this tab's machine list**, or **Create a new tab with this list**. New-tab paste selects a fresh tab in the same section with default update settings and keeps the original results intact.
 
 Script saves ask before replacing an existing destination and reject stale approvals; declining preserves editor text. Custom-column names must be unique (case-insensitive); duplicate additions keep the existing script and values without executing a replacement.
@@ -140,7 +142,7 @@ dotnet run --project source\Vivre.Desktop
 
 ## Publish / deploy to another machine
 
-Current release: **1.20.1** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
+Current release: **1.20.2** on the default branch **master**. Build the stable-name package with `.\publish.ps1 -Zip`. Output is `C:\src\Vivre\publish\Vivre.zip`; the app and manifest retain their version and commit identity. Keep this output path for subsequent releases. Older versioned archives, `Vivre-win-x64.zip`, and `Vivre-audited-8b0c2be.zip` are historical artifacts, not this release.
 
 Use `publish.ps1` (wraps `dotnet publish` of the Desktop project):
 

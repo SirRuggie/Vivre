@@ -57,6 +57,7 @@ and retired. **Load-bearing constraints — DON'T break:**
   destroys pages — so use NavigationView for the **pane only** and host section content in the
   keep-alive container.
 - **Activity and settings:** WorkspaceActivityLog adds identity at emission time to the existing bounded queue; Origin is displayed/searched/copied. Typed and package CU changes share TrySaveCu with a baseline guard and one shared-store Update; explicit reloads use LoadForEditing so unreadable settings cannot replace a draft with defaults.
+- **CU controller file load:** `CuPackageIo` serializes per-host CU resolution and payload drop/copy/verification across lane instances/tabs. Release before SCM launch/remote installation; retain source/destination integrity checks. Queued cancellation must not contact a CU target for cleanup before its drop starts. Interactive package-choice preflight is separate; this is neither a bandwidth cap nor a cross-process gate. See `docs/cu-transfer-load-validation.md` for incident limits.
 - **Scheduling approval:** capture InstallTargetScope before the dialog and recheck identities/tab disposal before dispatch; timezone display must match ScheduleTimeFormatter host-local conversion. The pending-reboot dialog maps Primary to install and Secondary to forced reboot; preserve the tested mapping.
 - **Patch options are per workspace, session-only.** Each workspace clones defaults; new tabs start with Windows Update. The toolbar says Update options; source labels remain in Patching headers, the banner and the button tooltip. Credentials and read throttling remain app-wide.
 - **List clarity:** membership status uses the existing coalesced fleet timer and the last successful open/save snapshot, never polling disk or reacting to scan results. Paste and Quick Add share ComputerNameInput; Name is the fixed first column in both grids.
@@ -339,7 +340,7 @@ Current acceptance evidence and remaining operational gaps: docs/vivre-review-de
 - Saved-list folders are bookmark-style metadata in `Lists/list-folders.json`; existing `.txt`/`.vlist` files stay flat and appear directly in Lists until moved. Folder create/rename/remove/move must not rewrite list contents or identity; removing a folder returns its lists to the top level. Rebuild grouped Open/Delete menus from current list files, and keep those files visible at the top level if folder metadata is unreadable.
 - Right-click saved-list moves require an explicit destination and Move; typing/filtering/cancelling must never move or open a list. Reuse `ComputerListFolders` validation. Fleet Actions keeps selected shortcuts separate from all-tab Remove offline/Clear results and rejects stale tab/row snapshots.
 - Preserve standard scrollbar page commands in both orientations and the transparent 14-DIP thumb hit area. Empty/search recovery must reuse existing handlers and never discard editor contents or workspace results.
-- Current release is 1.20.1; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
+- Current release is 1.20.2; future work accumulates under Unreleased until the next release. Historical validation documents remain historical.
 
 ## Health-to-Patching handoff
 

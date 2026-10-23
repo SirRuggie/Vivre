@@ -6,6 +6,18 @@ it ships, then gets a dated heading.
 
 ## Unreleased
 
+## 1.20.2 — 2026-10-23
+
+### Fixed
+
+- Queue per-host CU stage checks, large package copies and verification reads one at a time across tabs to reduce controller load during mixed installs; remote installations continue after their transfer releases the slot, with the same integrity checks and reboot behavior. The initial package-choice precheck remains separate.
+- Show queued CU work and log transfer start/completion timing; canceled queued work does not contact the target for cleanup.
+- Describe a missing update heartbeat as an unknown installation outcome, without assuming the remote server caused the loss of progress.
+
+### Validation
+
+- See [CU transfer safeguard validation](docs/cu-transfer-load-validation.md) for local test/review evidence and the remaining APVPatching production validation. This is a targeted mitigation, not a confirmed resolution of the host/RDP incident.
+
 ## 1.20.1 — 2026-10-20
 
 ### Changed

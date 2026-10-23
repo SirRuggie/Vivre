@@ -328,9 +328,9 @@ public sealed class WuaUpdateLane
         }
         catch (OperationCanceledException) when (watchdogStale && !cancellationToken.IsCancellationRequested)
         {
-            // The watchdog tripped (total silence) — not a user Stop. The session is dead/hung.
+            // Total silence proves loss of monitoring, not which endpoint stalled or the install outcome.
             var stale = HostPatchStatus.Failed(
-                $"No response from {host} for {options.NoResponseTimeout.TotalSeconds:N0}s — the remote session stopped sending progress and heartbeats (it appears dead or hung). Hit Stop, then re-scan once it's back.");
+                $"No response received from {host} for {options.NoResponseTimeout.TotalSeconds:N0}s — progress monitoring timed out. Update outcome is unknown; the controller, network, or target may be busy. Check status before retrying.");
             progress.Report(stale);
             await SafetyCleanupAsync(host, taskName, exePath, configPath, progressPath, credential).ConfigureAwait(false);
             return stale;

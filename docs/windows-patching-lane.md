@@ -49,6 +49,8 @@ filenames (`Vivre_WUA_<runId>.*`) isolate concurrent runs.
 
 ## Kerberos-broken hosts: the SMB + SCM fallback lane
 
+CU staging resolution/hash checks and the AddPackage drop/copy/verification step share `CuPackageIo`, a process-wide queue built on the existing `KeyedOperationGate`. The queue waits asynchronously and keeps file I/O off the dispatcher. It is released before remote service launch/install/tailing. Normal WUA/SMB operations retain their existing concurrency. Queued cancellations do not attempt remote cleanup; once copying has started, the existing cancellation checks prevent a canceled transfer from launching the agent. The current synchronous `File.Copy` cannot be interrupted mid-call. This limits simultaneous large-file work, not bandwidth, separate app instances, or interactive package preflight checks. See [validation](cu-transfer-load-validation.md).
+
 Cached Kerberos rejections are scoped to the host, WinRM port/TLS settings, and session credential
 identity. **Retry WinRM** in the machine context menu performs a bounded, harmless connection check;
 only verified success restores that connection to WinRM. Replacing credentials permits a fresh
