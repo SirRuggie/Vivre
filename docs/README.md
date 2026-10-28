@@ -6,6 +6,8 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[repeat-install-legacy-os-validation.md](repeat-install-legacy-os-validation.md)** — repeat-scan selection and Server 2012/2012 R2 build-recognition acceptance and local regression evidence.
+
 - **[cu-transfer-settings-validation.md](cu-transfer-settings-validation.md)** — configurable CU file limit (default 2), safe live adjustment, persistence and UI checks; follow-up under Unreleased.
 
 - **[list-organization-validation.md](list-organization-validation.md)** — U-58/U-59 list organization/save-folder flow included in 1.20.1, review corrections, focused checks and native-validation limits.

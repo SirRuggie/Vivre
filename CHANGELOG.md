@@ -13,6 +13,12 @@ it ships, then gets a dated heading.
 ### Validation
 
 - See [CU transfer settings validation](docs/cu-transfer-settings-validation.md) for adjustable-limit, persistence and UI checks; the APVPatching production freeze remains unverified.
+- Repeat-install and legacy OS fixes: 780 update tests plus the isolated real-workspace scan/install probe passed; see [acceptance and limits](docs/repeat-install-legacy-os-validation.md).
+
+### Fixed
+
+- Fresh applicable scans no longer inherit checkboxes automatically cleared after a successful install, preventing misleading “No updates selected” on a repeat install; deliberate exclusions remain unchecked.
+- Recognise Server 2012/2012 R2 build numbers already returned by Check Vitals, instead of incorrectly skipping them as an unknown OS. Staged-CU and pending-reboot approval guards are unchanged.
 
 ## 1.20.2 — 2026-10-23
 

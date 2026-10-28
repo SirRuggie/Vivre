@@ -48,7 +48,8 @@ public static partial class LcuRouting
 
     /// <summary>
     /// Pulls the OS build number out of the OS string Vivre already captures (caption + version, e.g.
-    /// "Windows Server 2016 Standard — 10.0.14393" → 14393). Modern Windows all report 10.0.&lt;build&gt;.
+    /// "Windows Server 2016 Standard — 10.0.14393" → 14393, or Server 2012 R2 — 6.3.9600 → 9600).
+    /// Recognises Windows 6.0–6.3 and 10.0 versions from the existing vitals caption/version string.
     /// Returns null when the string is absent or has no recognisable build (so the box stays unclassified).
     /// </summary>
     public static int? ParseBuild(string? operatingSystem)
@@ -62,7 +63,8 @@ public static partial class LcuRouting
         return m.Success && int.TryParse(m.Groups[1].Value, out int build) ? build : null;
     }
 
-    // "10.0.<build>" — the version form every Windows 10 / Server 2016+ reports.
-    [GeneratedRegex(@"10\.0\.(\d{3,})", RegexOptions.CultureInvariant)]
+    // Require a Windows caption and a whole version token; don't mistake Linux versions or a
+    // substring of a malformed version for a Windows build. The optional final component is UBR.
+    [GeneratedRegex(@"\bWindows\b[^\r\n]*?(?<![\w.])(?:10\.0|6\.[0-3])\.(\d{3,})(?:\.\d+)?(?![\w.])", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase)]
     private static partial Regex BuildRegex();
 }

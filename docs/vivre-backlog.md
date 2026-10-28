@@ -8,6 +8,8 @@ The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The 
 
 **Follow-up under Unreleased:** Shaun requested a separate CU file-transfer setting, default 2, beside install concurrency. See [current settings acceptance](cu-transfer-settings-validation.md); this does not close the production freeze incident.
 
+**Repeat-install / legacy OS follow-up:** checklist reconciliation and Server 2012/2012 R2 build recognition are tracked in [acceptance and validation](repeat-install-legacy-os-validation.md); live target validation is separate from local regressions.
+
 ## Status rules
 
 - **Implemented / locally validated:** the cited implementation has evidence; this does not claim current live-server, native interaction or whole-app soak coverage.

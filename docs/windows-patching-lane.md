@@ -154,9 +154,17 @@ the controller tails.
 - **Scan** fills the per-machine checklist (Applicable scope) or the installed-updates list
   (Installed scope). The exclude-by-name list filters titles fleet-wide; `Type='Software'` hides
   drivers unless **Include drivers** is on.
-- **Install** installs the ticked KBs (or all applicable if nothing's ticked), with live progress
+- **Install** installs the ticked KBs (or all applicable when no checklist exists); a nonempty
+  checklist with nothing ticked is skipped. Successful installation unticks its completed snapshot.
+  A fresh Applicable scan selects those results again if Windows still reports them applicable,
+  while deliberately unchecked updates remain unchecked; Installed-scope removal remains opt-in.
+  Installation has live progress
   (download maps to 0–50% of the bar, install 50–100%). Reboot is **reported, not forced** by
   default (`RebootBehavior.ReportOnly`).
+- **OS routing** reads the existing Windows vitals caption/version, including Server 2012
+  (`6.2.9200`) and 2012 R2 (`6.3.9600`). Only build 14393 can use the opted-in CU lane;
+  unknown builds still require Check Vitals. Recognition adds no remote probe and is not a
+  guarantee of update availability or end-to-end compatibility on a legacy OS.
 - **Uninstall** = **WUA then DISM**. WUA `BeginUninstall` (live %) when WUA can remove the update,
   otherwise **`dism /Online /Remove-Package`** (the supported path — `wusa /uninstall` is deprecated
   for cumulative updates). The Installed scan only marks a row removable when **WUA reports

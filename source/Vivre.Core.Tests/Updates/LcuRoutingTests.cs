@@ -14,6 +14,10 @@ public class LcuRoutingTests
     [InlineData("Windows Server 2019 Datacenter — 10.0.17763", 17763)]
     [InlineData("Windows Server 2022 — 10.0.20348", 20348)]
     [InlineData("Microsoft Windows 11 Enterprise — 10.0.26100", 26100)]
+    [InlineData("Microsoft Windows Server 2012 Standard — 6.2.9200", 9200)]
+    [InlineData("Windows Server 2012 R2 Standard — 6.3.9600", 9600)]
+    [InlineData("Microsoft Windows Server 2008 R2 — 6.1.7601", 7601)]
+    [InlineData("Windows Server 2012 R2 — 6.3.9600.22188", 9600)]
     public void ParseBuild_pulls_the_build_from_the_os_string(string os, int expected) =>
         Assert.Equal(expected, LcuRouting.ParseBuild(os));
 
@@ -22,6 +26,11 @@ public class LcuRoutingTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("Some OS with no version")]
+    [InlineData("Windows Server 2012 R2")]
+    [InlineData("Linux — 6.3.9600")]
+    [InlineData("Windows — 110.0.14393")]
+    [InlineData("Windows — 10.0.14393oops")]
+    [InlineData("Windows — 6.3.9999999999999999")]
     public void ParseBuild_is_null_when_there_is_no_recognisable_build(string? os) =>
         Assert.Null(LcuRouting.ParseBuild(os));
 
@@ -29,6 +38,8 @@ public class LcuRoutingTests
     [InlineData(14393, true)]   // Server 2016 → the LCU lane
     [InlineData(17763, false)]  // 2019
     [InlineData(20348, false)]  // 2022
+    [InlineData(9200, false)]   // 2012
+    [InlineData(9600, false)]   // 2012 R2
     [InlineData(null, false)]   // unread → deliberately NOT 2016 (fail-safe)
     public void Is2016_is_true_only_for_a_confirmed_14393_build(int? build, bool expected) =>
         Assert.Equal(expected, LcuRouting.Is2016(build));
@@ -47,6 +58,8 @@ public class LcuRoutingTests
     [InlineData(14393, false, RebootVerifyLane.Wua)]      // non-flagged 2016 → WUA lane (patches via Windows Update)
     [InlineData(17763, true, RebootVerifyLane.Wua)]       // 2019 is never the LCU lane, flag or not
     [InlineData(17763, false, RebootVerifyLane.Wua)]      // 2019
+    [InlineData(9200, true, RebootVerifyLane.Wua)]        // legacy Windows never uses CU lane
+    [InlineData(9600, true, RebootVerifyLane.Wua)]
     [InlineData(null, true, RebootVerifyLane.Wua)]        // unread → WUA (fail-safe), even if somehow flagged
     public void RebootVerifyLaneFor_is_override_aware(int? build, bool requiresStaging, RebootVerifyLane expected) =>
         Assert.Equal(expected, LcuRouting.RebootVerifyLaneFor(build, requiresStaging));

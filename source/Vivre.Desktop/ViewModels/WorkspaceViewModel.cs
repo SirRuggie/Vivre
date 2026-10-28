@@ -5203,6 +5203,15 @@ public partial class WorkspaceViewModel : ObservableObject, ITabViewModel, IDisp
         var prior = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
         foreach (SelectableUpdate existing in target)
         {
+            // A successful install unticks its snapshot automatically. That is not an operator
+            // opt-out: if a fresh Applicable scan reports the KB again (including a new definition
+            // revision), use the normal selected default. Keep explicit skips and Installed-scope
+            // uninstall choices unchanged. Without a fresh scan, completed items stay unticked.
+            if (scope == UpdateScope.Applicable && existing.InstalledThisSession)
+            {
+                continue;
+            }
+
             prior[existing.Kb ?? existing.Title] = existing.IsSelected;
         }
 

@@ -35,6 +35,7 @@ internal static class InstallOverrideProbe
             pass = true,
             observedApproval = observed,
             runBehavior = behaviors.Select(b => b.ToString()).ToArray(),
+            repeatInstallAndLegacyOs = RepeatInstallProbe.Run(),
             scope = "Actual WorkspaceViewModel with inert IPatchService; no remoting, target I/O, credentials, or visible windows",
         };
     }
