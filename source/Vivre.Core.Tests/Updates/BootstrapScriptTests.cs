@@ -10,6 +10,22 @@ namespace Vivre.Core.Tests.Updates;
 /// </summary>
 public class BootstrapScriptTests
 {
+    [Theory]
+    [InlineData(RunBehavior.InstallNow)]
+    [InlineData(RunBehavior.ScheduleAt)]
+    public void System_task_principal_explicitly_uses_service_account_logon(RunBehavior behavior)
+    {
+        string script = Bootstrap(
+            behavior,
+            behavior == RunBehavior.ScheduleAt ? DateTime.Today.AddDays(1).AddHours(1) : null);
+
+        // SYSTEM is a built-in service account. An unspecified logon method relies on
+        // provider inference and is not the contract to send to older target schedulers.
+        Assert.Contains("New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest", script);
+        Assert.Contains("-Principal $principal", script);
+        Assert.DoesNotContain("-Password", script);
+    }
+
     private static string Bootstrap(RunBehavior behavior, DateTime? at = null)
     {
         var options = new PatchOptions { RunBehavior = behavior, ScheduleAt = at };

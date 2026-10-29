@@ -1021,7 +1021,8 @@ public sealed class WuaUpdateLane
             {{ScheduledTasksModuleImport}}
             {{trigger}}
             $action    = New-ScheduledTaskAction -Execute '{{exePath}}' -Argument '"{{configPath}}"'
-            $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -RunLevel Highest
+            # Specify SYSTEM's logon method explicitly; do not rely on the target provider to infer it.
+            $principal = New-ScheduledTaskPrincipal -UserId 'S-1-5-18' -LogonType ServiceAccount -RunLevel Highest
             $settings  = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Hours {{executionTimeLimitHours}})
             Register-ScheduledTask -TaskName '{{taskName}}' -Action $action -Principal $principal -Settings $settings {{registerTrigger}}-Force | Out-Null
 

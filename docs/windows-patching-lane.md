@@ -40,6 +40,8 @@ separate authorization manager so the inbox CDXML module can load. Effective scr
 not enforced inside that controller runspace; process, user and machine policy settings remain
 unchanged, and the arbitrary script runner retains its normal authorization manager.
 
+The SYSTEM task principal explicitly uses ServiceAccount logon with SID S-1-5-18 and Highest run level. This avoids relying on target-provider inference; task triggers, execution ceilings and servicing guards are unchanged. The Server 2012 R2 registration incident and the remaining target-validation limit are documented in [SYSTEM task logon validation](wua-system-task-logon-validation.md).
+
 The drop directory is the **Administrators/SYSTEM-only** `C:\ProgramData\Vivre\agent` (the WinRM
 bootstrap creates + ACL-hardens it on the target), not the old world-writable `C:\Windows\Temp` —
 so a non-privileged local user can't plant or swap the binary that then runs as SYSTEM. Per-run

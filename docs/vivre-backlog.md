@@ -10,6 +10,8 @@ The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The 
 
 **Repeat-install / legacy OS follow-up:** checklist reconciliation and Server 2012/2012 R2 build recognition are tracked in [acceptance and validation](repeat-install-legacy-os-validation.md); live target validation is separate from local regressions.
 
+**WUA task registration follow-up:** an existing Server 2012 R2 PowerShell event identifies Register-ScheduledTask / 0x80070057 before agent startup. Explicit SYSTEM service-account logon is locally validated; actual target registration/install remains unverified because production checks are read-only. See [evidence and limits](wua-system-task-logon-validation.md).
+
 ## Status rules
 
 - **Implemented / locally validated:** the cited implementation has evidence; this does not claim current live-server, native interaction or whole-app soak coverage.
