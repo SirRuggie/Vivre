@@ -12,6 +12,8 @@ The [UI/UX checklist](vivre-ui-ux-backlog.md) holds individual U decisions. The 
 
 **WUA task registration follow-up:** an existing Server 2012 R2 PowerShell event identifies Register-ScheduledTask / 0x80070057 before agent startup. Explicit SYSTEM service-account logon is locally validated; actual target registration/install remains unverified because production checks are read-only. See [evidence and limits](wua-system-task-logon-validation.md).
 
+**WUG false ambiguity:** corrected the overbroad name/hostName conflict check introduced by 614b2d9; unique-ID safeguards retained. See [local evidence and production limits](wug-false-ambiguity-validation.md); affected-fleet recovery remains unverified.
+
 ## Status rules
 
 - **Implemented / locally validated:** the cited implementation has evidence; this does not claim current live-server, native interaction or whole-app soak coverage.

@@ -6,6 +6,7 @@ live status of anything they raise is tracked in the backlog.
 
 ## Living reference (kept current)
 
+- **[wug-false-ambiguity-validation.md](wug-false-ambiguity-validation.md)** — working-version comparison, label/IP hostname regression and safe device-targeting checks; production recovery unverified.
 - **[wua-system-task-logon-validation.md](wua-system-task-logon-validation.md)** — SYSTEM logon compatibility correction, confirmed registration failure, local checks and read-only production boundary.
 
 - **[repeat-install-legacy-os-validation.md](repeat-install-legacy-os-validation.md)** — repeat-scan selection and Server 2012/2012 R2 build-recognition acceptance and local regression evidence.

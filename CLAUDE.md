@@ -205,6 +205,7 @@ dotnet run --project source\Vivre.Desktop      # launch the app (Vivre.exe)
   verification that bypasses the cached rejection; only a clean verified result may clear it. Fence old
   attempts so they cannot overwrite newer retries; never hash/store passwords in cache keys or replay
   a prior operation. Routine polling must retain rejection suppression.
+- WUG name/hostName conflict checks compare qualified non-IP names only: labels and IP-valued host fields are not contradictory DNS evidence. Keep exactly-one-distinct-valid-ID selection in both read and maintenance paths; never restore first-match selection. See docs/wug-false-ambiguity-validation.md.
 - WhatsUp Gold state reads and maintenance changes share one identity resolver. Require exactly one
   distinct valid device ID; never select the first name match or use DNS/IP to bypass name ambiguity.
   Preserve explicit ambiguity/lookup-error/no-device outcomes and actual per-name mutation success.

@@ -18,6 +18,7 @@ it ships, then gets a dated heading.
 
 ### Fixed
 
+- Restore unique WhatsUp Gold name matches when the device uses an operator label or an IP-valued hostName, while retaining distinct-device-ID and qualified-name ambiguity guards.
 - WUA tasks explicitly specify the SYSTEM service-account logon method instead of relying on scheduler inference; local checks passed, while resolution of the reported Server 2012 R2 registration failure remains unverified on the target.
 - Fresh applicable scans no longer inherit checkboxes automatically cleared after a successful install, preventing misleading “No updates selected” on a repeat install; deliberate exclusions remain unchecked.
 - Recognise Server 2012/2012 R2 build numbers already returned by Check Vitals, instead of incorrectly skipping them as an unknown OS. Staged-CU and pending-reboot approval guards are unchanged.

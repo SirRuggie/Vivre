@@ -654,6 +654,21 @@ public class WugResolverProcessTests
     }
 
     [Theory]
+    [InlineData("TULVMANHOUR", "10.20.0.1", "TULVMANHOUR")]
+    [InlineData("Production server", "TULVMANHOUR.example", "TULVMANHOUR")]
+    [InlineData("TULVMANHOUR", "polling-alias", "TULVMANHOUR")]
+    public async Task Unique_device_with_label_or_ip_hostname_retains_working_name_match(string name, string hostName, string query)
+    {
+        RequirePowerShell51();
+        var (devices, summary) = await RunResolverAsync(
+            new[] { new StubDev(name, hostName, "10.20.0.1", "Maintenance", "601") },
+            new Dictionary<string, string>(), null, query);
+        Assert.Equal(WugLookupOutcome.MatchedByName, DeviceFor(devices, query).Outcome);
+        Assert.True(DeviceFor(devices, query).InMaintenance);
+        Assert.Equal(0, summary.Ambiguous);
+    }
+
+    [Theory]
     [InlineData("WEB.a.example", "WEB.a.example.other")]
     [InlineData("WEB.a.example.other", "WEB.a.example")]
     public async Task Conflicting_qualified_name_and_hostName_is_ambiguous(string name, string hostName)
@@ -710,6 +725,25 @@ public class WugResolverProcessTests
         Assert.Equal(2, result.Ambiguous);
         Assert.Equal(1, result.LookupErrors);
         Assert.False(result.Ok); // partial coverage is surfaced even though the two safe IDs were changed
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Label_and_ip_hostname_matches_never_choose_among_distinct_ids(bool enable)
+    {
+        RequirePowerShell51();
+        object[] inventory =
+        [
+            new { name = "GOOD", hostName = "10.46.0.1", networkAddress = "10.46.0.1", id = 601 },
+            new { name = "DUP", hostName = "10.46.0.2", networkAddress = "10.46.0.2", id = 602 },
+            new { name = "DUP", hostName = "10.46.0.3", networkAddress = "10.46.0.3", id = 603 },
+        ];
+        var (result, _, mutation) = await RunMaintenanceAsync(inventory, ["GOOD", "DUP"], enable: enable);
+        Assert.Equal($"{enable}:601", mutation, ignoreCase: true);
+        Assert.Equal(new[] { "GOOD" }, result.SucceededNames);
+        Assert.Equal(new[] { "DUP" }, result.AmbiguousNames);
+        Assert.Equal(1, result.DevicesSet);
     }
 
     [Fact]

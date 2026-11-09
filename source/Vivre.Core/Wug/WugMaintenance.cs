@@ -204,6 +204,13 @@ public static class WugMaintenance
             $n = ([string]$device.name).Trim().TrimEnd('.')
             $h = ([string]$device.hostName).Trim().TrimEnd('.')
             if ([string]::IsNullOrWhiteSpace($n) -or [string]::IsNullOrWhiteSpace($h)) { return $false }
+            # WUG permits operator labels and IP-valued hostName fields. Their difference is not
+            # proof of conflicting DNS identities. Only compare two fully-qualified DNS names here;
+            # the caller still requires exactly one distinct valid device id for every match.
+            [System.Net.IPAddress]$parsedAddress = $null
+            if ([System.Net.IPAddress]::TryParse($n, [ref]$parsedAddress) -or
+                [System.Net.IPAddress]::TryParse($h, [ref]$parsedAddress)) { return $false }
+            if (-not $n.Contains('.') -or -not $h.Contains('.')) { return $false }
             if ([string]::Equals($n, $h, [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
             if (-not $h.Contains('.') -and $n.StartsWith($h + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
             if (-not $n.Contains('.') -and $h.StartsWith($n + '.', [System.StringComparison]::OrdinalIgnoreCase)) { return $false }
@@ -230,7 +237,7 @@ public static class WugMaintenance
         # Control flow (a currently-working lookup still resolves via name-exact OR ip-exact):
         #   1. Name search (error-aware). A CAPTURED ERROR => LookupError immediately (never a false no-match,
         #      never a second call to a struggling server).
-        #   2. Clean hits with a normalized-exact match => MatchedByName (first exact if several).
+        #   2. Clean normalized name matches => MatchedByName only for one distinct valid device id.
         #   3. Clean (hits-no-exact OR empty) and NOT an IP literal => DNS→IP => IP search (error-aware) =>
         #      classify by the COUNT of EXACT networkAddress matches (SearchValue is a SUBSTRING search, so
         #      .10 also returns .101/.109): exactly 1 exact => MatchedByIp; 0 exact => substring-only rows
